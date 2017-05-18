@@ -100,6 +100,10 @@ func (kafka *kafkaReader) closeAsync() {
 }
 
 func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error) {
+	if kafka.spawned {
+		kafka.closeAsync()
+	}
+
 	broker, err := kafka.client.Leader(kafka.topic, kafka.partition)
 	if err != nil {
 		return 0, err
@@ -112,14 +116,12 @@ func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error)
 
 	atomic.StoreInt64(&kafka.offset, offset)
 
-	if !kafka.spawned {
-		asyncCtx, cancel := context.WithCancel(ctx)
-		kafka.cancel = cancel
+	asyncCtx, cancel := context.WithCancel(ctx)
+	kafka.cancel = cancel
 
-		kafka.asyncWait.Add(1)
-		go kafka.fetchMessagesAsync(asyncCtx)
-		kafka.spawned = true
-	}
+	kafka.asyncWait.Add(1)
+	go kafka.fetchMessagesAsync(asyncCtx)
+	kafka.spawned = true
 
 	return offset, nil
 }
