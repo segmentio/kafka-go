@@ -11,6 +11,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	OffsetNewest int64 = -1
+	OffsetOldest int64 = -2
+)
+
 type kafkaReader struct {
 	client    sarama.Client
 	partition int32
