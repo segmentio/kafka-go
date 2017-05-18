@@ -25,6 +25,7 @@ type kafkaReader struct {
 	events    chan Message
 	errors    chan error
 	asyncWait sync.WaitGroup
+	mu        sync.RWMutex
 	// Determine if an async task has been spawned
 	spawned bool
 	// Cancel the async task
@@ -89,6 +90,9 @@ func NewReader(config ReaderConfig) (Reader, error) {
 // `Read` will block until a message is ready to be read. The asynchronous task
 // will also block until `Read` is called.
 func (kafka *kafkaReader) Read(ctx context.Context) (Message, error) {
+	kafka.mu.RLock()
+	defer kafka.mu.RUnlock()
+
 	select {
 	case <-ctx.Done():
 		return Message{}, ctx.Err()
@@ -106,6 +110,9 @@ func (kafka *kafkaReader) closeAsync() {
 
 	// Avoid blocking the async goroutine by emptying the channels.
 	go func() {
+		kafka.mu.RLock()
+		defer kafka.mu.RUnlock()
+
 		for _ = range kafka.events {
 		}
 		for _ = range kafka.errors {
@@ -117,6 +124,8 @@ func (kafka *kafkaReader) closeAsync() {
 	close(kafka.events)
 	close(kafka.errors)
 
+	kafka.mu.Lock()
+	defer kafka.mu.Unlock()
 	// In-case `Seek` is called again and we need to these channels
 	kafka.events = make(chan Message)
 	kafka.errors = make(chan error)
