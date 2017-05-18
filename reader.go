@@ -2,20 +2,15 @@ package kafka
 
 import "context"
 
-type Offset uint64
-
 type Message struct {
-	Offset Offset
+	Offset int64
 	Key    []byte
 	Value  []byte
 }
 
-type MessageIter interface {
-	Next(*Message) bool
-	Close() error
-}
-
 type Reader interface {
-	Read(context.Context, Offset) MessageIter
+	Offset() int64
+	Read(context.Context) (Message, error)
+	Seek(context.Context, int64) (int64, error)
 	Close() error
 }
