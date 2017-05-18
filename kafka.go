@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/pkg/errors"
@@ -14,30 +15,37 @@ type kafkaReader struct {
 	client    sarama.Client
 	partition int32
 	topic     string
+
+	// async task
 	events    chan Message
 	errors    chan error
 	asyncWait sync.WaitGroup
-	spawned   bool
-	cancel    context.CancelFunc
-	offset    int64
+	// Determine if an async task has been spawned
+	spawned bool
+	// Cancel the async task
+	cancel context.CancelFunc
 
-	maxWaitMs uint
-	minBytes  uint32
-	maxBytes  uint32
+	offset int64
+
+	// kafka fetch configuration
+	maxWaitTime time.Duration
+	minBytes    uint32
+	maxBytes    uint32
 }
 
 type ReaderConfig struct {
 	BrokerAddrs []string
 	Topic       string
-	Partition   uint
+	Partition   int
 
 	// Kafka requests wait for `RequestMaxWaitTime` OR `RequestMinBytes`, but
 	// always stops at `RequestMaxBytes`.
-	RequestMaxWaitMs uint
-	RequestMinBytes  uint32
-	RequestMaxBytes  uint32
+	RequestMaxWaitTime time.Duration
+	RequestMinBytes    uint32
+	RequestMaxBytes    uint32
 }
 
+// Create a new base Kafka reader given a topic and partition.
 func NewReader(config ReaderConfig) (Reader, error) {
 	conf := sarama.NewConfig()
 	conf.Version = sarama.V0_10_1_0
@@ -47,27 +55,34 @@ func NewReader(config ReaderConfig) (Reader, error) {
 		return nil, err
 	}
 
+	if config.Partition < 0 {
+		return nil, errors.New("partitions cannot be negative.")
+	}
+
+	// MaxBytes of 0 would make the task spin continuously without
+	// actually returning data.
 	if config.RequestMaxBytes == 0 {
 		config.RequestMaxBytes = 1000000
 	}
 
 	return &kafkaReader{
-		events:    make(chan Message),
-		errors:    make(chan error),
-		spawned:   false,
-		client:    client,
-		offset:    0,
-		cancel:    func() {},
-		topic:     config.Topic,
-		partition: int32(config.Partition),
-		maxWaitMs: config.RequestMaxWaitMs,
-		minBytes:  config.RequestMinBytes,
-		maxBytes:  config.RequestMaxBytes,
+		events:      make(chan Message),
+		errors:      make(chan error),
+		spawned:     false,
+		client:      client,
+		offset:      0,
+		cancel:      func() {},
+		topic:       config.Topic,
+		partition:   int32(config.Partition),
+		maxWaitTime: config.RequestMaxWaitTime,
+		minBytes:    config.RequestMinBytes,
+		maxBytes:    config.RequestMaxBytes,
 	}, nil
 }
 
-// Start consuming from Kafka starting at the given `offset`. `Read` will return a sequential iterator that makes progress
-// as its being read. Rewinding or needing to reset the offset will require calling `Read` again, returning a new iterator.
+// Read the next message from the underlying asynchronous task fetching from Kafka.
+// `Read` will block until a message is ready to be read. The asynchronous task
+// will also block until `Read` is called.
 func (kafka *kafkaReader) Read(ctx context.Context) (Message, error) {
 	select {
 	case <-ctx.Done():
@@ -79,6 +94,8 @@ func (kafka *kafkaReader) Read(ctx context.Context) (Message, error) {
 	}
 }
 
+// Cancel the asynchronous task, flush the events/errors channel to avoid blocking
+// the goroutine and wait for the async task to close.
 func (kafka *kafkaReader) closeAsync() {
 	kafka.cancel()
 
@@ -95,10 +112,21 @@ func (kafka *kafkaReader) closeAsync() {
 	close(kafka.events)
 	close(kafka.errors)
 
+	// In-case `Seek` is called again and we need to these channels
 	kafka.events = make(chan Message)
 	kafka.errors = make(chan error)
 }
 
+// Given an offset spawn an asynchronous task that will read messages from Kafka. The offset
+// can be a real Kafka offset or the special -1/-2.
+//
+// -1 = Newest Offset
+// -2 = Oldest Offset
+//
+// If you want to start at the beginning of the partition, use `-2`.
+// If you want to start at the end of the partition, use `-1`.
+//
+// Calling `Seek` again will cancel the previous task and create a new one.
 func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error) {
 	if kafka.spawned {
 		kafka.closeAsync()
@@ -126,6 +154,9 @@ func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error)
 	return offset, nil
 }
 
+// Get the real offset from Kafka. If a non-negative offset is provided this method won't
+// do anything and will return the same offset. If the offset provided is -1/-2 then it will
+// make a call to Kafka to fetch the real offset.
 func (kafka *kafkaReader) getOffset(broker *sarama.Broker, offset int64) (int64, error) {
 	// An offset of -1/-2 means the partition has no offset state associated with it yet.
 	//  -1 = Newest Offset
@@ -158,10 +189,13 @@ func (kafka *kafkaReader) getOffset(broker *sarama.Broker, offset int64) (int64,
 	return offset, nil
 }
 
+// Return the current offset. This will return `0` if `Seek` hasn't been called.
 func (kafka *kafkaReader) Offset() int64 {
 	return atomic.LoadInt64(&kafka.offset)
 }
 
+// Internal asynchronous task to fetch messages from Kafka and send to an internal
+// channel.
 func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context) {
 	defer kafka.asyncWait.Done()
 
@@ -184,7 +218,7 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context) {
 		// The request will wait at most `maxWaitMs` (milliseconds) OR at most `minBytes`,
 		// which ever happens first.
 		request := sarama.FetchRequest{
-			MaxWaitTime: int32(kafka.maxWaitMs),
+			MaxWaitTime: int32(kafka.maxWaitTime.Seconds() / 1000),
 			MinBytes:    int32(kafka.minBytes),
 		}
 
@@ -241,8 +275,7 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context) {
 	}
 }
 
-// Shutdown the Kafka client. The Kafka reader does not persist the offset
-// when closing down and thus any iterator progress will be lost.
+// Shutdown the Kafka client.
 func (kafka *kafkaReader) Close() (err error) {
 	kafka.closeAsync()
 	return kafka.client.Close()

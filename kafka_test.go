@@ -77,11 +77,11 @@ func TestReader(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
 			config := ReaderConfig{
-				BrokerAddrs:      []string{"localhost:9092"},
-				Topic:            "test",
-				Partition:        0,
-				RequestMaxWaitMs: 100,
-				RequestMinBytes:  100,
+				BrokerAddrs:        []string{"localhost:9092"},
+				Topic:              "test",
+				Partition:          0,
+				RequestMaxWaitTime: 100 * time.Millisecond,
+				RequestMinBytes:    100,
 			}
 
 			reader, err := NewReader(config)
