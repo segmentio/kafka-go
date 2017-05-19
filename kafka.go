@@ -35,8 +35,8 @@ type kafkaReader struct {
 
 	// kafka fetch configuration
 	maxWaitTime time.Duration
-	minBytes    uint32
-	maxBytes    uint32
+	minBytes    int
+	maxBytes    int
 }
 
 type ReaderConfig struct {
@@ -47,8 +47,8 @@ type ReaderConfig struct {
 	// Kafka requests wait for `RequestMaxWaitTime` OR `RequestMinBytes`, but
 	// always stops at `RequestMaxBytes`.
 	RequestMaxWaitTime time.Duration
-	RequestMinBytes    uint32
-	RequestMaxBytes    uint32
+	RequestMinBytes    int
+	RequestMaxBytes    int
 }
 
 // Create a new base Kafka reader given a topic and partition.
@@ -63,6 +63,14 @@ func NewReader(config ReaderConfig) (Reader, error) {
 
 	if config.Partition < 0 {
 		return nil, errors.New("partitions cannot be negative.")
+	}
+
+	if config.RequestMinBytes < 0 {
+		return nil, errors.New("minimum bytes for requests must be greater than 0")
+	}
+
+	if config.RequestMaxBytes < 0 {
+		return nil, errors.New("maximum bytes for requests must be greater than 0")
 	}
 
 	// MaxBytes of 0 would make the task spin continuously without
@@ -162,7 +170,11 @@ func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error)
 	kafka.cancel = cancel
 
 	kafka.asyncWait.Add(1)
-	go kafka.fetchMessagesAsync(asyncCtx)
+
+	kafka.mu.RLock()
+	defer kafka.mu.RUnlock()
+
+	go kafka.fetchMessagesAsync(asyncCtx, kafka.events, kafka.errors)
 	kafka.spawned = true
 
 	return offset, nil
@@ -210,7 +222,7 @@ func (kafka *kafkaReader) Offset() int64 {
 
 // Internal asynchronous task to fetch messages from Kafka and send to an internal
 // channel.
-func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context) {
+func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<- Message, errorsCh chan<- error) {
 	defer kafka.asyncWait.Done()
 
 	for {
@@ -225,7 +237,7 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context) {
 		// due to a leader election happening (and thus the leader has changed).
 		broker, err := kafka.client.Leader(kafka.topic, kafka.partition)
 		if err != nil {
-			kafka.errors <- errors.Wrap(err, "failed to find leader for topic/partition")
+			errorsCh <- errors.Wrap(err, "failed to find leader for topic/partition")
 			continue
 		}
 
@@ -241,19 +253,19 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context) {
 		request.AddBlock(kafka.topic, kafka.partition, offset, int32(kafka.maxBytes))
 		res, err := broker.Fetch(&request)
 		if err != nil {
-			kafka.errors <- errors.Wrap(err, "kafka reader failed to fetch a block")
+			errorsCh <- errors.Wrap(err, "kafka reader failed to fetch a block")
 			continue
 		}
 
 		partition := res.GetBlock(kafka.topic, kafka.partition)
 		if partition == nil {
-			kafka.errors <- fmt.Errorf("kafka topic/partition is invalid (topic: %s, partition: %d)", kafka.topic, kafka.partition)
+			errorsCh <- fmt.Errorf("kafka topic/partition is invalid (topic: %s, partition: %d)", kafka.topic, kafka.partition)
 			continue
 		}
 
 		// Possible errors: https://godoc.org/github.com/Shopify/sarama#KError
 		if partition.Err != sarama.ErrNoError {
-			kafka.errors <- errors.Wrap(partition.Err, "kafka block returned an error")
+			errorsCh <- errors.Wrap(partition.Err, "kafka block returned an error")
 			continue
 		}
 
@@ -280,7 +292,7 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context) {
 			// Give the message to the iterator. This will block if the consumer of the iterator
 			// is blocking or not calling `.Next(..)`. This allows the Kafka reader to stay in-sync
 			// with the consumer.
-			kafka.events <- Message{
+			eventsCh <- Message{
 				Offset: msg.Offset,
 				Key:    msg.Msg.Key,
 				Value:  msg.Msg.Value,
