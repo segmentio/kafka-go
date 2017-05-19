@@ -14,7 +14,7 @@ import "github.com/segmentio/kafka-go"
 ctx := context.Background()
 
 reader, err := kafka.NewReader(ReaderConfig{
-  BrokerAddrs: []string{"localhost:9092"},
+  Brokers: []string{"localhost:9092"},
   Topic: "events",
   Partition: 0,
 })
@@ -50,7 +50,7 @@ config := kafka.GroupConfig{
   Name: "my-group-name",
   // Consul address
   Addr: "http://localhost:8500",
-  BrokerAddrs: []string{"localhost:9092"},
+  Brokers: []string{"localhost:9092"},
   Topic: "foobar",
   Partitions: 100,
 

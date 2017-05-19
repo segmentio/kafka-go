@@ -17,9 +17,9 @@ const (
 )
 
 type ReaderConfig struct {
-	BrokerAddrs []string
-	Topic       string
-	Partition   int
+	Brokers   []string
+	Topic     string
+	Partition int
 
 	// Kafka requests wait for `RequestMaxWaitTime` OR `RequestMinBytes`, but
 	// always stops at `RequestMaxBytes`.
@@ -56,7 +56,7 @@ func NewReader(config ReaderConfig) (Reader, error) {
 	conf := sarama.NewConfig()
 	conf.Version = sarama.V0_10_1_0
 
-	client, err := sarama.NewClient(config.BrokerAddrs, conf)
+	client, err := sarama.NewClient(config.Brokers, conf)
 	if err != nil {
 		return nil, err
 	}

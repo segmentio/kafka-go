@@ -77,7 +77,7 @@ func TestReader(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
 			config := ReaderConfig{
-				BrokerAddrs:        []string{"localhost:9092"},
+				Brokers:            []string{"localhost:9092"},
 				Topic:              "test",
 				Partition:          0,
 				RequestMaxWaitTime: 100 * time.Millisecond,

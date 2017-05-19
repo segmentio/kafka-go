@@ -20,10 +20,10 @@ type consulReader struct {
 }
 
 type GroupConfig struct {
-	Name        string
-	Addr        string
-	BrokerAddrs []string
-	Topic       string
+	Name    string
+	Addr    string
+	Brokers []string
+	Topic   string
 	// Number of partitions
 	Partitions int
 
@@ -63,9 +63,9 @@ func NewGroupReader(config GroupConfig) (Reader, error) {
 	}
 
 	consulReader.reader, err = NewReader(ReaderConfig{
-		BrokerAddrs: config.BrokerAddrs,
-		Topic:       config.Topic,
-		Partition:   partitionID,
+		Brokers:   config.Brokers,
+		Topic:     config.Topic,
+		Partition: partitionID,
 
 		RequestMaxWaitTime: config.RequestMaxWaitTime,
 		RequestMinBytes:    config.RequestMinBytes,
