@@ -36,6 +36,10 @@ func NewGroupReader(config GroupConfig) (Reader, error) {
 	conf := api.DefaultConfig()
 	conf.Address = config.Addr
 
+	if len(config.Addr) == 0 {
+		return nil, errors.New("cannot have an empty consul address")
+	}
+
 	client, err := api.NewClient(conf)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create consul client")
