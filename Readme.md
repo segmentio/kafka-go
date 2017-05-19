@@ -40,6 +40,37 @@ for {
 reader.Close()
 ```
 
+### Creating a Group Reader
+
+Instead of manually assigning partitions to each reader we can automate it with groups. Just give it the number of partitions there are and each reader
+will take ownership of one.
+
+```golang
+config := kafka.GroupConfig{
+  Name: "my-group-name",
+  // Consul address
+  Addr: "http://localhost:8500",
+  BrokerAddrs: []string{"localhost:9092"},
+  Topic: "foobar",
+  Partitions: 100,
+
+  // ...
+}
+
+reader, err := kafka.NewGroupReader(config)
+if err != nil {
+  panic(err)
+}
+
+offset, err := reader.Seek(ctx, kafka.OffsetOldest)
+// ...
+
+msg, err := reader.Read(ctx)
+// ...
+
+defer reader.Close()
+```
+
 ## Running Tests
 
 ```bash
