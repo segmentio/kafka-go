@@ -16,6 +16,18 @@ const (
 	OffsetOldest int64 = -2
 )
 
+type ReaderConfig struct {
+	BrokerAddrs []string
+	Topic       string
+	Partition   int
+
+	// Kafka requests wait for `RequestMaxWaitTime` OR `RequestMinBytes`, but
+	// always stops at `RequestMaxBytes`.
+	RequestMaxWaitTime time.Duration
+	RequestMinBytes    int
+	RequestMaxBytes    int
+}
+
 type kafkaReader struct {
 	client    sarama.Client
 	partition int32
@@ -37,18 +49,6 @@ type kafkaReader struct {
 	maxWaitTime time.Duration
 	minBytes    int
 	maxBytes    int
-}
-
-type ReaderConfig struct {
-	BrokerAddrs []string
-	Topic       string
-	Partition   int
-
-	// Kafka requests wait for `RequestMaxWaitTime` OR `RequestMinBytes`, but
-	// always stops at `RequestMaxBytes`.
-	RequestMaxWaitTime time.Duration
-	RequestMinBytes    int
-	RequestMaxBytes    int
 }
 
 // Create a new base Kafka reader given a topic and partition.
