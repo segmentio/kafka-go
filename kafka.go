@@ -257,6 +257,12 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 			continue
 		}
 
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		partition := res.GetBlock(kafka.topic, kafka.partition)
 		if partition == nil {
 			errorsCh <- fmt.Errorf("kafka topic/partition is invalid (topic: %s, partition: %d)", kafka.topic, kafka.partition)
