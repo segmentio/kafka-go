@@ -52,22 +52,27 @@ func TestReader(t *testing.T) {
 			"should close without errors",
 			closeNoErrors,
 		},
+
 		{
 			"Read should cancel with expired context",
 			readCancelContext,
 		},
+
 		{
 			"Seek return newest offset",
 			seekNewestOffset,
 		},
+
 		{
 			"Seek return oldest offset",
 			seekOldestOffset,
 		},
+
 		{
 			"seek and read oldest offset",
 			seekReadOldestOffset,
 		},
+
 		{
 			"seek and read newest offset",
 			seekReadNewestOffset,

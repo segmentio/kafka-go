@@ -168,12 +168,7 @@ func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error)
 		kafka.closeAsync()
 	}
 
-	broker, err := kafka.client.Leader(kafka.topic, kafka.partition)
-	if err != nil {
-		return 0, err
-	}
-
-	offset, err = kafka.getOffset(broker, offset)
+	offset, err := kafka.getOffset(ctx, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -194,41 +189,126 @@ func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error)
 // Get the real offset from Kafka. If a non-negative offset is provided this method won't
 // do anything and will return the same offset. If the offset provided is -1/-2 then it will
 // make a call to Kafka to fetch the real offset.
-func (kafka *kafkaReader) getOffset(broker *sarama.Broker, offset int64) (int64, error) {
+func (kafka *kafkaReader) getOffset(ctx context.Context, offset int64) (int64, error) {
 	// An offset of -1/-2 means the partition has no offset state associated with it yet.
 	//  -1 = Newest Offset
 	//  -2 = Oldest Offset
-	if offset == -1 || offset == -2 {
+	if offset != -1 && offset != -2 {
+		return offset, nil
+	}
+
+	errs := make(chan error)
+	val := make(chan int64)
+
+	broker, err := kafka.getLeader(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	go func() {
 		request := &sarama.OffsetRequest{Version: 1}
 		request.AddBlock(kafka.topic, kafka.partition, int64(offset), 1)
 
 		offsetResponse, err := broker.GetAvailableOffsets(request)
 		if err != nil {
-			return offset, errors.Wrap(err, "failed to fetch available offsets")
+			errs <- errors.Wrap(err, "failed to fetch available offsets")
+			return
 		}
 
 		block := offsetResponse.GetBlock(kafka.topic, kafka.partition)
 		if block == nil {
-			return offset, errors.Wrap(err, "fetching available offsets returned 0 blocks")
+			errs <- errors.Wrap(err, "fetching available offsets returned 0 blocks")
+			return
 		}
 
 		if block.Err != sarama.ErrNoError {
-			return offset, errors.Wrap(err, "fetching available offsets failed")
+			errs <- errors.Wrap(err, "fetching available offsets failed")
+			return
 		}
 
 		if block.Offset != 0 {
-			return block.Offset - 1, nil
+			val <- block.Offset - 1
+		} else {
+			val <- block.Offset
 		}
+	}()
 
-		return block.Offset, nil
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case err := <-errs:
+		return 0, err
+	case res := <-val:
+		return res, nil
 	}
-
-	return offset, nil
 }
 
 // Return the current offset. This will return `0` if `Seek` hasn't been called.
 func (kafka *kafkaReader) Offset() int64 {
 	return atomic.LoadInt64(&kafka.offset)
+}
+
+func (kafka *kafkaReader) getMessages(ctx context.Context, offset int64) (*sarama.FetchResponse, error) {
+	errs := make(chan error)
+	val := make(chan *sarama.FetchResponse)
+
+	broker, err := kafka.getLeader(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		// The request will wait at most `maxWaitMs` (milliseconds) OR at most `minBytes`,
+		// which ever happens first.
+		request := sarama.FetchRequest{
+			MaxWaitTime: int32(kafka.maxWaitTime.Seconds() / 1000),
+			MinBytes:    int32(kafka.minBytes),
+		}
+
+		request.AddBlock(kafka.topic, kafka.partition, offset, int32(kafka.maxBytes))
+
+		res, err := broker.Fetch(&request)
+		if err != nil {
+			errs <- errors.Wrap(err, "kafka reader failed to fetch a block")
+		} else {
+			val <- res
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case err := <-errs:
+		return nil, err
+	case res := <-val:
+		return res, nil
+	}
+}
+
+// Find the broker that is the given partition's leader. Failure to fetch the leader is either
+// the result of an invalid topic/partition OR the broker/leader is unavailable. This can happen
+// due to a leader election happening (and thus the leader has changed).
+func (kafka *kafkaReader) getLeader(ctx context.Context) (*sarama.Broker, error) {
+	errs := make(chan error)
+	val := make(chan *sarama.Broker)
+
+	go func() {
+		broker, err := kafka.client.Leader(kafka.topic, kafka.partition)
+		if err != nil {
+			errs <- errors.Wrap(err, "failed to find leader for topic/partition")
+		} else {
+			val <- broker
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case err := <-errs:
+		return nil, err
+	case broker := <-val:
+		return broker, nil
+	}
 }
 
 // Internal asynchronous task to fetch messages from Kafka and send to an internal
@@ -237,41 +317,13 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 	defer kafka.asyncWait.Done()
 
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		// Find the broker that is the given partition's leader. Failure to fetch the leader is either
-		// the result of an invalid topic/partition OR the broker/leader is unavailable. This can happen
-		// due to a leader election happening (and thus the leader has changed).
-		broker, err := kafka.client.Leader(kafka.topic, kafka.partition)
-		if err != nil {
-			errorsCh <- errors.Wrap(err, "failed to find leader for topic/partition")
-			continue
-		}
-
-		// The request will wait at most `maxWaitMs` (milliseconds) OR at most `minBytes`,
-		// which ever happens first.
-		request := sarama.FetchRequest{
-			MaxWaitTime: int32(kafka.maxWaitTime.Seconds() / 1000),
-			MinBytes:    int32(kafka.minBytes),
-		}
-
 		offset := atomic.LoadInt64(&kafka.offset)
-
-		request.AddBlock(kafka.topic, kafka.partition, offset, int32(kafka.maxBytes))
-		res, err := broker.Fetch(&request)
-		if err != nil {
-			errorsCh <- errors.Wrap(err, "kafka reader failed to fetch a block")
-			continue
-		}
-
-		select {
-		case <-ctx.Done():
+		res, err := kafka.getMessages(ctx, offset)
+		if err != nil && err == context.Canceled {
 			return
-		default:
+		} else if err != nil {
+			errorsCh <- err
+			continue
 		}
 
 		partition := res.GetBlock(kafka.topic, kafka.partition)
