@@ -71,6 +71,33 @@ msg, err := reader.Read(ctx)
 defer reader.Close()
 ```
 
+# Kafka CLI
+
+Some utility tools exist that were built with this library.
+
+```bash
+$ go install github.com/segmentio/kafka-go/cmd/kafkacli
+$ kafkacli
+Usage:
+  kafkacli [command] [options...]
+
+Commands:
+  tail     Tail a partition or topic
+  help     Show the kafkacli help
+  version  Show the kafkacli version
+
+Error:
+  missing command
+```
+
+### Tailing Messages
+
+```bash
+kafkacli tail -kafka-url kafka://localhost:9092/events
+```
+
+Where `events` is the topic you want to tail and `localhost:9092` is the broker.
+
 ## Running Tests
 
 ```bash
