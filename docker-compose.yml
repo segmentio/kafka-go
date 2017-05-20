@@ -15,3 +15,8 @@ zookeeper:
   image: wurstmeister/zookeeper
   ports:
     - "2181:2181"
+
+consul:
+  image: consul
+  ports:
+    - "8500:8500"
