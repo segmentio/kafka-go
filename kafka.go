@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -44,7 +43,7 @@ type kafkaReader struct {
 	// Cancel the async task
 	cancel context.CancelFunc
 
-	// The current offset that is synchronized via atomics.
+	// The current offset that is updated by `Read`
 	offset int64
 
 	// kafka fetch configuration
@@ -109,6 +108,9 @@ func (kafka *kafkaReader) Read(ctx context.Context) (Message, error) {
 	case <-ctx.Done():
 		return Message{}, ctx.Err()
 	case msg := <-kafka.events:
+		// Update the local offset to the current message.
+		kafka.offset = msg.Offset
+
 		return msg, nil
 	case err := <-kafka.errors:
 		return Message{}, err
@@ -173,14 +175,12 @@ func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error)
 		return 0, err
 	}
 
-	atomic.StoreInt64(&kafka.offset, offset)
-
 	asyncCtx, cancel := context.WithCancel(ctx)
 	kafka.cancel = cancel
 
 	kafka.asyncWait.Add(1)
 
-	go kafka.fetchMessagesAsync(asyncCtx, kafka.events, kafka.errors)
+	go kafka.fetchMessagesAsync(asyncCtx, kafka.events, kafka.errors, offset)
 	kafka.spawned = true
 
 	return offset, nil
@@ -245,7 +245,7 @@ func (kafka *kafkaReader) getOffset(ctx context.Context, offset int64) (int64, e
 
 // Return the current offset. This will return `0` if `Seek` hasn't been called.
 func (kafka *kafkaReader) Offset() int64 {
-	return atomic.LoadInt64(&kafka.offset)
+	return kafka.offset
 }
 
 func (kafka *kafkaReader) getMessages(ctx context.Context, offset int64) (*sarama.FetchResponse, error) {
@@ -313,11 +313,10 @@ func (kafka *kafkaReader) getLeader(ctx context.Context) (*sarama.Broker, error)
 
 // Internal asynchronous task to fetch messages from Kafka and send to an internal
 // channel.
-func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<- Message, errorsCh chan<- error) {
+func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<- Message, errorsCh chan<- error, offset int64) {
 	defer kafka.asyncWait.Done()
 
 	for {
-		offset := atomic.LoadInt64(&kafka.offset)
 		res, err := kafka.getMessages(ctx, offset)
 		if err != nil && err == context.Canceled {
 			return
@@ -356,16 +355,6 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 			msgSet = msgSet[:len(msgSet)-1]
 		}
 
-		// Bump the current offset to the last offset in the message set. The new offset will
-		// be used the next time we fetch a block from Kafka.
-		//
-		// This doesn't commit the offset in any way, it only allows the iterator to continue to
-		// make progress.
-		//
-		// If there was a trailing message this next offset will start there.
-		offset = msgSet[len(msgSet)-1].Offset + 1
-		atomic.StoreInt64(&kafka.offset, offset)
-
 		for _, msg := range msgSet {
 			// Give the message to the iterator. This will block if the consumer of the iterator
 			// is blocking or not calling `.Next(..)`. This allows the Kafka reader to stay in-sync
@@ -375,6 +364,9 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 				Key:    msg.Msg.Key,
 				Value:  msg.Msg.Value,
 			}
+
+			// Update the offset for the next batch of messages
+			offset = msg.Offset + 1
 		}
 	}
 }
