@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -44,7 +45,8 @@ type kafkaReader struct {
 	cancel context.CancelFunc
 
 	// The current offset that is updated by `Read`
-	offset int64
+	offset   int64
+	highmark int64
 
 	// kafka fetch configuration
 	maxWaitTime time.Duration
@@ -98,6 +100,10 @@ func NewReader(config ReaderConfig) (Reader, error) {
 		minBytes:    config.RequestMinBytes,
 		maxBytes:    config.RequestMaxBytes,
 	}, nil
+}
+
+func (kafka *kafkaReader) Lag() int64 {
+	return atomic.LoadInt64(&kafka.highmark) - kafka.offset
 }
 
 // Read the next message from the underlying asynchronous task fetching from Kafka.
@@ -336,6 +342,9 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 			errorsCh <- errors.Wrap(partition.Err, "kafka block returned an error")
 			continue
 		}
+
+		// Update the high watermark offset to determine the lag of the reader.
+		atomic.StoreInt64(&kafka.highmark, partition.HighWaterMarkOffset)
 
 		// Bump the current offset to the last offset in the message set. The new offset will
 		// be used the next time we fetch a block from Kafka.
