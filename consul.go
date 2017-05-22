@@ -127,6 +127,10 @@ func (reader *consulReader) acquire(partitions int) (int, error) {
 	return 0, errors.New("failed to acquire consul lock")
 }
 
+func (reader *consulReader) Lag() int64 {
+	return reader.reader.Lag()
+}
+
 // Read the next message from the underlying reader
 func (reader *consulReader) Read(ctx context.Context) (Message, error) {
 	return reader.reader.Read(ctx)

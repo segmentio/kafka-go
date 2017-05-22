@@ -44,8 +44,9 @@ type kafkaReader struct {
 	// Cancel the async task
 	cancel context.CancelFunc
 
-	// The current offset that is synchronized via atomics.
-	offset int64
+	// The current offset that is updated by `Read`
+	offset   int64
+	highmark int64
 
 	// kafka fetch configuration
 	maxWaitTime time.Duration
@@ -101,6 +102,10 @@ func NewReader(config ReaderConfig) (Reader, error) {
 	}, nil
 }
 
+func (kafka *kafkaReader) Lag() int64 {
+	return atomic.LoadInt64(&kafka.highmark) - kafka.offset
+}
+
 // Read the next message from the underlying asynchronous task fetching from Kafka.
 // `Read` will block until a message is ready to be read. The asynchronous task
 // will also block until `Read` is called.
@@ -109,6 +114,9 @@ func (kafka *kafkaReader) Read(ctx context.Context) (Message, error) {
 	case <-ctx.Done():
 		return Message{}, ctx.Err()
 	case msg := <-kafka.events:
+		// Update the local offset to the current message.
+		kafka.offset = msg.Offset
+
 		return msg, nil
 	case err := <-kafka.errors:
 		return Message{}, err
@@ -168,24 +176,17 @@ func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error)
 		kafka.closeAsync()
 	}
 
-	broker, err := kafka.client.Leader(kafka.topic, kafka.partition)
+	offset, err := kafka.getOffset(ctx, offset)
 	if err != nil {
 		return 0, err
 	}
-
-	offset, err = kafka.getOffset(broker, offset)
-	if err != nil {
-		return 0, err
-	}
-
-	atomic.StoreInt64(&kafka.offset, offset)
 
 	asyncCtx, cancel := context.WithCancel(ctx)
 	kafka.cancel = cancel
 
 	kafka.asyncWait.Add(1)
 
-	go kafka.fetchMessagesAsync(asyncCtx, kafka.events, kafka.errors)
+	go kafka.fetchMessagesAsync(asyncCtx, kafka.events, kafka.errors, offset)
 	kafka.spawned = true
 
 	return offset, nil
@@ -194,64 +195,82 @@ func (kafka *kafkaReader) Seek(ctx context.Context, offset int64) (int64, error)
 // Get the real offset from Kafka. If a non-negative offset is provided this method won't
 // do anything and will return the same offset. If the offset provided is -1/-2 then it will
 // make a call to Kafka to fetch the real offset.
-func (kafka *kafkaReader) getOffset(broker *sarama.Broker, offset int64) (int64, error) {
+func (kafka *kafkaReader) getOffset(ctx context.Context, offset int64) (int64, error) {
 	// An offset of -1/-2 means the partition has no offset state associated with it yet.
 	//  -1 = Newest Offset
 	//  -2 = Oldest Offset
-	if offset == -1 || offset == -2 {
+	if offset != -1 && offset != -2 {
+		return offset, nil
+	}
+
+	errs := make(chan error)
+	val := make(chan int64)
+
+	broker, err := kafka.getLeader(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	go func() {
 		request := &sarama.OffsetRequest{Version: 1}
 		request.AddBlock(kafka.topic, kafka.partition, int64(offset), 1)
 
 		offsetResponse, err := broker.GetAvailableOffsets(request)
 		if err != nil {
-			return offset, errors.Wrap(err, "failed to fetch available offsets")
+			errs <- errors.Wrap(err, "failed to fetch available offsets")
+			return
 		}
 
 		block := offsetResponse.GetBlock(kafka.topic, kafka.partition)
 		if block == nil {
-			return offset, errors.Wrap(err, "fetching available offsets returned 0 blocks")
+			errs <- errors.Wrap(err, "fetching available offsets returned 0 blocks")
+			return
 		}
 
 		if block.Err != sarama.ErrNoError {
-			return offset, errors.Wrap(err, "fetching available offsets failed")
+			errs <- errors.Wrap(err, "fetching available offsets failed")
+			return
 		}
 
 		if block.Offset != 0 {
-			return block.Offset - 1, nil
+			val <- block.Offset - 1
+		} else {
+			val <- block.Offset
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		// ensure the channels are emptied so that the goroutine
+		// doesn't leak if the context is canceled.
+		select {
+		case <-errs:
+		case <-val:
 		}
 
-		return block.Offset, nil
+		return 0, ctx.Err()
+	case err := <-errs:
+		return 0, err
+	case res := <-val:
+		return res, nil
 	}
-
-	return offset, nil
 }
 
 // Return the current offset. This will return `0` if `Seek` hasn't been called.
 func (kafka *kafkaReader) Offset() int64 {
-	return atomic.LoadInt64(&kafka.offset)
+	return kafka.offset
 }
 
-// Internal asynchronous task to fetch messages from Kafka and send to an internal
-// channel.
-func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<- Message, errorsCh chan<- error) {
-	defer kafka.asyncWait.Done()
+func (kafka *kafkaReader) getMessages(ctx context.Context, offset int64) (*sarama.FetchResponse, error) {
+	errs := make(chan error)
+	val := make(chan *sarama.FetchResponse)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
+	broker, err := kafka.getLeader(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-		// Find the broker that is the given partition's leader. Failure to fetch the leader is either
-		// the result of an invalid topic/partition OR the broker/leader is unavailable. This can happen
-		// due to a leader election happening (and thus the leader has changed).
-		broker, err := kafka.client.Leader(kafka.topic, kafka.partition)
-		if err != nil {
-			errorsCh <- errors.Wrap(err, "failed to find leader for topic/partition")
-			continue
-		}
-
+	go func() {
 		// The request will wait at most `maxWaitMs` (milliseconds) OR at most `minBytes`,
 		// which ever happens first.
 		request := sarama.FetchRequest{
@@ -259,19 +278,74 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 			MinBytes:    int32(kafka.minBytes),
 		}
 
-		offset := atomic.LoadInt64(&kafka.offset)
-
 		request.AddBlock(kafka.topic, kafka.partition, offset, int32(kafka.maxBytes))
+
 		res, err := broker.Fetch(&request)
 		if err != nil {
-			errorsCh <- errors.Wrap(err, "kafka reader failed to fetch a block")
-			continue
+			errs <- errors.Wrap(err, "kafka reader failed to fetch a block")
+		} else {
+			val <- res
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		select {
+		case <-errs:
+		case <-val:
 		}
 
+		return nil, ctx.Err()
+	case err := <-errs:
+		return nil, err
+	case res := <-val:
+		return res, nil
+	}
+}
+
+// Find the broker that is the given partition's leader. Failure to fetch the leader is either
+// the result of an invalid topic/partition OR the broker/leader is unavailable. This can happen
+// due to a leader election happening (and thus the leader has changed).
+func (kafka *kafkaReader) getLeader(ctx context.Context) (*sarama.Broker, error) {
+	errs := make(chan error)
+	val := make(chan *sarama.Broker)
+
+	go func() {
+		broker, err := kafka.client.Leader(kafka.topic, kafka.partition)
+		if err != nil {
+			errs <- errors.Wrap(err, "failed to find leader for topic/partition")
+		} else {
+			val <- broker
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
 		select {
-		case <-ctx.Done():
+		case <-errs:
+		case <-val:
+		}
+
+		return nil, ctx.Err()
+	case err := <-errs:
+		return nil, err
+	case broker := <-val:
+		return broker, nil
+	}
+}
+
+// Internal asynchronous task to fetch messages from Kafka and send to an internal
+// channel.
+func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<- Message, errorsCh chan<- error, offset int64) {
+	defer kafka.asyncWait.Done()
+
+	for {
+		res, err := kafka.getMessages(ctx, offset)
+		if err != nil && err == context.Canceled {
 			return
-		default:
+		} else if err != nil {
+			errorsCh <- err
+			continue
 		}
 
 		partition := res.GetBlock(kafka.topic, kafka.partition)
@@ -285,6 +359,9 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 			errorsCh <- errors.Wrap(partition.Err, "kafka block returned an error")
 			continue
 		}
+
+		// Update the high watermark offset to determine the lag of the reader.
+		atomic.StoreInt64(&kafka.highmark, partition.HighWaterMarkOffset)
 
 		// Bump the current offset to the last offset in the message set. The new offset will
 		// be used the next time we fetch a block from Kafka.
@@ -304,16 +381,6 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 			msgSet = msgSet[:len(msgSet)-1]
 		}
 
-		// Bump the current offset to the last offset in the message set. The new offset will
-		// be used the next time we fetch a block from Kafka.
-		//
-		// This doesn't commit the offset in any way, it only allows the iterator to continue to
-		// make progress.
-		//
-		// If there was a trailing message this next offset will start there.
-		offset = msgSet[len(msgSet)-1].Offset + 1
-		atomic.StoreInt64(&kafka.offset, offset)
-
 		for _, msg := range msgSet {
 			// Give the message to the iterator. This will block if the consumer of the iterator
 			// is blocking or not calling `.Next(..)`. This allows the Kafka reader to stay in-sync
@@ -323,6 +390,9 @@ func (kafka *kafkaReader) fetchMessagesAsync(ctx context.Context, eventsCh chan<
 				Key:    msg.Msg.Key,
 				Value:  msg.Msg.Value,
 			}
+
+			// Update the offset for the next batch of messages
+			offset = msg.Offset + 1
 		}
 	}
 }
