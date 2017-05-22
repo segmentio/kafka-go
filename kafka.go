@@ -241,6 +241,13 @@ func (kafka *kafkaReader) getOffset(ctx context.Context, offset int64) (int64, e
 
 	select {
 	case <-ctx.Done():
+		// ensure the channels are emptied so that the goroutine
+		// doesn't leak if the context is canceled.
+		select {
+		case <-errs:
+		case <-val:
+		}
+
 		return 0, ctx.Err()
 	case err := <-errs:
 		return 0, err
@@ -283,6 +290,11 @@ func (kafka *kafkaReader) getMessages(ctx context.Context, offset int64) (*saram
 
 	select {
 	case <-ctx.Done():
+		select {
+		case <-errs:
+		case <-val:
+		}
+
 		return nil, ctx.Err()
 	case err := <-errs:
 		return nil, err
@@ -309,6 +321,11 @@ func (kafka *kafkaReader) getLeader(ctx context.Context) (*sarama.Broker, error)
 
 	select {
 	case <-ctx.Done():
+		select {
+		case <-errs:
+		case <-val:
+		}
+
 		return nil, ctx.Err()
 	case err := <-errs:
 		return nil, err
