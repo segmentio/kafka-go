@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hashicorp/consul/api"
 	"github.com/pkg/errors"
+	consul "github.com/segmentio/consul-go"
 )
 
 const baseKey = "group-readers/"
@@ -22,11 +22,10 @@ type consulReader struct {
 	// The underlying reader
 	reader Reader
 	// Consul client
-	client *api.Client
+	client consul.Client
 	// The name of the group. Allows multiple groups without clashing.
-	name string
-	// The Consul session ID
-	session string
+	name   string
+	cancel context.CancelFunc
 }
 
 type GroupConfig struct {
@@ -51,38 +50,27 @@ type GroupConfig struct {
 // Create a new Consul-based consumer group returning a Kafka reader that has acquired
 // a partition. To read from all partitions you must call `NewGroupReader` N times for N partitions.
 // Each reader will acquire an exclusive partition.
-func NewGroupReader(config GroupConfig) (Reader, error) {
-	conf := api.DefaultConfig()
-	conf.Address = config.Addr
-
-	if len(config.Addr) == 0 {
-		return nil, errors.New("cannot have an empty consul address")
+func NewGroupReader(ctx context.Context, config GroupConfig) (Reader, error) {
+	client := consul.Client{
+		Address: config.Addr,
 	}
 
-	client, err := api.NewClient(conf)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create consul client")
+	session := consul.Session{
+		Client:    &client,
+		Name:      config.Name,
+		Behavior:  consul.Delete,
+		LockDelay: 1 * time.Second,
 	}
 
-	// When the session expires or is removed, delete the locks that were acquired.
-	entry := api.SessionEntry{
-		Name:     "group reader: " + config.Name,
-		Behavior: "delete",
-	}
-
-	// The session id needs to be kept so that it can be deleted if the group/reader is closed.
-	sessionID, _, err := client.Session().Create(&entry, &api.WriteOptions{})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create consul session")
-	}
+	ctx, cancel := consul.WithSession(ctx, session)
 
 	consulReader := &consulReader{
-		name:    config.Name,
-		client:  client,
-		session: sessionID,
+		name:   config.Name,
+		cancel: cancel,
+		client: client,
 	}
 
-	partitionID, err := consulReader.acquire(config.Partitions)
+	partitionID, err := consulReader.acquire(ctx, config.Partitions)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to acquire an exclusive lock on a partition")
 	}
@@ -104,24 +92,21 @@ func NewGroupReader(config GroupConfig) (Reader, error) {
 	return consulReader, nil
 }
 
-func (reader *consulReader) acquire(partitions int) (int, error) {
+func (reader *consulReader) acquire(ctx context.Context, partitions int) (int, error) {
+	locker := consul.Locker{
+		Client: &reader.client,
+	}
+
 	// Cycle through each partition and try to acquire a lock to own it.
 	// Consul doesn't have support for sequential keys.
 	for partition := 0; partition < partitions; partition++ {
-		pair := &api.KVPair{
-			Key:     baseKey + reader.name + "/" + strconv.Itoa(partition),
-			Value:   []byte{},
-			Session: reader.session,
+		key := strconv.Itoa(partition)
+		lock, _ := locker.TryLockOne(ctx, baseKey+reader.name+"/"+key)
+		if lock.Err() != nil {
+			continue
 		}
 
-		res, _, err := reader.client.KV().Acquire(pair, &api.WriteOptions{})
-		if err != nil {
-			return 0, err
-		}
-
-		if res {
-			return partition, nil
-		}
+		return partition, nil
 	}
 
 	return 0, errors.New("failed to acquire consul lock")
@@ -148,6 +133,6 @@ func (reader *consulReader) Seek(ctx context.Context, offset int64) (int64, erro
 
 // Release any locks/keys that were acquired and close the underlying reader.
 func (reader *consulReader) Close() error {
-	reader.client.Session().Destroy(reader.session, &api.WriteOptions{})
+	reader.cancel()
 	return reader.reader.Close()
 }
