@@ -60,6 +60,7 @@ func NewGroupReader(ctx context.Context, config GroupConfig) (Reader, error) {
 		Name:      config.Name,
 		Behavior:  consul.Delete,
 		LockDelay: 1 * time.Second,
+		TTL:       10 * time.Minute,
 	}
 
 	ctx, cancel := consul.WithSession(ctx, session)
