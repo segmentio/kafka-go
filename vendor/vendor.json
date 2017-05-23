@@ -39,6 +39,12 @@
 			"revisionTime": "2017-02-15T23:32:05Z"
 		},
 		{
+			"checksumSHA1": "WMTjT/WhwABW0CP22n1KeXxb96w=",
+			"path": "github.com/google/uuid",
+			"revision": "6a5e28554805e78ea6141142aba763936c4761c0",
+			"revisionTime": "2017-03-06T14:51:42Z"
+		},
+		{
 			"checksumSHA1": "McdWdV7nHpXLqn2/7zHAmj94MDY=",
 			"path": "github.com/hashicorp/consul/watch",
 			"revision": "f9d27d2732009fed799bc32e499f09f9e4644f33",

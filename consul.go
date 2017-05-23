@@ -56,14 +56,16 @@ func NewGroupReader(ctx context.Context, config GroupConfig) (Reader, error) {
 	}
 
 	session := consul.Session{
-		Client:   &client,
-		Name:     config.Name,
-		Behavior: consul.Delete,
+		Client:    &client,
+		Name:      config.Name,
+		Behavior:  consul.Delete,
+		LockDelay: 1 * time.Second,
 	}
 
 	ctx, cancel := consul.WithSession(ctx, session)
 
 	consulReader := &consulReader{
+		name:   config.Name,
 		cancel: cancel,
 		client: client,
 	}
@@ -91,10 +93,15 @@ func NewGroupReader(ctx context.Context, config GroupConfig) (Reader, error) {
 }
 
 func (reader *consulReader) acquire(ctx context.Context, partitions int) (int, error) {
+	locker := consul.Locker{
+		Client: &reader.client,
+	}
+
 	// Cycle through each partition and try to acquire a lock to own it.
 	// Consul doesn't have support for sequential keys.
 	for partition := 0; partition < partitions; partition++ {
-		lock, _ := consul.Lock(ctx, baseKey+reader.name+"/"+strconv.Itoa(partition))
+		key := strconv.Itoa(partition)
+		lock, _ := locker.TryLockOne(ctx, baseKey+reader.name+"/"+key)
 		if lock.Err() != nil {
 			continue
 		}
