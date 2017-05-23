@@ -39,12 +39,6 @@
 			"revisionTime": "2017-02-15T23:32:05Z"
 		},
 		{
-			"checksumSHA1": "iGAHizBUN43QlmYmn1bPLlNN9pw=",
-			"path": "github.com/hashicorp/consul/api",
-			"revision": "f9d27d2732009fed799bc32e499f09f9e4644f33",
-			"revisionTime": "2017-05-18T14:29:51Z"
-		},
-		{
 			"checksumSHA1": "McdWdV7nHpXLqn2/7zHAmj94MDY=",
 			"path": "github.com/hashicorp/consul/watch",
 			"revision": "f9d27d2732009fed799bc32e499f09f9e4644f33",
@@ -103,6 +97,12 @@
 			"path": "github.com/segmentio/conf",
 			"revision": "b57f9759f58e996491f0071bf0596c121c355b96",
 			"revisionTime": "2017-05-03T02:48:19Z"
+		},
+		{
+			"checksumSHA1": "S3rMIE6XMyghZFKRHCbmnsa2OtA=",
+			"path": "github.com/segmentio/consul-go",
+			"revision": "216e08fa5e3b81f2bdd7f47f447ec5f301ed1ced",
+			"revisionTime": "2017-05-22T03:35:38Z"
 		},
 		{
 			"checksumSHA1": "PoXqLiPO6C5Z2gzS6nm1LIhYfMA=",
