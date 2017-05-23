@@ -221,6 +221,8 @@ func seekReadNewestOffset(t *testing.T, ctx context.Context, reader Reader, prod
 }
 
 func testReaderConsume(t *testing.T, ctx context.Context, reader Reader, producer Producer) {
+	defer reader.Close()
+
 	msgs := make([][]byte, 168)
 	for i := range msgs {
 		msgs[i] = []byte(fmt.Sprintf("consume job/%03d", i))
@@ -255,8 +257,4 @@ func testReaderConsume(t *testing.T, ctx context.Context, reader Reader, produce
 
 		cur = reader.Offset() + 1
 	}
-
-	// if _, err := reader.Read(ctx); err != centrifuge.EOS {
-	// 	t.Error("reading from the stream after all jobs were consumed should have returned centrifuge.EOS, got:", err)
-	// }
 }
