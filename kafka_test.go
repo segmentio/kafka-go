@@ -2,18 +2,22 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/google/uuid"
 )
 
-func produce(t *testing.T, msg []byte) int64 {
+type Producer func(t *testing.T, msg []byte) int64
+
+func produce(t *testing.T, topic string, msg []byte) int64 {
 	producer := newProducer(t)
 	defer producer.Close()
 
 	message := sarama.ProducerMessage{
-		Topic: "test",
+		Topic: topic,
 		Value: sarama.ByteEncoder(msg),
 	}
 
@@ -23,6 +27,12 @@ func produce(t *testing.T, msg []byte) int64 {
 	}
 
 	return offset
+}
+
+func makeProducer(t *testing.T, topic string) func(t *testing.T, msg []byte) int64 {
+	return func(t *testing.T, msg []byte) int64 {
+		return produce(t, topic, msg)
+	}
 }
 
 func newProducer(t *testing.T) sarama.SyncProducer {
@@ -46,7 +56,7 @@ func newProducer(t *testing.T) sarama.SyncProducer {
 func TestReader(t *testing.T) {
 	tests := []struct {
 		scenario string
-		test     func(t *testing.T, ctx context.Context, reader Reader)
+		test     func(t *testing.T, ctx context.Context, reader Reader, producer Producer)
 	}{
 		{
 			"should close without errors",
@@ -77,13 +87,20 @@ func TestReader(t *testing.T) {
 			"seek and read newest offset",
 			seekReadNewestOffset,
 		},
+
+		{
+			"sequentially consume a reader",
+			testReaderConsume,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
+			topic := uuid.New().String()
+
 			config := ReaderConfig{
 				Brokers:            []string{"localhost:9092"},
-				Topic:              "test",
+				Topic:              topic,
 				Partition:          0,
 				RequestMaxWaitTime: 100 * time.Millisecond,
 				RequestMinBytes:    100,
@@ -97,19 +114,21 @@ func TestReader(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			test.test(t, ctx, reader)
+			producer := makeProducer(t, topic)
+
+			test.test(t, ctx, reader, producer)
 		})
 	}
 }
 
-func closeNoErrors(t *testing.T, ctx context.Context, reader Reader) {
+func closeNoErrors(t *testing.T, ctx context.Context, reader Reader, producer Producer) {
 	err := reader.Close()
 	if err != nil {
 		t.Fatalf("unexpected error while closing the reader: %s", err.Error())
 	}
 }
 
-func readCancelContext(t *testing.T, ctx context.Context, reader Reader) {
+func readCancelContext(t *testing.T, ctx context.Context, reader Reader, producer Producer) {
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
 
@@ -119,8 +138,8 @@ func readCancelContext(t *testing.T, ctx context.Context, reader Reader) {
 	}
 }
 
-func seekNewestOffset(t *testing.T, ctx context.Context, reader Reader) {
-	offset := produce(t, []byte("foobar xxx"))
+func seekNewestOffset(t *testing.T, ctx context.Context, reader Reader, producer Producer) {
+	offset := producer(t, []byte("foobar xxx"))
 
 	newOffset, err := reader.Seek(ctx, -1)
 	if err != nil {
@@ -134,7 +153,7 @@ func seekNewestOffset(t *testing.T, ctx context.Context, reader Reader) {
 	reader.Close()
 }
 
-func seekOldestOffset(t *testing.T, ctx context.Context, reader Reader) {
+func seekOldestOffset(t *testing.T, ctx context.Context, reader Reader, producer Producer) {
 	offset, err := reader.Seek(ctx, -2)
 	if err != nil {
 		t.Fatalf("seek returned an error: %s", err.Error())
@@ -147,7 +166,9 @@ func seekOldestOffset(t *testing.T, ctx context.Context, reader Reader) {
 	reader.Close()
 }
 
-func seekReadOldestOffset(t *testing.T, ctx context.Context, reader Reader) {
+func seekReadOldestOffset(t *testing.T, ctx context.Context, reader Reader, producer Producer) {
+	offset := producer(t, []byte("foobar xxx"))
+
 	_, err := reader.Seek(ctx, -2)
 	if err != nil {
 		t.Fatalf("seek returned an error: %s", err.Error())
@@ -162,11 +183,15 @@ func seekReadOldestOffset(t *testing.T, ctx context.Context, reader Reader) {
 		t.Fatalf("unexpected message value")
 	}
 
+	if offset != msg.Offset {
+		t.Fatalf("offsets do not match")
+	}
+
 	reader.Close()
 }
 
-func seekReadNewestOffset(t *testing.T, ctx context.Context, reader Reader) {
-	lastOffset := produce(t, []byte("hello 123"))
+func seekReadNewestOffset(t *testing.T, ctx context.Context, reader Reader, producer Producer) {
+	lastOffset := producer(t, []byte("hello 123"))
 
 	_, err := reader.Seek(ctx, -1)
 	if err != nil {
@@ -193,4 +218,45 @@ func seekReadNewestOffset(t *testing.T, ctx context.Context, reader Reader) {
 	}
 
 	reader.Close()
+}
+
+func testReaderConsume(t *testing.T, ctx context.Context, reader Reader, producer Producer) {
+	msgs := make([][]byte, 168)
+	for i := range msgs {
+		msgs[i] = []byte(fmt.Sprintf("consume job/%03d", i))
+		producer(t, msgs[i])
+	}
+
+	cur := reader.Offset()
+
+	for i, _ := range msgs {
+		if cur2, err := reader.Seek(ctx, cur); err != nil {
+			t.Error("seeking to the current position failed:", err)
+			return
+		} else if cur != cur2 {
+			t.Error("seeking to the current position should have produced the same cursor:")
+			t.Logf("expected: %q", cur)
+			t.Logf("found:    %q", cur2)
+			return
+		}
+
+		msg, err := reader.Read(ctx)
+		if err != nil {
+			t.Errorf("reading the msg at %q from the stream failed: %s", cur, err)
+			return
+		}
+
+		if string(msgs[i]) != string(msg.Value) {
+			t.Errorf("the msg returned at %d doesn't match:", cur)
+			t.Logf("expected: %#v", string(msgs[i]))
+			t.Logf("found:    %#v", string(msg.Value))
+			return
+		}
+
+		cur = reader.Offset() + 1
+	}
+
+	// if _, err := reader.Read(ctx); err != centrifuge.EOS {
+	// 	t.Error("reading from the stream after all jobs were consumed should have returned centrifuge.EOS, got:", err)
+	// }
 }

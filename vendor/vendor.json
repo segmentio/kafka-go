@@ -105,10 +105,10 @@
 			"revisionTime": "2017-05-03T02:48:19Z"
 		},
 		{
-			"checksumSHA1": "S3rMIE6XMyghZFKRHCbmnsa2OtA=",
+			"checksumSHA1": "mIrn8/XHw4wY6/dcLc8sn1MxpxI=",
 			"path": "github.com/segmentio/consul-go",
-			"revision": "216e08fa5e3b81f2bdd7f47f447ec5f301ed1ced",
-			"revisionTime": "2017-05-22T03:35:38Z"
+			"revision": "4c6bbe1223d2fc0ebad0b28e39761aef2ff9d3cf",
+			"revisionTime": "2017-05-23T17:43:25Z"
 		},
 		{
 			"checksumSHA1": "PoXqLiPO6C5Z2gzS6nm1LIhYfMA=",
