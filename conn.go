@@ -513,8 +513,7 @@ func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int32) 
 			c.skipResponseSizeAndID()
 			err := read(opsize)
 			switch err.(type) {
-			case nil:
-			case Error:
+			case nil, Error:
 			default:
 				c.conn.Close()
 			}
