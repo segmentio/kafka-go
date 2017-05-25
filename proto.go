@@ -82,7 +82,7 @@ func (m message) crc32() int32 {
 	sum = crc32.Update(sum, crc32.IEEETable, buf[:])
 
 	if m.Key == nil {
-		binary.BigEndian.PutUint32(buf[:4], 0xFF) // -1
+		binary.BigEndian.PutUint32(buf[:4], 0xFFFFFFFF) // -1
 	} else {
 		binary.BigEndian.PutUint32(buf[:4], uint32(len(m.Key)))
 	}
@@ -186,6 +186,10 @@ type partitionOffset struct {
 	Offsets   []int64
 }
 
+func makeInt8(b []byte) int8 {
+	return int8(b[0])
+}
+
 func makeInt16(b []byte) int16 {
 	return int16(binary.BigEndian.Uint16(b))
 }
@@ -208,6 +212,10 @@ func peekRead(r *bufio.Reader, n int, f func([]byte)) error {
 	return err
 }
 
+func readInt8(r *bufio.Reader, v *int8) error {
+	return peekRead(r, 1, func(b []byte) { *v = makeInt8(b) })
+}
+
 func readInt16(r *bufio.Reader, v *int16) error {
 	return peekRead(r, 2, func(b []byte) { *v = makeInt16(b) })
 }
@@ -221,38 +229,52 @@ func readInt64(r *bufio.Reader, v *int64) error {
 }
 
 func readString(r *bufio.Reader, v *string) error {
+	var b []byte
 	var n int16
+
 	if err := readInt16(r, &n); err != nil {
 		return err
 	}
-	b := make([]byte, int(n))
-	if _, err := io.ReadFull(r, b); err != nil {
-		return err
+
+	if n >= 0 {
+		b = make([]byte, int(n))
+		if _, err := io.ReadFull(r, b); err != nil {
+			return err
+		}
 	}
+
 	*v = string(b)
 	return nil
 }
 
 func readBytes(r *bufio.Reader, v *[]byte) error {
+	var b []byte
 	var n int32
+
 	if err := readInt32(r, &n); err != nil {
 		return err
 	}
-	b := make([]byte, int(n))
-	if _, err := io.ReadFull(r, b); err != nil {
-		return err
+
+	if n >= 0 {
+		b = make([]byte, int(n))
+		if _, err := io.ReadFull(r, b); err != nil {
+			return err
+		}
 	}
+
 	*v = b
 	return nil
 }
 
-func readResponse(r *bufio.Reader, size int64, res interface{}) error {
+func readResponse(r *bufio.Reader, size int32, res interface{}) error {
 	// TODO: check size?
 	return read(r, res)
 }
 
 func read(r *bufio.Reader, a interface{}) error {
 	switch v := a.(type) {
+	case *int8:
+		return readInt8(r, v)
 	case *int16:
 		return readInt16(r, v)
 	case *int32:
@@ -264,10 +286,12 @@ func read(r *bufio.Reader, a interface{}) error {
 	case *[]byte:
 		return readBytes(r, v)
 	}
+
 	v := reflect.ValueOf(a)
 	if v.IsNil() {
 		v.Set(reflect.New(v.Type().Elem()))
 	}
+
 	switch v = v.Elem(); v.Kind() {
 	case reflect.Struct:
 		return readStruct(r, v)
@@ -304,6 +328,10 @@ func readSlice(r *bufio.Reader, v reflect.Value) error {
 	}
 
 	return nil
+}
+
+func writeInt8(w *bufio.Writer, i int8) error {
+	return w.WriteByte(byte(i))
 }
 
 func writeInt16(w *bufio.Writer, i int16) error {
@@ -391,6 +419,8 @@ func writev(w *bufio.Writer, args ...interface{}) error {
 
 func write(w *bufio.Writer, a interface{}) error {
 	switch v := a.(type) {
+	case int8:
+		return writeInt8(w, v)
 	case int16:
 		return writeInt16(w, v)
 	case int32:

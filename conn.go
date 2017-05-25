@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,15 +46,14 @@ type Conn struct {
 	mutex  sync.Mutex
 	offset int64
 
+	wlock  sync.Mutex
+	rlock  sync.Mutex
+	opsize int32
+	opid   int32
+
 	dmutex    sync.RWMutex
-	rconn     net.Conn
-	wconn     net.Conn
 	rdeadline time.Time
 	wdeadline time.Time
-
-	oplock     sync.Mutex
-	opmutex    sync.Mutex
-	operations map[int32]*connOp
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -94,20 +94,15 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	}
 
 	conn.SetDeadline(time.Time{})
-
-	c := &Conn{
-		conn:       conn,
-		clientID:   config.ClientID,
-		topic:      config.Topic,
-		partition:  int32(config.Partition),
-		offset:     -2,
-		operations: make(map[int32]*connOp),
+	return &Conn{
+		conn:      conn,
+		crbuf:     *bufio.NewReader(conn),
+		cwbuf:     *bufio.NewWriter(conn),
+		clientID:  config.ClientID,
+		topic:     config.Topic,
+		partition: int32(config.Partition),
+		offset:    -2,
 	}
-	c.crbuf.Reset(conn)
-	c.cwbuf.Reset(conn)
-
-	go c.readLoop()
-	return c
 }
 
 // Close closes the kafka connection.
@@ -137,7 +132,8 @@ func (c *Conn) RemoteAddr() net.Addr {
 // A zero value for t means I/O operations will not time out.
 func (c *Conn) SetDeadline(t time.Time) error {
 	c.dmutex.Lock()
-	c.setDeadline(t, t)
+	c.rdeadline = t
+	c.wdeadline = t
 	c.dmutex.Unlock()
 	return nil
 }
@@ -147,7 +143,7 @@ func (c *Conn) SetDeadline(t time.Time) error {
 // A zero value for t means Read will not time out.
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	c.dmutex.Lock()
-	c.setDeadline(t, c.wdeadline)
+	c.rdeadline = t
 	c.dmutex.Lock()
 	return nil
 }
@@ -159,42 +155,9 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 // A zero value for t means Write will not time out.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	c.dmutex.Lock()
-	c.setDeadline(c.rdeadline, t)
+	c.wdeadline = t
 	c.dmutex.Unlock()
 	return nil
-}
-
-func (c *Conn) setDeadline(rdeadline time.Time, wdeadline time.Time) {
-	if c.rconn != nil {
-		c.rconn.SetReadDeadline(rdeadline)
-	}
-	if c.wconn != nil {
-		c.wconn.SetWriteDeadline(wdeadline)
-	}
-	c.rdeadline = rdeadline
-	c.wdeadline = wdeadline
-
-	now := time.Now()
-	c.opmutex.Lock()
-	for _, op := range c.operations {
-		var deadline time.Time
-		switch op.typ {
-		case readOp:
-			deadline = rdeadline
-		case writeOp:
-			deadline = wdeadline
-		}
-		switch {
-		case deadline.IsZero():
-			op.timer.Stop()
-		case deadline.After(op.deadline):
-			op.timer.Reset(deadline.Sub(now))
-		default:
-			op.cancel(&timeout{})
-		}
-		op.deadline = deadline
-	}
-	c.opmutex.Unlock()
 }
 
 func (c *Conn) Offset() (offset int64, whence int) {
@@ -299,38 +262,23 @@ func (c *Conn) ReadBatchAt(size int, offset int64) (*BatchReader, error) {
 	// There's a bit of code duplication here with the (*Conn).do method, this
 	// is done to support the streaming API of Batch and not have to load the
 	// fetch response all in memory.
-	op := newConnOp(readOp, c.readDeadline())
 	id := c.generateCorrelationID()
-	c.addOperation(id, op)
+	deadline := c.readDeadline()
 
-	c.oplock.Lock()
-	c.setConnWriteDeadline(op.deadline)
+	c.wlock.Lock()
+	c.conn.SetWriteDeadline(deadline)
 	err := c.writeRequest(fetchRequest, v1, id, nil) // TODO
-	c.unsetConnWriteDeadline()
-	c.oplock.Unlock()
-
-	if err == nil {
-		select {
-		case <-op.ready:
-			c.setConnReadDeadline(op.deadline)
-		case <-op.timer.C:
-			err = &timeout{}
-		case <-op.done:
-			err = op.error()
-		}
-	}
+	c.wlock.Unlock()
 
 	if err != nil {
 		// When an error occurs there's no way to know if the connection is in a
 		// recoverable state so we're better off just giving up at this point to
 		// avoid any risk of corrupting the following operations.
 		c.conn.Close()
-		c.removeOperation(id)
-		op.cancel(err)
 		return nil, err
 	}
 
-	return &BatchReader{conn: c, op: op, id: id}, nil
+	return &BatchReader{conn: c, id: id}, nil
 }
 
 func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
@@ -348,7 +296,7 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 				}},
 			})
 		},
-		func(size int64) error {
+		func(size int32) error {
 			var res []listOffsetResponse
 			if err := c.readResponse(size, &res); err != nil {
 				return err
@@ -390,7 +338,7 @@ func (c *Conn) ReadPartitions() (partitions []Partition, err error) {
 		func(id int32) error {
 			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequest{c.topic})
 		},
-		func(size int64) error {
+		func(size int32) error {
 			var res metadataResponse
 			if err := c.readResponse(size, &res); err != nil {
 				return err
@@ -461,7 +409,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 				}},
 			})
 		},
-		func(size int64) error {
+		func(size int32) error {
 			var res produceResponse
 			if err := c.readResponse(size, &res); err != nil {
 				return err
@@ -494,54 +442,18 @@ func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID 
 	return writeRequest(&c.cwbuf, c.requestHeader(apiKey, apiVersion, correlationID), req)
 }
 
-func (c *Conn) readResponse(size int64, res interface{}) error {
+func (c *Conn) readResponse(size int32, res interface{}) error {
 	return readResponse(&c.crbuf, size, &res)
 }
 
-func (c *Conn) readLoop() {
-	for {
-		c.conn.SetReadDeadline(time.Time{})
-		b, err := c.crbuf.Peek(8)
-		if err != nil {
-			break
-		}
-
-		size := int64(makeInt32(b[:4]))
-		id := makeInt32(b[4:])
-		c.crbuf.Discard(8)
-
-		c.opmutex.Lock()
-		op, ok := c.operations[id]
-		c.opmutex.Unlock()
-		if ok {
-			select {
-			case <-op.done:
-			case op.ready <- size - 8:
-				<-op.done // wait for the program to consume the response
-				continue
-			}
-		}
-		discard(&c.crbuf, c.conn, size)
+func (c *Conn) readResponseSizeAndID() (int32, int32, error) {
+	b, err := c.crbuf.Peek(8)
+	if err != nil {
+		return 0, 0, err
 	}
-
-	c.conn.Close()
-	c.opmutex.Lock()
-	for _, op := range c.operations {
-		op.cancel(io.ErrClosedPipe)
-	}
-	c.opmutex.Unlock()
-}
-
-func (c *Conn) addOperation(id int32, op *connOp) {
-	c.opmutex.Lock()
-	c.operations[id] = op
-	c.opmutex.Unlock()
-}
-
-func (c *Conn) removeOperation(id int32) {
-	c.opmutex.Lock()
-	delete(c.operations, id)
-	c.opmutex.Unlock()
+	size, id := makeInt32(b[:4]), makeInt32(b[4:])
+	_, err = c.crbuf.Discard(8)
+	return size, id, err
 }
 
 func (c *Conn) generateCorrelationID() int32 {
@@ -562,84 +474,55 @@ func (c *Conn) writeDeadline() time.Time {
 	return t
 }
 
-func (c *Conn) readOperation(write func(int32) error, read func(int64) error) error {
-	return c.do(newConnOp(readOp, c.readDeadline()), write, read)
+func (c *Conn) readOperation(write func(int32) error, read func(int32) error) error {
+	return c.do(c.readDeadline(), write, read)
 }
 
-func (c *Conn) writeOperation(write func(int32) error, read func(int64) error) error {
-	return c.do(newConnOp(writeOp, c.writeDeadline()), write, read)
+func (c *Conn) writeOperation(write func(int32) error, read func(int32) error) error {
+	return c.do(c.writeDeadline(), write, read)
 }
 
-func (c *Conn) do(op *connOp, write func(int32) error, read func(int64) error) (err error) {
-	// TODO: there's a race if SetDeadline, SetReadDeadline, or SetWriteDeadline
-	// is called after the operation was created but before it is inserted into
-	// the map of active operations. In that case the deadline used by that
-	// operation could be wrong... Not sure if it's worth adding more contention
-	// to attempt to solve this edge case, most applications won't be making
-	// changes to the deadlines concurrently while reading or writing.
+func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int32) error) error {
 	id := c.generateCorrelationID()
-	c.addOperation(id, op)
 
-	// This lock synchronizes writes to the connection, it ensures that only one
-	// goroutines will being sending requests at a time. At first sight it may
-	// look like it would not respect the current operation's timer expiration
-	// but actually all in-flight operation timers are adjusted based on the
-	// same deadline.
-	c.oplock.Lock()
-	c.setConnWriteDeadline(op.deadline)
-	err = write(id)
-	c.unsetConnWriteDeadline()
-	c.oplock.Unlock()
-
-	if err == nil {
-		select {
-		case size := <-op.ready:
-			c.setConnReadDeadline(op.deadline)
-			err = read(size)
-			c.unsetConnReadDeadline()
-		case <-op.timer.C:
-			err = &timeout{}
-		case <-op.done:
-			err = op.error()
-		}
-	}
+	c.wlock.Lock()
+	c.conn.SetWriteDeadline(deadline)
+	err := write(id)
+	c.wlock.Unlock()
 
 	if err != nil {
 		// When an error occurs there's no way to know if the connection is in a
 		// recoverable state so we're better off just giving up at this point to
 		// avoid any risk of corrupting the following operations.
 		c.conn.Close()
+		return err
 	}
 
-	c.removeOperation(id)
-	op.cancel(err)
-	return
-}
+	c.rlock.Lock()
+	c.conn.SetReadDeadline(deadline)
 
-func (c *Conn) setConnReadDeadline(t time.Time) {
-	c.dmutex.Lock()
-	c.conn.SetReadDeadline(t)
-	c.rconn = c.conn
-	c.dmutex.Unlock()
-}
+	for id != c.opid {
+		if c.opid != 0 {
+			// Optimistically release the read lock if a response has already
+			// been received but the current operation is not the target for it.
+			c.rlock.Unlock()
+			runtime.Gosched()
+			c.rlock.Lock()
+			continue
+		}
+		opsize, opid, err := c.readResponseSizeAndID()
+		if err != nil {
+			c.conn.Close()
+			c.rlock.Unlock()
+			return err
+		}
+		c.opsize, c.opid = opsize, opid
+	}
 
-func (c *Conn) unsetConnReadDeadline() {
-	c.dmutex.Lock()
-	c.rconn = nil
-	c.dmutex.Unlock()
-}
-
-func (c *Conn) setConnWriteDeadline(t time.Time) {
-	c.dmutex.Lock()
-	c.conn.SetWriteDeadline(t)
-	c.wconn = c.conn
-	c.dmutex.Unlock()
-}
-
-func (c *Conn) unsetConnWriteDeadline() {
-	c.dmutex.Lock()
-	c.wconn = nil
-	c.dmutex.Unlock()
+	err = read(c.opsize)
+	c.opsize, c.opid = 0, 0
+	c.rlock.Unlock()
+	return err
 }
 
 func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32) requestHeader {
@@ -656,55 +539,6 @@ func discard(r io.Reader, c io.Closer, n int64) {
 		c.Close()
 	}
 }
-
-// connOp is a context-like type that carries the synchronization primitives and
-// the state of an active operation.
-type connOp struct {
-	typ      connOpType
-	ready    chan int64
-	done     chan struct{}
-	timer    *time.Timer
-	deadline time.Time
-	once     sync.Once
-	err      atomic.Value
-}
-
-func newConnOp(typ connOpType, deadline time.Time) *connOp {
-	var timer *time.Timer
-	if deadline.IsZero() {
-		timer = time.NewTimer(time.Hour)
-		timer.Stop()
-	} else {
-		timer = time.NewTimer(deadline.Sub(time.Now()))
-	}
-	return &connOp{
-		typ:      typ,
-		ready:    make(chan int64),
-		done:     make(chan struct{}),
-		timer:    timer,
-		deadline: deadline,
-	}
-}
-
-func (op *connOp) error() error {
-	err, _ := op.err.Load().(error)
-	return err
-}
-
-func (op *connOp) cancel(err error) {
-	op.once.Do(func() {
-		op.err.Store(err)
-		op.timer.Stop()
-		close(op.done)
-	})
-}
-
-type connOpType int
-
-const (
-	readOp connOpType = iota
-	writeOp
-)
 
 type timeout struct{}
 

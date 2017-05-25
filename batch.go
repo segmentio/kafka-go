@@ -10,8 +10,8 @@ type BatchReader struct {
 	rlock  sync.Mutex
 	mutex  sync.Mutex
 	conn   *Conn
-	op     *connOp
 	id     int32
+	size   int32
 	offset int64
 	err    error
 	update bool
@@ -21,9 +21,7 @@ func (batch *BatchReader) Close() error {
 	batch.mutex.Lock()
 	err := batch.err
 	if batch.conn != nil {
-		batch.op.cancel(err)
-		batch.conn.unsetConnReadDeadline()
-		batch.conn.removeOperation(batch.id)
+		// TODO
 		batch.conn = nil
 	}
 	batch.mutex.Unlock()
