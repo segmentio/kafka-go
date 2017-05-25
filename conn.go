@@ -508,6 +508,7 @@ func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int32) 
 			c.rlock.Unlock()
 			runtime.Gosched()
 			c.rlock.Lock()
+			c.conn.SetReadDeadline(deadline)
 			continue
 		}
 		opsize, opid, err := c.readResponseSizeAndID()
