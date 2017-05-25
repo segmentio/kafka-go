@@ -203,8 +203,10 @@ func (c *Conn) Offset() (offset int64, whence int) {
 	c.mutex.Unlock()
 	switch offset {
 	case -1:
+		offset = 0
 		whence = 2
 	case -2:
+		offset = 0
 		whence = 0
 	default:
 		whence = 1
