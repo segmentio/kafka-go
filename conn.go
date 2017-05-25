@@ -43,13 +43,10 @@ type Conn struct {
 	partition     int32
 	correlationID int32
 
-	mutex  sync.Mutex
-	offset int64
-
 	wlock  sync.Mutex
 	rlock  sync.Mutex
-	opsize int32
-	opid   int32
+	mutex  sync.Mutex
+	offset int64
 
 	dmutex    sync.RWMutex
 	rdeadline time.Time
@@ -446,14 +443,17 @@ func (c *Conn) readResponse(size int32, res interface{}) error {
 	return readResponse(&c.crbuf, size, &res)
 }
 
-func (c *Conn) readResponseSizeAndID() (int32, int32, error) {
+func (c *Conn) peekResponseSizeAndID() (int32, int32, error) {
 	b, err := c.crbuf.Peek(8)
 	if err != nil {
 		return 0, 0, err
 	}
 	size, id := makeInt32(b[:4]), makeInt32(b[4:])
-	_, err = c.crbuf.Discard(8)
-	return size, id, err
+	return size, id, nil
+}
+
+func (c *Conn) skipResponseSizeAndID() {
+	c.crbuf.Discard(8)
 }
 
 func (c *Conn) generateCorrelationID() int32 {
@@ -498,32 +498,35 @@ func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int32) 
 		return err
 	}
 
-	c.rlock.Lock()
-	c.conn.SetReadDeadline(deadline)
+	for {
+		c.rlock.Lock()
+		c.conn.SetReadDeadline(deadline)
 
-	for id != c.opid {
-		if c.opid != 0 {
-			// Optimistically release the read lock if a response has already
-			// been received but the current operation is not the target for it.
-			c.rlock.Unlock()
-			runtime.Gosched()
-			c.rlock.Lock()
-			c.conn.SetReadDeadline(deadline)
-			continue
-		}
-		opsize, opid, err := c.readResponseSizeAndID()
+		opsize, opid, err := c.peekResponseSizeAndID()
 		if err != nil {
 			c.conn.Close()
 			c.rlock.Unlock()
 			return err
 		}
-		c.opsize, c.opid = opsize, opid
-	}
 
-	err = read(c.opsize)
-	c.opsize, c.opid = 0, 0
-	c.rlock.Unlock()
-	return err
+		if id == opid {
+			c.skipResponseSizeAndID()
+			err := read(opsize)
+			switch err.(type) {
+			case nil:
+			case Error:
+			default:
+				c.conn.Close()
+			}
+			c.rlock.Unlock()
+			return err
+		}
+
+		// Optimistically release the read lock if a response has already
+		// been received but the current operation is not the target for it.
+		c.rlock.Unlock()
+		runtime.Gosched()
+	}
 }
 
 func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32) requestHeader {
