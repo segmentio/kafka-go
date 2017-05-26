@@ -53,7 +53,7 @@ type Dialer struct {
 	KeepAlive time.Duration
 
 	// Resolver optionally specifies an alternate resolver to use.
-	Resolver *net.Resolver
+	Resolver Resolver
 }
 
 // Dial connects to the address on the named network.
@@ -170,13 +170,34 @@ func (d *Dialer) LookupLeader(ctx context.Context, network string, address strin
 }
 
 func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {
+	if r := d.Resolver; r != nil {
+		host, port := splitHostPort(address)
+		addrs, err := r.LookupHost(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if len(addrs) != 0 {
+			address = addrs[0]
+		}
+		if len(port) != 0 {
+			address, _ = splitHostPort(address)
+			address = net.JoinHostPort(address, port)
+		}
+	}
 	return (&net.Dialer{
 		LocalAddr:     d.LocalAddr,
 		DualStack:     d.DualStack,
 		FallbackDelay: d.FallbackDelay,
 		KeepAlive:     d.KeepAlive,
-		Resolver:      d.Resolver,
 	}).DialContext(ctx, network, address)
+}
+
+// The Resolver interface is used as an abstraction to provide service discovery
+// of the hosts of a kafka cluster.
+type Resolver interface {
+	// LookupHost looks up the given host using the local resolver.
+	// It returns a slice of that host's addresses.
+	LookupHost(ctx context.Context, host string) (addrs []string, err error)
 }
 
 func sleep(ctx context.Context, duration time.Duration) {
@@ -194,4 +215,12 @@ func backoff(attempt int, min time.Duration, max time.Duration) time.Duration {
 		d = max
 	}
 	return d
+}
+
+func splitHostPort(s string) (host string, port string) {
+	host, port, _ = net.SplitHostPort(s)
+	if len(host) == 0 && len(port) == 0 {
+		host = s
+	}
+	return
 }

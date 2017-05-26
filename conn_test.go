@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,7 +37,9 @@ func TestConn(t *testing.T) {
 
 			topic := fmt.Sprintf("kafka-go-%02d", atomic.AddInt32(&id, 1))
 
-			conn, err := (&Dialer{}).DialLeader(ctx, "tcp", "localhost:9092", topic, 0)
+			conn, err := (&Dialer{
+				Resolver: &net.Resolver{PreferGo: true},
+			}).DialLeader(ctx, "tcp", "localhost:9092", topic, 0)
 			if err != nil {
 				t.Fatal("failed to open a new kafka connection:", err)
 			}
