@@ -34,15 +34,12 @@ func TestConn(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			conn, err := (&Dialer{
-				Topic:     fmt.Sprintf("kafka-go-%02d", atomic.AddInt32(&id, 1)),
-				DualStack: true,
-			}).DialContext(ctx, "tcp", "localhost:9092")
+			topic := fmt.Sprintf("kafka-go-%02d", atomic.AddInt32(&id, 1))
 
+			conn, err := (&Dialer{}).DialLeader(ctx, "tcp", "localhost:9092", topic, 0)
 			if err != nil {
 				t.Fatal("failed to open a new kafka connection:", err)
 			}
-
 			defer conn.Close()
 			testFunc(t, conn)
 		})

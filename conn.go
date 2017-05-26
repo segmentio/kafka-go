@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,8 +23,19 @@ type Broker struct {
 	ID   int
 }
 
+// Network satisfies the net.Addr interface, returns "kafka".
+func (b Broker) Network() string {
+	return "kafka"
+}
+
+// String satisfies the net.Addr interface, returns "Host:Port".
+func (b Broker) String() string {
+	return net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
+}
+
 // Partition carries the metadata associated with a kafka partition.
 type Partition struct {
+	Topic    string
 	Leader   Broker
 	Replicas []Broker
 	Isr      []Broker
@@ -34,7 +46,7 @@ type Partition struct {
 //
 // Instances of Conn are safe to use concurrently from multiple goroutines.
 type Conn struct {
-	conn  net.Conn
+	conn net.Conn
 	rbuf bufio.Reader
 	wbuf bufio.Writer
 
@@ -93,8 +105,8 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	conn.SetDeadline(time.Time{})
 	return &Conn{
 		conn:      conn,
-		rbuf:     *bufio.NewReader(conn),
-		wbuf:     *bufio.NewWriter(conn),
+		rbuf:      *bufio.NewReader(conn),
+		wbuf:      *bufio.NewWriter(conn),
 		clientID:  config.ClientID,
 		topic:     config.Topic,
 		partition: int32(config.Partition),
@@ -330,10 +342,16 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 	return
 }
 
-func (c *Conn) ReadPartitions() (partitions []Partition, err error) {
+func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err error) {
+	defaultTopics := [1]string{c.topic}
+
+	if len(topics) == 0 && len(c.topic) != 0 {
+		topics = defaultTopics[:]
+	}
+
 	err = c.readOperation(
 		func(id int32) error {
-			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequest{c.topic})
+			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequest(topics))
 		},
 		func(size int32) error {
 			var res metadataResponse
@@ -344,9 +362,9 @@ func (c *Conn) ReadPartitions() (partitions []Partition, err error) {
 			switch len(res.Topics) {
 			case 1:
 			case 0:
-				return fmt.Errorf("no topic metadata returned by the kafka server for %q", c.topic)
+				return fmt.Errorf("no topic metadata returned by the kafka server for %v", topics)
 			default:
-				return fmt.Errorf("too many topic metadata returned by the kafka server for %q", c.topic)
+				return fmt.Errorf("too many topic metadata returned by the kafka server for %v", topics)
 			}
 
 			brokers := make(map[int32]Broker, len(res.Brokers))
@@ -367,14 +385,12 @@ func (c *Conn) ReadPartitions() (partitions []Partition, err error) {
 			}
 
 			for _, t := range res.Topics {
-				if t.TopicName != c.topic {
-					continue
-				}
 				if t.TopicErrorCode != 0 {
-					return Error(t.TopicErrorCode)
+					continue // TODO: report?
 				}
 				for _, p := range t.Partitions {
 					partitions = append(partitions, Partition{
+						Topic:    t.TopicName,
 						Leader:   brokers[p.Leader],
 						Replicas: makeBrokers(p.Replicas...),
 						Isr:      makeBrokers(p.Isr...),

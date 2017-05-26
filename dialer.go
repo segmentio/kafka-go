@@ -2,9 +2,7 @@ package kafka
 
 import (
 	"context"
-	"fmt"
 	"net"
-	"strconv"
 	"time"
 )
 
@@ -13,13 +11,6 @@ import (
 type Dialer struct {
 	// Unique identifier for client connections established by this Dialer.
 	ClientID string
-
-	// Name of the default kafka topic configured on connections established
-	// through the Dialer.
-	Topic string
-
-	// The partition number used by the connections returned by this dialer.
-	Partition int
 
 	// Timeout is the maximum amount of time a dial will wait for a connect to
 	// complete. If Deadline is also set, it may fail earlier.
@@ -73,12 +64,6 @@ func (d *Dialer) Dial(network string, address string) (*Conn, error) {
 // DialContext connects to the address on the named network using the provided
 // context.
 //
-// If the dialer's Topic is set, the address given to the DialContext method may
-// not be the one that the connection will end up being established to, because
-// the dialer will lookup the partition leader for the topic and return a
-// connection to that server. The original address is only used as a mechanism
-// to discover the configuration of the kafka cluster that we're connecting to.
-//
 // The provided Context must be non-nil. If the context expires before the
 // connection is complete, an error is returned. Once successfully connected,
 // any expiration of the context will not affect the connection.
@@ -86,7 +71,7 @@ func (d *Dialer) Dial(network string, address string) (*Conn, error) {
 // When using TCP, and the host in the address parameter resolves to multiple
 // network addresses, any dial timeout (from d.Timeout or ctx) is spread over
 // each consecutive dial, such that each is given an appropriate fraction of the
-//time to connect. For example, if a host has 4 IP addresses and the timeout is
+// time to connect. For example, if a host has 4 IP addresses and the timeout is
 // 1 minute, the connect to each single address will be given 15 seconds to
 // complete before trying the next one.
 func (d *Dialer) DialContext(ctx context.Context, network string, address string) (*Conn, error) {
@@ -102,41 +87,57 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 		defer cancel()
 	}
 
-	dialer := net.Dialer{
-		LocalAddr:     d.LocalAddr,
-		DualStack:     d.DualStack,
-		FallbackDelay: d.FallbackDelay,
-		KeepAlive:     d.KeepAlive,
-		Resolver:      d.Resolver,
-	}
-
-	c, err := dialer.DialContext(ctx, network, address)
+	c, err := d.dialContext(ctx, network, address)
 	if err != nil {
 		return nil, err
 	}
+	return NewConnWith(c, ConnConfig{ClientID: d.ClientID}), nil
+}
+
+// DialLeader opens a connection to the leader of the partition for a given
+// topic.
+//
+// The address given to the DialContext method may not be the one that the
+// connection will end up being established to, because the dialer will lookup
+// the partition leader for the topic and return a connection to that server.
+// The original address is only used as a mechanism to discover the
+// configuration of the kafka cluster that we're connecting to.
+func (d *Dialer) DialLeader(ctx context.Context, network string, address string, topic string, partition int) (*Conn, error) {
+	b, err := d.LookupLeader(ctx, network, address, topic, partition)
+	if err != nil {
+		return nil, err
+	}
+
+	c, err := d.dialContext(ctx, network, b.String())
+	if err != nil {
+		return nil, err
+	}
+
+	return NewConnWith(c, ConnConfig{
+		ClientID:  d.ClientID,
+		Topic:     topic,
+		Partition: partition,
+	}), nil
+}
+
+// LookupLeader searches for the kafka broker that is the leader of the
+// partition for a given topic, returning a Broker value representing it.
+func (d *Dialer) LookupLeader(ctx context.Context, network string, address string, topic string, partition int) (Broker, error) {
+	c, err := d.DialContext(ctx, network, address)
+	if err != nil {
+		return Broker{}, err
+	}
 	defer c.Close()
 
-	config := ConnConfig{
-		ClientID:  d.ClientID,
-		Topic:     d.Topic,
-		Partition: d.Partition,
-	}
-
-	conn := NewConnWith(c, config)
-	if len(d.Topic) == 0 {
-		return conn, nil
-	}
-	defer conn.Close()
-
-	resch := make(chan string, 1)
+	brkch := make(chan Broker, 1)
 	errch := make(chan error, 1)
 
 	go func() {
-		var paritions []Partition
+		var partitions []Partition
 		var err error
 
 		for attempt := 1; true; attempt++ {
-			paritions, err = conn.ReadPartitions()
+			partitions, err = c.ReadPartitions(topic)
 			if err == nil {
 				break
 			}
@@ -148,32 +149,34 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 			return
 		}
 
-		for _, p := range paritions {
-			if p.ID == d.Partition {
-				resch <- net.JoinHostPort(p.Leader.Host, strconv.Itoa(p.Leader.Port))
+		for _, p := range partitions {
+			if p.ID == partition {
+				brkch <- p.Leader
 				return
 			}
 		}
 
-		errch <- fmt.Errorf("kafka topic '%s' has no partition with id '%d'", d.Topic, d.Partition)
+		errch <- UnknownTopicOrPartition
 	}()
 
+	var brk Broker
 	select {
-	case address = <-resch:
+	case brk = <-brkch:
 	case err = <-errch:
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
-	if err != nil {
-		return nil, err
-	}
+	return brk, err
+}
 
-	c, err = dialer.DialContext(ctx, network, address)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewConnWith(c, config), nil
+func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {
+	return (&net.Dialer{
+		LocalAddr:     d.LocalAddr,
+		DualStack:     d.DualStack,
+		FallbackDelay: d.FallbackDelay,
+		KeepAlive:     d.KeepAlive,
+		Resolver:      d.Resolver,
+	}).DialContext(ctx, network, address)
 }
 
 func sleep(ctx context.Context, duration time.Duration) {
