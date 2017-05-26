@@ -169,6 +169,11 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
+// Offset returns the current offset of the connection as pair of integers,
+// where the first one is an offset value and the second one indicates how
+// to interpret it.
+//
+// See Seek for more details about the offset and whence values.
 func (c *Conn) Offset() (offset int64, whence int) {
 	c.mutex.Lock()
 	offset = c.offset
@@ -186,6 +191,10 @@ func (c *Conn) Offset() (offset int64, whence int) {
 	return
 }
 
+// Seek changes the offset of the connection to offset, interpreted according to
+// whence: 0 means relative to the first offset, 1 means relative to the current
+// offset, and 2 means relative to the last offset.
+// The method returns the new absoluate offset of the connection.
 func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	if offset < 0 {
 		return 0, fmt.Errorf("invalid negative offset (offset = %d)", offset)
@@ -228,6 +237,12 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	return offset, nil
 }
 
+// Read reads the message at the current offset of the connection, advancing
+// the offset on success so the next call to Read produces the next message.
+// The method returns the number of bytes read, or an error if something went
+// wrong.
+//
+// Read satisfies the io.Reader interface.
 func (c *Conn) Read(b []byte) (int, error) {
 	batch, err := c.ReadBatch(1)
 	if err != nil {
@@ -241,6 +256,11 @@ func (c *Conn) Read(b []byte) (int, error) {
 	return n, batch.Close()
 }
 
+// ReadAt reads the message at the given absolute offset, returning the number
+// of bytes read and the offset of the next message, or an error if something
+// went wrong.
+//
+// Unlike Read, the method doesn't modify the offset of the connection.
 func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 	batch, err := c.ReadBatchAt(1, offset)
 	if err != nil {
@@ -290,6 +310,8 @@ func (c *Conn) ReadBatchAt(size int, offset int64) (*BatchReader, error) {
 	return &BatchReader{conn: c, id: id}, nil
 }
 
+// ReadOffsets returns the absolute first and last offsets of the topic used by
+// the connection.
 func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 	first, last = -1, -1
 
@@ -342,8 +364,14 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 	return
 }
 
+// ReadPartitions returns the list of available partitions for the given list of
+// topics.
+//
+// If the method is called with no topic, it uses the topic configured on the
+// connection. If there are none, the method fetches all partitions of the kafka
+// cluster.
 func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err error) {
-	defaultTopics := [1]string{c.topic}
+	defaultTopics := [...]string{c.topic}
 
 	if len(topics) == 0 && len(c.topic) != 0 {
 		topics = defaultTopics[:]
@@ -404,6 +432,13 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 	return
 }
 
+// Write writes a message to the kafka broker that this connection was
+// established to. The method returns the number of bytes written, or an error
+// if something went wrong.
+//
+// The operation either succeeds or fail, it never partially writes the message.
+//
+// Write satisfies the io.Writer interface.
 func (c *Conn) Write(b []byte) (int, error) {
 	msg := makeMessage(timestamp(), nil, b)
 	set := messageSet{{
