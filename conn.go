@@ -327,7 +327,7 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 				}},
 			})
 		},
-		func(size int32) error {
+		func(size int) error {
 			var res []listOffsetResponse
 			if err := c.readResponse(size, &res); err != nil {
 				return err
@@ -381,7 +381,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 		func(id int32) error {
 			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequest(topics))
 		},
-		func(size int32) error {
+		func(size int) error {
 			var res metadataResponse
 			if err := c.readResponse(size, &res); err != nil {
 				return err
@@ -461,7 +461,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 				}},
 			})
 		},
-		func(size int32) error {
+		func(size int) error {
 			var res produceResponse
 			if err := c.readResponse(size, &res); err != nil {
 				return err
@@ -494,7 +494,7 @@ func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID 
 	return writeRequest(&c.wbuf, c.requestHeader(apiKey, apiVersion, correlationID), req)
 }
 
-func (c *Conn) readResponse(size int32, res interface{}) error {
+func (c *Conn) readResponse(size int, res interface{}) error {
 	return readResponse(&c.rbuf, size, res)
 }
 
@@ -529,15 +529,15 @@ func (c *Conn) writeDeadline() time.Time {
 	return t
 }
 
-func (c *Conn) readOperation(write func(int32) error, read func(int32) error) error {
+func (c *Conn) readOperation(write func(int32) error, read func(int) error) error {
 	return c.do(c.readDeadline(), write, read)
 }
 
-func (c *Conn) writeOperation(write func(int32) error, read func(int32) error) error {
+func (c *Conn) writeOperation(write func(int32) error, read func(int) error) error {
 	return c.do(c.writeDeadline(), write, read)
 }
 
-func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int32) error) error {
+func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int) error) error {
 	id := c.generateCorrelationID()
 
 	c.wlock.Lock()
@@ -566,7 +566,7 @@ func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int32) 
 
 		if id == opid {
 			c.skipResponseSizeAndID()
-			err := read(opsize - 4)
+			err := read(int(opsize) - 4)
 			switch err.(type) {
 			case nil, Error:
 			default:

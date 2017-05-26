@@ -106,7 +106,7 @@ func TestProtocol(t *testing.T) {
 
 			v := reflect.New(reflect.TypeOf(test))
 
-			if err := read(r, v.Interface()); err != nil {
+			if _, err := read(r, b.Len(), v.Interface()); err != nil {
 				t.Fatal(err)
 			}
 

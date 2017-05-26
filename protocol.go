@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -190,6 +191,10 @@ type partitionOffset struct {
 	Offsets   []int64
 }
 
+var (
+	errShortRead = errors.New("not enough bytes available to load the response")
+)
+
 func makeInt8(b []byte) int8 {
 	return int8(b[0])
 }
@@ -206,89 +211,97 @@ func makeInt64(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
 }
 
-func peekRead(r *bufio.Reader, n int, f func([]byte)) error {
+func peekRead(r *bufio.Reader, sz int, n int, f func([]byte)) (int, error) {
+	if n > sz {
+		return sz, errShortRead
+	}
 	b, err := r.Peek(n)
 	if err != nil {
-		return err
+		return sz, err
 	}
 	f(b)
-	_, err = r.Discard(n)
-	return err
+	r.Discard(n)
+	return sz - n, nil
 }
 
-func readInt8(r *bufio.Reader, v *int8) error {
-	return peekRead(r, 1, func(b []byte) { *v = makeInt8(b) })
+func readInt8(r *bufio.Reader, sz int, v *int8) (int, error) {
+	return peekRead(r, sz, 1, func(b []byte) { *v = makeInt8(b) })
 }
 
-func readInt16(r *bufio.Reader, v *int16) error {
-	return peekRead(r, 2, func(b []byte) { *v = makeInt16(b) })
+func readInt16(r *bufio.Reader, sz int, v *int16) (int, error) {
+	return peekRead(r, sz, 2, func(b []byte) { *v = makeInt16(b) })
 }
 
-func readInt32(r *bufio.Reader, v *int32) error {
-	return peekRead(r, 4, func(b []byte) { *v = makeInt32(b) })
+func readInt32(r *bufio.Reader, sz int, v *int32) (int, error) {
+	return peekRead(r, sz, 4, func(b []byte) { *v = makeInt32(b) })
 }
 
-func readInt64(r *bufio.Reader, v *int64) error {
-	return peekRead(r, 8, func(b []byte) { *v = makeInt64(b) })
+func readInt64(r *bufio.Reader, sz int, v *int64) (int, error) {
+	return peekRead(r, sz, 8, func(b []byte) { *v = makeInt64(b) })
 }
 
-func readString(r *bufio.Reader, v *string) error {
+func readString(r *bufio.Reader, sz int, v *string) (int, error) {
+	var err error
+	var len int16
 	var b []byte
-	var n int16
 
-	if err := readInt16(r, &n); err != nil {
-		return err
+	if sz, err = readInt16(r, sz, &len); err != nil {
+		return sz, err
 	}
 
-	if n >= 0 {
-		b = make([]byte, int(n))
-		if _, err := io.ReadFull(r, b); err != nil {
-			return err
+	if n := int(len); n >= 0 {
+		if n > sz {
+			return sz, errShortRead
 		}
+		b = make([]byte, n)
+		if _, err = io.ReadFull(r, b); err != nil {
+			return sz, err
+		}
+		sz -= n
 	}
 
 	*v = string(b)
-	return nil
+	return sz, nil
 }
 
-func readBytes(r *bufio.Reader, v *[]byte) error {
+func readBytes(r *bufio.Reader, sz int, v *[]byte) (int, error) {
+	var err error
+	var len int32
 	var b []byte
-	var n int32
 
-	if err := readInt32(r, &n); err != nil {
-		return err
+	if sz, err = readInt32(r, sz, &len); err != nil {
+		return sz, err
 	}
 
-	if n >= 0 {
-		b = make([]byte, int(n))
-		if _, err := io.ReadFull(r, b); err != nil {
-			return err
+	if n := int(len); n >= 0 {
+		if n > sz {
+			return sz, errShortRead
 		}
+		b = make([]byte, n)
+		if _, err = io.ReadFull(r, b); err != nil {
+			return sz, err
+		}
+		sz -= n
 	}
 
 	*v = b
-	return nil
+	return sz, nil
 }
 
-func readResponse(r *bufio.Reader, size int32, res interface{}) error {
-	// TODO: check size?
-	return read(r, res)
-}
-
-func read(r *bufio.Reader, a interface{}) error {
+func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
 	switch v := a.(type) {
 	case *int8:
-		return readInt8(r, v)
+		return readInt8(r, sz, v)
 	case *int16:
-		return readInt16(r, v)
+		return readInt16(r, sz, v)
 	case *int32:
-		return readInt32(r, v)
+		return readInt32(r, sz, v)
 	case *int64:
-		return readInt64(r, v)
+		return readInt64(r, sz, v)
 	case *string:
-		return readString(r, v)
+		return readString(r, sz, v)
 	case *[]byte:
-		return readBytes(r, v)
+		return readBytes(r, sz, v)
 	}
 
 	v := reflect.ValueOf(a)
@@ -298,39 +311,52 @@ func read(r *bufio.Reader, a interface{}) error {
 
 	switch v = v.Elem(); v.Kind() {
 	case reflect.Struct:
-		return readStruct(r, v)
+		return readStruct(r, sz, v)
 	case reflect.Slice:
-		return readSlice(r, v)
+		return readSlice(r, sz, v)
 	default:
 		panic(fmt.Sprintf("unsupported type: %T", a))
 	}
 }
 
-func readStruct(r *bufio.Reader, v reflect.Value) error {
+func readStruct(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
+	var err error
 	for i, n := 0, v.NumField(); i != n; i++ {
-		if err := read(r, v.Field(i).Addr().Interface()); err != nil {
-			return err
+		if sz, err = read(r, sz, v.Field(i).Addr().Interface()); err != nil {
+			return sz, err
 		}
 	}
-	return nil
+	return sz, nil
 }
 
-func readSlice(r *bufio.Reader, v reflect.Value) error {
-	size := int32(0)
+func readSlice(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
+	var err error
+	var len int32
 
-	if err := readInt32(r, &size); err != nil {
-		return err
+	if sz, err = readInt32(r, sz, &len); err != nil {
+		return sz, err
 	}
 
-	n := int(size)
+	n := int(len)
 	v.Set(reflect.MakeSlice(v.Type(), n, n))
 
 	for i := 0; i != n; i++ {
-		if err := read(r, v.Index(i).Addr().Interface()); err != nil {
-			return err
+		if sz, err = read(r, sz, v.Index(i).Addr().Interface()); err != nil {
+			return sz, err
 		}
 	}
 
+	return sz, nil
+}
+
+func readResponse(r *bufio.Reader, sz int, res interface{}) error {
+	n, err := read(r, sz, res)
+	if err != nil {
+		return err
+	}
+	if n != 0 {
+		return fmt.Errorf("reading a response of size %d left %d unread bytes", sz, n)
+	}
 	return nil
 }
 
@@ -397,13 +423,6 @@ func writeSmallBuffer(w *bufio.Writer, b []byte) error {
 	return nil
 }
 
-func writeRequest(w *bufio.Writer, hdr requestHeader, req interface{}) error {
-	hdr.Size = (sizeof(hdr) + sizeof(req)) - 4
-	write(w, hdr)
-	write(w, req)
-	return w.Flush()
-}
-
 func write(w *bufio.Writer, a interface{}) error {
 	switch v := a.(type) {
 	case int8:
@@ -451,6 +470,13 @@ func writeSlice(w *bufio.Writer, v reflect.Value) error {
 		}
 	}
 	return nil
+}
+
+func writeRequest(w *bufio.Writer, hdr requestHeader, req interface{}) error {
+	hdr.Size = (sizeof(hdr) + sizeof(req)) - 4
+	write(w, hdr)
+	write(w, req)
+	return w.Flush()
 }
 
 func sizeof(a interface{}) int32 {
