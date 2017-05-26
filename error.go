@@ -337,3 +337,12 @@ func isTemporary(err error) bool {
 	})
 	return ok && e.Temporary()
 }
+
+func coalesceErrors(err ...error) error {
+	for _, e := range err {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}

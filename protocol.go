@@ -13,19 +13,19 @@ import (
 type apiKey int16
 
 const (
-	produceRequestKey          apiKey = 0
-	fetchRequestKey            apiKey = 1
-	offsetRequestKey           apiKey = 2
-	metadataRequestKey         apiKey = 3
-	offsetCommitRequestKey     apiKey = 8
-	offsetFetchRequestKey      apiKey = 9
-	groupCoordinatorRequestKey apiKey = 10
-	joinGroupRequestKey        apiKey = 11
-	heartbeatRequestKey        apiKey = 12
-	leaveGroupRequestKey       apiKey = 13
-	syncGroupRequestKey        apiKey = 14
-	describeGroupsRequestKey   apiKey = 15
-	listGroupsRequestKey       apiKey = 16
+	produceRequest          apiKey = 0
+	fetchRequest            apiKey = 1
+	offsetRequest           apiKey = 2
+	metadataRequest         apiKey = 3
+	offsetCommitRequest     apiKey = 8
+	offsetFetchRequest      apiKey = 9
+	groupCoordinatorRequest apiKey = 10
+	joinGroupRequest        apiKey = 11
+	heartbeatRequest        apiKey = 12
+	leaveGroupRequest       apiKey = 13
+	syncGroupRequest        apiKey = 14
+	describeGroupsRequest   apiKey = 15
+	listGroupsRequest       apiKey = 16
 )
 
 type apiVersion int16
@@ -100,27 +100,27 @@ func crc32Bytes(sum uint32, b []byte) uint32 {
 	return sum
 }
 
-// Metadata API
-type topicMetadataRequest []string
+// Metadata API (v0)
+type topicMetadataRequestV0 []string
 
-type metadataResponse struct {
-	Brokers []broker
-	Topics  []topicMetadata
+type metadataResponseV0 struct {
+	Brokers []brokerMetadataV0
+	Topics  []topicMetadataV0
 }
 
-type broker struct {
+type brokerMetadataV0 struct {
 	NodeID int32
 	Host   string
 	Port   int32
 }
 
-type topicMetadata struct {
+type topicMetadataV0 struct {
 	TopicErrorCode int16
 	TopicName      string
-	Partitions     []partitionMetadata
+	Partitions     []partitionMetadataV0
 }
 
-type partitionMetadata struct {
+type partitionMetadataV0 struct {
 	PartitionErrorCode int16
 	PartitionID        int32
 	Leader             int32
@@ -128,71 +128,71 @@ type partitionMetadata struct {
 	Isr                []int32
 }
 
-// Produce API
-type produceRequest struct {
+// Produce API (v2)
+type produceRequestV2 struct {
 	RequiredAcks int16
 	Timeout      int32
-	Topics       []produceRequestTopic
+	Topics       []produceRequestTopicV2
 }
 
-type produceRequestTopic struct {
+type produceRequestTopicV2 struct {
 	TopicName  string
-	Partitions []produceRequestPartition
+	Partitions []produceRequestPartitionV2
 }
 
-type produceRequestPartition struct {
+type produceRequestPartitionV2 struct {
 	Partition      int32
 	MessageSetSize int32
 	MessageSet     messageSet
 }
 
-type produceResponse struct {
-	Topics       []produceResponseTopic
+type produceResponseV2 struct {
+	Topics       []produceResponseTopicV2
 	ThrottleTime int32
 }
 
-type produceResponseTopic struct {
+type produceResponseTopicV2 struct {
 	TopicName  string
-	Partitions []produceResponsePartition
+	Partitions []produceResponsePartitionV2
 }
 
-type produceResponsePartition struct {
+type produceResponsePartitionV2 struct {
 	Partition int32
 	ErrorCode int16
 	Offset    int64
 	Timestamp int64
 }
 
-// Fetch API
-type fetchRequest struct {
+// Fetch API (v1)
+type fetchRequestV1 struct {
 	ReplicaID   int32
 	MaxWaitTime int32
 	MinBytes    int32
-	Topics      []fetchRequestTopic
+	Topics      []fetchRequestTopicV1
 }
 
-type fetchRequestTopic struct {
+type fetchRequestTopicV1 struct {
 	TopicName  string
-	Partitions []fetchRequestPartition
+	Partitions []fetchRequestPartitionV1
 }
 
-type fetchRequestPartition struct {
+type fetchRequestPartitionV1 struct {
 	Partition   int32
 	FetchOffset int64
 	MaxBytes    int32
 }
 
-type fetchResponse struct {
+type fetchResponseV1 struct {
 	ThrottleTime int32
-	Topics       []fetchResponseTopic
+	Topics       []fetchResponseTopicV1
 }
 
-type fetchResponseTopic struct {
+type fetchResponseTopicV1 struct {
 	TopicName string
-	Partition []fetchResponsePartition
+	Partition []fetchResponsePartitionV1
 }
 
-type fetchResponsePartition struct {
+type fetchResponsePartitionV1 struct {
 	Partition           int32
 	ErrorCode           int16
 	HighwaterMarkOffset int64
@@ -200,7 +200,7 @@ type fetchResponsePartition struct {
 	MessageSet          messageSet
 }
 
-// Offset API
+// Offset API (v1)
 type listOffsetRequestV1 struct {
 	ReplicaID int32
 	Topics    []listOffsetRequestTopicV1
@@ -566,4 +566,24 @@ func sizeofSlice(v reflect.Value) (size int32) {
 		size += sizeof(v.Index(i).Interface())
 	}
 	return
+}
+
+func minInt64(ints ...int64) int64 {
+	min := ints[0]
+	for _, val := range ints[1:] {
+		if val < min {
+			min = val
+		}
+	}
+	return min
+}
+
+func maxInt64(ints ...int64) int64 {
+	max := ints[0]
+	for _, val := range ints[1:] {
+		if val > max {
+			max = val
+		}
+	}
+	return max
 }

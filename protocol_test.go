@@ -39,7 +39,7 @@ func TestProtocol(t *testing.T) {
 	tests := []interface{}{
 		requestHeader{
 			Size:          26,
-			ApiKey:        int16(offsetCommitRequestKey),
+			ApiKey:        int16(offsetCommitRequest),
 			ApiVersion:    int16(v2),
 			CorrelationID: 42,
 			ClientID:      "Hello World!",
@@ -52,15 +52,15 @@ func TestProtocol(t *testing.T) {
 			Value:     []byte("Hello World!"),
 		},
 
-		topicMetadataRequest{"A", "B", "C"},
+		topicMetadataRequestV0{"A", "B", "C"},
 
-		metadataResponse{
-			Brokers: []broker{
+		metadataResponseV0{
+			Brokers: []brokerMetadataV0{
 				{NodeID: 1, Host: "localhost", Port: 9001},
 				{NodeID: 2, Host: "localhost", Port: 9002},
 			},
-			Topics: []topicMetadata{
-				{TopicErrorCode: 0, Partitions: []partitionMetadata{{
+			Topics: []topicMetadataV0{
+				{TopicErrorCode: 0, Partitions: []partitionMetadataV0{{
 					PartitionErrorCode: 0,
 					PartitionID:        1,
 					Leader:             2,

@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 func TestConn(t *testing.T) {
 	tests := []struct {
 		scenario string
@@ -54,7 +58,7 @@ func TestConn(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			topic := fmt.Sprintf("kafka-go-%d", rand.Int63())
+			topic := fmt.Sprintf("kafka-go-%016x", rand.Int63())
 
 			conn, err := (&Dialer{
 				Resolver: &net.Resolver{},

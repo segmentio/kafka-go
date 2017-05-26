@@ -135,7 +135,7 @@ func (d *Dialer) LookupLeader(ctx context.Context, network string, address strin
 	go func() {
 		for attempt := 0; true; attempt++ {
 			if attempt != 0 {
-				sleep(ctx, backoff(attempt, time.Second, time.Minute))
+				sleep(ctx, backoff(attempt, 100*time.Millisecond, 10*time.Second))
 			}
 
 			partitions, err := c.ReadPartitions(topic)
