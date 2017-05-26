@@ -74,26 +74,29 @@ func makeMessage(timestamp int64, key []byte, value []byte) message {
 
 func (m message) crc32() int32 {
 	sum := uint32(0)
-	buf := [10]byte{}
 
+	buf := [10]byte{}
 	buf[0] = byte(m.MagicByte)
 	buf[1] = byte(m.Attributes)
 	binary.BigEndian.PutUint64(buf[2:], uint64(m.Timestamp))
+
 	sum = crc32.Update(sum, crc32.IEEETable, buf[:])
-
-	if m.Key == nil {
-		binary.BigEndian.PutUint32(buf[:4], 0xFFFFFFFF) // -1
-	} else {
-		binary.BigEndian.PutUint32(buf[:4], uint32(len(m.Key)))
-	}
-	sum = crc32.Update(sum, crc32.IEEETable, buf[:4])
-	sum = crc32.Update(sum, crc32.IEEETable, m.Key)
-
-	binary.BigEndian.PutUint32(buf[:4], uint32(len(m.Value)))
-	sum = crc32.Update(sum, crc32.IEEETable, buf[:4])
-	sum = crc32.Update(sum, crc32.IEEETable, m.Value)
+	sum = crc32Bytes(sum, m.Key)
+	sum = crc32Bytes(sum, m.Value)
 
 	return int32(sum)
+}
+
+func crc32Bytes(sum uint32, b []byte) uint32 {
+	buf := [4]byte{}
+	if b == nil {
+		binary.BigEndian.PutUint32(buf[:4], 0xFFFFFFFF) // -1
+	} else {
+		binary.BigEndian.PutUint32(buf[:4], uint32(len(b)))
+	}
+	sum = crc32.Update(sum, crc32.IEEETable, buf[:4])
+	sum = crc32.Update(sum, crc32.IEEETable, b)
+	return sum
 }
 
 // Metadata API
