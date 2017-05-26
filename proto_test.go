@@ -100,6 +100,10 @@ func TestProtocol(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			if size := int(sizeof(test)); size != b.Len() {
+				t.Error("invalid size:", size, "!=", b.Len())
+			}
+
 			v := reflect.New(reflect.TypeOf(test))
 
 			if err := read(r, v.Interface()); err != nil {

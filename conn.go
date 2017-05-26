@@ -35,8 +35,8 @@ type Partition struct {
 // Instances of Conn are safe to use concurrently from multiple goroutines.
 type Conn struct {
 	conn  net.Conn
-	crbuf bufio.Reader
-	cwbuf bufio.Writer
+	rbuf bufio.Reader
+	wbuf bufio.Writer
 
 	clientID      string
 	topic         string
@@ -93,8 +93,8 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	conn.SetDeadline(time.Time{})
 	return &Conn{
 		conn:      conn,
-		crbuf:     *bufio.NewReader(conn),
-		cwbuf:     *bufio.NewWriter(conn),
+		rbuf:     *bufio.NewReader(conn),
+		wbuf:     *bufio.NewWriter(conn),
 		clientID:  config.ClientID,
 		topic:     config.Topic,
 		partition: int32(config.Partition),
@@ -349,10 +349,6 @@ func (c *Conn) ReadPartitions() (partitions []Partition, err error) {
 				return fmt.Errorf("too many topic metadata returned by the kafka server for %q", c.topic)
 			}
 
-			if res.Topics[0].TopicErrorCode != 0 {
-				return Error(res.Topics[0].TopicErrorCode)
-			}
-
 			brokers := make(map[int32]Broker, len(res.Brokers))
 			for _, b := range res.Brokers {
 				brokers[b.NodeID] = Broker{
@@ -370,13 +366,21 @@ func (c *Conn) ReadPartitions() (partitions []Partition, err error) {
 				return b
 			}
 
-			for _, p := range res.Topics[0].Partitions {
-				partitions = append(partitions, Partition{
-					Leader:   brokers[p.Leader],
-					Replicas: makeBrokers(p.Replicas...),
-					Isr:      makeBrokers(p.Isr...),
-					ID:       int(p.PartitionID),
-				})
+			for _, t := range res.Topics {
+				if t.TopicName != c.topic {
+					continue
+				}
+				if t.TopicErrorCode != 0 {
+					return Error(t.TopicErrorCode)
+				}
+				for _, p := range t.Partitions {
+					partitions = append(partitions, Partition{
+						Leader:   brokers[p.Leader],
+						Replicas: makeBrokers(p.Replicas...),
+						Isr:      makeBrokers(p.Isr...),
+						ID:       int(p.PartitionID),
+					})
+				}
 			}
 			return nil
 		},
@@ -436,15 +440,15 @@ func (c *Conn) Write(b []byte) (int, error) {
 }
 
 func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req interface{}) error {
-	return writeRequest(&c.cwbuf, c.requestHeader(apiKey, apiVersion, correlationID), req)
+	return writeRequest(&c.wbuf, c.requestHeader(apiKey, apiVersion, correlationID), req)
 }
 
 func (c *Conn) readResponse(size int32, res interface{}) error {
-	return readResponse(&c.crbuf, size, &res)
+	return readResponse(&c.rbuf, size, res)
 }
 
 func (c *Conn) peekResponseSizeAndID() (int32, int32, error) {
-	b, err := c.crbuf.Peek(8)
+	b, err := c.rbuf.Peek(8)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -453,7 +457,7 @@ func (c *Conn) peekResponseSizeAndID() (int32, int32, error) {
 }
 
 func (c *Conn) skipResponseSizeAndID() {
-	c.crbuf.Discard(8)
+	c.rbuf.Discard(8)
 }
 
 func (c *Conn) generateCorrelationID() int32 {
@@ -511,7 +515,7 @@ func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int32) 
 
 		if id == opid {
 			c.skipResponseSizeAndID()
-			err := read(opsize)
+			err := read(opsize - 4)
 			switch err.(type) {
 			case nil, Error:
 			default:

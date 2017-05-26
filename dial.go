@@ -114,11 +114,19 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 	if err != nil {
 		return nil, err
 	}
+	defer c.Close()
 
-	conn := NewConnWith(c, ConnConfig{ClientID: d.ClientID})
+	config := ConnConfig{
+		ClientID:  d.ClientID,
+		Topic:     d.Topic,
+		Partition: d.Partition,
+	}
+
+	conn := NewConnWith(c, config)
 	if len(d.Topic) == 0 {
 		return conn, nil
 	}
+	defer conn.Close()
 
 	resch := make(chan string, 1)
 	errch := make(chan error, 1)
@@ -129,13 +137,15 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 
 		for attempt := 1; true; attempt++ {
 			paritions, err = conn.ReadPartitions()
-			switch {
-			case isTemporary(err):
-				sleep(ctx, backoff(attempt, time.Second, time.Minute))
-			case err != nil:
-				errch <- err
-				return
+			if err == nil {
+				break
 			}
+			if isTemporary(err) {
+				sleep(ctx, backoff(attempt, time.Second, time.Minute))
+				continue
+			}
+			errch <- err
+			return
 		}
 
 		for _, p := range paritions {
@@ -154,9 +164,7 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
-
 	if err != nil {
-		conn.Close()
 		return nil, err
 	}
 
@@ -165,12 +173,7 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 		return nil, err
 	}
 
-	conn = NewConnWith(c, ConnConfig{
-		ClientID:  d.ClientID,
-		Topic:     d.Topic,
-		Partition: d.Partition,
-	})
-	return conn, nil
+	return NewConnWith(c, config), nil
 }
 
 func sleep(ctx context.Context, duration time.Duration) {

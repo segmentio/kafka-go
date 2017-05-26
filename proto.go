@@ -112,6 +112,7 @@ type broker struct {
 
 type topicMetadata struct {
 	TopicErrorCode int16
+	TopicName      string
 	Partitions     []partitionMetadata
 }
 
@@ -372,13 +373,6 @@ func writeBytes(w *bufio.Writer, b []byte) error {
 	return err
 }
 
-func writeArray(w *bufio.Writer, a ...interface{}) error {
-	if err := writeInt32(w, int32(len(a))); err != nil {
-		return err
-	}
-	return writev(w, a...)
-}
-
 func writeMessageSet(w *bufio.Writer, mset messageSet) error {
 	// message sets are not preceded by their size for some reason
 	for _, m := range mset {
@@ -401,20 +395,10 @@ func writeSmallBuffer(w *bufio.Writer, b []byte) error {
 }
 
 func writeRequest(w *bufio.Writer, hdr requestHeader, req interface{}) error {
-	hdr.Size = sizeof(hdr) + sizeof(req)
-	if err := writev(w, hdr, req); err != nil {
-		return err
-	}
+	hdr.Size = (sizeof(hdr) + sizeof(req)) - 4
+	write(w, hdr)
+	write(w, req)
 	return w.Flush()
-}
-
-func writev(w *bufio.Writer, args ...interface{}) error {
-	for _, a := range args {
-		if err := write(w, a); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func write(w *bufio.Writer, a interface{}) error {
@@ -468,6 +452,8 @@ func writeSlice(w *bufio.Writer, v reflect.Value) error {
 
 func sizeof(a interface{}) int32 {
 	switch v := a.(type) {
+	case int8:
+		return 1
 	case int16:
 		return 2
 	case int32:
@@ -478,6 +464,8 @@ func sizeof(a interface{}) int32 {
 		return 2 + int32(len(v))
 	case []byte:
 		return 4 + int32(len(v))
+	case messageSet:
+		return sizeofMessageSet(v)
 	}
 	switch v := reflect.ValueOf(a); v.Kind() {
 	case reflect.Struct:
@@ -489,6 +477,13 @@ func sizeof(a interface{}) int32 {
 	}
 }
 
+func sizeofMessageSet(set messageSet) (size int32) {
+	for _, msg := range set {
+		size += sizeof(msg)
+	}
+	return
+}
+
 func sizeofStruct(v reflect.Value) (size int32) {
 	for i, n := 0, v.NumField(); i != n; i++ {
 		size += sizeof(v.Field(i).Interface())
@@ -497,6 +492,7 @@ func sizeofStruct(v reflect.Value) (size int32) {
 }
 
 func sizeofSlice(v reflect.Value) (size int32) {
+	size = 4
 	for i, n := 0, v.Len(); i != n; i++ {
 		size += sizeof(v.Index(i).Interface())
 	}
