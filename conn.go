@@ -201,7 +201,6 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	}
 	switch whence {
 	case 0, 1, 2:
-		return 0, nil
 	default:
 		return 0, fmt.Errorf("the whence value has to be 0, 1, or 2 (whence = %d)", whence)
 	}
@@ -216,6 +215,7 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	first, last, err := c.ReadOffsets()
+	fmt.Println("first =", first, "last =", last)
 	if err != nil {
 		return 0, err
 	}
@@ -244,16 +244,22 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 //
 // Read satisfies the io.Reader interface.
 func (c *Conn) Read(b []byte) (int, error) {
-	batch, err := c.ReadBatch(1)
+	offset, err := c.Seek(c.Offset())
 	if err != nil {
 		return 0, err
 	}
-	n, err := batch.Read(b)
-	if err != nil {
-		batch.Close()
-		return 0, err
-	}
-	return n, batch.Close()
+	_ = offset
+	var n int
+	err = c.readOperation(
+		func(id int32) error {
+			return nil
+		},
+		func(size int) error {
+			return nil
+		},
+	)
+
+	return n, err
 }
 
 // ReadAt reads the message at the given absolute offset, returning the number
@@ -296,7 +302,7 @@ func (c *Conn) ReadBatchAt(size int, offset int64) (*BatchReader, error) {
 
 	c.wlock.Lock()
 	c.conn.SetWriteDeadline(deadline)
-	err := c.writeRequest(fetchRequest, v1, id, nil) // TODO
+	err := c.writeRequest(fetchRequestKey, v1, id, nil) // TODO
 	c.wlock.Unlock()
 
 	if err != nil {
@@ -317,10 +323,11 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 
 	err = c.writeOperation(
 		func(id int32) error {
-			return c.writeRequest(offsetRequest, v1, id, listOffsetRequest{
-				Topics: []listOffsetRequestTopic{{
+			return c.writeRequest(offsetRequestKey, v1, id, listOffsetRequestV1{
+				ReplicaID: -1,
+				Topics: []listOffsetRequestTopicV1{{
 					TopicName: c.topic,
-					Partitions: []listOffsetRequestPartition{
+					Partitions: []listOffsetRequestPartitionV1{
 						{Partition: c.partition, Time: -2},
 						{Partition: c.partition, Time: -1},
 					},
@@ -328,28 +335,21 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 			})
 		},
 		func(size int) error {
-			var res []listOffsetResponse
+			var res []listOffsetResponseV1
 			if err := c.readResponse(size, &res); err != nil {
 				return err
 			}
+			fmt.Printf("%#v\n", res)
 			for _, r := range res {
-				if r.TopicName != c.topic {
-					continue
-				}
 				for _, p := range r.PartitionOffsets {
-					if p.Partition != c.partition {
-						continue
-					}
 					if p.ErrorCode != 0 {
 						return Error(p.ErrorCode)
 					}
-					for _, offset := range p.Offsets {
-						if first < 0 || offset < first {
-							first = offset
-						}
-						if last < 0 || offset > last {
-							last = offset
-						}
+					if first < 0 || p.Offset < first {
+						first = p.Offset
+					}
+					if last < 0 || p.Offset > last {
+						last = p.Offset
 					}
 				}
 			}
@@ -379,7 +379,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 
 	err = c.readOperation(
 		func(id int32) error {
-			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequest(topics))
+			return c.writeRequest(metadataRequestKey, v0, id, topicMetadataRequest(topics))
 		},
 		func(size int) error {
 			var res metadataResponse
@@ -448,7 +448,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 
 	err := c.writeOperation(
 		func(id int32) error {
-			return c.writeRequest(produceRequest, v2, id, produceRequestType{
+			return c.writeRequest(produceRequestKey, v2, id, produceRequest{
 				RequiredAcks: -1,
 				Timeout:      10000,
 				Topics: []produceRequestTopic{{

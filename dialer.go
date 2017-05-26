@@ -133,30 +133,27 @@ func (d *Dialer) LookupLeader(ctx context.Context, network string, address strin
 	errch := make(chan error, 1)
 
 	go func() {
-		var partitions []Partition
-		var err error
-
-		for attempt := 1; true; attempt++ {
-			partitions, err = c.ReadPartitions(topic)
-			if err == nil {
-				break
-			}
-			if isTemporary(err) {
+		for attempt := 0; true; attempt++ {
+			if attempt != 0 {
 				sleep(ctx, backoff(attempt, time.Second, time.Minute))
-				continue
 			}
-			errch <- err
-			return
-		}
 
-		for _, p := range partitions {
-			if p.ID == partition {
-				brkch <- p.Leader
+			partitions, err := c.ReadPartitions(topic)
+			if err != nil {
+				if isTemporary(err) {
+					continue
+				}
+				errch <- err
 				return
 			}
-		}
 
-		errch <- UnknownTopicOrPartition
+			for _, p := range partitions {
+				if p.ID == partition {
+					brkch <- p.Leader
+					return
+				}
+			}
+		}
 	}()
 
 	var brk Broker

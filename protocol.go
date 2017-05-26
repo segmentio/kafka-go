@@ -13,19 +13,19 @@ import (
 type apiKey int16
 
 const (
-	produceRequest          apiKey = 0
-	fetchRequest            apiKey = 1
-	offsetRequest           apiKey = 2
-	metadataRequest         apiKey = 3
-	offsetCommitRequest     apiKey = 8
-	offsetFetchRequest      apiKey = 9
-	groupCoordinatorRequest apiKey = 10
-	joinGroupRequest        apiKey = 11
-	heartbeatRequest        apiKey = 12
-	leaveGroupRequest       apiKey = 13
-	syncGroupRequest        apiKey = 14
-	describeGroupsRequest   apiKey = 15
-	listGroupsRequest       apiKey = 16
+	produceRequestKey          apiKey = 0
+	fetchRequestKey            apiKey = 1
+	offsetRequestKey           apiKey = 2
+	metadataRequestKey         apiKey = 3
+	offsetCommitRequestKey     apiKey = 8
+	offsetFetchRequestKey      apiKey = 9
+	groupCoordinatorRequestKey apiKey = 10
+	joinGroupRequestKey        apiKey = 11
+	heartbeatRequestKey        apiKey = 12
+	leaveGroupRequestKey       apiKey = 13
+	syncGroupRequestKey        apiKey = 14
+	describeGroupsRequestKey   apiKey = 15
+	listGroupsRequestKey       apiKey = 16
 )
 
 type apiVersion int16
@@ -129,7 +129,7 @@ type partitionMetadata struct {
 }
 
 // Produce API
-type produceRequestType struct {
+type produceRequest struct {
 	RequiredAcks int16
 	Timeout      int32
 	Topics       []produceRequestTopic
@@ -163,32 +163,69 @@ type produceResponsePartition struct {
 	Timestamp int64
 }
 
-// Offset API
-type listOffsetRequest struct {
-	ReplicaID int32
-	Topics    []listOffsetRequestTopic
+// Fetch API
+type fetchRequest struct {
+	ReplicaID   int32
+	MaxWaitTime int32
+	MinBytes    int32
+	Topics      []fetchRequestTopic
 }
 
-type listOffsetRequestTopic struct {
+type fetchRequestTopic struct {
 	TopicName  string
-	Partitions []listOffsetRequestPartition
+	Partitions []fetchRequestPartition
 }
 
-type listOffsetRequestPartition struct {
+type fetchRequestPartition struct {
+	Partition   int32
+	FetchOffset int64
+	MaxBytes    int32
+}
+
+type fetchResponse struct {
+	ThrottleTime int32
+	Topics       []fetchResponseTopic
+}
+
+type fetchResponseTopic struct {
+	TopicName string
+	Partition []fetchResponsePartition
+}
+
+type fetchResponsePartition struct {
+	Partition           int32
+	ErrorCode           int16
+	HighwaterMarkOffset int64
+	MessageSetSize      int32
+	MessageSet          messageSet
+}
+
+// Offset API
+type listOffsetRequestV1 struct {
+	ReplicaID int32
+	Topics    []listOffsetRequestTopicV1
+}
+
+type listOffsetRequestTopicV1 struct {
+	TopicName  string
+	Partitions []listOffsetRequestPartitionV1
+}
+
+type listOffsetRequestPartitionV1 struct {
 	Partition int32
 	Time      int64
 }
 
-type listOffsetResponse struct {
+type listOffsetResponseV1 struct {
 	TopicName        string
-	PartitionOffsets []partitionOffset
+	PartitionOffsets []partitionOffsetV1
 }
 
-type partitionOffset struct {
+type partitionOffsetV1 struct {
 	Partition int32
 	ErrorCode int16
 	Timestamp int64
-	Offsets   []int64
+	Offset    int64
 }
 
 var (
@@ -337,12 +374,15 @@ func readSlice(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
 		return sz, err
 	}
 
-	n := int(len)
-	v.Set(reflect.MakeSlice(v.Type(), n, n))
+	if n := int(len); n < 0 {
+		v.Set(reflect.Zero(v.Type()))
+	} else {
+		v.Set(reflect.MakeSlice(v.Type(), n, n))
 
-	for i := 0; i != n; i++ {
-		if sz, err = read(r, sz, v.Index(i).Addr().Interface()); err != nil {
-			return sz, err
+		for i := 0; i != n; i++ {
+			if sz, err = read(r, sz, v.Index(i).Addr().Interface()); err != nil {
+				return sz, err
+			}
 		}
 	}
 

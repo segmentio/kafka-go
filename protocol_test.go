@@ -39,7 +39,7 @@ func TestProtocol(t *testing.T) {
 	tests := []interface{}{
 		requestHeader{
 			Size:          26,
-			ApiKey:        int16(offsetCommitRequest),
+			ApiKey:        int16(offsetCommitRequestKey),
 			ApiVersion:    int16(v2),
 			CorrelationID: 42,
 			ClientID:      "Hello World!",
@@ -53,6 +53,7 @@ func TestProtocol(t *testing.T) {
 		},
 
 		topicMetadataRequest{"A", "B", "C"},
+
 		metadataResponse{
 			Brokers: []broker{
 				{NodeID: 1, Host: "localhost", Port: 9001},
@@ -69,21 +70,31 @@ func TestProtocol(t *testing.T) {
 			},
 		},
 
-		listOffsetRequest{
+		listOffsetRequestV1{
 			ReplicaID: 1,
-			Topics: []listOffsetRequestTopic{
-				{TopicName: "A", Partitions: []listOffsetRequestPartition{
+			Topics: []listOffsetRequestTopicV1{
+				{TopicName: "A", Partitions: []listOffsetRequestPartitionV1{
 					{Partition: 0, Time: -1},
 					{Partition: 1, Time: -1},
 					{Partition: 2, Time: -1},
 				}},
-				{TopicName: "B", Partitions: []listOffsetRequestPartition{
+				{TopicName: "B", Partitions: []listOffsetRequestPartitionV1{
 					{Partition: 0, Time: -2},
 				}},
-				{TopicName: "C", Partitions: []listOffsetRequestPartition{
+				{TopicName: "C", Partitions: []listOffsetRequestPartitionV1{
 					{Partition: 0, Time: 42},
 				}},
 			},
+		},
+
+		[]listOffsetResponseV1{
+			{TopicName: "A", PartitionOffsets: []partitionOffsetV1{
+				{Partition: 0, Timestamp: 42, Offset: 1},
+			}},
+			{TopicName: "B", PartitionOffsets: []partitionOffsetV1{
+				{Partition: 0, Timestamp: 43, Offset: 10},
+				{Partition: 1, Timestamp: 44, Offset: 100},
+			}},
 		},
 	}
 
@@ -105,9 +116,14 @@ func TestProtocol(t *testing.T) {
 			}
 
 			v := reflect.New(reflect.TypeOf(test))
+			n := b.Len()
 
-			if _, err := read(r, b.Len(), v.Interface()); err != nil {
+			n, err := read(r, n, v.Interface())
+			if err != nil {
 				t.Fatal(err)
+			}
+			if n != 0 {
+				t.Error("%d unread bytes", n)
 			}
 
 			if !reflect.DeepEqual(test, v.Elem().Interface()) {

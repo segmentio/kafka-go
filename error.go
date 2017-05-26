@@ -6,43 +6,67 @@ import "fmt"
 type Error int
 
 const (
-	NoError                      Error = 0
-	Unknown                      Error = -1
-	OffsetOutOfRange             Error = 1
-	InvalidMessage               Error = 2
-	UnknownTopicOrPartition      Error = 3
-	InvalidMessageSize           Error = 4
-	LeaderNotAvailable           Error = 5
-	NotLeaderForPartition        Error = 6
-	RequestTimedOut              Error = 7
-	BrokerNotAvailable           Error = 8
-	ReplicaNotAvailable          Error = 9
-	MessageSizeTooLarge          Error = 10
-	StaleControllerEpoch         Error = 11
-	OffsetMetadataTooLarge       Error = 12
-	GroupLoadInProgress          Error = 14
-	GroupCoordinatorNotAvailable Error = 15
-	NotCoordinatorForGroup       Error = 16
-	InvalidTopic                 Error = 17
-	RecordListTooLarge           Error = 18
-	NotEnoughReplicas            Error = 19
-	NotEnoughReplicasAfterAppend Error = 20
-	InvalidRequiredAcks          Error = 21
-	IllegalGeneration            Error = 22
-	InconsistentGroupProtocol    Error = 23
-	InvalidGroupId               Error = 24
-	UnknownMemberId              Error = 25
-	InvalidSessionTimeout        Error = 26
-	RebalanceInProgress          Error = 27
-	InvalidCommitOffsetSize      Error = 28
-	TopicAuthorizationFailed     Error = 29
-	GroupAuthorizationFailed     Error = 30
-	ClusterAuthorizationFailed   Error = 31
+	NoError                            Error = 0
+	Unknown                            Error = -1
+	OffsetOutOfRange                   Error = 1
+	InvalidMessage                     Error = 2
+	UnknownTopicOrPartition            Error = 3
+	InvalidMessageSize                 Error = 4
+	LeaderNotAvailable                 Error = 5
+	NotLeaderForPartition              Error = 6
+	RequestTimedOut                    Error = 7
+	BrokerNotAvailable                 Error = 8
+	ReplicaNotAvailable                Error = 9
+	MessageSizeTooLarge                Error = 10
+	StaleControllerEpoch               Error = 11
+	OffsetMetadataTooLarge             Error = 12
+	GroupLoadInProgress                Error = 14
+	GroupCoordinatorNotAvailable       Error = 15
+	NotCoordinatorForGroup             Error = 16
+	InvalidTopic                       Error = 17
+	RecordListTooLarge                 Error = 18
+	NotEnoughReplicas                  Error = 19
+	NotEnoughReplicasAfterAppend       Error = 20
+	InvalidRequiredAcks                Error = 21
+	IllegalGeneration                  Error = 22
+	InconsistentGroupProtocol          Error = 23
+	InvalidGroupId                     Error = 24
+	UnknownMemberId                    Error = 25
+	InvalidSessionTimeout              Error = 26
+	RebalanceInProgress                Error = 27
+	InvalidCommitOffsetSize            Error = 28
+	TopicAuthorizationFailed           Error = 29
+	GroupAuthorizationFailed           Error = 30
+	ClusterAuthorizationFailed         Error = 31
+	InvalidTimestamp                   Error = 32
+	UnsupportedSASLMechanism           Error = 33
+	IllegalSASLState                   Error = 34
+	UnsupportedVersion                 Error = 35
+	TopicAlreadyExists                 Error = 36
+	InvalidPartitionNumber             Error = 37
+	InvalidReplicationFactor           Error = 38
+	InvalidReplicaAssignment           Error = 39
+	InvalidConfiguration               Error = 40
+	NotController                      Error = 41
+	InvalidRequest                     Error = 42
+	UnsupportedForMessageFormat        Error = 43
+	PolicyViolation                    Error = 44
+	OutOfOrderSequenceNumber           Error = 45
+	DuplicateSequenceNumber            Error = 46
+	InvalidProducerEpoch               Error = 47
+	InvalidTransactionState            Error = 48
+	InvalidProducerIDMapping           Error = 49
+	InvalidTransactionTimeout          Error = 50
+	ConcurrentTransactions             Error = 51
+	TransactionCorrdinatorFenced       Error = 52
+	TransactionalIDAuthorizationFailed Error = 53
+	SecurityDisabled                   Error = 54
+	BrokerAuthorizationFailed          Error = 55
 )
 
 // Error satisfies the error interface.
 func (e Error) Error() string {
-	return fmt.Sprintf("%d %s: %s", e, e.Title(), e.Description())
+	return fmt.Sprintf("[%d] %s: %s", e, e.Title(), e.Description())
 }
 
 // Timeout returns true if the error was due to a timeout.
@@ -66,69 +90,117 @@ func (e Error) Temporary() bool {
 func (e Error) Title() string {
 	switch e {
 	case NoError:
-		return "no error"
+		return "No Error"
 	case Unknown:
-		return "unknown"
+		return "Unknown"
 	case OffsetOutOfRange:
-		return "ouffset out of range"
+		return "Ouffset Out Of Range"
 	case InvalidMessage:
-		return "invalid message"
+		return "Invalid Message"
 	case UnknownTopicOrPartition:
-		return "unknown topic or partition"
+		return "Unknown Topic Or Partition"
 	case InvalidMessageSize:
-		return "invalid message size"
+		return "Invalid Message Size"
 	case LeaderNotAvailable:
-		return "leader not available"
+		return "Leader Not Available"
 	case NotLeaderForPartition:
-		return "not leader for patition"
+		return "Not Leader For Patition"
 	case RequestTimedOut:
-		return "request timed out"
+		return "Request Timed Out"
 	case BrokerNotAvailable:
-		return "broker not available"
+		return "Broker Not Available"
 	case ReplicaNotAvailable:
-		return "replica not available"
+		return "Replica Not Available"
 	case MessageSizeTooLarge:
-		return "message size too large"
+		return "Message Size Too Large"
 	case StaleControllerEpoch:
-		return "stale controller epoch"
+		return "Stale Controller Epoch"
 	case OffsetMetadataTooLarge:
-		return "offset metadata too large"
+		return "Offset Metadata Too Large"
 	case GroupLoadInProgress:
-		return "group load in progress"
+		return "Group Load In Progress"
 	case GroupCoordinatorNotAvailable:
-		return "group corrdinator not available"
+		return "Group Corrdinator Not Available"
 	case NotCoordinatorForGroup:
-		return "not coordinator for group"
+		return "Not Coordinator For Group"
 	case InvalidTopic:
-		return "invalid topic"
+		return "Invalid Topic"
 	case RecordListTooLarge:
-		return "record list too large"
+		return "Record List Too Large"
 	case NotEnoughReplicas:
-		return "not enough replicas"
+		return "Not Enough Replicas"
 	case NotEnoughReplicasAfterAppend:
-		return "not enough replicas after append"
+		return "Not Enough Replicas After Append"
 	case InvalidRequiredAcks:
-		return "invalid required acks"
+		return "Invalid Required Acks"
 	case IllegalGeneration:
-		return "illegal generation"
+		return "Illegal Generation"
 	case InconsistentGroupProtocol:
-		return "inconsistent group protocol"
+		return "Inconsistent Group Protocol"
 	case InvalidGroupId:
-		return "invalid group id"
+		return "Invalid Group ID"
 	case UnknownMemberId:
-		return "unknown member id"
+		return "Unknown Member ID"
 	case InvalidSessionTimeout:
-		return "invalid session timeout"
+		return "Invalid Session Timeout"
 	case RebalanceInProgress:
-		return "rebalance in progress"
+		return "Rebalance In Progress"
 	case InvalidCommitOffsetSize:
-		return "invalid commit offset size"
+		return "Invalid Commit Offset Size"
 	case TopicAuthorizationFailed:
-		return "topic authorization failed"
+		return "Topic Authorization Failed"
 	case GroupAuthorizationFailed:
-		return "group authorization failed"
+		return "Group Authorization Failed"
 	case ClusterAuthorizationFailed:
-		return "cluster authorization failed"
+		return "Cluster Authorization Failed"
+	case InvalidTimestamp:
+		return "Invalid Timestamp"
+	case UnsupportedSASLMechanism:
+		return "Unsupported SASL Mechanism"
+	case IllegalSASLState:
+		return "Illegal SASL State"
+	case UnsupportedVersion:
+		return "Unsupported Version"
+	case TopicAlreadyExists:
+		return "Topic Already Exists"
+	case InvalidPartitionNumber:
+		return "Invalid Partition Number"
+	case InvalidReplicationFactor:
+		return "Invalid Replication Factor"
+	case InvalidReplicaAssignment:
+		return "Invalid Replica Assignment"
+	case InvalidConfiguration:
+		return "Invalid Configuration"
+	case NotController:
+		return "Not Controller"
+	case InvalidRequest:
+		return "Invalid Request"
+	case UnsupportedForMessageFormat:
+		return "Unsupported For Message Format"
+	case PolicyViolation:
+		return ""
+	case OutOfOrderSequenceNumber:
+		return ""
+	case DuplicateSequenceNumber:
+		return ""
+	case InvalidProducerEpoch:
+		return ""
+	case InvalidTransactionState:
+		return ""
+	case InvalidProducerIDMapping:
+		return ""
+	case InvalidTransactionTimeout:
+		return ""
+	case ConcurrentTransactions:
+		return ""
+	case TransactionCorrdinatorFenced:
+		return ""
+	case TransactionalIDAuthorizationFailed:
+		return ""
+	case SecurityDisabled:
+		return ""
+	case BrokerAuthorizationFailed:
+		return ""
 	}
 	return ""
 }
@@ -200,6 +272,54 @@ func (e Error) Description() string {
 		return "the client is not authorized to access a particular group id"
 	case ClusterAuthorizationFailed:
 		return "the client is not authorized to use an inter-broker or administrative API"
+	case InvalidTimestamp:
+		return "the timestamp of the message is out of acceptable range"
+	case UnsupportedSASLMechanism:
+		return "the broker does not support the requested SASL mechanism"
+	case IllegalSASLState:
+		return "the request is not valid given the current SASL state"
+	case UnsupportedVersion:
+		return "the version of API is not supported"
+	case TopicAlreadyExists:
+		return "a topic with this name already exists"
+	case InvalidPartitionNumber:
+		return "the number of partitions is invalid"
+	case InvalidReplicationFactor:
+		return "the replication-factor is invalid"
+	case InvalidReplicaAssignment:
+		return "the replica assignment is invalid"
+	case InvalidConfiguration:
+		return "the configuration is invalid"
+	case NotController:
+		return "this is not the correct controller for this cluster"
+	case InvalidRequest:
+		return "this most likely occurs because of a request being malformed by the client library or the message was sent to an incompatible broker, se the broker logs for more details"
+	case UnsupportedForMessageFormat:
+		return "the message format version on the broker does not support the request"
+	case PolicyViolation:
+		return "the request parameters do not satisfy the configured policy"
+	case OutOfOrderSequenceNumber:
+		return "the broker received an out of order sequence number"
+	case DuplicateSequenceNumber:
+		return "the broker received a duplicate sequence number"
+	case InvalidProducerEpoch:
+		return "the producer attempted an operation with an old epoch, either there is a newer producer with the same transactional ID, or the producer's transaction has been expired by the broker"
+	case InvalidTransactionState:
+		return "the producer attempted a transactional operation in an invalid state"
+	case InvalidProducerIDMapping:
+		return "the producer attempted to use a producer id which is not currently assigned to its transactional ID"
+	case InvalidTransactionTimeout:
+		return "the transaction timeout is larger than the maximum value allowed by the broker (as configured by max.transaction.timeout.ms)"
+	case ConcurrentTransactions:
+		return "the producer attempted to update a transaction while another concurrent operation on the same transaction was ongoing"
+	case TransactionCorrdinatorFenced:
+		return "the transaction coordinator sending a WriteTxnMarker is no longer the current coordinator for a given producer"
+	case TransactionalIDAuthorizationFailed:
+		return "the transactional ID authorization failed"
+	case SecurityDisabled:
+		return "the security features are disabled"
+	case BrokerAuthorizationFailed:
+		return "the broker authorization failed"
 	}
 	return ""
 }
