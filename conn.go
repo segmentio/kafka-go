@@ -687,9 +687,3 @@ func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID
 		ClientID:      c.clientID,
 	}
 }
-
-type timeout struct{}
-
-func (*timeout) Error() string   { return "kafka operation timeout" }
-func (*timeout) Timeout() bool   { return true }
-func (*timeout) Temporary() bool { return false }
