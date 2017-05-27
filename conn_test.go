@@ -61,6 +61,11 @@ func TestConn(t *testing.T) {
 		},
 
 		{
+			scenario: "writing a batch of messages and reading it sequentially should preserve the order",
+			function: testConnWriteBatchReadSequentially,
+		},
+
+		{
 			scenario: "reading messages with a buffer that is too short should return io.ErrShortBuffer and maintain the connection open",
 			function: testConnReadShortBuffer,
 		},
@@ -181,6 +186,39 @@ func testConnWriteReadSequentially(t *testing.T, conn *Conn) {
 		if _, err := conn.Write([]byte(strconv.Itoa(i))); err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	b := make([]byte, 128)
+
+	for i := 0; i != 10; i++ {
+		n, err := conn.Read(b)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		s := string(b[:n])
+		if v, err := strconv.Atoi(s); err != nil {
+			t.Error(err)
+		} else if v != i {
+			t.Errorf("bad message read at offset %d: %s", i, s)
+		}
+	}
+}
+
+func testConnWriteBatchReadSequentially(t *testing.T, conn *Conn) {
+	if _, err := conn.WriteMessages(
+		Message{Value: []byte("0")},
+		Message{Value: []byte("1")},
+		Message{Value: []byte("2")},
+		Message{Value: []byte("3")},
+		Message{Value: []byte("4")},
+		Message{Value: []byte("5")},
+		Message{Value: []byte("6")},
+		Message{Value: []byte("7")},
+		Message{Value: []byte("8")},
+		Message{Value: []byte("9")},
+	); err != nil {
+		t.Fatal(err)
 	}
 
 	b := make([]byte, 128)
