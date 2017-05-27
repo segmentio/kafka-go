@@ -257,8 +257,7 @@ func peekRead(r *bufio.Reader, sz int, n int, f func([]byte)) (int, error) {
 		return sz, err
 	}
 	f(b)
-	r.Discard(n)
-	return sz - n, nil
+	return discard(r, sz, n)
 }
 
 func readInt8(r *bufio.Reader, sz int, v *int8) (int, error) {
@@ -340,13 +339,7 @@ func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
 	case *[]byte:
 		return readBytes(r, sz, v)
 	}
-
-	v := reflect.ValueOf(a)
-	if v.IsNil() {
-		v.Set(reflect.New(v.Type().Elem()))
-	}
-
-	switch v = v.Elem(); v.Kind() {
+	switch v := reflect.ValueOf(a).Elem(); v.Kind() {
 	case reflect.Struct:
 		return readStruct(r, sz, v)
 	case reflect.Slice:
@@ -390,14 +383,104 @@ func readSlice(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
 }
 
 func readResponse(r *bufio.Reader, sz int, res interface{}) error {
-	n, err := read(r, sz, res)
-	if err != nil {
-		return err
+	return expectZeroSize(read(r, sz, res))
+}
+
+func expectZeroSize(sz int, err error) error {
+	if err == nil && sz != 0 {
+		err = fmt.Errorf("reading a response left %d unread bytes", sz)
 	}
-	if n != 0 {
-		return fmt.Errorf("reading a response of size %d left %d unread bytes", sz, n)
+	return err
+}
+
+func streamArray(r *bufio.Reader, sz int, cb func(*bufio.Reader, int) (int, error)) (int, error) {
+	var err error
+	var len int32
+
+	if sz, err = readInt32(r, sz, &len); err != nil {
+		return sz, err
 	}
-	return nil
+
+	for n := int(len); n > 0; n-- {
+		if sz, err = cb(r, sz); err != nil {
+			break
+		}
+	}
+
+	return sz, err
+}
+
+func streamString(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int16) (int, error)) (int, error) {
+	var err error
+	var len int16
+
+	if sz, err = readInt16(r, sz, &len); err != nil {
+		return sz, err
+	}
+
+	sz0 := sz
+	sz1 := sz - int(len)
+
+	if sz, err = cb(r, sz, len); err != nil {
+		return sz, err
+	}
+
+	if sz != sz1 {
+		return sz, fmt.Errorf("streaming callback of string of length %d consumed %d bytes", len, sz0-sz)
+	}
+
+	return sz, nil
+}
+
+func streamBytes(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int32) (int, error)) (int, error) {
+	var err error
+	var len int32
+
+	if sz, err = readInt32(r, sz, &len); err != nil {
+		return sz, err
+	}
+
+	sz0 := sz
+	sz1 := sz - int(len)
+
+	if sz, err = cb(r, sz, len); err != nil {
+		return sz, err
+	}
+
+	if sz != sz1 {
+		return sz, fmt.Errorf("streaming callback of string of length %d consumed %d bytes", len, sz0-sz)
+	}
+
+	return sz, nil
+}
+
+func discard(r *bufio.Reader, sz int, n int) (int, error) {
+	n, err := r.Discard(n)
+	return sz - n, err
+}
+
+func discardInt8(r *bufio.Reader, sz int) (int, error) {
+	return discard(r, sz, 1)
+}
+
+func discardInt16(r *bufio.Reader, sz int) (int, error) {
+	return discard(r, sz, 2)
+}
+
+func discardInt32(r *bufio.Reader, sz int) (int, error) {
+	return discard(r, sz, 4)
+}
+
+func discardInt64(r *bufio.Reader, sz int) (int, error) {
+	return discard(r, sz, 8)
+}
+
+func discardString(r *bufio.Reader, sz int) (int, error) {
+	return streamString(r, sz, func(r *bufio.Reader, sz int, len int16) (int, error) { return discard(r, sz, int(len)) })
+}
+
+func discardBytes(r *bufio.Reader, sz int) (int, error) {
+	return streamBytes(r, sz, func(r *bufio.Reader, sz int, len int32) (int, error) { return discard(r, sz, int(len)) })
 }
 
 func writeInt8(w *bufio.Writer, i int8) error {

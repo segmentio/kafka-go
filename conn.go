@@ -3,8 +3,6 @@ package kafka
 import (
 	"bufio"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"os"
@@ -349,21 +347,29 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 				})
 			},
 			func(size int) error {
-				var res []listOffsetResponseV1
-				if err := c.readResponse(size, &res); err != nil {
-					return err
-				}
-				for _, r := range res {
-					for _, p := range r.PartitionOffsets {
-						if p.ErrorCode != 0 {
-							return Error(p.ErrorCode)
-						} else {
-							off = p.Offset
-							return nil
-						}
+				return expectZeroSize(streamArray(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
+					// We skip the topic name because we've made a request for
+					// a single topic.
+					size, err := discardString(r, size)
+					if err != nil {
+						return size, err
 					}
-				}
-				return UnknownTopicOrPartition
+
+					// Reading the array of partitions, there will be only one
+					// partition which gives the offset we're looking for.
+					return streamArray(r, size, func(r *bufio.Reader, size int) (int, error) {
+						var p partitionOffsetV1
+						size, err := read(r, size, &p)
+						if err != nil {
+							return size, err
+						}
+						if p.ErrorCode != 0 {
+							return size, Error(p.ErrorCode)
+						}
+						off = p.Offset
+						return size, nil
+					})
+				}))
 			},
 		)
 		resch <- result{off, err}
@@ -403,16 +409,9 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 		},
 		func(size int) error {
 			var res metadataResponseV0
+
 			if err := c.readResponse(size, &res); err != nil {
 				return err
-			}
-
-			switch len(res.Topics) {
-			case 1:
-			case 0:
-				return fmt.Errorf("no topic metadata returned by the kafka server for %v", topics)
-			default:
-				return fmt.Errorf("too many topic metadata returned by the kafka server for %v", topics)
 			}
 
 			brokers := make(map[int32]Broker, len(res.Brokers))
@@ -482,24 +481,32 @@ func (c *Conn) Write(b []byte) (int, error) {
 			})
 		},
 		func(size int) error {
-			var res produceResponseV2
-			if err := c.readResponse(size, &res); err != nil {
-				return err
-			}
-			for _, t := range res.Topics {
-				if t.TopicName != c.topic {
-					continue
+			return expectZeroSize(streamArray(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
+				// Skip the topic, we've produced the message to only one topic,
+				// no need to waste resources loading it in memory.
+				size, err := discardString(r, size)
+				if err != nil {
+					return size, err
 				}
-				for _, p := range t.Partitions {
-					if p.Partition != c.partition {
-						continue
+
+				// Read the list of partitions, there should be only one since
+				// we've produced a message to a single partition.
+				size, err = streamArray(r, size, func(r *bufio.Reader, size int) (int, error) {
+					var p produceResponsePartitionV2
+					size, err := read(r, size, &p)
+					if err == nil && p.ErrorCode != 0 {
+						err = Error(p.ErrorCode)
 					}
-					if p.ErrorCode != 0 {
-						return Error(p.ErrorCode)
-					}
+					return size, err
+				})
+				if err != nil {
+					return size, err
 				}
-			}
-			return nil
+
+				// The response is trailed by the throttle time, also skipping
+				// since it's not interesting here.
+				return discardInt32(r, size)
+			}))
 		},
 	)
 
@@ -609,12 +616,6 @@ func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID
 		ApiVersion:    int16(apiVersion),
 		CorrelationID: correlationID,
 		ClientID:      c.clientID,
-	}
-}
-
-func discard(r io.Reader, c io.Closer, n int64) {
-	if _, err := io.CopyN(ioutil.Discard, r, n); err != nil {
-		c.Close()
 	}
 }
 
