@@ -30,8 +30,13 @@ func TestConn(t *testing.T) {
 		},
 
 		{
-			scenario: "write a single message to kafka",
+			scenario: "write a single message to kafka should succeed",
 			function: testConnWrite,
+		},
+
+		{
+			scenario: "writing a message to a closed kafka connection should fail",
+			function: testConnCloseAndWrite,
 		},
 
 		{
@@ -96,6 +101,16 @@ func testConnWrite(t *testing.T, conn *Conn) {
 
 	if n != len(b) {
 		t.Error("bad length returned by (*Conn).Write:", n)
+	}
+}
+
+func testConnCloseAndWrite(t *testing.T, conn *Conn) {
+	conn.Close()
+
+	switch _, err := conn.Write([]byte("Hello World!")); err.(type) {
+	case *net.OpError:
+	default:
+		t.Error(err)
 	}
 }
 
