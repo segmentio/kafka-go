@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 	"reflect"
 	"time"
 )
@@ -61,17 +62,6 @@ type message struct {
 	Timestamp  int64
 	Key        []byte
 	Value      []byte
-}
-
-func makeMessage(timestamp int64, key []byte, value []byte) message {
-	m := message{
-		MagicByte: 1,
-		Timestamp: timestamp,
-		Key:       key,
-		Value:     value,
-	}
-	m.CRC = m.crc32()
-	return m
 }
 
 func (m message) crc32() int32 {
@@ -803,9 +793,27 @@ func timestamp() int64 {
 }
 
 func timeToTimestamp(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
 	return t.UnixNano() / int64(time.Millisecond)
 }
 
 func timestampToTime(t int64) time.Time {
 	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
+}
+
+func deadlineToTimeout(deadline time.Time) int32 {
+	const timeoutLimit = time.Duration(math.MaxInt32) * time.Millisecond
+	// Compute the max wait time with a best-effort attempt to account
+	// for network latency.
+	timeout := timeoutLimit
+	if !deadline.IsZero() {
+		timeout = deadline.Sub(time.Now())
+		timeout -= timeout / 4
+	}
+	if timeout > timeoutLimit {
+		timeout = timeoutLimit
+	}
+	return int32(timeout / time.Millisecond)
 }

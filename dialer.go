@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -108,7 +109,7 @@ func (d *Dialer) DialLeader(ctx context.Context, network string, address string,
 		return nil, err
 	}
 
-	c, err := d.dialContext(ctx, network, b.String())
+	c, err := d.dialContext(ctx, network, net.JoinHostPort(b.Host, strconv.Itoa(b.Port)))
 	if err != nil {
 		return nil, err
 	}

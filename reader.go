@@ -2,12 +2,6 @@ package kafka
 
 import "context"
 
-type Message struct {
-	Offset int64
-	Key    []byte
-	Value  []byte
-}
-
 type Reader interface {
 	Offset() int64
 	Lag() int64

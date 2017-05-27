@@ -189,6 +189,7 @@ func testConnWriteReadSequentially(t *testing.T, conn *Conn) {
 		n, err := conn.Read(b)
 		if err != nil {
 			t.Error(err)
+			continue
 		}
 		s := string(b[:n])
 		if v, err := strconv.Atoi(s); err != nil {

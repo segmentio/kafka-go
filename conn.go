@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,16 +19,6 @@ type Broker struct {
 	Host string
 	Port int
 	ID   int
-}
-
-// Network satisfies the net.Addr interface, returns "kafka".
-func (b Broker) Network() string {
-	return "kafka"
-}
-
-// String satisfies the net.Addr interface, returns "Host:Port".
-func (b Broker) String() string {
-	return net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
 }
 
 // Partition carries the metadata associated with a kafka partition.
@@ -282,21 +271,10 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 	var n int
 	var err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			const maxWaitTimeLimit = time.Duration(math.MaxInt32) * time.Millisecond
-			// Compute the max wait time with a best-effort attempt to account
-			// for network latency.
-			maxWaitTime := maxWaitTimeLimit
-			if !deadline.IsZero() {
-				maxWaitTime = deadline.Sub(time.Now())
-				maxWaitTime -= maxWaitTime / 4
-			}
-			if maxWaitTime > maxWaitTimeLimit {
-				maxWaitTime = maxWaitTimeLimit
-			}
 			return c.writeRequest(fetchRequest, v1, id, fetchRequestV1{
 				ReplicaID:   -1,
-				MaxWaitTime: int32(maxWaitTime / time.Millisecond),
 				MinBytes:    1,
+				MaxWaitTime: deadlineToTimeout(deadline),
 				Topics: []fetchRequestTopicV1{{
 					TopicName: c.topic,
 					Partitions: []fetchRequestPartitionV1{{
@@ -395,42 +373,6 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 	return n, offset, err
 }
 
-func (c *Conn) ReadBatch(size int) (*BatchReader, error) {
-	offset, err := c.Seek(c.Offset())
-	if err != nil {
-		return nil, err
-	}
-	batch, err := c.ReadBatchAt(size, offset)
-	if err != nil {
-		return nil, err
-	}
-	batch.update = true // we want the batch to update the connection's offset
-	return batch, nil
-}
-
-func (c *Conn) ReadBatchAt(size int, offset int64) (*BatchReader, error) {
-	// There's a bit of code duplication here with the (*Conn).do method, this
-	// is done to support the streaming API of Batch and not have to load the
-	// fetch response all in memory.
-	id := c.generateCorrelationID()
-	deadline := c.readDeadline()
-
-	c.wlock.Lock()
-	c.conn.SetWriteDeadline(deadline)
-	err := c.writeRequest(fetchRequest, v1, id, nil) // TODO
-	c.wlock.Unlock()
-
-	if err != nil {
-		// When an error occurs there's no way to know if the connection is in a
-		// recoverable state so we're better off just giving up at this point to
-		// avoid any risk of corrupting the following operations.
-		c.conn.Close()
-		return nil, err
-	}
-
-	return &BatchReader{conn: c, id: id}, nil
-}
-
 // ReadOffset returns the offset of the first message with a timestamp equal or
 // greater to t.
 func (c *Conn) ReadOffset(t time.Time) (int64, error) {
@@ -451,7 +393,7 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 }
 
 func (c *Conn) readOffset(t int64) (offset int64, err error) {
-	err = c.writeOperation(
+	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
 			return c.writeRequest(offsetRequest, v1, id, listOffsetRequestV1{
 				ReplicaID: -1,
@@ -532,8 +474,11 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 			}
 
 			for _, t := range res.Topics {
-				if t.TopicErrorCode != 0 {
-					continue // TODO: report?
+				if t.TopicErrorCode != 0 && t.TopicName == c.topic {
+					// We only report errors if they happened for the topic of
+					// the connection, otherwise the topic will simply have no
+					// partitions in the result set.
+					return Error(t.TopicErrorCode)
 				}
 				for _, p := range t.Partitions {
 					partitions = append(partitions, Partition{
@@ -559,17 +504,41 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 //
 // Write satisfies the io.Writer interface.
 func (c *Conn) Write(b []byte) (int, error) {
-	msg := makeMessage(timestamp(), nil, b)
-	set := messageSet{{
-		MessageSize: sizeof(msg),
-		Message:     msg,
-	}}
+	return c.WriteMessages(Message{Value: b})
+}
+
+// WriteMessages writes a batch of messages to the connection's topic and
+// partition, returning the number of bytes written. The write is an atomic
+// operation, it either fully succeeds or fails.
+func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
+	if len(msgs) == 0 {
+		return 0, nil
+	}
+
+	var n int
+	var set = make(messageSet, len(msgs))
+
+	for i, msg := range msgs {
+		n += len(msg.Key) + len(msg.Value)
+		m := message{
+			MagicByte: 1,
+			Key:       msg.Key,
+			Value:     msg.Value,
+			Timestamp: timeToTimestamp(msg.Time),
+		}
+		m.CRC = m.crc32()
+		set[i] = messageSetItem{
+			Offset:      msg.Offset,
+			MessageSize: sizeof(m),
+			Message:     m,
+		}
+	}
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
 			return c.writeRequest(produceRequest, v2, id, produceRequestV2{
 				RequiredAcks: -1,
-				Timeout:      10000,
+				Timeout:      deadlineToTimeout(deadline),
 				Topics: []produceRequestTopicV2{{
 					TopicName: c.topic,
 					Partitions: []produceRequestPartitionV2{{
@@ -611,10 +580,10 @@ func (c *Conn) Write(b []byte) (int, error) {
 	)
 
 	if err != nil {
-		return 0, err
+		n = 0
 	}
 
-	return len(b), nil
+	return n, err
 }
 
 func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req interface{}) error {
