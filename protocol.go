@@ -8,6 +8,7 @@ import (
 	"hash/crc32"
 	"io"
 	"reflect"
+	"time"
 )
 
 type apiKey int16
@@ -798,16 +799,14 @@ func sizeofSlice(v reflect.Value) (size int32) {
 	return
 }
 
-func minInt64(a int64, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
+func timestamp() int64 {
+	return timeToTimestamp(time.Now())
 }
 
-func maxInt64(a int64, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
+func timeToTimestamp(t time.Time) int64 {
+	return t.UnixNano() / int64(time.Millisecond)
+}
+
+func timestampToTime(t int64) time.Time {
+	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
 }
