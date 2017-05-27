@@ -336,7 +336,7 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 	resch := make(chan result, 2)
 	fetch := func(time int64) {
 		off := int64(0)
-		err = c.writeOperation(
+		err := c.writeOperation(
 			func(id int32) error {
 				return c.writeRequest(offsetRequest, v1, id, listOffsetRequestV1{
 					ReplicaID: -1,
