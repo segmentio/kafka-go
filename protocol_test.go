@@ -123,7 +123,7 @@ func TestProtocol(t *testing.T) {
 				t.Fatal(err)
 			}
 			if n != 0 {
-				t.Error("%d unread bytes", n)
+				t.Errorf("%d unread bytes", n)
 			}
 
 			if !reflect.DeepEqual(test, v.Elem().Interface()) {

@@ -264,9 +264,23 @@ func (c *Conn) Read(b []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	n, offset, err := c.ReadAt(b, offset)
+	if err == nil {
+		c.mutex.Lock()
+		c.offset = offset + 1
+		c.mutex.Unlock()
+	}
+	return n, err
+}
 
+// ReadAt reads the message at the given absolute offset, returning the number
+// of bytes read and the offset of the next message, or an error if something
+// went wrong.
+//
+// Unlike Read, the method doesn't modify the offset of the connection.
+func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 	var n int
-	err = c.readOperation(
+	var err = c.readOperation(
 		func(deadline time.Time, id int32) error {
 			const maxWaitTimeLimit = time.Duration(math.MaxInt32) * time.Millisecond
 			// Compute the max wait time with a best-effort attempt to account
@@ -363,35 +377,11 @@ func (c *Conn) Read(b []byte) (int, error) {
 		},
 	)
 
-	switch {
-	case err != nil:
-	case n > len(b):
+	if err == nil && n > len(b) {
 		n, err = len(b), io.ErrShortBuffer
-	default:
-		c.mutex.Lock()
-		c.offset = offset + 1
-		c.mutex.Unlock()
 	}
 
-	return n, err
-}
-
-// ReadAt reads the message at the given absolute offset, returning the number
-// of bytes read and the offset of the next message, or an error if something
-// went wrong.
-//
-// Unlike Read, the method doesn't modify the offset of the connection.
-func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
-	batch, err := c.ReadBatchAt(1, offset)
-	if err != nil {
-		return 0, 0, err
-	}
-	n, err := batch.Read(b)
-	if err != nil {
-		batch.Close()
-		return 0, 0, err
-	}
-	return n, batch.Offset(), batch.Close()
+	return n, offset, err
 }
 
 func (c *Conn) ReadBatch(size int) (*BatchReader, error) {

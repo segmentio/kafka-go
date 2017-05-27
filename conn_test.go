@@ -194,7 +194,7 @@ func testConnWriteReadSequentially(t *testing.T, conn *Conn) {
 		if v, err := strconv.Atoi(s); err != nil {
 			t.Error(err)
 		} else if v != i {
-			t.Error("bad message read at offset %d: %s", i, s)
+			t.Errorf("bad message read at offset %d: %s", i, s)
 		}
 	}
 }
