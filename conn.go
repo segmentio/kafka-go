@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"os"
@@ -239,19 +240,35 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 // The method returns the number of bytes read, or an error if something went
 // wrong.
 //
+// While it is safe to call read concurrently from multiple goroutines it may
+// be hard for the program to prodict the results as the connection offset will
+// be read and written by multiple goroutines, they could read duplicates, or
+// messages may be seen by only some of the goroutines.
+//
 // Read satisfies the io.Reader interface.
 func (c *Conn) Read(b []byte) (int, error) {
 	offset, err := c.Seek(c.Offset())
 	if err != nil {
 		return 0, err
 	}
-	_ = offset
+
 	var n int
 	err = c.readOperation(
-		func(id int32) error {
+		func(deadline time.Time, id int32) error {
+			const maxWaitTimeLimit = time.Duration(math.MaxInt32) * time.Millisecond
+			// Compute the max wait time with a best-effort attempt to account
+			// for network latency.
+			maxWaitTime := maxWaitTimeLimit
+			if !deadline.IsZero() {
+				maxWaitTime = deadline.Sub(time.Now())
+				maxWaitTime -= maxWaitTime / 4
+			}
+			if maxWaitTime > maxWaitTimeLimit {
+				maxWaitTime = maxWaitTimeLimit
+			}
 			return c.writeRequest(fetchRequest, v1, id, fetchRequestV1{
 				ReplicaID:   -1,
-				MaxWaitTime: 100,
+				MaxWaitTime: int32(maxWaitTime / time.Millisecond),
 				MinBytes:    1,
 				Topics: []fetchRequestTopicV1{{
 					TopicName: c.topic,
@@ -259,12 +276,96 @@ func (c *Conn) Read(b []byte) (int, error) {
 						Partition:   c.partition,
 						FetchOffset: offset,
 						MaxBytes:    int32(len(b) + 1),
+						// We read for the length of the buffer + 1 to detect
+						// the case where the message is larger than the output
+						// buffer.
 					}},
 				}},
 			})
 		},
-		func(size int) error {
-			return nil
+		func(deadline time.Time, size int) error {
+			// Skipping the throttle time since there's no way to report this
+			// information with the Read method.
+			size, err := discardInt32(&c.rbuf, size)
+			if err != nil {
+				return err
+			}
+
+			// Consume the stream of fetched topic and partition, we skip the
+			// topic name because we sent the request for a single topic.
+			return expectZeroSize(streamArray(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
+				size, err := discardString(&c.rbuf, size)
+				if err != nil {
+					return size, err
+				}
+				return streamArray(r, size, func(r *bufio.Reader, size int) (int, error) {
+					// Partition header, followed by the message set.
+					var p struct {
+						Partition           int32
+						ErrorCode           int16
+						HighwaterMarkOffset int64
+						MessageSetSize      int32
+					}
+					size, err := read(r, size, &p)
+
+					if size != int(p.MessageSetSize) {
+						return size, fmt.Errorf("the remaining response size is different from the message set size (%d vs %d)", size, p.MessageSetSize)
+					}
+
+					done := false
+					for size != 0 && (err == nil || err == io.ErrShortBuffer) {
+						var msgOffset int64
+						var msgSize int32
+
+						if size, err = readInt64(r, size, &msgOffset); err != nil {
+							continue
+						}
+						if size, err = readInt32(r, size, &msgSize); err != nil {
+							continue
+						}
+
+						fmt.Println("message offset =", msgOffset)
+						fmt.Println("message size =", msgSize)
+
+						if done {
+							// If the fetch returned any trailing messages we
+							// just discard them all because we only load one
+							// message into the read buffer.
+							size, err = discard(r, size, message{})
+							continue
+						}
+						done = true
+
+						// Message header, followed by the key and value.
+						var crc uint32
+						var msg messageHeader
+
+						if msg, crc, size, err = readMessageHeader(r, size); err != nil {
+							fmt.Println("failed to read the message header")
+							continue
+						}
+						fmt.Printf("msg = %#v\n", msg)
+						if _, crc, size, err = readMessageBytes(r, size, b, crc); err != nil {
+							fmt.Println("failed to read the message key")
+							continue
+						}
+						if n, crc, size, err = readMessageBytes(r, size, b, crc); err != nil {
+							fmt.Println("failed to read the message value")
+							continue
+						}
+						if crc != uint32(msg.CRC) {
+							err = InvalidMessage
+							continue
+						}
+
+						c.mutex.Lock()
+						c.offset = msgOffset + 1
+						c.mutex.Unlock()
+					}
+
+					return size, err
+				})
+			}))
 		},
 	)
 
@@ -334,19 +435,19 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 	}
 
 	resch := make(chan result, 2)
-	fetch := func(time int64) {
+	fetch := func(ptime int64) {
 		off := int64(0)
 		err := c.writeOperation(
-			func(id int32) error {
+			func(deadline time.Time, id int32) error {
 				return c.writeRequest(offsetRequest, v1, id, listOffsetRequestV1{
 					ReplicaID: -1,
 					Topics: []listOffsetRequestTopicV1{{
 						TopicName:  c.topic,
-						Partitions: []listOffsetRequestPartitionV1{{Partition: c.partition, Time: time}},
+						Partitions: []listOffsetRequestPartitionV1{{Partition: c.partition, Time: ptime}},
 					}},
 				})
 			},
-			func(size int) error {
+			func(deadline time.Time, size int) error {
 				return expectZeroSize(streamArray(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
 					// We skip the topic name because we've made a request for
 					// a single topic.
@@ -404,10 +505,10 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 	}
 
 	err = c.readOperation(
-		func(id int32) error {
+		func(deadline time.Time, id int32) error {
 			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequestV0(topics))
 		},
-		func(size int) error {
+		func(deadline time.Time, size int) error {
 			var res metadataResponseV0
 
 			if err := c.readResponse(size, &res); err != nil {
@@ -466,7 +567,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 	}}
 
 	err := c.writeOperation(
-		func(id int32) error {
+		func(deadline time.Time, id int32) error {
 			return c.writeRequest(produceRequest, v2, id, produceRequestV2{
 				RequiredAcks: -1,
 				Timeout:      10000,
@@ -480,7 +581,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 				}},
 			})
 		},
-		func(size int) error {
+		func(deadline time.Time, size int) error {
 			return expectZeroSize(streamArray(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
 				// Skip the topic, we've produced the message to only one topic,
 				// no need to waste resources loading it in memory.
@@ -556,20 +657,20 @@ func (c *Conn) writeDeadline() time.Time {
 	return t
 }
 
-func (c *Conn) readOperation(write func(int32) error, read func(int) error) error {
+func (c *Conn) readOperation(write func(time.Time, int32) error, read func(time.Time, int) error) error {
 	return c.do(c.readDeadline(), write, read)
 }
 
-func (c *Conn) writeOperation(write func(int32) error, read func(int) error) error {
+func (c *Conn) writeOperation(write func(time.Time, int32) error, read func(time.Time, int) error) error {
 	return c.do(c.writeDeadline(), write, read)
 }
 
-func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int) error) error {
+func (c *Conn) do(deadline time.Time, write func(time.Time, int32) error, read func(time.Time, int) error) error {
 	id := c.generateCorrelationID()
 
 	c.wlock.Lock()
 	c.conn.SetWriteDeadline(deadline)
-	err := write(id)
+	err := write(deadline, id)
 	c.wlock.Unlock()
 
 	if err != nil {
@@ -593,11 +694,16 @@ func (c *Conn) do(deadline time.Time, write func(int32) error, read func(int) er
 
 		if id == opid {
 			c.skipResponseSizeAndID()
-			err := read(int(opsize) - 4)
+			err := read(deadline, int(opsize)-4)
 			switch err.(type) {
 			case nil, Error:
 			default:
-				c.conn.Close()
+				// This error is returned when a read operation has provided a
+				// buffer that was too short, in that case the response was
+				// fully consumed so the connection is still in a valid state.
+				if err != io.ErrShortBuffer {
+					c.conn.Close()
+				}
 			}
 			c.rlock.Unlock()
 			return err

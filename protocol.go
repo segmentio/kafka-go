@@ -62,6 +62,13 @@ type message struct {
 	Value      []byte
 }
 
+type messageHeader struct {
+	CRC        int32
+	MagicByte  int8
+	Attributes int8
+	Timestamp  int64
+}
+
 func makeMessage(timestamp int64, key []byte, value []byte) message {
 	m := message{
 		MagicByte: 1,
@@ -75,29 +82,42 @@ func makeMessage(timestamp int64, key []byte, value []byte) message {
 
 func (m message) crc32() int32 {
 	sum := uint32(0)
-
-	buf := [10]byte{}
-	buf[0] = byte(m.MagicByte)
-	buf[1] = byte(m.Attributes)
-	binary.BigEndian.PutUint64(buf[2:], uint64(m.Timestamp))
-
-	sum = crc32.Update(sum, crc32.IEEETable, buf[:])
+	sum = crc32Int8(sum, m.MagicByte)
+	sum = crc32Int8(sum, m.Attributes)
+	sum = crc32Int64(sum, m.Timestamp)
 	sum = crc32Bytes(sum, m.Key)
 	sum = crc32Bytes(sum, m.Value)
-
 	return int32(sum)
 }
 
+func crc32Int8(sum uint32, v int8) uint32 {
+	b := [1]byte{byte(v)}
+	return crc32Add(sum, b[:])
+}
+
+func crc32Int32(sum uint32, v int32) uint32 {
+	b := [4]byte{}
+	binary.BigEndian.PutUint32(b[:], uint32(v))
+	return crc32Add(sum, b[:])
+}
+
+func crc32Int64(sum uint32, v int64) uint32 {
+	b := [8]byte{}
+	binary.BigEndian.PutUint64(b[:], uint64(v))
+	return crc32Add(sum, b[:])
+}
+
 func crc32Bytes(sum uint32, b []byte) uint32 {
-	buf := [4]byte{}
 	if b == nil {
-		binary.BigEndian.PutUint32(buf[:4], 0xFFFFFFFF) // -1
+		sum = crc32Int32(sum, -1)
 	} else {
-		binary.BigEndian.PutUint32(buf[:4], uint32(len(b)))
+		sum = crc32Int32(sum, int32(len(b)))
 	}
-	sum = crc32.Update(sum, crc32.IEEETable, buf[:4])
-	sum = crc32.Update(sum, crc32.IEEETable, b)
-	return sum
+	return crc32Add(sum, b)
+}
+
+func crc32Add(sum uint32, b []byte) uint32 {
+	return crc32.Update(sum, crc32.IEEETable, b[:])
 }
 
 // Metadata API (v0)
@@ -257,7 +277,7 @@ func peekRead(r *bufio.Reader, sz int, n int, f func([]byte)) (int, error) {
 		return sz, err
 	}
 	f(b)
-	return discard(r, sz, n)
+	return discardN(r, sz, n)
 }
 
 func readInt8(r *bufio.Reader, sz int, v *int8) (int, error) {
@@ -322,6 +342,48 @@ func readBytes(r *bufio.Reader, sz int, v *[]byte) (int, error) {
 
 	*v = b
 	return sz, nil
+}
+
+func readMessageHeader(r *bufio.Reader, sz int) (msg messageHeader, crc uint32, newSize int, err error) {
+	newSize, err = read(r, sz, &msg)
+	crc = crc32Int8(crc, msg.MagicByte)
+	crc = crc32Int8(crc, msg.Attributes)
+	crc = crc32Int64(crc, msg.Timestamp)
+	return
+}
+
+func readMessageBytes(r *bufio.Reader, sz int, b []byte, crc uint32) (n int, newCRC uint32, newSize int, err error) {
+	var bytesLen int32
+
+	if newSize, err = readInt32(r, sz, &bytesLen); err != nil {
+		return
+	}
+
+	if bytesLen > 0 {
+		n = int(bytesLen)
+	}
+
+	if n > newSize {
+		fmt.Println("n =", n, "sz =", newSize)
+		err = errShortRead
+		return
+	}
+
+	if n > len(b) {
+		newSize, _ = discardN(r, newSize, n)
+		err = io.ErrShortBuffer
+		return
+	}
+
+	if _, err = io.ReadFull(r, b[:n]); err != nil {
+		return
+	}
+
+	newSize -= n
+	newCRC = crc
+	newCRC = crc32Int32(newCRC, bytesLen)
+	newCRC = crc32Bytes(newCRC, b[:n])
+	return
 }
 
 func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
@@ -454,33 +516,90 @@ func streamBytes(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int32) (in
 	return sz, nil
 }
 
-func discard(r *bufio.Reader, sz int, n int) (int, error) {
+func discardN(r *bufio.Reader, sz int, n int) (int, error) {
 	n, err := r.Discard(n)
 	return sz - n, err
 }
 
 func discardInt8(r *bufio.Reader, sz int) (int, error) {
-	return discard(r, sz, 1)
+	return discardN(r, sz, 1)
 }
 
 func discardInt16(r *bufio.Reader, sz int) (int, error) {
-	return discard(r, sz, 2)
+	return discardN(r, sz, 2)
 }
 
 func discardInt32(r *bufio.Reader, sz int) (int, error) {
-	return discard(r, sz, 4)
+	return discardN(r, sz, 4)
 }
 
 func discardInt64(r *bufio.Reader, sz int) (int, error) {
-	return discard(r, sz, 8)
+	return discardN(r, sz, 8)
 }
 
 func discardString(r *bufio.Reader, sz int) (int, error) {
-	return streamString(r, sz, func(r *bufio.Reader, sz int, len int16) (int, error) { return discard(r, sz, int(len)) })
+	return streamString(r, sz, func(r *bufio.Reader, sz int, len int16) (int, error) {
+		return discardN(r, sz, int(len))
+	})
 }
 
 func discardBytes(r *bufio.Reader, sz int) (int, error) {
-	return streamBytes(r, sz, func(r *bufio.Reader, sz int, len int32) (int, error) { return discard(r, sz, int(len)) })
+	return streamBytes(r, sz, func(r *bufio.Reader, sz int, len int32) (int, error) {
+		return discardN(r, sz, int(len))
+	})
+}
+
+func discard(r *bufio.Reader, sz int, a interface{}) (int, error) {
+	switch a.(type) {
+	case int8:
+		return discardInt8(r, sz)
+	case int16:
+		return discardInt16(r, sz)
+	case int32:
+		return discardInt32(r, sz)
+	case int64:
+		return discardInt64(r, sz)
+	case string:
+		return discardString(r, sz)
+	case []byte:
+		return discardBytes(r, sz)
+	}
+	switch v := reflect.ValueOf(a); v.Kind() {
+	case reflect.Struct:
+		return discardStruct(r, sz, v)
+	case reflect.Slice:
+		return discardSlice(r, sz, v)
+	default:
+		panic(fmt.Sprintf("unsupported type: %T", a))
+	}
+}
+
+func discardStruct(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
+	var err error
+	for i, n := 0, v.NumField(); i != n; i++ {
+		if sz, err = discard(r, sz, v.Field(i)); err != nil {
+			break
+		}
+	}
+	return sz, err
+}
+
+func discardSlice(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
+	var zero = reflect.Zero(v.Type().Elem())
+	var err error
+	var len int32
+
+	if sz, err = readInt32(r, sz, &len); err != nil {
+		return sz, err
+	}
+
+	for n := int(len); n > 0; n-- {
+		if sz, err = discard(r, sz, zero); err != nil {
+			break
+		}
+	}
+
+	return sz, err
 }
 
 func writeInt8(w *bufio.Writer, i int8) error {

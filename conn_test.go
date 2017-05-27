@@ -53,6 +53,11 @@ func TestConn(t *testing.T) {
 			scenario: "ensure the connection can seek to a random offset",
 			function: testConnSeekRandomOffset,
 		},
+
+		{
+			scenario: "writing and reading messages sequentially should preserve the order",
+			function: testConnWriteReadSequentially,
+		},
 	}
 
 	for _, test := range tests {
@@ -162,5 +167,28 @@ func testConnSeekRandomOffset(t *testing.T, conn *Conn) {
 
 	if offset != 3 {
 		t.Error("bad offset:", offset)
+	}
+}
+
+func testConnWriteReadSequentially(t *testing.T, conn *Conn) {
+	for i := 0; i != 10; i++ {
+		if _, err := conn.Write([]byte(strconv.Itoa(i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b := make([]byte, 128)
+
+	for i := 0; i != 10; i++ {
+		n, err := conn.Read(b)
+		if err != nil {
+			t.Error(err)
+		}
+		s := string(b[:n])
+		if v, err := strconv.Atoi(s); err != nil {
+			t.Error(err)
+		} else if v != i {
+			t.Error("bad message read at offset %d: %s", i, s)
+		}
 	}
 }
