@@ -212,12 +212,11 @@ func testConnReadShortBuffer(t *testing.T, conn *Conn) {
 		b[2] = 0
 		b[3] = 0
 
-		fmt.Println(i)
 		n, err := conn.Read(b)
 		if err != io.ErrShortBuffer {
 			t.Error("bad error:", i, err)
 		}
-		if n != 1 {
+		if n != 4 {
 			t.Error("bad byte count:", i, n)
 		}
 		if s := string(b); s != "Hell" {

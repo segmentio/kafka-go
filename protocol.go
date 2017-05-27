@@ -62,12 +62,6 @@ type message struct {
 	Value      []byte
 }
 
-type messageHeader struct {
-	MagicByte  int8
-	Attributes int8
-	Timestamp  int64
-}
-
 func makeMessage(timestamp int64, key []byte, value []byte) message {
 	m := message{
 		MagicByte: 1,
@@ -207,8 +201,8 @@ type fetchResponseV1 struct {
 }
 
 type fetchResponseTopicV1 struct {
-	TopicName string
-	Partition []fetchResponsePartitionV1
+	TopicName  string
+	Partitions []fetchResponsePartitionV1
 }
 
 type fetchResponsePartitionV1 struct {
@@ -409,29 +403,30 @@ func readMessageOffsetAndSize(r *bufio.Reader, sz int) (offset int64, size int32
 	return
 }
 
-func readMessageHeader(r *bufio.Reader, sz int) (msg messageHeader, remain int, err error) {
+func readMessageHeader(r *bufio.Reader, sz int) (attributes int8, timestamp int64, remain int, err error) {
+	var version int8
 	// TCP is already taking care of ensuring data integrirty, no need to waste
 	// resources doing it a second time so we just skip the message CRC.
 	if remain, err = discardInt32(r, sz); err != nil {
 		return
 	}
 
-	if remain, err = readInt8(r, remain, &msg.MagicByte); err != nil {
+	if remain, err = readInt8(r, remain, &version); err != nil {
 		return
 	}
 
-	if remain, err = readInt8(r, remain, &msg.Attributes); err != nil {
+	if remain, err = readInt8(r, remain, &attributes); err != nil {
 		return
 	}
 
-	switch msg.MagicByte {
+	switch version {
 	case 0:
 	case 1:
-		if remain, err = readInt64(r, remain, &msg.Timestamp); err != nil {
+		if remain, err = readInt64(r, remain, &timestamp); err != nil {
 			return
 		}
 	default:
-		err = fmt.Errorf("unsupported message version: %d", msg.MagicByte)
+		err = fmt.Errorf("unsupported message version: %d", version)
 	}
 
 	return
@@ -439,8 +434,11 @@ func readMessageHeader(r *bufio.Reader, sz int) (msg messageHeader, remain int, 
 
 func readMessageBytes(r *bufio.Reader, sz int, b []byte) (n int, remain int, err error) {
 	var bytesLen int32
+	var limit int
+	var count int
 
 	if remain, err = readInt32(r, sz, &bytesLen); err != nil {
+		fmt.Println(err)
 		return
 	}
 
@@ -449,23 +447,16 @@ func readMessageBytes(r *bufio.Reader, sz int, b []byte) (n int, remain int, err
 	}
 
 	if n > remain {
-		remain, _ = discardN(r, remain, remain)
-		n, err = 0, errShortRead
-		return
+		limit = remain
+	} else {
+		limit = n
+	}
+	if limit > len(b) {
+		limit = len(b)
 	}
 
-	if n > len(b) {
-		if _, err = io.ReadFull(r, b); err != nil {
-			return
-		}
-		remain, _ = discardN(r, remain-len(b), n-len(b))
-		return
-	}
-
-	if _, err = io.ReadFull(r, b[:n]); err != nil {
-		return
-	}
-	remain -= n
+	count, err = io.ReadFull(r, b[:limit])
+	remain -= count
 	return
 }
 
@@ -483,6 +474,13 @@ func expectZeroSize(sz int, err error) error {
 		err = fmt.Errorf("reading a response left %d unread bytes", sz)
 	}
 	return err
+}
+
+func ignoreShortRead(sz int, err error) (int, error) {
+	if err == errShortRead {
+		err = nil
+	}
+	return sz, err
 }
 
 func streamArray(r *bufio.Reader, sz int, cb func(*bufio.Reader, int) (int, error)) (int, error) {

@@ -53,6 +53,7 @@ type Conn struct {
 	topic         string
 	partition     int32
 	correlationID int32
+	fetchMinSize  int32
 
 	wlock  sync.Mutex
 	rlock  sync.Mutex
@@ -110,6 +111,18 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		topic:     config.Topic,
 		partition: int32(config.Partition),
 		offset:    -2,
+
+		// The fetch request needs to ask for a MaxBytes value that is at least
+		// enough to load the control data of the response. To avoid having to
+		// recompute it on every read, it is cached here in the Conn value.
+		fetchMinSize: sizeof(fetchResponseV1{
+			Topics: []fetchResponseTopicV1{{
+				TopicName: config.Topic,
+				Partitions: []fetchResponsePartitionV1{{
+					Partition: int32(config.Partition),
+				}},
+			}},
+		}),
 	}
 }
 
@@ -274,11 +287,8 @@ func (c *Conn) Read(b []byte) (int, error) {
 					TopicName: c.topic,
 					Partitions: []fetchRequestPartitionV1{{
 						Partition:   c.partition,
+						MaxBytes:    c.fetchMinSize + int32(len(b)),
 						FetchOffset: offset,
-						MaxBytes:    int32(len(b) + 1),
-						// We read for the length of the buffer + 1 to detect
-						// the case where the message is larger than the output
-						// buffer.
 					}},
 				}},
 			})
@@ -298,7 +308,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 				if err != nil {
 					return size, err
 				}
-				return streamArray(r, size, func(r *bufio.Reader, size int) (int, error) {
+				return ignoreShortRead(streamArray(r, size, func(r *bufio.Reader, size int) (int, error) {
 					// Partition header, followed by the message set.
 					var p struct {
 						Partition           int32
@@ -335,7 +345,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 						done = true
 
 						// Message header, followed by the key and value.
-						if _, size, err = readMessageHeader(r, size); err != nil {
+						if _, _, size, err = readMessageHeader(r, size); err != nil {
 							continue
 						}
 						if _, size, err = readMessageBytes(r, size, b); err != nil {
@@ -348,7 +358,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 					}
 
 					return size, err
-				})
+				}))
 			}))
 		},
 	)
