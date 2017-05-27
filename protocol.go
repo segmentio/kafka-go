@@ -439,7 +439,6 @@ func readMessageBytes(r *bufio.Reader, sz int, b []byte) (n int, remain int, err
 	var count int
 
 	if remain, err = readInt32(r, sz, &bytesLen); err != nil {
-		fmt.Println(err)
 		return
 	}
 

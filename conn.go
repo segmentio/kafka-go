@@ -322,7 +322,18 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 				if err != nil {
 					return size, err
 				}
-				return ignoreShortRead(streamArray(r, size, func(r *bufio.Reader, size int) (int, error) {
+
+				// As an "optimization" kafka truncates the returned response
+				// after producing MaxBytes, which could then cause the code to
+				// return errShortRead.
+				// Because we read at least c.fetchMinSize bytes we should be
+				// able to decode all the control values for the first message,
+				// and errShortRead should only happen when reading the message
+				// key or value.
+				// I'm not sure this is rock solid and there may be some weird
+				// edge cases...
+				// There's just so much we can do with questionable design.
+				return streamArray(r, size, func(r *bufio.Reader, size int) (int, error) {
 					// Partition header, followed by the message set.
 					var p struct {
 						Partition           int32
@@ -333,7 +344,7 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 
 					size, err := read(r, size, &p)
 					if err != nil {
-						return size, err
+						return ignoreShortRead(size, err)
 					}
 					if p.ErrorCode != 0 {
 						return size, Error(p.ErrorCode)
@@ -362,7 +373,7 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 						if _, _, size, err = readMessageHeader(r, size); err != nil {
 							continue
 						}
-						if _, size, err = readMessageBytes(r, size, b); err != nil {
+						if n, size, err = readMessageBytes(r, size, b); err != nil {
 							continue
 						}
 						if n, size, err = readMessageBytes(r, size, b); err != nil {
@@ -371,8 +382,8 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 						offset = msgOffset
 					}
 
-					return size, err
-				}))
+					return ignoreShortRead(size, err)
+				})
 			}))
 		},
 	)
