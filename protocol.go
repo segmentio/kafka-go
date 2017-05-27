@@ -416,18 +416,18 @@ func readMessageHeader(r *bufio.Reader, sz int) (msg messageHeader, remain int, 
 		return
 	}
 
-	if remain, err = readInt8(r, sz, &msg.MagicByte); err != nil {
+	if remain, err = readInt8(r, remain, &msg.MagicByte); err != nil {
 		return
 	}
 
-	if remain, err = readInt8(r, sz, &msg.Attributes); err != nil {
+	if remain, err = readInt8(r, remain, &msg.Attributes); err != nil {
 		return
 	}
 
 	switch msg.MagicByte {
 	case 0:
 	case 1:
-		if remain, err = readInt64(r, sz, &msg.Timestamp); err != nil {
+		if remain, err = readInt64(r, remain, &msg.Timestamp); err != nil {
 			return
 		}
 	default:
@@ -465,7 +465,6 @@ func readMessageBytes(r *bufio.Reader, sz int, b []byte) (n int, remain int, err
 	if _, err = io.ReadFull(r, b[:n]); err != nil {
 		return
 	}
-
 	remain -= n
 	return
 }
