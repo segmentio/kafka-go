@@ -306,61 +306,45 @@ func (c *Conn) Read(b []byte) (int, error) {
 						HighwaterMarkOffset int64
 						MessageSetSize      int32
 					}
-					size, err := read(r, size, &p)
 
-					if size != int(p.MessageSetSize) {
-						return size, fmt.Errorf("the remaining response size is different from the message set size (%d vs %d)", size, p.MessageSetSize)
+					size, err := read(r, size, &p)
+					if err != nil {
+						return size, err
+					}
+					if p.ErrorCode != 0 {
+						return size, Error(p.ErrorCode)
 					}
 
 					done := false
-					for size != 0 && (err == nil || err == io.ErrShortBuffer) {
+
+					for size != 0 && err == nil {
 						var msgOffset int64
 						var msgSize int32
 
-						if size, err = readInt64(r, size, &msgOffset); err != nil {
+						if msgOffset, msgSize, size, err = readMessageOffsetAndSize(r, size); err != nil {
 							continue
 						}
-						if size, err = readInt32(r, size, &msgSize); err != nil {
-							continue
-						}
-
-						fmt.Println("message offset =", msgOffset)
-						fmt.Println("message size =", msgSize)
 
 						if done {
 							// If the fetch returned any trailing messages we
 							// just discard them all because we only load one
 							// message into the read buffer.
-							size, err = discard(r, size, message{})
+							size, err = discardN(r, size, int(msgSize))
 							continue
 						}
 						done = true
 
 						// Message header, followed by the key and value.
-						var crc uint32
-						var msg messageHeader
-
-						if msg, crc, size, err = readMessageHeader(r, size); err != nil {
-							fmt.Println("failed to read the message header")
+						if _, size, err = readMessageHeader(r, size); err != nil {
 							continue
 						}
-						fmt.Printf("msg = %#v\n", msg)
-						if _, crc, size, err = readMessageBytes(r, size, b, crc); err != nil {
-							fmt.Println("failed to read the message key")
+						if _, size, err = readMessageBytes(r, size, b); err != nil {
 							continue
 						}
-						if n, crc, size, err = readMessageBytes(r, size, b, crc); err != nil {
-							fmt.Println("failed to read the message value")
+						if n, size, err = readMessageBytes(r, size, b); err != nil {
 							continue
 						}
-						if crc != uint32(msg.CRC) {
-							err = InvalidMessage
-							continue
-						}
-
-						c.mutex.Lock()
-						c.offset = msgOffset + 1
-						c.mutex.Unlock()
+						offset = msgOffset
 					}
 
 					return size, err
@@ -368,6 +352,16 @@ func (c *Conn) Read(b []byte) (int, error) {
 			}))
 		},
 	)
+
+	switch {
+	case err != nil:
+	case n > len(b):
+		n, err = len(b), io.ErrShortBuffer
+	default:
+		c.mutex.Lock()
+		c.offset = offset + 1
+		c.mutex.Unlock()
+	}
 
 	return n, err
 }
@@ -698,12 +692,7 @@ func (c *Conn) do(deadline time.Time, write func(time.Time, int32) error, read f
 			switch err.(type) {
 			case nil, Error:
 			default:
-				// This error is returned when a read operation has provided a
-				// buffer that was too short, in that case the response was
-				// fully consumed so the connection is still in a valid state.
-				if err != io.ErrShortBuffer {
-					c.conn.Close()
-				}
+				c.conn.Close()
 			}
 			c.rlock.Unlock()
 			return err

@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"strconv"
@@ -57,6 +58,11 @@ func TestConn(t *testing.T) {
 		{
 			scenario: "writing and reading messages sequentially should preserve the order",
 			function: testConnWriteReadSequentially,
+		},
+
+		{
+			scenario: "reading messages with a buffer that is too short should return io.ErrShortBuffer and maintain the connection open",
+			function: testConnReadShortBuffer,
 		},
 	}
 
@@ -189,6 +195,33 @@ func testConnWriteReadSequentially(t *testing.T, conn *Conn) {
 			t.Error(err)
 		} else if v != i {
 			t.Error("bad message read at offset %d: %s", i, s)
+		}
+	}
+}
+
+func testConnReadShortBuffer(t *testing.T, conn *Conn) {
+	if _, err := conn.Write([]byte("Hello World!")); err != nil {
+		t.Fatal(err)
+	}
+
+	b := make([]byte, 4)
+
+	for i := 0; i != 10; i++ {
+		b[0] = 0
+		b[1] = 0
+		b[2] = 0
+		b[3] = 0
+
+		fmt.Println(i)
+		n, err := conn.Read(b)
+		if err != io.ErrShortBuffer {
+			t.Error("bad error:", i, err)
+		}
+		if n != 1 {
+			t.Error("bad byte count:", i, n)
+		}
+		if s := string(b); s != "Hell" {
+			t.Error("bad content:", i, s)
 		}
 	}
 }

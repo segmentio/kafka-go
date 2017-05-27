@@ -63,7 +63,6 @@ type message struct {
 }
 
 type messageHeader struct {
-	CRC        int32
 	MagicByte  int8
 	Attributes int8
 	Timestamp  int64
@@ -344,48 +343,6 @@ func readBytes(r *bufio.Reader, sz int, v *[]byte) (int, error) {
 	return sz, nil
 }
 
-func readMessageHeader(r *bufio.Reader, sz int) (msg messageHeader, crc uint32, newSize int, err error) {
-	newSize, err = read(r, sz, &msg)
-	crc = crc32Int8(crc, msg.MagicByte)
-	crc = crc32Int8(crc, msg.Attributes)
-	crc = crc32Int64(crc, msg.Timestamp)
-	return
-}
-
-func readMessageBytes(r *bufio.Reader, sz int, b []byte, crc uint32) (n int, newCRC uint32, newSize int, err error) {
-	var bytesLen int32
-
-	if newSize, err = readInt32(r, sz, &bytesLen); err != nil {
-		return
-	}
-
-	if bytesLen > 0 {
-		n = int(bytesLen)
-	}
-
-	if n > newSize {
-		fmt.Println("n =", n, "sz =", newSize)
-		err = errShortRead
-		return
-	}
-
-	if n > len(b) {
-		newSize, _ = discardN(r, newSize, n)
-		err = io.ErrShortBuffer
-		return
-	}
-
-	if _, err = io.ReadFull(r, b[:n]); err != nil {
-		return
-	}
-
-	newSize -= n
-	newCRC = crc
-	newCRC = crc32Int32(newCRC, bytesLen)
-	newCRC = crc32Bytes(newCRC, b[:n])
-	return
-}
-
 func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
 	switch v := a.(type) {
 	case *int8:
@@ -444,8 +401,82 @@ func readSlice(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
 	return sz, nil
 }
 
+func readMessageOffsetAndSize(r *bufio.Reader, sz int) (offset int64, size int32, remain int, err error) {
+	if remain, err = readInt64(r, sz, &offset); err != nil {
+		return
+	}
+	remain, err = readInt32(r, remain, &size)
+	return
+}
+
+func readMessageHeader(r *bufio.Reader, sz int) (msg messageHeader, remain int, err error) {
+	// TCP is already taking care of ensuring data integrirty, no need to waste
+	// resources doing it a second time so we just skip the message CRC.
+	if remain, err = discardInt32(r, sz); err != nil {
+		return
+	}
+
+	if remain, err = readInt8(r, sz, &msg.MagicByte); err != nil {
+		return
+	}
+
+	if remain, err = readInt8(r, sz, &msg.Attributes); err != nil {
+		return
+	}
+
+	switch msg.MagicByte {
+	case 0:
+	case 1:
+		if remain, err = readInt64(r, sz, &msg.Timestamp); err != nil {
+			return
+		}
+	default:
+		err = fmt.Errorf("unsupported message version: %d", msg.MagicByte)
+	}
+
+	return
+}
+
+func readMessageBytes(r *bufio.Reader, sz int, b []byte) (n int, remain int, err error) {
+	var bytesLen int32
+
+	if remain, err = readInt32(r, sz, &bytesLen); err != nil {
+		return
+	}
+
+	if bytesLen > 0 {
+		n = int(bytesLen)
+	}
+
+	if n > remain {
+		remain, _ = discardN(r, remain, remain)
+		n, err = 0, errShortRead
+		return
+	}
+
+	if n > len(b) {
+		if _, err = io.ReadFull(r, b); err != nil {
+			return
+		}
+		remain, _ = discardN(r, remain-len(b), n-len(b))
+		return
+	}
+
+	if _, err = io.ReadFull(r, b[:n]); err != nil {
+		return
+	}
+
+	remain -= n
+	return
+}
+
 func readResponse(r *bufio.Reader, sz int, res interface{}) error {
-	return expectZeroSize(read(r, sz, res))
+	sz, err := read(r, sz, res)
+	switch err.(type) {
+	case Error:
+		sz, err = discardN(r, sz, sz)
+	}
+	return expectZeroSize(sz, err)
 }
 
 func expectZeroSize(sz int, err error) error {
@@ -770,22 +801,16 @@ func sizeofSlice(v reflect.Value) (size int32) {
 	return
 }
 
-func minInt64(ints ...int64) int64 {
-	min := ints[0]
-	for _, val := range ints[1:] {
-		if val < min {
-			min = val
-		}
+func minInt64(a int64, b int64) int64 {
+	if a < b {
+		return a
 	}
-	return min
+	return b
 }
 
-func maxInt64(ints ...int64) int64 {
-	max := ints[0]
-	for _, val := range ints[1:] {
-		if val > max {
-			max = val
-		}
+func maxInt64(a int64, b int64) int64 {
+	if a > b {
+		return a
 	}
-	return max
+	return b
 }
