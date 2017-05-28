@@ -50,6 +50,8 @@ type Conn struct {
 	offset int64
 
 	dmutex    sync.RWMutex
+	rconn     net.Conn
+	wconn     net.Conn
 	rdeadline time.Time
 	wdeadline time.Time
 }
@@ -144,6 +146,15 @@ func (c *Conn) SetDeadline(t time.Time) error {
 	c.dmutex.Lock()
 	c.rdeadline = t
 	c.wdeadline = t
+
+	if c.rconn != nil {
+		c.rconn.SetReadDeadline(t)
+	}
+
+	if c.wconn != nil {
+		c.wconn.SetWriteDeadline(t)
+	}
+
 	c.dmutex.Unlock()
 	return nil
 }
@@ -154,7 +165,12 @@ func (c *Conn) SetDeadline(t time.Time) error {
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	c.dmutex.Lock()
 	c.rdeadline = t
-	c.dmutex.Lock()
+
+	if c.rconn != nil {
+		c.rconn.SetReadDeadline(t)
+	}
+
+	c.dmutex.Unlock()
 	return nil
 }
 
@@ -166,6 +182,11 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	c.dmutex.Lock()
 	c.wdeadline = t
+
+	if c.wconn != nil {
+		c.wconn.SetWriteDeadline(t)
+	}
+
 	c.dmutex.Unlock()
 	return nil
 }
@@ -268,13 +289,16 @@ func (c *Conn) Read(b []byte) (int, error) {
 //
 // Unlike Read, the method doesn't modify the offset of the connection.
 func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
+	var adjustedDeadline time.Time
 	var n int
 	var err = c.readOperation(
 		func(deadline time.Time, id int32) error {
+			maxWaitTime := deadlineToTimeout(deadline)
+			adjustedDeadline = time.Now().Add(time.Duration(maxWaitTime) * time.Millisecond)
 			return c.writeRequest(fetchRequest, v1, id, fetchRequestV1{
 				ReplicaID:   -1,
 				MinBytes:    1,
-				MaxWaitTime: deadlineToTimeout(deadline),
+				MaxWaitTime: maxWaitTime,
 				Topics: []fetchRequestTopicV1{{
 					TopicName: c.topic,
 					Partitions: []fetchRequestPartitionV1{{
@@ -366,8 +390,27 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 		},
 	)
 
-	if err == nil && n > len(b) {
-		n, err = len(b), io.ErrShortBuffer
+	if err == nil {
+		if n > len(b) {
+			n, err = len(b), io.ErrShortBuffer
+		} else if n == 0 {
+			if now := time.Now(); now.After(adjustedDeadline) {
+				// In case we got a timeout, it may be a kafka protocol error
+				// which means we would have received a response saying there
+				// was a timeout on the kafka server side. Because timeouts are
+				// configured based on the deadline it means we could return too
+				// early so we may have to wait a little while.
+				c.dmutex.Lock()
+				deadline := c.rdeadline
+				c.dmutex.Unlock()
+
+				if now.Before(deadline) {
+					time.Sleep(deadline.Sub(now))
+				}
+
+				err = RequestTimedOut
+			}
+		}
 	}
 
 	return n, offset, err
@@ -611,34 +654,64 @@ func (c *Conn) generateCorrelationID() int32 {
 	return atomic.AddInt32(&c.correlationID, 1)
 }
 
+func (c *Conn) setConnReadDeadline(deadline *time.Time) time.Time {
+	c.dmutex.Lock()
+	t := *deadline
+	c.rconn = c.conn
+	c.rconn.SetReadDeadline(t)
+	c.dmutex.Unlock()
+	return t
+}
+
+func (c *Conn) unsetConnReadDeadline() {
+	c.dmutex.Lock()
+	c.rconn = nil
+	c.dmutex.Unlock()
+}
+
+func (c *Conn) setConnWriteDeadline(deadline *time.Time) time.Time {
+	c.dmutex.Lock()
+	t := *deadline
+	c.wconn = c.conn
+	c.wconn.SetWriteDeadline(t)
+	c.dmutex.Unlock()
+	return t
+}
+
+func (c *Conn) unsetConnWriteDeadline() {
+	c.dmutex.Lock()
+	c.wconn = nil
+	c.dmutex.Unlock()
+}
+
 func (c *Conn) readDeadline() time.Time {
-	c.dmutex.RLock()
+	c.dmutex.Lock()
 	t := c.rdeadline
-	c.dmutex.RUnlock()
+	c.dmutex.Unlock()
 	return t
 }
 
 func (c *Conn) writeDeadline() time.Time {
-	c.dmutex.RLock()
+	c.dmutex.Lock()
 	t := c.wdeadline
-	c.dmutex.RUnlock()
+	c.dmutex.Unlock()
 	return t
 }
 
 func (c *Conn) readOperation(write func(time.Time, int32) error, read func(time.Time, int) error) error {
-	return c.do(c.readDeadline(), write, read)
+	return c.do(&c.rdeadline, write, read)
 }
 
 func (c *Conn) writeOperation(write func(time.Time, int32) error, read func(time.Time, int) error) error {
-	return c.do(c.writeDeadline(), write, read)
+	return c.do(&c.wdeadline, write, read)
 }
 
-func (c *Conn) do(deadline time.Time, write func(time.Time, int32) error, read func(time.Time, int) error) error {
+func (c *Conn) do(deadline *time.Time, write func(time.Time, int32) error, read func(time.Time, int) error) error {
 	id := c.generateCorrelationID()
 
 	c.wlock.Lock()
-	c.conn.SetWriteDeadline(deadline)
-	err := write(deadline, id)
+	err := write(c.setConnWriteDeadline(deadline), id)
+	c.unsetConnWriteDeadline()
 	c.wlock.Unlock()
 
 	if err != nil {
@@ -651,10 +724,11 @@ func (c *Conn) do(deadline time.Time, write func(time.Time, int32) error, read f
 
 	for {
 		c.rlock.Lock()
-		c.conn.SetReadDeadline(deadline)
+		t := c.setConnReadDeadline(deadline)
 
 		opsize, opid, err := c.peekResponseSizeAndID()
 		if err != nil {
+			c.unsetConnReadDeadline()
 			c.conn.Close()
 			c.rlock.Unlock()
 			return err
@@ -662,12 +736,13 @@ func (c *Conn) do(deadline time.Time, write func(time.Time, int32) error, read f
 
 		if id == opid {
 			c.skipResponseSizeAndID()
-			err := read(deadline, int(opsize)-4)
+			err := read(t, int(opsize)-4)
 			switch err.(type) {
 			case nil, Error:
 			default:
 				c.conn.Close()
 			}
+			c.unsetConnReadDeadline()
 			c.rlock.Unlock()
 			return err
 		}
