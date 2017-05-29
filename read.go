@@ -69,6 +69,10 @@ func readStringWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int16) 
 		len = 0
 	}
 
+	if sz < int(len) {
+		return sz, errShortRead
+	}
+
 	return cb(r, sz, len)
 }
 
@@ -101,6 +105,10 @@ func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int32) (
 
 	if len < 0 {
 		len = 0
+	}
+
+	if sz < int(len) {
+		return sz, errShortRead
 	}
 
 	return cb(r, sz, len)
