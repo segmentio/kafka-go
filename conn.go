@@ -30,6 +30,14 @@ type Partition struct {
 	ID       int
 }
 
+// Message is a data structure representing kafka messages.
+type Message struct {
+	Offset int64
+	Key    []byte
+	Value  []byte
+	Time   time.Time
+}
+
 // Conn represents a connection to a kafka broker.
 //
 // Instances of Conn are safe to use concurrently from multiple goroutines.
@@ -147,8 +155,8 @@ func (c *Conn) RemoteAddr() net.Addr {
 //
 // A zero value for t means I/O operations will not time out.
 func (c *Conn) SetDeadline(t time.Time) error {
-	c.rdeadline.set(t)
-	c.wdeadline.set(t)
+	c.rdeadline.setDeadline(t)
+	c.wdeadline.setDeadline(t)
 	return nil
 }
 
@@ -156,7 +164,7 @@ func (c *Conn) SetDeadline(t time.Time) error {
 // currently-blocked Read call.
 // A zero value for t means Read will not time out.
 func (c *Conn) SetReadDeadline(t time.Time) error {
-	c.rdeadline.set(t)
+	c.rdeadline.setDeadline(t)
 	return nil
 }
 
@@ -166,7 +174,7 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 // data was successfully written.
 // A zero value for t means Write will not time out.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
-	c.wdeadline.set(t)
+	c.wdeadline.setDeadline(t)
 	return nil
 }
 
@@ -386,6 +394,12 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 
 	return n, offset, err
 }
+
+/*
+func (c *Conn) ReadBatch(maxBytes int) *Batch {
+	return nil
+}
+*/
 
 // ReadOffset returns the offset of the first message with a timestamp equal or
 // greater to t.
@@ -626,26 +640,50 @@ func (c *Conn) generateCorrelationID() int32 {
 }
 
 func (c *Conn) readDeadline() time.Time {
-	return c.rdeadline.val()
+	return c.rdeadline.deadline()
 }
 
 func (c *Conn) writeDeadline() time.Time {
-	return c.wdeadline.val()
+	return c.wdeadline.deadline()
 }
 
-func (c *Conn) readOperation(write func(time.Time, int32) error, read func(time.Time, int) error) error {
+func (c *Conn) readOperation(write writeFunc, read readFunc) error {
 	return c.do(&c.rdeadline, write, read)
 }
 
-func (c *Conn) writeOperation(write func(time.Time, int32) error, read func(time.Time, int) error) error {
+func (c *Conn) writeOperation(write writeFunc, read readFunc) error {
 	return c.do(&c.wdeadline, write, read)
 }
 
-func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func(time.Time, int) error) error {
-	id := c.generateCorrelationID()
+func (c *Conn) do(d *connDeadline, write writeFunc, read readFunc) error {
+	id, err := c.doRequest(d, write)
+	if err != nil {
+		return err
+	}
+
+	deadline, size, lock, err := c.waitResponse(d, id)
+	if err != nil {
+		return err
+	}
+
+	if err = read(deadline, int(size)-4); err != nil {
+		switch err.(type) {
+		case Error:
+		default:
+			c.conn.Close()
+		}
+	}
+
+	d.unsetConnReadDeadline()
+	lock.Unlock()
+	return err
+}
+
+func (c *Conn) doRequest(d *connDeadline, write writeFunc) (id int32, err error) {
+	id = c.generateCorrelationID()
 
 	c.wlock.Lock()
-	err := write(d.setConnWriteDeadline(c.conn), id)
+	err = write(d.setConnWriteDeadline(c.conn), id)
 	d.unsetConnWriteDeadline()
 	c.wlock.Unlock()
 
@@ -654,32 +692,30 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func
 		// recoverable state so we're better off just giving up at this point to
 		// avoid any risk of corrupting the following operations.
 		c.conn.Close()
-		return err
 	}
 
-	for {
-		c.rlock.Lock()
-		t := d.setConnReadDeadline(c.conn)
+	return
+}
 
-		opsize, opid, err := c.peekResponseSizeAndID()
-		if err != nil {
+func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size int32, lock *sync.Mutex, err error) {
+	for {
+		var rsz int32
+		var rid int32
+
+		c.rlock.Lock()
+		deadline = d.setConnReadDeadline(c.conn)
+
+		if rsz, rid, err = c.peekResponseSizeAndID(); err != nil {
 			d.unsetConnReadDeadline()
 			c.conn.Close()
 			c.rlock.Unlock()
-			return err
+			return
 		}
 
-		if id == opid {
+		if id == rid {
 			c.skipResponseSizeAndID()
-			err := read(t, int(opsize)-4)
-			switch err.(type) {
-			case nil, Error:
-			default:
-				c.conn.Close()
-			}
-			d.unsetConnReadDeadline()
-			c.rlock.Unlock()
-			return err
+			size, lock = rsz, &c.rlock
+			return
 		}
 
 		// Optimistically release the read lock if a response has already
@@ -698,6 +734,8 @@ func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID
 	}
 }
 
+// connDeadline is a helper type to implement read/write deadline management on
+// the kafka connection.
 type connDeadline struct {
 	mutex sync.Mutex
 	value time.Time
@@ -705,14 +743,14 @@ type connDeadline struct {
 	wconn net.Conn
 }
 
-func (d *connDeadline) val() time.Time {
+func (d *connDeadline) deadline() time.Time {
 	d.mutex.Lock()
 	t := d.value
 	d.mutex.Unlock()
 	return t
 }
 
-func (d *connDeadline) set(t time.Time) {
+func (d *connDeadline) setDeadline(t time.Time) {
 	d.mutex.Lock()
 	d.value = t
 
@@ -756,3 +794,11 @@ func (d *connDeadline) unsetConnWriteDeadline() {
 	d.wconn = nil
 	d.mutex.Unlock()
 }
+
+// writeFunc is the type of functions passed to (*Conn).do to write a request
+// to the kafka connection.
+type writeFunc func(deadline time.Time, id int32) error
+
+// readFunc is the type of functions passed to (*Conn).do to read a response
+// from the kafka connection.
+type readFunc func(deadline time.Time, size int) error
