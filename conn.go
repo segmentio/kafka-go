@@ -34,23 +34,31 @@ type Partition struct {
 //
 // Instances of Conn are safe to use concurrently from multiple goroutines.
 type Conn struct {
+	// base network connection
 	conn net.Conn
-	rbuf bufio.Reader
-	wbuf bufio.Writer
 
+	// offset management (synchronized on the mutex field)
+	mutex  sync.Mutex
+	offset int64
+
+	// read buffer (synchronized on rlock)
+	rlock sync.Mutex
+	rbuf  bufio.Reader
+
+	// write buffer (synchronized on wlock)
+	wlock sync.Mutex
+	wbuf  bufio.Writer
+
+	// deadline management
+	wdeadline connDeadline
+	rdeadline connDeadline
+
+	// immutable values of the connection object
 	clientID      string
 	topic         string
 	partition     int32
 	correlationID int32
 	fetchMinSize  int32
-
-	wlock  sync.Mutex
-	rlock  sync.Mutex
-	mutex  sync.Mutex
-	offset int64
-
-	wdeadline connDeadline
-	rdeadline connDeadline
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
