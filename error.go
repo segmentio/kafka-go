@@ -6,7 +6,6 @@ import "fmt"
 type Error int
 
 const (
-	NoError                                  = 0
 	Unknown                            Error = -1
 	OffsetOutOfRange                   Error = 1
 	InvalidMessage                     Error = 2
@@ -89,8 +88,6 @@ func (e Error) Temporary() bool {
 // Title returns a human readable title for the error.
 func (e Error) Title() string {
 	switch e {
-	case NoError:
-		return "No Error"
 	case Unknown:
 		return "Unknown"
 	case OffsetOutOfRange:
@@ -208,8 +205,6 @@ func (e Error) Title() string {
 // Description returns a human readable description of cause of the error.
 func (e Error) Description() string {
 	switch e {
-	case NoError:
-		return "it worked!"
 	case Unknown:
 		return "an unexpected server error occurred"
 	case OffsetOutOfRange:

@@ -327,7 +327,7 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 					if err != nil {
 						return ignoreShortRead(size, err)
 					}
-					if p.ErrorCode != NoError {
+					if p.ErrorCode != 0 {
 						return size, Error(p.ErrorCode)
 					}
 
@@ -437,7 +437,7 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 					if err != nil {
 						return size, err
 					}
-					if p.ErrorCode != NoError {
+					if p.ErrorCode != 0 {
 						return size, Error(p.ErrorCode)
 					}
 					offset = p.Offset
@@ -491,7 +491,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 			}
 
 			for _, t := range res.Topics {
-				if t.TopicErrorCode != NoError && t.TopicName == c.topic {
+				if t.TopicErrorCode != 0 && t.TopicName == c.topic {
 					// We only report errors if they happened for the topic of
 					// the connection, otherwise the topic will simply have no
 					// partitions in the result set.
@@ -580,7 +580,7 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 				size, err = streamArray(r, size, func(r *bufio.Reader, size int) (int, error) {
 					var p produceResponsePartitionV2
 					size, err := read(r, size, &p)
-					if err == nil && p.ErrorCode != NoError {
+					if err == nil && p.ErrorCode != 0 {
 						err = Error(p.ErrorCode)
 					}
 					return size, err
