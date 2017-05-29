@@ -6,7 +6,7 @@ import "fmt"
 type Error int
 
 const (
-	NoError                            Error = 0
+	NoError                                  = 0
 	Unknown                            Error = -1
 	OffsetOutOfRange                   Error = 1
 	InvalidMessage                     Error = 2
