@@ -373,6 +373,13 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 		if n > len(b) {
 			n, err = len(b), io.ErrShortBuffer
 		} else if n == 0 && time.Now().After(adjustedDeadline) {
+			// Because we use the adjusted deadline we could end up returning
+			// before the actual deadline occurred. This is necessary otherwise
+			// timing out the connection for read could end up leaving it in an
+			// unpredictable state, which would require closing it.
+			// This design decision was main to maximize the changes of keeping
+			// the connection open, the trade off being to lose precision on the
+			// read deadline management.
 			err = RequestTimedOut
 		}
 	}
