@@ -372,18 +372,8 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 	if err == nil {
 		if n > len(b) {
 			n, err = len(b), io.ErrShortBuffer
-		} else if n == 0 {
-			if now := time.Now(); now.After(adjustedDeadline) {
-				// In case we got a timeout, it may be a kafka protocol error
-				// which means we would have received a response saying there
-				// was a timeout on the kafka server side. Because timeouts are
-				// configured based on the deadline it means we could return too
-				// early so we may have to wait a little while.
-				if deadline := c.readDeadline(); now.Before(deadline) {
-					time.Sleep(deadline.Sub(now))
-				}
-				err = RequestTimedOut
-			}
+		} else if n == 0 && time.Now().After(adjustedDeadline) {
+			err = RequestTimedOut
 		}
 	}
 

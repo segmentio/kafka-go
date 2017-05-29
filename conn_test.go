@@ -444,10 +444,6 @@ func testConnReadEmptyWithDeadline(t *testing.T, conn *Conn) {
 	conn.SetReadDeadline(deadline)
 	n, err := conn.Read(b)
 
-	if now := time.Now(); now.Before(deadline) {
-		t.Errorf("returned %s too early", deadline.Sub(now))
-	}
-
 	if n != 0 {
 		t.Error("bad byte count:", n)
 	}
