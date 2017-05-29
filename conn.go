@@ -280,12 +280,12 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 	var n int
 	var err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			maxWaitTime := deadlineToTimeout(deadline)
-			adjustedDeadline = time.Now().Add(time.Duration(maxWaitTime) * time.Millisecond)
+			now := time.Now()
+			adjustedDeadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 			return c.writeRequest(fetchRequest, v1, id, fetchRequestV1{
 				ReplicaID:   -1,
 				MinBytes:    1,
-				MaxWaitTime: maxWaitTime,
+				MaxWaitTime: milliseconds(deadlineToTimeout(adjustedDeadline, now)),
 				Topics: []fetchRequestTopicV1{{
 					TopicName: c.topic,
 					Partitions: []fetchRequestPartitionV1{{
@@ -395,11 +395,9 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 	return n, offset, err
 }
 
-/*
 func (c *Conn) ReadBatch(maxBytes int) *Batch {
 	return nil
 }
-*/
 
 // ReadOffset returns the offset of the first message with a timestamp equal or
 // greater to t.
@@ -564,9 +562,11 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
+			now := time.Now()
+			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 			return c.writeRequest(produceRequest, v2, id, produceRequestV2{
 				RequiredAcks: -1,
-				Timeout:      deadlineToTimeout(deadline),
+				Timeout:      milliseconds(deadlineToTimeout(deadline, now)),
 				Topics: []produceRequestTopicV2{{
 					TopicName: c.topic,
 					Partitions: []produceRequestPartitionV2{{

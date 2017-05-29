@@ -788,6 +788,12 @@ func sizeofSlice(v reflect.Value) (size int32) {
 	return
 }
 
+const (
+	maxTimeout = time.Duration(math.MaxInt32) * time.Millisecond
+	minTimeout = time.Duration(math.MinInt32) * time.Millisecond
+	defaultRTT = 1 * time.Second
+)
+
 func timestamp() int64 {
 	return timeToTimestamp(time.Now())
 }
@@ -803,17 +809,30 @@ func timestampToTime(t int64) time.Time {
 	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
 }
 
-func deadlineToTimeout(deadline time.Time) int32 {
-	const timeoutLimit = time.Duration(math.MaxInt32) * time.Millisecond
-	// Compute the max wait time with a best-effort attempt to account
-	// for network latency.
-	timeout := timeoutLimit
+func milliseconds(d time.Duration) int32 {
+	switch {
+	case d > maxTimeout:
+		d = maxTimeout
+	case d < minTimeout:
+		d = minTimeout
+	}
+	return int32(d / time.Millisecond)
+}
+
+func deadlineToTimeout(deadline time.Time, now time.Time) time.Duration {
+	if deadline.IsZero() {
+		return maxTimeout
+	}
+	return deadline.Sub(now)
+}
+
+func adjustDeadlineForRTT(deadline time.Time, now time.Time, rtt time.Duration) time.Time {
 	if !deadline.IsZero() {
-		timeout = deadline.Sub(time.Now())
-		timeout -= timeout / 4
+		timeout := deadline.Sub(now)
+		if timeout < rtt {
+			rtt = timeout / 4
+		}
+		deadline = deadline.Add(-rtt)
 	}
-	if timeout > timeoutLimit {
-		timeout = timeoutLimit
-	}
-	return int32(timeout / time.Millisecond)
+	return deadline
 }
