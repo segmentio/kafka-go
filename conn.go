@@ -90,7 +90,6 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		panic(fmt.Sprintf("invalid partition number: %d", config.Partition))
 	}
 
-	conn.SetDeadline(time.Time{})
 	return &Conn{
 		conn:      conn,
 		rbuf:      *bufio.NewReader(conn),
