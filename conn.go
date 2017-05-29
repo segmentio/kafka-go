@@ -322,16 +322,10 @@ func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
 
 				if moffset, _, _, size, err = readMessage(r, size,
 					func(r *bufio.Reader, size int, nbytes int) (int, error) {
-						if nbytes > size {
-							nbytes = size
-						}
 						return discardN(r, size, nbytes)
 					},
 					func(r *bufio.Reader, size int, nbytes int) (int, error) {
 						n = nbytes // return value of the ReadAt method
-						if nbytes > size {
-							nbytes = size
-						}
 						if nbytes > len(b) {
 							nbytes = len(b)
 						}
