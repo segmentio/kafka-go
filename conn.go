@@ -64,9 +64,11 @@ type Conn struct {
 	clientID      string
 	topic         string
 	partition     int32
-	correlationID int32
 	fetchMaxBytes int32
 	fetchMinSize  int32
+
+	// correlation ID generator (accessed through atomic operations)
+	correlationID int32
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.

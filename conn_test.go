@@ -95,6 +95,8 @@ func init() {
 }
 
 func TestConn(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		scenario string
 		function func(*testing.T, *Conn)
