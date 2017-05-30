@@ -346,18 +346,7 @@ func testConnWriteReadSequentially(t *testing.T, conn *Conn) {
 }
 
 func testConnWriteBatchReadSequentially(t *testing.T, conn *Conn) {
-	if _, err := conn.WriteMessages(
-		Message{Value: []byte("0")},
-		Message{Value: []byte("1")},
-		Message{Value: []byte("2")},
-		Message{Value: []byte("3")},
-		Message{Value: []byte("4")},
-		Message{Value: []byte("5")},
-		Message{Value: []byte("6")},
-		Message{Value: []byte("7")},
-		Message{Value: []byte("8")},
-		Message{Value: []byte("9")},
-	); err != nil {
+	if _, err := conn.WriteMessages(makeTestSequence(10)...); err != nil {
 		t.Fatal(err)
 	}
 
@@ -450,5 +439,128 @@ func testConnReadEmptyWithDeadline(t *testing.T, conn *Conn) {
 
 	if !isTimeout(err) {
 		t.Error("expected timeout error but got", err)
+	}
+}
+
+func BenchmarkConn(b *testing.B) {
+	benchmarks := []struct {
+		scenario string
+		function func(*testing.B, *Conn, []byte)
+	}{
+		{
+			scenario: "Seek",
+			function: benchmarkConnSeek,
+		},
+
+		{
+			scenario: "Read",
+			function: benchmarkConnRead,
+		},
+
+		{
+			scenario: "ReadBatch",
+			function: benchmarkConnReadBatch,
+		},
+
+		{
+			scenario: "ReadOffsets",
+			function: benchmarkConnReadOffsets,
+		},
+	}
+
+	value := make([]byte, 10e3) // 10 KB
+	msgs := make([]Message, 1000)
+
+	for i := range msgs {
+		msgs[i].Value = value
+	}
+
+	for _, benchmark := range benchmarks {
+		benchFunc := benchmark.function
+		b.Run(benchmark.scenario, func(b *testing.B) {
+			topic := makeTopic()
+			conn, err := DialLeader(context.Background(), "tcp", "localhost:9092", topic, 0)
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer conn.Close()
+			if _, err := conn.WriteMessages(msgs...); err != nil {
+				b.Fatal(err)
+			}
+			b.ResetTimer()
+			benchFunc(b, conn, value)
+		})
+	}
+}
+
+func benchmarkConnSeek(b *testing.B, conn *Conn, _ []byte) {
+	for i := 0; i != b.N; i++ {
+		if _, err := conn.Seek(int64(i%1000), 1); err != nil {
+			b.Error(err)
+			return
+		}
+	}
+}
+
+func benchmarkConnRead(b *testing.B, conn *Conn, a []byte) {
+	n := 0
+	i := 0
+
+	for i != b.N {
+		if (i % 1000) == 0 {
+			if _, err := conn.Seek(0, 0); err != nil {
+				b.Error(err)
+				return
+			}
+		}
+
+		c, err := conn.Read(a)
+		if err != nil {
+			b.Error(err)
+			return
+		}
+
+		n += c
+		i++
+	}
+
+	b.SetBytes(int64(n / i))
+}
+
+func benchmarkConnReadBatch(b *testing.B, conn *Conn, a []byte) {
+	const minBytes = 1
+	const maxBytes = 10e6 // 10 MB
+
+	batch := conn.ReadBatch(minBytes, maxBytes)
+	i := 0
+	n := 0
+
+	for i != b.N {
+		c, err := batch.Read(a)
+		if err != nil {
+			if err = batch.Close(); err != nil {
+				b.Error(err)
+				return
+			}
+			if _, err = conn.Seek(0, 0); err != nil {
+				b.Error(err)
+				return
+			}
+			batch = conn.ReadBatch(minBytes, maxBytes)
+		}
+		n += c
+		i++
+	}
+
+	b.SetBytes(int64(n / i))
+}
+
+func benchmarkConnReadOffsets(b *testing.B, conn *Conn, _ []byte) {
+	for i := 0; i != b.N; i++ {
+		_, _, err := conn.ReadOffsets()
+		if err != nil {
+			b.Error(err)
+			return
+		}
 	}
 }
