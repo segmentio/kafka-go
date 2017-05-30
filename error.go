@@ -1,6 +1,9 @@
 package kafka
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+)
 
 // Error represents the different error codes that may be returned by kafka.
 type Error int
@@ -57,7 +60,7 @@ const (
 	InvalidProducerIDMapping           Error = 49
 	InvalidTransactionTimeout          Error = 50
 	ConcurrentTransactions             Error = 51
-	TransactionCorrdinatorFenced       Error = 52
+	TransactionCoordinatorFenced       Error = 52
 	TransactionalIDAuthorizationFailed Error = 53
 	SecurityDisabled                   Error = 54
 	BrokerAuthorizationFailed          Error = 55
@@ -175,29 +178,29 @@ func (e Error) Title() string {
 	case UnsupportedForMessageFormat:
 		return "Unsupported For Message Format"
 	case PolicyViolation:
-		return ""
+		return "Policy Violation"
 	case OutOfOrderSequenceNumber:
-		return ""
+		return "Out Of Order Sequence Number"
 	case DuplicateSequenceNumber:
-		return ""
+		return "Duplicate Sequence Number"
 	case InvalidProducerEpoch:
-		return ""
+		return "Invalid Producer Epoch"
 	case InvalidTransactionState:
-		return ""
+		return "Invalid Transaction State"
 	case InvalidProducerIDMapping:
-		return ""
+		return "Invalid Producer ID Mapping"
 	case InvalidTransactionTimeout:
-		return ""
+		return "Invalid Transaction Timeout"
 	case ConcurrentTransactions:
-		return ""
-	case TransactionCorrdinatorFenced:
-		return ""
+		return "Concurrent Transactions"
+	case TransactionCoordinatorFenced:
+		return "Transaction Coordinator Fenced"
 	case TransactionalIDAuthorizationFailed:
-		return ""
+		return "Transactional ID Authorization Failed"
 	case SecurityDisabled:
-		return ""
+		return "Security Disabled"
 	case BrokerAuthorizationFailed:
-		return ""
+		return "Broker Authorization Failed"
 	}
 	return ""
 }
@@ -307,7 +310,7 @@ func (e Error) Description() string {
 		return "the transaction timeout is larger than the maximum value allowed by the broker (as configured by max.transaction.timeout.ms)"
 	case ConcurrentTransactions:
 		return "the producer attempted to update a transaction while another concurrent operation on the same transaction was ongoing"
-	case TransactionCorrdinatorFenced:
+	case TransactionCoordinatorFenced:
 		return "the transaction coordinator sending a WriteTxnMarker is no longer the current coordinator for a given producer"
 	case TransactionalIDAuthorizationFailed:
 		return "the transactional ID authorization failed"
@@ -331,4 +334,20 @@ func isTemporary(err error) bool {
 		Temporary() bool
 	})
 	return ok && e.Temporary()
+}
+
+func silentEOF(err error) error {
+	if err == io.EOF {
+		err = nil
+	}
+	return err
+}
+
+func coalesceErrors(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -190,6 +190,27 @@ func (d *Dialer) dialContext(ctx context.Context, network string, address string
 	}).DialContext(ctx, network, address)
 }
 
+// DefaultDialer is the default dialer used when none is specified.
+var DefaultDialer = &Dialer{
+	Timeout:   10 * time.Second,
+	DualStack: true,
+}
+
+// Dial is a convenience wrapper for DefaultDialer.Dial.
+func Dial(network string, address string) (*Conn, error) {
+	return DefaultDialer.Dial(network, address)
+}
+
+// DialContext is a convenience wrapper for DefaultDialer.DialContext.
+func DialContext(ctx context.Context, network string, address string) (*Conn, error) {
+	return DefaultDialer.DialContext(ctx, network, address)
+}
+
+// DialLeader is a convenience wrapper for DefaultDialer.DialLeader.
+func DialLeader(ctx context.Context, network string, address string, topic string, partition int) (*Conn, error) {
+	return DefaultDialer.DialLeader(ctx, network, address, topic, partition)
+}
+
 // The Resolver interface is used as an abstraction to provide service discovery
 // of the hosts of a kafka cluster.
 type Resolver interface {
@@ -198,13 +219,15 @@ type Resolver interface {
 	LookupHost(ctx context.Context, host string) (addrs []string, err error)
 }
 
-func sleep(ctx context.Context, duration time.Duration) {
+func sleep(ctx context.Context, duration time.Duration) bool {
 	timer := time.NewTimer(duration)
+	defer timer.Stop()
 	select {
-	case <-ctx.Done():
 	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
-	timer.Stop()
 }
 
 func backoff(attempt int, min time.Duration, max time.Duration) time.Duration {

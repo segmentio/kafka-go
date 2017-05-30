@@ -103,26 +103,23 @@ func TestProtocol(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		value := test
-		t.Run(fmt.Sprintf("%T", value), func(t *testing.T) {
-			t.Parallel()
-
+		t.Run(fmt.Sprintf("%T", test), func(t *testing.T) {
 			b := &bytes.Buffer{}
 			r := bufio.NewReader(b)
 			w := bufio.NewWriter(b)
 
-			if err := write(w, value); err != nil {
+			if err := write(w, test); err != nil {
 				t.Fatal(err)
 			}
 			if err := w.Flush(); err != nil {
 				t.Fatal(err)
 			}
 
-			if size := int(sizeof(value)); size != b.Len() {
+			if size := int(sizeof(test)); size != b.Len() {
 				t.Error("invalid size:", size, "!=", b.Len())
 			}
 
-			v := reflect.New(reflect.TypeOf(value))
+			v := reflect.New(reflect.TypeOf(test))
 			n := b.Len()
 
 			n, err := read(r, n, v.Interface())
@@ -133,9 +130,9 @@ func TestProtocol(t *testing.T) {
 				t.Errorf("%d unread bytes", n)
 			}
 
-			if !reflect.DeepEqual(value, v.Elem().Interface()) {
+			if !reflect.DeepEqual(test, v.Elem().Interface()) {
 				t.Error("values don't match:")
-				t.Logf("expected: %#v", value)
+				t.Logf("expected: %#v", test)
 				t.Logf("found:    %#v", v.Elem().Interface())
 			}
 		})

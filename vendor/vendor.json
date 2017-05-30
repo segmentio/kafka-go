@@ -3,40 +3,10 @@
 	"ignore": "test",
 	"package": [
 		{
-			"checksumSHA1": "iGAHizBUN43QlmYmn1bPLlNN9pw=",
-			"path": "github.com/hashicorp/consul/api",
-			"revision": "f9d27d2732009fed799bc32e499f09f9e4644f33",
-			"revisionTime": "2017-05-18T14:29:51Z"
-		},
-		{
 			"checksumSHA1": "McdWdV7nHpXLqn2/7zHAmj94MDY=",
 			"path": "github.com/hashicorp/consul/watch",
 			"revision": "f9d27d2732009fed799bc32e499f09f9e4644f33",
 			"revisionTime": "2017-05-18T14:29:51Z"
-		},
-		{
-			"checksumSHA1": "b8F628srIitj5p7Y130xc9k0QWs=",
-			"path": "github.com/hashicorp/go-cleanhttp",
-			"revision": "3573b8b52aa7b37b9358d966a898feb387f62437",
-			"revisionTime": "2017-02-11T01:34:15Z"
-		},
-		{
-			"checksumSHA1": "A1PcINvF3UiwHRKn8UcgARgvGRs=",
-			"path": "github.com/hashicorp/go-rootcerts",
-			"revision": "6bb64b370b90e7ef1fa532be9e591a81c3493e00",
-			"revisionTime": "2016-05-03T14:34:40Z"
-		},
-		{
-			"checksumSHA1": "E3Xcanc9ouQwL+CZGOUyA/+giLg=",
-			"path": "github.com/hashicorp/serf/coordinate",
-			"revision": "65c2babe73c7a096cd24e9eeec67613eb4e436c9",
-			"revisionTime": "2017-04-19T22:16:26Z"
-		},
-		{
-			"checksumSHA1": "V/quM7+em2ByJbWBLOsEwnY3j/Q=",
-			"path": "github.com/mitchellh/go-homedir",
-			"revision": "b8bc1bf767474819792c23f32d8286a45736f1c6",
-			"revisionTime": "2016-12-03T19:45:07Z"
 		},
 		{
 			"checksumSHA1": "rJab1YdNhQooDiBWNnt7TLWPyBU=",

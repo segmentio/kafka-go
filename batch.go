@@ -64,6 +64,7 @@ func (batch *Batch) close() (err error) {
 	}
 
 	if conn != nil {
+		conn.rdeadline.unsetConnReadDeadline()
 		conn.mutex.Lock()
 		conn.offset = batch.offset
 		conn.mutex.Unlock()
@@ -89,6 +90,9 @@ func (batch *Batch) close() (err error) {
 // again will keep returning that error. All errors except io.EOF (indicating
 // that the program consumed all messages from the batch) are also returned by
 // Close.
+//
+// The method fails with io.ErrShortBuffer if the buffer passed as argument is
+// too small to hold the message value.
 func (batch *Batch) Read(b []byte) (int, error) {
 	n := 0
 
@@ -126,6 +130,32 @@ func (batch *Batch) Read(b []byte) (int, error) {
 
 	batch.mutex.Unlock()
 	return n, err
+}
+
+// ReadMessage reads and return the next message from the batch.
+//
+// Because this method allocate memory buffers for the message key and value
+// it is less memory-efficient than Read, but has the advantage of never
+// failing with io.ErrShortBuffer.
+func (batch *Batch) ReadMessage() (Message, error) {
+	msg := Message{}
+	batch.mutex.Lock()
+
+	offset, timestamp, err := batch.readMessage(
+		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
+			msg.Key, remain, err = readNewBytes(r, size, nbytes)
+			return
+		},
+		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
+			msg.Value, remain, err = readNewBytes(r, size, nbytes)
+			return
+		},
+	)
+
+	batch.mutex.Unlock()
+	msg.Offset = offset
+	msg.Time = timestampToTime(timestamp)
+	return msg, err
 }
 
 func (batch *Batch) readMessage(

@@ -210,9 +210,6 @@ func (c *Conn) Offset() (offset int64, whence int) {
 // offset, and 2 means relative to the last offset.
 // The method returns the new absoluate offset of the connection.
 func (c *Conn) Seek(offset int64, whence int) (int64, error) {
-	if offset < 0 {
-		return 0, fmt.Errorf("invalid negative offset (offset = %d)", offset)
-	}
 	switch whence {
 	case 0, 1, 2:
 	default:
@@ -250,8 +247,9 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	return offset, nil
 }
 
-// Read reads the message at the current offset of the connection, advancing
-// the offset on success so the next call to Read produces the next message.
+// Read reads the message at the current offset from the connection, advancing
+// the offset on success so the next call to a read method will produce the next
+// message.
 // The method returns the number of bytes read, or an error if something went
 // wrong.
 //
@@ -260,22 +258,36 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 // be read and written by multiple goroutines, they could read duplicates, or
 // messages may be seen by only some of the goroutines.
 //
+// The method fails with io.ErrShortBuffer if the buffer passed as argument is
+// too small to hold the message value.
+//
 // This method is provided to satisfies the net.Conn interface but is much less
 // efficient than using the more general purpose ReadBatch method.
 func (c *Conn) Read(b []byte) (int, error) {
-	if len(b) == 0 {
-		return 0, nil
-	}
-
 	batch := c.ReadBatch(1, len(b))
-	n, readErr := batch.Read(b)
-	closeErr := batch.Close()
+	n, err := batch.Read(b)
+	return n, coalesceErrors(silentEOF(err), batch.Close())
+}
 
-	if readErr == nil && closeErr != nil {
-		readErr = closeErr
-	}
-
-	return n, readErr
+// ReadMessage reads the message at the current offset from the connection,
+// advancing the offset on success so the next call to a read method will
+// produce the next message.
+//
+// Because this method allocate memory buffers for the message key and value
+// it is less memory-efficient than Read, but has the advantage of never
+// failing with io.ErrShortBuffer.
+//
+// While it is safe to call Read concurrently from multiple goroutines it may
+// be hard for the program to prodict the results as the connection offset will
+// be read and written by multiple goroutines, they could read duplicates, or
+// messages may be seen by only some of the goroutines.
+//
+// This method is provided for convenience purposes but is much less efficient
+// than using the more general purpose ReadBatch method.
+func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
+	batch := c.ReadBatch(1, maxBytes)
+	msg, err := batch.ReadMessage()
+	return msg, coalesceErrors(silentEOF(err), batch.Close())
 }
 
 // ReadBatch reads a batch of messages from the kafka server. The method always

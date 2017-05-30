@@ -94,6 +94,10 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
+func makeTopic() string {
+	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
+}
+
 func TestConn(t *testing.T) {
 	t.Parallel()
 
@@ -166,10 +170,6 @@ func TestConn(t *testing.T) {
 		tcp   = "tcp"
 		kafka = "localhost:9092"
 	)
-
-	makeTopic := func() string {
-		return fmt.Sprintf("kafka-go-%016x", rand.Int63())
-	}
 
 	for _, test := range tests {
 		testFunc := test.function
@@ -361,15 +361,13 @@ func testConnWriteBatchReadSequentially(t *testing.T, conn *Conn) {
 		t.Fatal(err)
 	}
 
-	b := make([]byte, 128)
-
 	for i := 0; i != 10; i++ {
-		n, err := conn.Read(b)
+		msg, err := conn.ReadMessage(128)
 		if err != nil {
 			t.Error(err)
 			continue
 		}
-		s := string(b[:n])
+		s := string(msg.Value)
 		if v, err := strconv.Atoi(s); err != nil {
 			t.Error(err)
 		} else if v != i {

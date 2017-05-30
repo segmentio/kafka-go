@@ -28,14 +28,20 @@ func discardInt64(r *bufio.Reader, sz int) (int, error) {
 }
 
 func discardString(r *bufio.Reader, sz int) (int, error) {
-	return readStringWith(r, sz, func(r *bufio.Reader, sz int, len int16) (int, error) {
-		return discardN(r, sz, int(len))
+	return readStringWith(r, sz, func(r *bufio.Reader, sz int, n int) (int, error) {
+		if n < 0 {
+			return sz, nil
+		}
+		return discardN(r, sz, n)
 	})
 }
 
 func discardBytes(r *bufio.Reader, sz int) (int, error) {
-	return readBytesWith(r, sz, func(r *bufio.Reader, sz int, len int32) (int, error) {
-		return discardN(r, sz, int(len))
+	return readBytesWith(r, sz, func(r *bufio.Reader, sz int, n int) (int, error) {
+		if n < 0 {
+			return sz, nil
+		}
+		return discardN(r, sz, n)
 	})
 }
 

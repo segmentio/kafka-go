@@ -1,0 +1,361 @@
+package kafka
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"math"
+	"sync"
+	"time"
+)
+
+// Reader provides a high-level API for consuming messages from kafka.
+//
+// A Reader automatically manages reconnections to a kafka server, and
+// blocking methods have context support for asynchronous cancellations.
+type Reader struct {
+	// immutable fields of the reader
+	config ReaderConfig
+
+	// communication channels between the parent reader and its subreaders
+	msgs chan readerMessage
+	errs chan readerError
+	done chan struct{}
+
+	// mutable fields of the reader (synchronized on the mutex)
+	mutex   sync.Mutex
+	ctx     context.Context
+	cancel  context.CancelFunc
+	version int64
+	offset  int64
+	dirty   bool
+	closed  bool
+}
+
+// ReaderConfig is a configuration object used to create new instances of
+// Reader.
+type ReaderConfig struct {
+	// The list of broker addresses used to connect to the kafka cluster.
+	Brokers []string
+
+	// The topic to read messages from.
+	Topic string
+
+	// The partition number to read messages from.
+	Partition int
+
+	// An dialer used to open connections to the kafka server. This field is
+	// optional, if nil, the default dialer is used instead.
+	Dialer *Dialer
+
+	// Min and max number of bytes to fetch from kafka in each request.
+	MinBytes int
+	MaxBytes int
+
+	// Maximum amount of time to wait for new data to come when fetching batches
+	// of messages from kafka.
+	MaxWait time.Duration
+}
+
+// NewReader creates and returns a new Reader configured with config.
+func NewReader(config ReaderConfig) *Reader {
+	if len(config.Brokers) == 0 {
+		panic("cannot create a new kafka reader with an empty list of broker addresses")
+	}
+
+	if len(config.Topic) == 0 {
+		panic("cannot create a new kafka reader with an empty topic")
+	}
+
+	if config.Partition < 0 || config.Partition >= math.MaxInt32 {
+		panic(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
+	}
+
+	if config.Dialer == nil {
+		config.Dialer = DefaultDialer
+	}
+
+	if config.MinBytes > config.MaxBytes {
+		panic(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
+	}
+
+	if config.MinBytes < 0 {
+		panic(fmt.Sprintf("invalid negative minimum batch size (min = %d)", config.MinBytes))
+	}
+
+	if config.MaxBytes < 0 {
+		panic(fmt.Sprintf("invalid negative maximum batch size (max = %d)", config.MaxBytes))
+	}
+
+	if config.MaxBytes == 0 {
+		config.MaxBytes = 10e6 // 10 MB
+	}
+
+	if config.MinBytes == 0 {
+		config.MinBytes = config.MaxBytes
+	}
+
+	if config.MaxWait == 0 {
+		config.MaxWait = 10 * time.Second
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Reader{
+		config: config,
+		msgs:   make(chan readerMessage),
+		errs:   make(chan readerError),
+		done:   make(chan struct{}),
+		ctx:    ctx,
+		cancel: cancel,
+		offset: -1,
+		dirty:  true,
+	}
+}
+
+// Config returns the reader's configuration.
+func (r *Reader) Config() ReaderConfig {
+	return r.config
+}
+
+// Close closes the stream, preventing the program from reading any more
+// messages from it.
+func (r *Reader) Close() error {
+	r.mutex.Lock()
+	if !r.closed {
+		close(r.done)
+	}
+	r.closed = true
+	r.dirty = false
+	r.cancel()
+	r.mutex.Unlock()
+	return nil
+}
+
+// ReadMessage reads and return the next message from the r. The method call
+// blocks until a message becomes available, or an error occurs. The program
+// may also specify a context to asynchronously cancel the blocking operation.
+func (r *Reader) ReadMessage(ctx context.Context) (msg Message, err error) {
+	for {
+		r.mutex.Lock()
+
+		if r.dirty {
+			subctx, cancel := context.WithCancel(context.Background())
+
+			r.cancel() // always cancel the previous reader
+			r.cancel = cancel
+			r.dirty = false
+			r.version++
+
+			go (&reader{
+				dialer:    r.config.Dialer,
+				brokers:   r.config.Brokers,
+				topic:     r.config.Topic,
+				partition: r.config.Partition,
+				minBytes:  r.config.MinBytes,
+				maxBytes:  r.config.MaxBytes,
+				maxWait:   r.config.MaxWait,
+				version:   r.version,
+				msgs:      r.msgs,
+				errs:      r.errs,
+			}).run(subctx, r.offset)
+		}
+
+		rctx, version := r.ctx, r.version
+		r.mutex.Unlock()
+
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			return
+
+		case m := <-r.msgs:
+			if m.version >= version {
+				r.mutex.Lock()
+				if version == r.version {
+					r.offset = m.message.Offset + 1
+				}
+				r.mutex.Unlock()
+				msg = m.message
+				return
+			}
+
+		case e := <-r.errs:
+			if e.version >= version {
+				err = e.error
+				return
+			}
+
+		case <-r.done:
+			err = io.ErrClosedPipe
+			return
+
+		case <-rctx.Done():
+			// The subreader was canceled, loop back to start a new one.
+		}
+	}
+}
+
+// Offset returns the current offset of the reader.
+func (r *Reader) Offset() int64 {
+	r.mutex.Lock()
+	offset := r.offset
+	r.mutex.Unlock()
+	return offset
+}
+
+// SetOffset changes the offset from which the next batch of messages will be
+// read.
+//
+// The method fails with io.ErrClosedPipe if the reader has already been closed.
+func (r *Reader) SetOffset(offset int64) error {
+	var err error
+	r.mutex.Lock()
+	if r.closed {
+		err = io.ErrClosedPipe
+	} else if offset != r.offset {
+		r.offset = offset
+		r.dirty = true
+		r.cancel() // may wake up a blocked Read call to spawn a new reader
+	}
+	r.mutex.Unlock()
+	return err
+}
+
+// A reader reads messages from kafka and produces them on its channels, it's
+// used as an way to asynchronously fetch messages while the main program reads
+// them using the high level reader API.
+type reader struct {
+	dialer    *Dialer
+	brokers   []string
+	topic     string
+	partition int
+	minBytes  int
+	maxBytes  int
+	maxWait   time.Duration
+	version   int64
+	msgs      chan<- readerMessage
+	errs      chan<- readerError
+}
+
+type readerMessage struct {
+	version int64
+	message Message
+}
+
+type readerError struct {
+	version int64
+	error   error
+}
+
+func (r *reader) run(ctx context.Context, offset int64) {
+	// This is the reader's main loop, it only ends if the context is canceled
+	// and will keep attempting to reader messages otherwise.
+	//
+	// Retrying indefinitely has the nice side effect of preventing Read calls
+	// on the parent reader to block if connection to the kafka server fails,
+	// the reader keeps reporting errors on the error channel which will then
+	// be surfaced to the program.
+	// If the reader wasn't retrying then the program would block indefinitely
+	// on a Read call after reading the first error.
+	for attempt := 0; true; attempt++ {
+		if attempt != 0 {
+			if !sleep(ctx, backoff(attempt, time.Second, time.Minute)) {
+				return
+			}
+		}
+
+		conn, start, err := r.initialize(ctx, offset)
+		if err != nil {
+			r.sendError(ctx, err)
+			continue
+		}
+
+		// Resetting the attempt counter ensures that if a failre occurs after
+		// a successful initialization we don't keep increasing the backoff
+		// timeout.
+		attempt = 0
+
+		// Now we're sure to have an absolute offset number, may anything happen
+		// to the connection we know we'll want to restart from this offset.
+		offset = start
+
+	readLoop:
+		for {
+			switch offset, err = r.read(ctx, offset, conn); err {
+			case nil:
+			case RequestTimedOut:
+			case context.Canceled: // another reader has taken over
+				conn.Close()
+				return
+			default:
+				conn.Close()
+				break readLoop
+			}
+		}
+	}
+}
+
+func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, start int64, err error) {
+	var whence int
+
+	if offset < 0 {
+		offset = 0
+	} else {
+		whence = 1
+	}
+
+	for _, broker := range r.brokers {
+		if conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition); err != nil {
+			continue
+		}
+		if start, err = conn.Seek(offset, whence); err != nil {
+			conn.Close()
+			break
+		}
+	}
+
+	return
+}
+
+func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, error) {
+	conn.SetReadDeadline(time.Now().Add(r.maxWait))
+	batch := conn.ReadBatch(r.minBytes, r.maxBytes)
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
+	var msg Message
+	var err error
+
+	for {
+		if msg, err = batch.ReadMessage(); err != nil {
+			err = batch.Close()
+			break
+		}
+
+		if err = r.sendMessage(ctx, msg); err != nil {
+			batch.Close()
+			break
+		}
+
+		offset = msg.Offset + 1
+	}
+
+	return offset, err
+}
+
+func (r *reader) sendMessage(ctx context.Context, msg Message) error {
+	select {
+	case r.msgs <- readerMessage{version: r.version, message: msg}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (r *reader) sendError(ctx context.Context, err error) error {
+	select {
+	case r.errs <- readerError{version: r.version, error: err}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}

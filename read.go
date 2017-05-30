@@ -39,26 +39,13 @@ func readInt64(r *bufio.Reader, sz int, v *int64) (int, error) {
 }
 
 func readString(r *bufio.Reader, sz int, v *string) (int, error) {
-	return readStringWith(r, sz, func(r *bufio.Reader, sz int, len int16) (int, error) {
-		var err error
-		var b []byte
-		var n = int(len)
-
-		if n > sz {
-			return sz, errShortRead
-		}
-
-		if n > 0 {
-			b = make([]byte, n)
-			n, err = io.ReadFull(r, b)
-			*v = string(b[:n])
-		}
-
-		return sz - n, err
+	return readStringWith(r, sz, func(r *bufio.Reader, sz int, n int) (remain int, err error) {
+		*v, remain, err = readNewString(r, sz, n)
+		return
 	})
 }
 
-func readStringWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int16) (int, error)) (int, error) {
+func readStringWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (int, error)) (int, error) {
 	var err error
 	var len int16
 
@@ -66,34 +53,27 @@ func readStringWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int16) 
 		return sz, err
 	}
 
-	if sz < int(len) {
+	n := int(len)
+	if n > sz {
 		return sz, errShortRead
 	}
 
-	return cb(r, sz, len)
+	return cb(r, sz, n)
+}
+
+func readNewString(r *bufio.Reader, sz int, n int) (string, int, error) {
+	b, sz, err := readNewBytes(r, sz, n)
+	return string(b), sz, err
 }
 
 func readBytes(r *bufio.Reader, sz int, v *[]byte) (int, error) {
-	return readBytesWith(r, sz, func(r *bufio.Reader, sz int, len int32) (int, error) {
-		var err error
-		var b []byte
-		var n = int(len)
-
-		if n > sz {
-			return sz, errShortRead
-		}
-
-		if n > 0 {
-			b = make([]byte, n)
-			n, err = io.ReadFull(r, b)
-			*v = b[:n]
-		}
-
-		return sz - n, err
+	return readBytesWith(r, sz, func(r *bufio.Reader, sz int, n int) (remain int, err error) {
+		*v, remain, err = readNewBytes(r, sz, n)
+		return
 	})
 }
 
-func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int32) (int, error)) (int, error) {
+func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (int, error)) (int, error) {
 	var err error
 	var len int32
 
@@ -101,15 +81,26 @@ func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int32) (
 		return sz, err
 	}
 
-	if len < 0 {
-		len = 0
-	}
-
-	if sz < int(len) {
+	n := int(len)
+	if n > sz {
 		return sz, errShortRead
 	}
 
-	return cb(r, sz, len)
+	return cb(r, sz, n)
+}
+
+func readNewBytes(r *bufio.Reader, sz int, n int) ([]byte, int, error) {
+	var err error
+	var b []byte
+
+	if n > 0 {
+		b = make([]byte, n)
+		n, err = io.ReadFull(r, b)
+		b = b[:n]
+		sz -= n
+	}
+
+	return b, sz, err
 }
 
 func readArrayWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int) (int, error)) (int, error) {
@@ -288,12 +279,6 @@ func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, 
 	return
 }
 
-func readMessageBytes(r *bufio.Reader, sz int, read func(*bufio.Reader, int, int) (int, error)) (int, error) {
-	return readBytesWith(r, sz, func(r *bufio.Reader, sz int, len int32) (int, error) {
-		return read(r, sz, int(len))
-	})
-}
-
 func readMessage(r *bufio.Reader, sz int,
 	min int64,
 	key func(*bufio.Reader, int, int) (int, error),
@@ -309,10 +294,10 @@ func readMessage(r *bufio.Reader, sz int,
 		// earlier offset than the one that was requested, apparently it's the
 		// client's responsibility to ignore those.
 		if offset >= min {
-			if remain, err = readMessageBytes(r, remain, key); err != nil {
+			if remain, err = readBytesWith(r, remain, key); err != nil {
 				return
 			}
-			remain, err = readMessageBytes(r, remain, val)
+			remain, err = readBytesWith(r, remain, val)
 			return
 		}
 
