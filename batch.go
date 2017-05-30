@@ -158,10 +158,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	return msg, err
 }
 
-func (batch *Batch) readMessage(
-	key func(r *bufio.Reader, size int, nbytes int) (int, error),
-	val func(r *bufio.Reader, size int, nbytes int) (int, error),
-) (offset int64, timestamp int64, err error) {
+func (batch *Batch) readMessage(key readBytesFunc, val readBytesFunc) (offset int64, timestamp int64, err error) {
 	if err = batch.err; err != nil {
 		return
 	}

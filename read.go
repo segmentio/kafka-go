@@ -8,6 +8,10 @@ import (
 	"reflect"
 )
 
+type readBytesFunc func(r *bufio.Reader, sz int, n int) (remain int, err error)
+
+type readArrayFunc func(r *bufio.Reader, sz int) (remain int, err error)
+
 var errShortRead = errors.New("not enough bytes available to load the response")
 
 func peekRead(r *bufio.Reader, sz int, n int, f func([]byte)) (int, error) {
@@ -45,7 +49,7 @@ func readString(r *bufio.Reader, sz int, v *string) (int, error) {
 	})
 }
 
-func readStringWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (int, error)) (int, error) {
+func readStringWith(r *bufio.Reader, sz int, cb readBytesFunc) (int, error) {
 	var err error
 	var len int16
 
@@ -73,7 +77,7 @@ func readBytes(r *bufio.Reader, sz int, v *[]byte) (int, error) {
 	})
 }
 
-func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (int, error)) (int, error) {
+func readBytesWith(r *bufio.Reader, sz int, cb readBytesFunc) (int, error) {
 	var err error
 	var len int32
 
@@ -103,7 +107,7 @@ func readNewBytes(r *bufio.Reader, sz int, n int) ([]byte, int, error) {
 	return b, sz, err
 }
 
-func readArrayWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int) (int, error)) (int, error) {
+func readArrayWith(r *bufio.Reader, sz int, cb readArrayFunc) (int, error) {
 	var err error
 	var len int32
 
