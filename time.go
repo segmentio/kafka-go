@@ -26,6 +26,10 @@ func timestampToTime(t int64) time.Time {
 	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
 }
 
+func duration(ms int32) time.Duration {
+	return time.Duration(ms) * time.Millisecond
+}
+
 func milliseconds(d time.Duration) int32 {
 	switch {
 	case d > maxTimeout:

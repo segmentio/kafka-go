@@ -3,7 +3,6 @@ package kafka
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"os"
@@ -254,139 +253,100 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 // The method returns the number of bytes read, or an error if something went
 // wrong.
 //
-// While it is safe to call read concurrently from multiple goroutines it may
+// While it is safe to call Read concurrently from multiple goroutines it may
 // be hard for the program to prodict the results as the connection offset will
 // be read and written by multiple goroutines, they could read duplicates, or
 // messages may be seen by only some of the goroutines.
 //
-// Read satisfies the io.Reader interface.
+// This method is provided to satisfies the net.Conn interface but is much less
+// efficient than using the more general purpose ReadBatch method.
 func (c *Conn) Read(b []byte) (int, error) {
+	if len(b) == 0 {
+		return 0, nil
+	}
+
+	batch := c.ReadBatch(1, len(b))
+	n, readErr := batch.Read(b)
+	closeErr := batch.Close()
+
+	if readErr == nil && closeErr != nil {
+		readErr = closeErr
+	}
+
+	return n, readErr
+}
+
+// ReadBatch reads a batch of messages from the kafka server. The method always
+// returns a non-nil Batch value. If an error occurred, either sending the fetch
+// request or reading the response, the error will be made available by the
+// returned value of  the batch's Close method.
+//
+// While it is safe to call ReadBatch concurrently from multiple goroutines it
+// may be hard for the program to prodict the results as the connection offset
+// will be read and written by multiple goroutines, they could read duplicates,
+// or messages may be seen by only some of the goroutines.
+//
+// A program doesn't specify the number of messages in wants from a batch, but
+// gives the minimum and maximum number of bytes that it wants to receive from
+// the kafka server.
+func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
+	var adjustedDeadline time.Time
+	var maxFetch = int(c.fetchMaxBytes)
+
+	if minBytes < 0 || minBytes > maxFetch {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", minBytes, maxFetch)}
+	}
+	if maxBytes < 0 || maxBytes > maxFetch {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", maxBytes, maxFetch)}
+	}
+	if minBytes > maxBytes {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", minBytes, maxBytes)}
+	}
+
 	offset, err := c.Seek(c.Offset())
 	if err != nil {
-		return 0, err
-	}
-	n, offset, err := c.ReadAt(b, offset)
-	if err == nil {
-		c.mutex.Lock()
-		c.offset = offset + 1
-		c.mutex.Unlock()
-	}
-	return n, err
-}
-
-// ReadAt reads the message at the given absolute offset, returning the number
-// of bytes read and the offset of the next message, or an error if something
-// went wrong.
-//
-// Unlike Read, the method doesn't modify the offset of the connection.
-func (c *Conn) ReadAt(b []byte, offset int64) (int, int64, error) {
-	maxBytes := len(b)
-	maxFetch := int(c.fetchMaxBytes)
-	if maxBytes > maxFetch {
-		maxBytes = maxFetch
+		return &Batch{err: err}
 	}
 
-	var adjustedDeadline time.Time
-	var ok bool
-	var n int
-	var err = c.readOperation(
-		func(deadline time.Time, id int32) error {
-			now := time.Now()
-			adj := adjustDeadlineForRTT(deadline, now, defaultRTT)
-			err := c.writeRequest(fetchRequest, v1, id, fetchRequestV1{
-				ReplicaID:   -1,
-				MinBytes:    1,
-				MaxWaitTime: milliseconds(deadlineToTimeout(adj, now)),
-				Topics: []fetchRequestTopicV1{{
-					TopicName: c.topic,
-					Partitions: []fetchRequestPartitionV1{{
-						Partition:   c.partition,
-						MaxBytes:    c.fetchMinSize + int32(maxBytes),
-						FetchOffset: offset,
-					}},
+	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
+		now := time.Now()
+		adj := adjustDeadlineForRTT(deadline, now, defaultRTT)
+		err := c.writeRequest(fetchRequest, v1, id, fetchRequestV1{
+			ReplicaID:   -1,
+			MinBytes:    int32(minBytes),
+			MaxWaitTime: milliseconds(deadlineToTimeout(adj, now)),
+			Topics: []fetchRequestTopicV1{{
+				TopicName: c.topic,
+				Partitions: []fetchRequestPartitionV1{{
+					Partition:   c.partition,
+					MaxBytes:    c.fetchMinSize + int32(maxBytes),
+					FetchOffset: offset,
 				}},
-			})
-			adjustedDeadline = adj
-			return err
-		},
-		func(deadline time.Time, size int) error {
-			var r = &c.rbuf
-
-			_, size, err := readFetchResponseHeader(r, size)
-			if err != nil {
-				return err
-			}
-
-			for size != 0 {
-				var moffset int64
-
-				if moffset, _, _, size, err = readMessage(r, size,
-					func(r *bufio.Reader, size int, nbytes int) (int, error) {
-						return discardN(r, size, nbytes)
-					},
-					func(r *bufio.Reader, size int, nbytes int) (int, error) {
-						n = nbytes // return value of the ReadAt method
-						if nbytes > len(b) {
-							nbytes = len(b)
-						}
-						nbytes, err := io.ReadFull(r, b[:nbytes])
-						return size - nbytes, err
-					},
-				); err != nil {
-					break
-				}
-
-				// When the messages are compressed kafka may return messages at
-				// an earlier offset than the one that was requested, apparently
-				// it's the client's responsibility to ignore those.
-				if moffset >= offset {
-					offset, ok = moffset, true
-					// There may be trailing bytes if more than one message was
-					// returned, in which case we simply ignore them all.
-					size, err = discardN(r, size, size)
-					break
-				}
-			}
-
-			// As an "optimization" kafka truncates the returned response
-			// after producing MaxBytes, which could then cause the code to
-			// return errShortRead.
-			// Because we read at least c.fetchMinSize bytes we should be
-			// able to decode all the control values for the first message,
-			// and errShortRead should only happen when reading the message
-			// key or value.
-			// I'm not sure this is rock solid and there may be some weird
-			// edge cases...
-			// There's just so much we can do with questionable design.
-			if err == errShortRead {
-				size, err = discardN(r, size, size)
-			}
-			return expectZeroSize(size, err)
-		},
-	)
-
-	if err == nil {
-		if n == 0 && time.Now().After(adjustedDeadline) {
-			// Because we use the adjusted deadline we could end up returning
-			// before the actual deadline occurred. This is necessary otherwise
-			// timing out the connection for read could end up leaving it in an
-			// unpredictable state, which would require closing it.
-			// This design decision was main to maximize the changes of keeping
-			// the connection open, the trade off being to lose precision on the
-			// read deadline management.
-			err = RequestTimedOut
-		} else if !ok {
-			n, err = 0, io.ErrShortBuffer
-		} else if n > len(b) {
-			n, err = len(b), io.ErrShortBuffer
-		}
+			}},
+		})
+		adjustedDeadline = adj
+		return err
+	})
+	if err != nil {
+		return &Batch{err: err}
 	}
 
-	return n, offset, err
-}
+	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
+	if err != nil {
+		return &Batch{err: err}
+	}
 
-func (c *Conn) ReadBatch(maxBytes int) *Batch {
-	return nil
+	throttle, remain, err := readFetchResponseHeader(&c.rbuf, int(size))
+	return &Batch{
+		conn:     c,
+		reader:   &c.rbuf,
+		deadline: adjustedDeadline,
+		throttle: duration(throttle),
+		lock:     lock,
+		remain:   remain,
+		offset:   offset,
+		err:      err,
+	}
 }
 
 // ReadOffset returns the offset of the first message with a timestamp equal or
@@ -518,7 +478,8 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 //
 // The operation either succeeds or fail, it never partially writes the message.
 //
-// Write satisfies the io.Writer interface.
+// This method is exposed to satisfy the net.Conn interface but is less efficient
+// than the more general purpose WriteMessages method.
 func (c *Conn) Write(b []byte) (int, error) {
 	return c.WriteMessages(Message{Value: b})
 }
@@ -656,7 +617,7 @@ func (c *Conn) do(d *connDeadline, write writeFunc, read readFunc) error {
 		return err
 	}
 
-	if err = read(deadline, int(size)-4); err != nil {
+	if err = read(deadline, int(size)); err != nil {
 		switch err.(type) {
 		case Error:
 		default:
@@ -704,7 +665,7 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 
 		if id == rid {
 			c.skipResponseSizeAndID()
-			size, lock = rsz, &c.rlock
+			size, lock = rsz-4, &c.rlock
 			return
 		}
 

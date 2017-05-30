@@ -40,17 +40,18 @@ func readInt64(r *bufio.Reader, sz int, v *int64) (int, error) {
 
 func readString(r *bufio.Reader, sz int, v *string) (int, error) {
 	return readStringWith(r, sz, func(r *bufio.Reader, sz int, len int16) (int, error) {
+		var err error
 		var b []byte
 		var n = int(len)
 
 		if n > sz {
 			return sz, errShortRead
 		}
-		b = make([]byte, n)
 
-		n, err := io.ReadFull(r, b)
-		if err == nil {
-			*v = string(b)
+		if n > 0 {
+			b = make([]byte, n)
+			n, err = io.ReadFull(r, b)
+			*v = string(b[:n])
 		}
 
 		return sz - n, err
@@ -65,10 +66,6 @@ func readStringWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int16) 
 		return sz, err
 	}
 
-	if len < 0 {
-		len = 0
-	}
-
 	if sz < int(len) {
 		return sz, errShortRead
 	}
@@ -77,18 +74,19 @@ func readStringWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int16) 
 }
 
 func readBytes(r *bufio.Reader, sz int, v *[]byte) (int, error) {
-	return readStringWith(r, sz, func(r *bufio.Reader, sz int, len int16) (int, error) {
+	return readBytesWith(r, sz, func(r *bufio.Reader, sz int, len int32) (int, error) {
+		var err error
 		var b []byte
 		var n = int(len)
 
 		if n > sz {
 			return sz, errShortRead
 		}
-		b = make([]byte, n)
 
-		n, err := io.ReadFull(r, b)
-		if err == nil {
-			*v = b
+		if n > 0 {
+			b = make([]byte, n)
+			n, err = io.ReadFull(r, b)
+			*v = b[:n]
 		}
 
 		return sz - n, err
@@ -252,33 +250,22 @@ func readFetchResponseHeader(r *bufio.Reader, size int) (throttle int32, remain 
 
 func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, timestamp int64, remain int, err error) {
 	var version int8
-	var msgsize int32
 
 	if remain, err = readInt64(r, sz, &offset); err != nil {
 		return
 	}
 
-	// Not sure why kafka gives the message size here, we already have the
+	// On discarding the message size and CRC:
+	// ---------------------------------------
+	//
+	// - Not sure why kafka gives the message size here, we already have the
 	// number of remaining bytes in the response and kafka should only truncate
-	// the trailing message. We still do a consistency check in case the server
-	// returns something weird.
-	if remain, err = readInt32(r, remain, &msgsize); err != nil {
-		return
-	}
-
-	if msgsize < 0 {
-		err = fmt.Errorf("invalid negative message size of %d in the fetch response", msgsize)
-		return
-	}
-
-	if int(msgsize) > remain {
-		err = fmt.Errorf("a message size of %d bytes in the fetch response exceeds the remaining size of %d bytes", msgsize, remain)
-		return
-	}
-
-	// TCP is already taking care of ensuring data integrirty, no need to waste
-	// resources doing it a second time so we just skip the message CRC.
-	if remain, err = discardInt32(r, remain); err != nil {
+	// the trailing message.
+	//
+	// - TCP is already taking care of ensuring data integrirty, no need to
+	// waste resources doing it a second time so we just skip the message CRC.
+	//
+	if remain, err = discardN(r, remain, 8); err != nil {
 		return
 	}
 
@@ -308,24 +295,44 @@ func readMessageBytes(r *bufio.Reader, sz int, read func(*bufio.Reader, int, int
 }
 
 func readMessage(r *bufio.Reader, sz int,
+	min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, attributes int8, timestamp int64, remain int, err error) {
-	if offset, attributes, timestamp, remain, err = readMessageHeader(r, sz); err != nil {
-		return
+) (offset int64, timestamp int64, remain int, err error) {
+	for {
+		// TODO: read attributes and decompress the message
+		if offset, _, timestamp, remain, err = readMessageHeader(r, sz); err != nil {
+			return
+		}
+
+		// When the messages are compressed kafka may return messages at an
+		// earlier offset than the one that was requested, apparently it's the
+		// client's responsibility to ignore those.
+		if offset >= min {
+			if remain, err = readMessageBytes(r, remain, key); err != nil {
+				return
+			}
+			remain, err = readMessageBytes(r, remain, val)
+			return
+		}
+
+		if remain, err = discardBytes(r, remain); err != nil {
+			return
+		}
+		if remain, err = discardBytes(r, remain); err != nil {
+			return
+		}
 	}
-	if remain, err = readMessageBytes(r, remain, key); err != nil {
-		return
-	}
-	remain, err = readMessageBytes(r, remain, val)
-	return
 }
 
 func readResponse(r *bufio.Reader, sz int, res interface{}) error {
 	sz, err := read(r, sz, res)
 	switch err.(type) {
 	case Error:
-		sz, err = discardN(r, sz, sz)
+		var e error
+		if sz, e = discardN(r, sz, sz); e != nil {
+			err = e
+		}
 	}
 	return expectZeroSize(sz, err)
 }
