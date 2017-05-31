@@ -27,7 +27,7 @@ func (msg Message) message() message {
 		MagicByte: 1,
 		Key:       msg.Key,
 		Value:     msg.Value,
-		Timestamp: timeToTimestamp(msg.Time),
+		Timestamp: timestamp(msg.Time),
 	}
 	m.CRC = m.crc32()
 	return m
@@ -43,17 +43,7 @@ type message struct {
 }
 
 func (m message) crc32() int32 {
-	b := acquireCrc32Buffer()
-	b.writeInt8(m.MagicByte)
-	b.writeInt8(m.Attributes)
-	if m.MagicByte != 0 {
-		b.writeInt64(m.Timestamp)
-	}
-	b.writeBytes(m.Key)
-	b.writeBytes(m.Value)
-	sum := b.sum
-	releaseCrc32Buffer(b)
-	return int32(sum)
+	return int32(crc32OfMessage(m.MagicByte, m.Attributes, m.Timestamp, m.Key, m.Value))
 }
 
 func (m message) size() int32 {

@@ -95,3 +95,17 @@ func (p produceResponsePartitionV2) writeTo(w *bufio.Writer) {
 	writeInt64(w, p.Offset)
 	writeInt64(w, p.Timestamp)
 }
+
+func (p *produceResponsePartitionV2) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
+	if remain, err = readInt32(r, sz, &p.Partition); err != nil {
+		return
+	}
+	if remain, err = readInt16(r, remain, &p.ErrorCode); err != nil {
+		return
+	}
+	if remain, err = readInt64(r, remain, &p.Offset); err != nil {
+		return
+	}
+	remain, err = readInt64(r, remain, &p.Timestamp)
+	return
+}

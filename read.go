@@ -8,9 +8,9 @@ import (
 	"reflect"
 )
 
-type readBytesFunc func(r *bufio.Reader, sz int, n int) (remain int, err error)
-
-type readArrayFunc func(r *bufio.Reader, sz int) (remain int, err error)
+type readable interface {
+	readFrom(*bufio.Reader, int) (int, error)
+}
 
 var errShortRead = errors.New("not enough bytes available to load the response")
 
@@ -49,7 +49,7 @@ func readString(r *bufio.Reader, sz int, v *string) (int, error) {
 	})
 }
 
-func readStringWith(r *bufio.Reader, sz int, cb readBytesFunc) (int, error) {
+func readStringWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (int, error)) (int, error) {
 	var err error
 	var len int16
 
@@ -77,7 +77,7 @@ func readBytes(r *bufio.Reader, sz int, v *[]byte) (int, error) {
 	})
 }
 
-func readBytesWith(r *bufio.Reader, sz int, cb readBytesFunc) (int, error) {
+func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (int, error)) (int, error) {
 	var err error
 	var len int32
 
@@ -107,7 +107,7 @@ func readNewBytes(r *bufio.Reader, sz int, n int) ([]byte, int, error) {
 	return b, sz, err
 }
 
-func readArrayWith(r *bufio.Reader, sz int, cb readArrayFunc) (int, error) {
+func readArrayWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int) (int, error)) (int, error) {
 	var err error
 	var len int32
 
@@ -146,6 +146,39 @@ func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
 		return readSlice(r, sz, v)
 	default:
 		panic(fmt.Sprintf("unsupported type: %T", a))
+	}
+}
+
+func readAll(r *bufio.Reader, sz int, ptrs ...interface{}) (int, error) {
+	var err error
+
+	for _, ptr := range ptrs {
+		if sz, err = readPtr(r, sz, ptr); err != nil {
+			break
+		}
+	}
+
+	return sz, err
+}
+
+func readPtr(r *bufio.Reader, sz int, ptr interface{}) (int, error) {
+	switch v := ptr.(type) {
+	case *int8:
+		return readInt8(r, sz, v)
+	case *int16:
+		return readInt16(r, sz, v)
+	case *int32:
+		return readInt32(r, sz, v)
+	case *int64:
+		return readInt64(r, sz, v)
+	case *string:
+		return readString(r, sz, v)
+	case *[]byte:
+		return readBytes(r, sz, v)
+	case readable:
+		return v.readFrom(r, sz)
+	default:
+		panic(fmt.Sprintf("unsupported type: %T", v))
 	}
 }
 
@@ -283,7 +316,10 @@ func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, 
 	return
 }
 
-func readMessage(r *bufio.Reader, sz int, min int64, key readBytesFunc, val readBytesFunc) (offset int64, timestamp int64, remain int, err error) {
+func readMessage(r *bufio.Reader, sz int, min int64,
+	key func(*bufio.Reader, int, int) (int, error),
+	val func(*bufio.Reader, int, int) (int, error),
+) (offset int64, timestamp int64, remain int, err error) {
 	for {
 		// TODO: read attributes and decompress the message
 		if offset, _, timestamp, remain, err = readMessageHeader(r, sz); err != nil {

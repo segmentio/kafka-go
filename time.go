@@ -11,11 +11,7 @@ const (
 	defaultRTT = 1 * time.Second
 )
 
-func timestamp() int64 {
-	return timeToTimestamp(time.Now())
-}
-
-func timeToTimestamp(t time.Time) int64 {
+func timestamp(t time.Time) int64 {
 	if t.IsZero() {
 		return 0
 	}

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -59,7 +58,7 @@ type Conn struct {
 	fetchMaxBytes int32
 	fetchMinSize  int32
 
-	// correlation ID generator (accessed through atomic operations)
+	// correlation ID generator (synchronized on wlock)
 	correlationID int32
 }
 
@@ -342,7 +341,7 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 		return &Batch{err: err}
 	}
 
-	throttle, remain, err := readFetchResponseHeader(&c.rbuf, int(size))
+	throttle, remain, err := readFetchResponseHeader(&c.rbuf, size)
 	return &Batch{
 		conn:     c,
 		reader:   &c.rbuf,
@@ -358,7 +357,7 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 // ReadOffset returns the offset of the first message with a timestamp equal or
 // greater to t.
 func (c *Conn) ReadOffset(t time.Time) (int64, error) {
-	return c.readOffset(timeToTimestamp(t))
+	return c.readOffset(timestamp(t))
 }
 
 // ReadOffsets returns the absolute first and last offsets of the topic used by
@@ -498,30 +497,24 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 		return 0, nil
 	}
 
-	var n int
-	var set = make(messageSet, len(msgs))
-
-	for i, msg := range msgs {
+	n := 0
+	for _, msg := range msgs {
 		n += len(msg.Key) + len(msg.Value)
-		set[i] = msg.item()
 	}
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-			return c.writeRequest(produceRequest, v2, id, produceRequestV2{
-				RequiredAcks: -1,
-				Timeout:      milliseconds(deadlineToTimeout(deadline, now)),
-				Topics: []produceRequestTopicV2{{
-					TopicName: c.topic,
-					Partitions: []produceRequestPartitionV2{{
-						Partition:      c.partition,
-						MessageSetSize: set.size(),
-						MessageSet:     set,
-					}},
-				}},
-			})
+			return writeProduceRequest(
+				&c.wbuf,
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				deadlineToTimeout(deadline, now),
+				msgs...,
+			)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
@@ -536,7 +529,7 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 				// we've produced a message to a single partition.
 				size, err = readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
 					var p produceResponsePartitionV2
-					size, err := read(r, size, &p)
+					size, err := p.readFrom(r, size)
 					if err == nil && p.ErrorCode != 0 {
 						err = Error(p.ErrorCode)
 					}
@@ -558,6 +551,12 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 	}
 
 	return n, err
+}
+
+func (c *Conn) writeRequestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32, size int32) {
+	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
+	hdr.Size = (hdr.size() + size) - 4
+	hdr.writeTo(&c.wbuf)
 }
 
 func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req request) error {
@@ -594,7 +593,8 @@ func (c *Conn) skipResponseSizeAndID() {
 }
 
 func (c *Conn) generateCorrelationID() int32 {
-	return atomic.AddInt32(&c.correlationID, 1)
+	c.correlationID++
+	return c.correlationID
 }
 
 func (c *Conn) readDeadline() time.Time {
@@ -605,15 +605,15 @@ func (c *Conn) writeDeadline() time.Time {
 	return c.wdeadline.deadline()
 }
 
-func (c *Conn) readOperation(write writeFunc, read readFunc) error {
+func (c *Conn) readOperation(write func(time.Time, int32) error, read func(time.Time, int) error) error {
 	return c.do(&c.rdeadline, write, read)
 }
 
-func (c *Conn) writeOperation(write writeFunc, read readFunc) error {
+func (c *Conn) writeOperation(write func(time.Time, int32) error, read func(time.Time, int) error) error {
 	return c.do(&c.wdeadline, write, read)
 }
 
-func (c *Conn) do(d *connDeadline, write writeFunc, read readFunc) error {
+func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func(time.Time, int) error) error {
 	id, err := c.doRequest(d, write)
 	if err != nil {
 		return err
@@ -624,7 +624,7 @@ func (c *Conn) do(d *connDeadline, write writeFunc, read readFunc) error {
 		return err
 	}
 
-	if err = read(deadline, int(size)); err != nil {
+	if err = read(deadline, size); err != nil {
 		switch err.(type) {
 		case Error:
 		default:
@@ -637,13 +637,11 @@ func (c *Conn) do(d *connDeadline, write writeFunc, read readFunc) error {
 	return err
 }
 
-func (c *Conn) doRequest(d *connDeadline, write writeFunc) (id int32, err error) {
-	id = c.generateCorrelationID()
-
+func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32) error) (id int32, err error) {
 	c.wlock.Lock()
+	id = c.generateCorrelationID()
 	err = write(d.setConnWriteDeadline(c.conn), id)
 	d.unsetConnWriteDeadline()
-	c.wlock.Unlock()
 
 	if err != nil {
 		// When an error occurs there's no way to know if the connection is in a
@@ -652,10 +650,11 @@ func (c *Conn) doRequest(d *connDeadline, write writeFunc) (id int32, err error)
 		c.conn.Close()
 	}
 
+	c.wlock.Unlock()
 	return
 }
 
-func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size int32, lock *sync.Mutex, err error) {
+func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size int, lock *sync.Mutex, err error) {
 	for {
 		var rsz int32
 		var rid int32
@@ -672,7 +671,7 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 
 		if id == rid {
 			c.skipResponseSizeAndID()
-			size, lock = rsz-4, &c.rlock
+			size, lock = int(rsz-4), &c.rlock
 			return
 		}
 
@@ -752,11 +751,3 @@ func (d *connDeadline) unsetConnWriteDeadline() {
 	d.wconn = nil
 	d.mutex.Unlock()
 }
-
-// writeFunc is the type of functions passed to (*Conn).do to write a request
-// to the kafka connection.
-type writeFunc func(deadline time.Time, id int32) error
-
-// readFunc is the type of functions passed to (*Conn).do to read a response
-// from the kafka connection.
-type readFunc func(deadline time.Time, size int) error

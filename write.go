@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"time"
 )
 
 type writable interface {
@@ -57,8 +58,12 @@ func writeBytes(w *bufio.Writer, b []byte) {
 	w.Write(b)
 }
 
-func writeArray(w *bufio.Writer, n int, f func(int)) {
+func writeArrayLen(w *bufio.Writer, n int) {
 	writeInt32(w, int32(n))
+}
+
+func writeArray(w *bufio.Writer, n int, f func(int)) {
+	writeArrayLen(w, n)
 	for i := 0; i != n; i++ {
 		f(i)
 	}
@@ -91,4 +96,76 @@ func write(w *bufio.Writer, a interface{}) {
 	default:
 		panic(fmt.Sprintf("unsupported type: %T", a))
 	}
+}
+
+// This function is used as an optimization to avoid dynamic memory allocations
+// in the common case of sending a batch messages to a kafka server for a single
+// topic and partition.
+func writeProduceRequest(w *bufio.Writer, corrleationID int32, clientID string, topic string, partition int32, timeout time.Duration, msgs ...Message) error {
+	var size int32
+
+	for _, msg := range msgs {
+		size += 8 + // offset
+			4 + // message size
+			4 + // crc
+			1 + // magic byte
+			1 + // attributes
+			8 + // timestamp
+			sizeofBytes(msg.Key) +
+			sizeofBytes(msg.Value)
+	}
+
+	h := requestHeader{
+		ApiKey:        int16(produceRequest),
+		ApiVersion:    int16(v2),
+		CorrelationID: corrleationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		2 + // required acks
+		4 + // timeout
+		4 + // topic array length
+		sizeofString(topic) + // topic
+		4 + // partition array length
+		4 + // partition
+		4 + // message set size
+		size
+
+	h.writeTo(w)
+	writeInt16(w, -1) // required acks
+	writeInt32(w, milliseconds(timeout))
+
+	// topic array
+	writeArrayLen(w, 1)
+	writeString(w, topic)
+
+	// partition array
+	writeArrayLen(w, 1)
+	writeInt32(w, partition)
+	writeInt32(w, size)
+
+	const magicByte = 1
+	const attributes = 0
+
+	for _, msg := range msgs {
+		timestamp := timestamp(msg.Time)
+		crc32 := crc32OfMessage(magicByte, attributes, timestamp, msg.Key, msg.Value)
+		size := 4 + // crc
+			1 + // magic byte
+			1 + // attributes
+			8 + // timestamp
+			sizeofBytes(msg.Key) +
+			sizeofBytes(msg.Value)
+
+		writeInt64(w, msg.Offset)
+		writeInt32(w, int32(size))
+		writeInt32(w, int32(crc32))
+		writeInt8(w, magicByte)
+		writeInt8(w, attributes)
+		writeInt64(w, timestamp)
+		writeBytes(w, msg.Key)
+		writeBytes(w, msg.Value)
+	}
+
+	return w.Flush()
 }

@@ -7,6 +7,20 @@ import (
 	"sync"
 )
 
+func crc32OfMessage(magicByte int8, attributes int8, timestamp int64, key []byte, value []byte) uint32 {
+	b := acquireCrc32Buffer()
+	b.writeInt8(magicByte)
+	b.writeInt8(attributes)
+	if magicByte != 0 {
+		b.writeInt64(timestamp)
+	}
+	b.writeBytes(key)
+	b.writeBytes(value)
+	sum := b.sum
+	releaseCrc32Buffer(b)
+	return sum
+}
+
 type crc32Buffer struct {
 	sum uint32
 	buf bytes.Buffer
