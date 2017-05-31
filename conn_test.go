@@ -442,6 +442,8 @@ func testConnReadEmptyWithDeadline(t *testing.T, conn *Conn) {
 	}
 }
 
+const benchmarkMessageCount = 100
+
 func BenchmarkConn(b *testing.B) {
 	benchmarks := []struct {
 		scenario string
@@ -475,7 +477,7 @@ func BenchmarkConn(b *testing.B) {
 
 	topic := makeTopic()
 	value := make([]byte, 10e3) // 10 KB
-	msgs := make([]Message, 1000)
+	msgs := make([]Message, benchmarkMessageCount)
 
 	for i := range msgs {
 		msgs[i].Value = value
@@ -501,7 +503,7 @@ func BenchmarkConn(b *testing.B) {
 
 func benchmarkConnSeek(b *testing.B, conn *Conn, _ []byte) {
 	for i := 0; i != b.N; i++ {
-		if _, err := conn.Seek(int64(i%1000), 1); err != nil {
+		if _, err := conn.Seek(int64(i%benchmarkMessageCount), 1); err != nil {
 			b.Error(err)
 			return
 		}
@@ -513,7 +515,7 @@ func benchmarkConnRead(b *testing.B, conn *Conn, a []byte) {
 	i := 0
 
 	for i != b.N {
-		if (i % 1000) == 0 {
+		if (i % benchmarkMessageCount) == 0 {
 			if _, err := conn.Seek(0, 0); err != nil {
 				b.Error(err)
 				return

@@ -16,8 +16,40 @@ const (
 
 func TestWriteOptimizations(t *testing.T) {
 	t.Parallel()
+	t.Run("writeFetchRequestV1", testWriteFetchRequestV1)
 	t.Run("writeListOffsetRequestV1", testWriteListOffsetRequestV1)
 	t.Run("writeProduceRequestV2", testWriteProduceRequestV2)
+}
+
+func testWriteFetchRequestV1(t *testing.T) {
+	const offset = 42
+	const minBytes = 10
+	const maxBytes = 1000
+	const maxWait = 100 * time.Millisecond
+	testWriteOptimization(t,
+		requestHeader{
+			ApiKey:        int16(fetchRequest),
+			ApiVersion:    int16(v1),
+			CorrelationID: testCorrelationID,
+			ClientID:      testClientID,
+		},
+		fetchRequestV1{
+			ReplicaID:   -1,
+			MaxWaitTime: milliseconds(maxWait),
+			MinBytes:    minBytes,
+			Topics: []fetchRequestTopicV1{{
+				TopicName: testTopic,
+				Partitions: []fetchRequestPartitionV1{{
+					Partition:   testPartition,
+					FetchOffset: offset,
+					MaxBytes:    maxBytes,
+				}},
+			}},
+		},
+		func(w *bufio.Writer) {
+			writeFetchRequestV1(w, testCorrelationID, testClientID, testTopic, testPartition, offset, minBytes, maxBytes, maxWait)
+		},
+	)
 }
 
 func testWriteListOffsetRequestV1(t *testing.T) {
@@ -121,7 +153,7 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*buf
 		} else {
 			for i := 0; i != n1; i++ {
 				if c1[i] != c2[i] {
-					t.Logf("byte at offset %d: %#x != %#x", i, c1[i], c2[i])
+					t.Logf("byte at offset %d/%d: %#x != %#x", i, n1, c1[i], c2[i])
 					break
 				}
 			}

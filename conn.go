@@ -315,22 +315,19 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
 		now := time.Now()
-		adj := adjustDeadlineForRTT(deadline, now, defaultRTT)
-		err := c.writeRequest(fetchRequest, v1, id, fetchRequestV1{
-			ReplicaID:   -1,
-			MinBytes:    int32(minBytes),
-			MaxWaitTime: milliseconds(deadlineToTimeout(adj, now)),
-			Topics: []fetchRequestTopicV1{{
-				TopicName: c.topic,
-				Partitions: []fetchRequestPartitionV1{{
-					Partition:   c.partition,
-					MaxBytes:    c.fetchMinSize + int32(maxBytes),
-					FetchOffset: offset,
-				}},
-			}},
-		})
-		adjustedDeadline = adj
-		return err
+		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+		adjustedDeadline = deadline
+		return writeFetchRequestV1(
+			&c.wbuf,
+			id,
+			c.clientID,
+			c.topic,
+			c.partition,
+			offset,
+			minBytes,
+			maxBytes+int(c.fetchMinSize),
+			deadlineToTimeout(deadline, now),
+		)
 	})
 	if err != nil {
 		return &Batch{err: err}
@@ -586,11 +583,6 @@ func (c *Conn) skipResponseSizeAndID() {
 	c.rbuf.Discard(8)
 }
 
-func (c *Conn) generateCorrelationID() int32 {
-	c.correlationID++
-	return c.correlationID
-}
-
 func (c *Conn) readDeadline() time.Time {
 	return c.rdeadline.deadline()
 }
@@ -633,7 +625,8 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func
 
 func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32) error) (id int32, err error) {
 	c.wlock.Lock()
-	id = c.generateCorrelationID()
+	c.correlationID++
+	id = c.correlationID
 	err = write(d.setConnWriteDeadline(c.conn), id)
 	d.unsetConnWriteDeadline()
 
