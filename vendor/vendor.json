@@ -3,6 +3,12 @@
 	"ignore": "test",
 	"package": [
 		{
+			"checksumSHA1": "WMTjT/WhwABW0CP22n1KeXxb96w=",
+			"path": "github.com/google/uuid",
+			"revision": "6a5e28554805e78ea6141142aba763936c4761c0",
+			"revisionTime": "2017-03-06T14:51:42Z"
+		},
+		{
 			"checksumSHA1": "McdWdV7nHpXLqn2/7zHAmj94MDY=",
 			"path": "github.com/hashicorp/consul/watch",
 			"revision": "f9d27d2732009fed799bc32e499f09f9e4644f33",
@@ -21,13 +27,13 @@
 			"revisionTime": "2017-05-03T02:48:19Z"
 		},
 		{
-			"checksumSHA1": "mIrn8/XHw4wY6/dcLc8sn1MxpxI=",
+			"checksumSHA1": "nZazGWPv8XfmTUoYADyEeh9YnI0=",
 			"path": "github.com/segmentio/consul-go",
-			"revision": "4c6bbe1223d2fc0ebad0b28e39761aef2ff9d3cf",
-			"revisionTime": "2017-05-23T17:43:25Z"
+			"revision": "9bd15346dba45c84881be5f671a0deb97c4beae9",
+			"revisionTime": "2017-05-26T01:52:51Z"
 		},
 		{
-			"checksumSHA1": "PoXqLiPO6C5Z2gzS6nm1LIhYfMA=",
+			"checksumSHA1": "tOykJBmoy1NF+LRMbe1KKX9808o=",
 			"path": "github.com/segmentio/events",
 			"revision": "69a8bb636942c7563942057b4e1d21e7aaaa6f56",
 			"revisionTime": "2017-05-25T22:20:38Z"
@@ -113,8 +119,8 @@
 		{
 			"checksumSHA1": "ZaU56svwLgiJD0y8JOB3+/mpYBA=",
 			"path": "golang.org/x/crypto/ssh/terminal",
-			"revision": "7e9105388ebff089b3f99f0ef676ea55a6da3a7e",
-			"revisionTime": "2017-05-16T03:11:29Z"
+			"revision": "080743b21912ae11ad9222778a048b795a5aae00",
+			"revisionTime": "2017-05-30T18:51:32Z"
 		},
 		{
 			"checksumSHA1": "VbMhUN6x2X0De+QIGjriw7gS20U=",
