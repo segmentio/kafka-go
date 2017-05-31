@@ -108,9 +108,8 @@ func TestProtocol(t *testing.T) {
 			r := bufio.NewReader(b)
 			w := bufio.NewWriter(b)
 
-			if err := write(w, test); err != nil {
-				t.Fatal(err)
-			}
+			write(w, test)
+
 			if err := w.Flush(); err != nil {
 				t.Fatal(err)
 			}

@@ -7,116 +7,99 @@ import (
 	"reflect"
 )
 
-func writeInt8(w *bufio.Writer, i int8) error {
-	return w.WriteByte(byte(i))
+func writeInt8(w *bufio.Writer, i int8) {
+	w.WriteByte(byte(i))
 }
 
-func writeInt16(w *bufio.Writer, i int16) error {
+func writeInt16(w *bufio.Writer, i int16) {
 	var b [2]byte
 	binary.BigEndian.PutUint16(b[:], uint16(i))
-	return writeSmallBuffer(w, b[:])
+	w.WriteByte(b[0])
+	w.WriteByte(b[1])
 }
 
-func writeInt32(w *bufio.Writer, i int32) error {
+func writeInt32(w *bufio.Writer, i int32) {
 	var b [4]byte
 	binary.BigEndian.PutUint32(b[:], uint32(i))
-	return writeSmallBuffer(w, b[:])
+	w.WriteByte(b[0])
+	w.WriteByte(b[1])
+	w.WriteByte(b[2])
+	w.WriteByte(b[3])
 }
 
-func writeInt64(w *bufio.Writer, i int64) error {
+func writeInt64(w *bufio.Writer, i int64) {
 	var b [8]byte
 	binary.BigEndian.PutUint64(b[:], uint64(i))
-	return writeSmallBuffer(w, b[:])
+	w.WriteByte(b[0])
+	w.WriteByte(b[1])
+	w.WriteByte(b[2])
+	w.WriteByte(b[3])
+	w.WriteByte(b[4])
+	w.WriteByte(b[5])
+	w.WriteByte(b[6])
+	w.WriteByte(b[7])
 }
 
-func writeString(w *bufio.Writer, s string) error {
-	if err := writeInt16(w, int16(len(s))); err != nil {
-		return err
-	}
-	_, err := w.WriteString(s)
-	return err
+func writeString(w *bufio.Writer, s string) {
+	writeInt16(w, int16(len(s)))
+	w.WriteString(s)
 }
 
-func writeBytes(w *bufio.Writer, b []byte) error {
-	n := int32(len(b))
+func writeBytes(w *bufio.Writer, b []byte) {
+	n := len(b)
 	if b == nil {
 		n = -1
 	}
-	if err := writeInt32(w, n); err != nil {
-		return err
-	}
-	_, err := w.Write(b)
-	return err
+	writeInt32(w, int32(n))
+	w.Write(b)
 }
 
-func writeMessageSet(w *bufio.Writer, mset messageSet) error {
-	// message sets are not preceded by their size for some reason
+func writeMessageSet(w *bufio.Writer, mset messageSet) {
 	for _, m := range mset {
-		if err := write(w, m); err != nil {
-			return err
-		}
+		write(w, m)
 	}
-	return nil
 }
 
-func writeSmallBuffer(w *bufio.Writer, b []byte) error {
-	// faster for short byte slices because it doesn't cause a memory allocation
-	// because the byte slice may be passed to the underlying io.Writer.
-	for _, c := range b {
-		if err := w.WriteByte(c); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func write(w *bufio.Writer, a interface{}) error {
+func write(w *bufio.Writer, a interface{}) {
 	switch v := a.(type) {
 	case int8:
-		return writeInt8(w, v)
+		writeInt8(w, v)
 	case int16:
-		return writeInt16(w, v)
+		writeInt16(w, v)
 	case int32:
-		return writeInt32(w, v)
+		writeInt32(w, v)
 	case int64:
-		return writeInt64(w, v)
+		writeInt64(w, v)
 	case string:
-		return writeString(w, v)
+		writeString(w, v)
 	case []byte:
-		return writeBytes(w, v)
+		writeBytes(w, v)
 	case messageSet:
-		return writeMessageSet(w, v)
-	}
-	switch v := reflect.ValueOf(a); v.Kind() {
-	case reflect.Struct:
-		return writeStruct(w, v)
-	case reflect.Slice:
-		return writeSlice(w, v)
+		writeMessageSet(w, v)
 	default:
-		panic(fmt.Sprintf("unsupported type: %T", a))
+		switch v := reflect.ValueOf(a); v.Kind() {
+		case reflect.Struct:
+			writeStruct(w, v)
+		case reflect.Slice:
+			writeSlice(w, v)
+		default:
+			panic(fmt.Sprintf("unsupported type: %T", a))
+		}
 	}
 }
 
-func writeStruct(w *bufio.Writer, v reflect.Value) error {
+func writeStruct(w *bufio.Writer, v reflect.Value) {
 	for i, n := 0, v.NumField(); i != n; i++ {
-		if err := write(w, v.Field(i).Interface()); err != nil {
-			return err
-		}
+		write(w, v.Field(i).Interface())
 	}
-	return nil
 }
 
-func writeSlice(w *bufio.Writer, v reflect.Value) error {
+func writeSlice(w *bufio.Writer, v reflect.Value) {
 	n := v.Len()
-	if err := writeInt32(w, int32(n)); err != nil {
-		return err
-	}
+	writeInt32(w, int32(n))
 	for i := 0; i != n; i++ {
-		if err := write(w, v.Index(i).Interface()); err != nil {
-			return err
-		}
+		write(w, v.Index(i).Interface())
 	}
-	return nil
 }
 
 func writeRequest(w *bufio.Writer, hdr requestHeader, req interface{}) error {
