@@ -92,10 +92,3 @@ func write(w *bufio.Writer, a interface{}) {
 		panic(fmt.Sprintf("unsupported type: %T", a))
 	}
 }
-
-func writeRequest(w *bufio.Writer, hdr requestHeader, req interface{}) error {
-	hdr.Size = (hdr.size() + sizeof(req)) - 4
-	hdr.writeTo(w)
-	write(w, req)
-	return w.Flush()
-}

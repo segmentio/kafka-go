@@ -13,6 +13,26 @@ type Message struct {
 	Time   time.Time
 }
 
+func (msg Message) item() messageSetItem {
+	item := messageSetItem{
+		Offset:  msg.Offset,
+		Message: msg.message(),
+	}
+	item.MessageSize = item.Message.size()
+	return item
+}
+
+func (msg Message) message() message {
+	m := message{
+		MagicByte: 1,
+		Key:       msg.Key,
+		Value:     msg.Value,
+		Timestamp: timeToTimestamp(msg.Time),
+	}
+	m.CRC = m.crc32()
+	return m
+}
+
 type message struct {
 	CRC        int32
 	MagicByte  int8
@@ -23,12 +43,16 @@ type message struct {
 }
 
 func (m message) crc32() int32 {
-	sum := uint32(0)
-	sum = crc32Int8(sum, m.MagicByte)
-	sum = crc32Int8(sum, m.Attributes)
-	sum = crc32Int64(sum, m.Timestamp)
-	sum = crc32Bytes(sum, m.Key)
-	sum = crc32Bytes(sum, m.Value)
+	b := acquireCrc32Buffer()
+	b.writeInt8(m.MagicByte)
+	b.writeInt8(m.Attributes)
+	if m.MagicByte != 0 {
+		b.writeInt64(m.Timestamp)
+	}
+	b.writeBytes(m.Key)
+	b.writeBytes(m.Value)
+	sum := b.sum
+	releaseCrc32Buffer(b)
 	return int32(sum)
 }
 

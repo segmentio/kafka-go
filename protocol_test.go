@@ -12,6 +12,15 @@ func TestProtocol(t *testing.T) {
 	t.Parallel()
 
 	tests := []interface{}{
+		int8(42),
+		int16(42),
+		int32(42),
+		int64(42),
+		"",
+		"Hello World!",
+		[]byte(nil),
+		[]byte("Hello World!"),
+
 		requestHeader{
 			Size:          26,
 			ApiKey:        int16(offsetCommitRequest),

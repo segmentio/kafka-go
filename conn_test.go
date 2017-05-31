@@ -489,8 +489,11 @@ func BenchmarkConn(b *testing.B) {
 	}
 
 	for _, benchmark := range benchmarks {
-		conn.Seek(0, 0)
 		b.Run(benchmark.scenario, func(b *testing.B) {
+			if _, err := conn.Seek(0, 0); err != nil {
+				b.Error(err)
+				return
+			}
 			benchmark.function(b, conn, value)
 		})
 	}

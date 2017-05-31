@@ -52,6 +52,11 @@ func (h requestHeader) writeTo(w *bufio.Writer) {
 	writeString(w, h.ClientID)
 }
 
+type request interface {
+	size() int32
+	writeTo(*bufio.Writer)
+}
+
 func makeInt8(b []byte) int8 {
 	return int8(b[0])
 }

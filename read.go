@@ -309,15 +309,3 @@ func readMessage(r *bufio.Reader, sz int, min int64, key readBytesFunc, val read
 		}
 	}
 }
-
-func readResponse(r *bufio.Reader, sz int, res interface{}) error {
-	sz, err := read(r, sz, res)
-	switch err.(type) {
-	case Error:
-		var e error
-		if sz, e = discardN(r, sz, sz); e != nil {
-			err = e
-		}
-	}
-	return expectZeroSize(sz, err)
-}

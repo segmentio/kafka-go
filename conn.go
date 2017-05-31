@@ -113,7 +113,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	// The fetch request needs to ask for a MaxBytes value that is at least
 	// enough to load the control data of the response. To avoid having to
 	// recompute it on every read, it is cached here in the Conn value.
-	c.fetchMinSize = sizeof(fetchResponseV1{
+	c.fetchMinSize = (fetchResponseV1{
 		Topics: []fetchResponseTopicV1{{
 			TopicName: config.Topic,
 			Partitions: []fetchResponsePartitionV1{{
@@ -121,7 +121,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 				MessageSet: messageSet{{}},
 			}},
 		}},
-	})
+	}).size()
 	c.fetchMaxBytes = math.MaxInt32 - c.fetchMinSize
 	return c
 }
@@ -503,18 +503,7 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 
 	for i, msg := range msgs {
 		n += len(msg.Key) + len(msg.Value)
-		m := message{
-			MagicByte: 1,
-			Key:       msg.Key,
-			Value:     msg.Value,
-			Timestamp: timeToTimestamp(msg.Time),
-		}
-		m.CRC = m.crc32()
-		set[i] = messageSetItem{
-			Offset:      msg.Offset,
-			MessageSize: sizeof(m),
-			Message:     m,
-		}
+		set[i] = msg.item()
 	}
 
 	err := c.writeOperation(
@@ -528,7 +517,7 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 					TopicName: c.topic,
 					Partitions: []produceRequestPartitionV2{{
 						Partition:      c.partition,
-						MessageSetSize: sizeof(set),
+						MessageSetSize: set.size(),
 						MessageSet:     set,
 					}},
 				}},
@@ -571,12 +560,24 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 	return n, err
 }
 
-func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req interface{}) error {
-	return writeRequest(&c.wbuf, c.requestHeader(apiKey, apiVersion, correlationID), req)
+func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req request) error {
+	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
+	hdr.Size = (hdr.size() + req.size()) - 4
+	hdr.writeTo(&c.wbuf)
+	req.writeTo(&c.wbuf)
+	return c.wbuf.Flush()
 }
 
 func (c *Conn) readResponse(size int, res interface{}) error {
-	return readResponse(&c.rbuf, size, res)
+	size, err := read(&c.rbuf, size, res)
+	switch err.(type) {
+	case Error:
+		var e error
+		if size, e = discardN(&c.rbuf, size, size); e != nil {
+			err = e
+		}
+	}
+	return expectZeroSize(size, err)
 }
 
 func (c *Conn) peekResponseSizeAndID() (int32, int32, error) {
