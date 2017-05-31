@@ -466,8 +466,14 @@ func BenchmarkConn(b *testing.B) {
 			scenario: "ReadOffsets",
 			function: benchmarkConnReadOffsets,
 		},
+
+		{
+			scenario: "Write",
+			function: benchmarkConnWrite,
+		},
 	}
 
+	topic := makeTopic()
 	value := make([]byte, 10e3) // 10 KB
 	msgs := make([]Message, 1000)
 
@@ -475,20 +481,17 @@ func BenchmarkConn(b *testing.B) {
 		msgs[i].Value = value
 	}
 
+	conn, _ := DialLeader(context.Background(), "tcp", "localhost:9092", topic, 0)
+	defer conn.Close()
+
+	if _, err := conn.WriteMessages(msgs...); err != nil {
+		b.Fatal(err)
+	}
+
 	for _, benchmark := range benchmarks {
-		benchFunc := benchmark.function
+		conn.Seek(0, 0)
 		b.Run(benchmark.scenario, func(b *testing.B) {
-			topic := makeTopic()
-			conn, err := DialLeader(context.Background(), "tcp", "localhost:9092", topic, 0)
-			if err != nil {
-				b.Fatal(err)
-			}
-			defer conn.Close()
-			if _, err := conn.WriteMessages(msgs...); err != nil {
-				b.Fatal(err)
-			}
-			b.ResetTimer()
-			benchFunc(b, conn, value)
+			benchmark.function(b, conn, value)
 		})
 	}
 }
@@ -552,6 +555,7 @@ func benchmarkConnReadBatch(b *testing.B, conn *Conn, a []byte) {
 		i++
 	}
 
+	batch.Close()
 	b.SetBytes(int64(n / i))
 }
 
@@ -563,4 +567,22 @@ func benchmarkConnReadOffsets(b *testing.B, conn *Conn, _ []byte) {
 			return
 		}
 	}
+}
+
+func benchmarkConnWrite(b *testing.B, conn *Conn, _ []byte) {
+	a := make([]byte, 10e3) // 10 KB
+	n := 0
+	i := 0
+
+	for i != b.N {
+		c, err := conn.Write(a)
+		if err != nil {
+			b.Error(err)
+			return
+		}
+		n += c
+		i++
+	}
+
+	b.SetBytes(int64(n / i))
 }

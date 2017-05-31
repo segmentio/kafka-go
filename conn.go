@@ -29,14 +29,6 @@ type Partition struct {
 	ID       int
 }
 
-// Message is a data structure representing kafka messages.
-type Message struct {
-	Offset int64
-	Key    []byte
-	Value  []byte
-	Time   time.Time
-}
-
 // Conn represents a connection to a kafka broker.
 //
 // Instances of Conn are safe to use concurrently from multiple goroutines.

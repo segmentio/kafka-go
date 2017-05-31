@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"reflect"
 )
+
+type writable interface {
+	writeTo(*bufio.Writer)
+}
 
 func writeInt8(w *bufio.Writer, i int8) {
 	w.WriteByte(byte(i))
@@ -54,10 +57,19 @@ func writeBytes(w *bufio.Writer, b []byte) {
 	w.Write(b)
 }
 
-func writeMessageSet(w *bufio.Writer, mset messageSet) {
-	for _, m := range mset {
-		write(w, m)
+func writeArray(w *bufio.Writer, n int, f func(int)) {
+	writeInt32(w, int32(n))
+	for i := 0; i != n; i++ {
+		f(i)
 	}
+}
+
+func writeStringArray(w *bufio.Writer, a []string) {
+	writeArray(w, len(a), func(i int) { writeString(w, a[i]) })
+}
+
+func writeInt32Array(w *bufio.Writer, a []int32) {
+	writeArray(w, len(a), func(i int) { writeInt32(w, a[i]) })
 }
 
 func write(w *bufio.Writer, a interface{}) {
@@ -74,37 +86,16 @@ func write(w *bufio.Writer, a interface{}) {
 		writeString(w, v)
 	case []byte:
 		writeBytes(w, v)
-	case messageSet:
-		writeMessageSet(w, v)
+	case writable:
+		v.writeTo(w)
 	default:
-		switch v := reflect.ValueOf(a); v.Kind() {
-		case reflect.Struct:
-			writeStruct(w, v)
-		case reflect.Slice:
-			writeSlice(w, v)
-		default:
-			panic(fmt.Sprintf("unsupported type: %T", a))
-		}
-	}
-}
-
-func writeStruct(w *bufio.Writer, v reflect.Value) {
-	for i, n := 0, v.NumField(); i != n; i++ {
-		write(w, v.Field(i).Interface())
-	}
-}
-
-func writeSlice(w *bufio.Writer, v reflect.Value) {
-	n := v.Len()
-	writeInt32(w, int32(n))
-	for i := 0; i != n; i++ {
-		write(w, v.Index(i).Interface())
+		panic(fmt.Sprintf("unsupported type: %T", a))
 	}
 }
 
 func writeRequest(w *bufio.Writer, hdr requestHeader, req interface{}) error {
-	hdr.Size = (sizeof(hdr) + sizeof(req)) - 4
-	write(w, hdr)
+	hdr.Size = (hdr.size() + sizeof(req)) - 4
+	hdr.writeTo(w)
 	write(w, req)
 	return w.Flush()
 }

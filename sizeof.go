@@ -1,9 +1,10 @@
 package kafka
 
-import (
-	"fmt"
-	"reflect"
-)
+import "fmt"
+
+type sizable interface {
+	size() int32
+}
 
 func sizeof(a interface{}) int32 {
 	switch v := a.(type) {
@@ -16,40 +17,35 @@ func sizeof(a interface{}) int32 {
 	case int64:
 		return 8
 	case string:
-		return 2 + int32(len(v))
+		return sizeofString(v)
 	case []byte:
-		return 4 + int32(len(v))
-	case messageSet:
-		return sizeofMessageSet(v)
+		return sizeofBytes(v)
+	case sizable:
+		return v.size()
 	}
-	switch v := reflect.ValueOf(a); v.Kind() {
-	case reflect.Struct:
-		return sizeofStruct(v)
-	case reflect.Slice:
-		return sizeofSlice(v)
-	default:
-		panic(fmt.Sprintf("unsupported type: %T", a))
-	}
+	panic(fmt.Sprintf("unsupported type: %T", a))
 }
 
-func sizeofMessageSet(set messageSet) (size int32) {
-	for _, msg := range set {
-		size += sizeof(msg)
-	}
-	return
+func sizeofString(s string) int32 {
+	return 2 + int32(len(s))
 }
 
-func sizeofStruct(v reflect.Value) (size int32) {
-	for i, n := 0, v.NumField(); i != n; i++ {
-		size += sizeof(v.Field(i).Interface())
-	}
-	return
+func sizeofBytes(b []byte) int32 {
+	return 4 + int32(len(b))
 }
 
-func sizeofSlice(v reflect.Value) (size int32) {
-	size = 4
-	for i, n := 0, v.Len(); i != n; i++ {
-		size += sizeof(v.Index(i).Interface())
+func sizeofArray(n int, f func(int) int32) int32 {
+	s := int32(4)
+	for i := 0; i != n; i++ {
+		s += f(i)
 	}
-	return
+	return s
+}
+
+func sizeofInt32Array(a []int32) int32 {
+	return 4 + (4 * int32(len(a)))
+}
+
+func sizeofStringArray(a []string) int32 {
+	return sizeofArray(len(a), func(i int) int32 { return sizeofString(a[i]) })
 }
