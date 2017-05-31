@@ -376,13 +376,7 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 func (c *Conn) readOffset(t int64) (offset int64, err error) {
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(offsetRequest, v1, id, listOffsetRequestV1{
-				ReplicaID: -1,
-				Topics: []listOffsetRequestTopicV1{{
-					TopicName:  c.topic,
-					Partitions: []listOffsetRequestPartitionV1{{Partition: c.partition, Time: t}},
-				}},
-			})
+			return writeListOffsetRequestV1(&c.wbuf, id, c.clientID, c.topic, c.partition, t)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
@@ -397,7 +391,7 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 				// partition which gives the offset we're looking for.
 				return readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
 					var p partitionOffsetV1
-					size, err := read(r, size, &p)
+					size, err := p.readFrom(r, size)
 					if err != nil {
 						return size, err
 					}
@@ -506,7 +500,7 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-			return writeProduceRequest(
+			return writeProduceRequestV2(
 				&c.wbuf,
 				id,
 				c.clientID,

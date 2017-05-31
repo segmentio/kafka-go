@@ -11,7 +11,7 @@ type apiKey int16
 const (
 	produceRequest          apiKey = 0
 	fetchRequest            apiKey = 1
-	offsetRequest           apiKey = 2
+	listOffsetRequest       apiKey = 2
 	metadataRequest         apiKey = 3
 	offsetCommitRequest     apiKey = 8
 	offsetFetchRequest      apiKey = 9

@@ -99,9 +99,41 @@ func write(w *bufio.Writer, a interface{}) {
 }
 
 // This function is used as an optimization to avoid dynamic memory allocations
+// in the common case of reading an offset on a single topic and partition.
+func writeListOffsetRequestV1(w *bufio.Writer, correleationID int32, clientID string, topic string, parition int32, time int64) error {
+	h := requestHeader{
+		ApiKey:        int16(listOffsetRequest),
+		ApiVersion:    int16(v1),
+		CorrelationID: correleationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		4 + // replica ID
+		4 + // topic array length
+		sizeofString(topic) + // topic
+		4 + // partition array length
+		4 + // partition
+		8 // time
+
+	h.writeTo(w)
+	writeInt32(w, -1) // replica ID
+
+	// topic array
+	writeArrayLen(w, 1)
+	writeString(w, topic)
+
+	// partition array
+	writeArrayLen(w, 1)
+	writeInt32(w, parition)
+	writeInt64(w, time)
+
+	return w.Flush()
+}
+
+// This function is used as an optimization to avoid dynamic memory allocations
 // in the common case of sending a batch messages to a kafka server for a single
 // topic and partition.
-func writeProduceRequest(w *bufio.Writer, corrleationID int32, clientID string, topic string, partition int32, timeout time.Duration, msgs ...Message) error {
+func writeProduceRequestV2(w *bufio.Writer, correleationID int32, clientID string, topic string, partition int32, timeout time.Duration, msgs ...Message) error {
 	var size int32
 
 	for _, msg := range msgs {
@@ -118,7 +150,7 @@ func writeProduceRequest(w *bufio.Writer, corrleationID int32, clientID string, 
 	h := requestHeader{
 		ApiKey:        int16(produceRequest),
 		ApiVersion:    int16(v2),
-		CorrelationID: corrleationID,
+		CorrelationID: correleationID,
 		ClientID:      clientID,
 	}
 	h.Size = (h.size() - 4) +

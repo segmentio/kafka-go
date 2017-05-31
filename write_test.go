@@ -7,16 +7,45 @@ import (
 	"time"
 )
 
-// This test ensures that the writeProduceRequest function (which exists for
-// optimization purposes) and the generic produceRequestV2.writeTo method behave
-// the same.
-func TestWriteProduceRequest(t *testing.T) {
-	b1 := &bytes.Buffer{}
-	w1 := bufio.NewWriter(b1)
+const (
+	testCorrelationID = 1
+	testClientID      = "localhost"
+	testTopic         = "topic"
+	testPartition     = 42
+)
 
-	b2 := &bytes.Buffer{}
-	w2 := bufio.NewWriter(b2)
+func TestWriteOptimizations(t *testing.T) {
+	t.Parallel()
+	t.Run("writeListOffsetRequestV1", testWriteListOffsetRequestV1)
+	t.Run("writeProduceRequestV2", testWriteProduceRequestV2)
+}
 
+func testWriteListOffsetRequestV1(t *testing.T) {
+	const time = -1
+	testWriteOptimization(t,
+		requestHeader{
+			ApiKey:        int16(listOffsetRequest),
+			ApiVersion:    int16(v1),
+			CorrelationID: testCorrelationID,
+			ClientID:      testClientID,
+		},
+		listOffsetRequestV1{
+			ReplicaID: -1,
+			Topics: []listOffsetRequestTopicV1{{
+				TopicName: testTopic,
+				Partitions: []listOffsetRequestPartitionV1{{
+					Partition: testPartition,
+					Time:      time,
+				}},
+			}},
+		},
+		func(w *bufio.Writer) {
+			writeListOffsetRequestV1(w, testCorrelationID, testClientID, testTopic, testPartition, time)
+		},
+	)
+}
+
+func testWriteProduceRequestV2(t *testing.T) {
 	key := []byte(nil)
 	val := []byte("Hello World!")
 
@@ -32,42 +61,70 @@ func TestWriteProduceRequest(t *testing.T) {
 	msg.MessageSize = msg.Message.size()
 	msg.Message.CRC = msg.Message.crc32()
 
-	req := produceRequestV2{
-		RequiredAcks: -1,
-		Timeout:      100,
-		Topics: []produceRequestTopicV2{{
-			TopicName: "A",
-			Partitions: []produceRequestPartitionV2{{
-				Partition:      42,
-				MessageSetSize: msg.size(),
-				MessageSet:     messageSet{msg},
+	const timeout = 100
+	testWriteOptimization(t,
+		requestHeader{
+			ApiKey:        int16(produceRequest),
+			ApiVersion:    int16(v2),
+			CorrelationID: testCorrelationID,
+			ClientID:      testClientID,
+		},
+		produceRequestV2{
+			RequiredAcks: -1,
+			Timeout:      timeout,
+			Topics: []produceRequestTopicV2{{
+				TopicName: testTopic,
+				Partitions: []produceRequestPartitionV2{{
+					Partition:      testPartition,
+					MessageSetSize: msg.size(),
+					MessageSet:     messageSet{msg},
+				}},
 			}},
-		}},
-	}
+		},
+		func(w *bufio.Writer) {
+			writeProduceRequestV2(w, testCorrelationID, testClientID, testTopic, testPartition, timeout*time.Millisecond, Message{
+				Offset: 10,
+				Key:    key,
+				Value:  val,
+			})
+		},
+	)
+}
 
-	hdr := requestHeader{
-		ApiKey:        int16(produceRequest),
-		ApiVersion:    int16(v2),
-		CorrelationID: 1,
-		ClientID:      "localhost",
-	}
-	hdr.Size = (hdr.size() + req.size()) - 4
-	hdr.writeTo(w1)
-	req.writeTo(w1)
+func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*bufio.Writer)) {
+	b1 := &bytes.Buffer{}
+	w1 := bufio.NewWriter(b1)
+
+	b2 := &bytes.Buffer{}
+	w2 := bufio.NewWriter(b2)
+
+	h.Size = (h.size() + r.size()) - 4
+	h.writeTo(w1)
+	r.writeTo(w1)
 	w1.Flush()
 
-	writeProduceRequest(w2, 1, "localhost", "A", 42, 100*time.Millisecond, Message{
-		Offset: 10,
-		Key:    key,
-		Value:  val,
-	})
+	f(w2)
+	w2.Flush()
 
 	c1 := b1.Bytes()
 	c2 := b2.Bytes()
 
 	if !bytes.Equal(c1, c2) {
 		t.Error("content differs")
-		t.Log("content length 1 =", len(c1))
-		t.Log("content length 2 =", len(c2))
+
+		n1 := len(c1)
+		n2 := len(c2)
+
+		if n1 != n2 {
+			t.Log("content length 1 =", n1)
+			t.Log("content length 2 =", n2)
+		} else {
+			for i := 0; i != n1; i++ {
+				if c1[i] != c2[i] {
+					t.Logf("byte at offset %d: %#x != %#x", i, c1[i], c2[i])
+					break
+				}
+			}
+		}
 	}
 }
