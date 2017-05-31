@@ -9,12 +9,6 @@
 			"revisionTime": "2017-03-06T14:51:42Z"
 		},
 		{
-			"checksumSHA1": "McdWdV7nHpXLqn2/7zHAmj94MDY=",
-			"path": "github.com/hashicorp/consul/watch",
-			"revision": "f9d27d2732009fed799bc32e499f09f9e4644f33",
-			"revisionTime": "2017-05-18T14:29:51Z"
-		},
-		{
 			"checksumSHA1": "rJab1YdNhQooDiBWNnt7TLWPyBU=",
 			"path": "github.com/pkg/errors",
 			"revision": "c605e284fe17294bda444b34710735b29d1a9d90",
@@ -61,12 +55,6 @@
 			"path": "github.com/segmentio/events/text",
 			"revision": "69a8bb636942c7563942057b4e1d21e7aaaa6f56",
 			"revisionTime": "2017-05-25T22:20:38Z"
-		},
-		{
-			"checksumSHA1": "7NxwEQrkMJoU3DrLaEnkDxU8t6I=",
-			"path": "github.com/segmentio/knobs-go",
-			"revision": "49e5e2c28ce4f9ad238802ea89cb1cf96084ea36",
-			"revisionTime": "2017-04-26T19:26:47Z"
 		},
 		{
 			"checksumSHA1": "Uz0XWlc15xqbVqGK8r6oTVCVcdo=",
