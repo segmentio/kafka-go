@@ -93,6 +93,7 @@ func tail(args []string) (err error) {
 		Topic:     topic,
 		Partition: 0,
 	})
+	defer reader.Close()
 
 	if err != nil {
 		return
@@ -118,8 +119,6 @@ func tail(args []string) (err error) {
 
 		fmt.Printf("read message at offset %d:\n\t%v\n\n", msg.Offset, string(msg.Value))
 	}
-
-	return reader.Close()
 }
 
 func signals(signals ...os.Signal) (<-chan os.Signal, func()) {
