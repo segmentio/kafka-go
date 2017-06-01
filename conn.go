@@ -338,16 +338,17 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 		return &Batch{err: err}
 	}
 
-	throttle, remain, err := readFetchResponseHeader(&c.rbuf, size)
+	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
 	return &Batch{
-		conn:     c,
-		reader:   &c.rbuf,
-		deadline: adjustedDeadline,
-		throttle: duration(throttle),
-		lock:     lock,
-		remain:   remain,
-		offset:   offset,
-		err:      err,
+		conn:          c,
+		reader:        &c.rbuf,
+		deadline:      adjustedDeadline,
+		throttle:      duration(throttle),
+		lock:          lock,
+		remain:        remain,
+		offset:        offset,
+		highWaterMark: highWaterMark,
+		err:           err,
 	}
 }
 

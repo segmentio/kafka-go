@@ -164,6 +164,11 @@ func TestConn(t *testing.T) {
 			scenario: "reading messages from an empty partition should timeout after reaching the deadline",
 			function: testConnReadEmptyWithDeadline,
 		},
+
+		{
+			scenario: "write batch of messages and read the highest offset (watermark)",
+			function: testConnReadWatermarkFromBatch,
+		},
 	}
 
 	const (
@@ -363,6 +368,34 @@ func testConnWriteBatchReadSequentially(t *testing.T, conn *Conn) {
 			t.Errorf("bad message read at offset %d: %s", i, s)
 		}
 	}
+}
+
+func testConnReadWatermarkFromBatch(t *testing.T, conn *Conn) {
+	if _, err := conn.WriteMessages(makeTestSequence(10)...); err != nil {
+		t.Fatal(err)
+	}
+
+	const minBytes = 1
+	const maxBytes = 10e6 // 10 MB
+
+	value := make([]byte, 10e3) // 10 KB
+
+	batch := conn.ReadBatch(minBytes, maxBytes)
+
+	for i := 0; i < 10; i++ {
+		_, err := batch.Read(value)
+		if err != nil {
+			if err = batch.Close(); err != nil {
+				t.Fatalf("error trying to read batch message: %s", err)
+			}
+		}
+
+		if batch.HighWatermark() != 10 {
+			t.Fatal("expected highest offset (watermark) to be 10")
+		}
+	}
+
+	batch.Close()
 }
 
 func testConnWriteReadConcurrently(t *testing.T, conn *Conn) {
