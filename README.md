@@ -21,9 +21,9 @@ for Go contexts.
 
 - [goka](https://github.com/lovoo/goka) is a more recent Kafka client for Go
 which focuses on a specific usage pattern. It provides abstractions to use Kafka
-as a message passing bus between services rather than an ordered log of events.
-While the implementation seem to be of high quality this is not the typical use
-case we make of Kafka at Segment.
+as a message passing bus between services rather than an ordered log of events,
+this is not the typical use case we make of Kafka at Segment. The package also
+depends on sarama for all interractions with kafka.
 
 This is where `kafka-go` comes into play, it provides both low and high level
 APIs to interract with Kafka, mirroring concepts and implementing interfaces of
