@@ -266,7 +266,12 @@ func (r *reader) run(ctx context.Context, offset int64) {
 
 		conn, start, err := r.initialize(ctx, offset)
 		if err != nil {
-			r.sendError(ctx, err)
+			// Wait 4 attempts before reporting the first errors, this helps
+			// mitigate situations where the kafka server is temporarily
+			// unavailable.
+			if attempt >= 3 {
+				r.sendError(ctx, err)
+			}
 			continue
 		}
 
