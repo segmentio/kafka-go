@@ -332,7 +332,7 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 			continue
 		}
 
-		// This deadline controls how long the offset negatiation may take.
+		// This deadline controls how long the offset negotiation may take.
 		conn.SetDeadline(time.Now().Add(10 * time.Second))
 
 		if first, err = conn.ReadFirstOffset(); err != nil {
