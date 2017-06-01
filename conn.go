@@ -357,16 +357,29 @@ func (c *Conn) ReadOffset(t time.Time) (int64, error) {
 	return c.readOffset(timestamp(t))
 }
 
+// ReadFirstOffset returns the first offset available on the connection.
+func (c *Conn) ReadFirstOffset() (int64, error) {
+	return c.readOffset(-2)
+}
+
+// ReadLastOffset returns the last offset available on the conncetion.
+func (c *Conn) ReadLastOffset() (int64, error) {
+	return c.readOffset(-1)
+}
+
 // ReadOffsets returns the absolute first and last offsets of the topic used by
 // the connection.
 func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 	// We have to submit two different requests to fetch the first and last
 	// offsets because kafka refuses requests that ask for multiple offsets
 	// on the same topic and partition.
-	if last, err = c.readOffset(-1); err != nil {
+	if first, err = c.ReadFirstOffset(); err != nil {
 		return
 	}
-	first, err = c.readOffset(-2)
+	if last, err = c.ReadLastOffset(); err != nil {
+		first = 0 // don't leak the value on error
+		return
+	}
 	return
 }
 
