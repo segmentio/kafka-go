@@ -3,12 +3,6 @@
 	"ignore": "test",
 	"package": [
 		{
-			"checksumSHA1": "WMTjT/WhwABW0CP22n1KeXxb96w=",
-			"path": "github.com/google/uuid",
-			"revision": "6a5e28554805e78ea6141142aba763936c4761c0",
-			"revisionTime": "2017-03-06T14:51:42Z"
-		},
-		{
 			"checksumSHA1": "rJab1YdNhQooDiBWNnt7TLWPyBU=",
 			"path": "github.com/pkg/errors",
 			"revision": "c605e284fe17294bda444b34710735b29d1a9d90",

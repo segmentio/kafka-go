@@ -2,10 +2,10 @@ package kafka
 
 import (
 	"context"
+	"math/rand"
+	"strconv"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 func TestConsul(t *testing.T) {
@@ -24,7 +24,7 @@ func TestConsul(t *testing.T) {
 			t.Parallel()
 
 			config := GroupConfig{
-				Name:       uuid.New().String(),
+				Name:       strconv.Itoa(rand.Int63()),
 				Addr:       "http://localhost:8500",
 				Brokers:    []string{"localhost:9092"},
 				Topic:      "test",
