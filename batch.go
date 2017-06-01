@@ -158,7 +158,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	return msg, err
 }
 
-func (batch *Batch) readMessage( // using readBytesFunc here cuases a dynamic memory allocation somehow...
+func (batch *Batch) readMessage(
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
 ) (offset int64, timestamp int64, err error) {

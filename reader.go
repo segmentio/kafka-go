@@ -313,10 +313,13 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 		if conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition); err != nil {
 			continue
 		}
+
 		if start, err = conn.Seek(offset, whence); err != nil {
 			conn.Close()
-			break
+			continue
 		}
+
+		break
 	}
 
 	return
