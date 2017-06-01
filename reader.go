@@ -305,7 +305,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			case RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 			case OffsetOutOfRange:
-				// We may be reading past the last offset, this should be
+				// We may be reading past the last offset, will retry later.
 			case context.Canceled:
 				// Another reader has taken over, we can safely quit.
 				conn.Close()
