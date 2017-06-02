@@ -26,11 +26,6 @@ func TestReader(t *testing.T) {
 		},
 
 		{
-			scenario: "setting the offset to an invalid value should return an error on the next Read call",
-			function: testReaderSetInvalidOffset,
-		},
-
-		{
 			scenario: "setting the offset to random values should return the expected messages when Read is called",
 			function: testReaderSetRandomOffset,
 		},
@@ -45,9 +40,10 @@ func TestReader(t *testing.T) {
 			defer cancel()
 
 			r := NewReader(ReaderConfig{
-				Brokers: []string{"localhost:9092"},
-				Topic:   makeTopic(),
-				MaxWait: 500 * time.Millisecond,
+				Brokers:  []string{"localhost:9092"},
+				Topic:    makeTopic(),
+				MinBytes: 1,
+				MaxBytes: 10e6,
 			})
 			defer r.Close()
 			testFunc(t, ctx, r)
@@ -68,26 +64,20 @@ func testReaderReadMessages(t *testing.T, ctx context.Context, r *Reader) {
 	const N = 1000
 	prepareReader(t, ctx, r, makeTestSequence(N)...)
 
+	var offset int64
+
 	for i := 0; i != N; i++ {
 		m, err := r.ReadMessage(ctx)
 		if err != nil {
-			t.Error(err)
+			t.Error("reading message at offset", offset, "failed:", err)
 			return
 		}
+		offset = m.Offset + 1
 		v, _ := strconv.Atoi(string(m.Value))
 		if v != i {
 			t.Error("message at index", i, "has wrong value:", v)
 			return
 		}
-	}
-}
-
-func testReaderSetInvalidOffset(t *testing.T, ctx context.Context, r *Reader) {
-	r.SetOffset(42)
-
-	_, err := r.ReadMessage(ctx)
-	if err == nil {
-		t.Error(err)
 	}
 }
 
@@ -100,7 +90,7 @@ func testReaderSetRandomOffset(t *testing.T, ctx context.Context, r *Reader) {
 		r.SetOffset(int64(offset))
 		m, err := r.ReadMessage(ctx)
 		if err != nil {
-			t.Error(err)
+			t.Error("seeking to offset", offset, "failed:", err)
 			return
 		}
 		v, _ := strconv.Atoi(string(m.Value))

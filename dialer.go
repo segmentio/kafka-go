@@ -220,6 +220,14 @@ type Resolver interface {
 }
 
 func sleep(ctx context.Context, duration time.Duration) bool {
+	if duration != 0 {
+		select {
+		default:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 	select {

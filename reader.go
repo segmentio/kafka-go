@@ -265,7 +265,13 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		}
 
 		conn, start, err := r.initialize(ctx, offset)
-		if err != nil {
+		switch err {
+		case nil:
+		case OffsetOutOfRange:
+			// This would happen if the requested offset is passed the last
+			// offset on the partition leader. In that case we're just going
+			// to retry later hoping that enough data has been produced.
+		default:
 			// Wait 4 attempts before reporting the first errors, this helps
 			// mitigate situations where the kafka server is temporarily
 			// unavailable.
@@ -284,42 +290,68 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		// to the connection we know we'll want to restart from this offset.
 		offset = start
 
+		errcount := 0
 	readLoop:
 		for {
+			if !sleep(ctx, backoff(errcount, 100*time.Millisecond, time.Second)) {
+				conn.Close()
+				return
+			}
+
 			switch offset, err = r.read(ctx, offset, conn); err {
-			case nil:
-			case RequestTimedOut:
-			case context.Canceled: // another reader has taken over
+			case nil, RequestTimedOut:
+				// Timeout on the kafka side, this can be safely retried.
+				errcount = 0
+				continue
+			case OffsetOutOfRange:
+				// We may be reading past the last offset, will retry later.
+			case context.Canceled:
+				// Another reader has taken over, we can safely quit.
 				conn.Close()
 				return
 			default:
-				conn.Close()
-				break readLoop
+				if _, ok := err.(Error); ok {
+					r.sendError(ctx, err)
+				} else {
+					conn.Close()
+					break readLoop
+				}
 			}
+
+			errcount++
 		}
 	}
 }
 
 func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, start int64, err error) {
-	var whence int
+	for i := 0; i != len(r.brokers) && conn == nil; i++ {
+		var broker = r.brokers[i]
+		var first int64
 
-	if offset < 0 {
-		offset = 0
-	} else {
-		whence = 1
-	}
-
-	for _, broker := range r.brokers {
 		if conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition); err != nil {
 			continue
 		}
 
-		if start, err = conn.Seek(offset, whence); err != nil {
+		// This deadline controls how long the offset negotiation may take.
+		conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+		if first, err = conn.ReadFirstOffset(); err != nil {
 			conn.Close()
-			continue
+			conn = nil
+			break
 		}
 
-		break
+		// In case the reader was configured with an offset before the first
+		// offset, skipping directly to the first offset.
+		if offset < first {
+			offset = first
+		}
+
+		if start, err = conn.Seek(offset, 1); err != nil {
+			conn.Close()
+			conn = nil
+			break
+		}
 	}
 
 	return
