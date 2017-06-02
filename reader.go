@@ -267,7 +267,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		conn, start, err := r.initialize(ctx, offset)
 		switch err {
 		case nil:
-		case OffsetMetadataTooLarge:
+		case OffsetOutOfRange:
 			// This would happen if the requested offset is passed the last
 			// offset on the partition leader. In that case we're just going
 			// to retry later hoping that enough data has been produced.
@@ -293,17 +293,16 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		errcount := 0
 	readLoop:
 		for {
-			if !sleep(ctx, backoff(errcount, 100*time.Millisecond, 10*time.Second)) {
+			if !sleep(ctx, backoff(errcount, 100*time.Millisecond, time.Second)) {
 				conn.Close()
 				return
 			}
 
 			switch offset, err = r.read(ctx, offset, conn); err {
-			case nil:
+			case nil, RequestTimedOut:
+				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
 				continue
-			case RequestTimedOut:
-				// Timeout on the kafka side, this can be safely retried.
 			case OffsetOutOfRange:
 				// We may be reading past the last offset, will retry later.
 			case context.Canceled:
@@ -325,7 +324,8 @@ func (r *reader) run(ctx context.Context, offset int64) {
 }
 
 func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, start int64, err error) {
-	for _, broker := range r.brokers {
+	for i := 0; i != len(r.brokers) && conn == nil; i++ {
+		var broker = r.brokers[i]
 		var first int64
 
 		if conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition); err != nil {
@@ -337,6 +337,7 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 
 		if first, err = conn.ReadFirstOffset(); err != nil {
 			conn.Close()
+			conn = nil
 			break
 		}
 
@@ -348,10 +349,9 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 
 		if start, err = conn.Seek(offset, 1); err != nil {
 			conn.Close()
+			conn = nil
 			break
 		}
-
-		break
 	}
 
 	return

@@ -40,9 +40,10 @@ func TestReader(t *testing.T) {
 			defer cancel()
 
 			r := NewReader(ReaderConfig{
-				Brokers: []string{"localhost:9092"},
-				Topic:   makeTopic(),
-				MaxWait: 500 * time.Millisecond,
+				Brokers:  []string{"localhost:9092"},
+				Topic:    makeTopic(),
+				MinBytes: 1,
+				MaxBytes: 10e6,
 			})
 			defer r.Close()
 			testFunc(t, ctx, r)
