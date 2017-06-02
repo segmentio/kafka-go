@@ -23,7 +23,7 @@ test:
       --volume ${PWD}:/go/src/github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}
       --workdir /go/src/github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}
       segment/golang:latest
-      go.test='sleep 10 && govendor test -v -cover .'
+      go.test='sleep 10 && govendor test -v -covermode atomic .'
       go.bench='true'
       # - sleep to give kafka time to start
       # - disable the race detector because there's too much concurrency going on in the tests and it takes too long to complete
