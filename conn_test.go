@@ -390,7 +390,7 @@ func testConnReadWatermarkFromBatch(t *testing.T, conn *Conn) {
 			}
 		}
 
-		if batch.HighWatermark() != 10 {
+		if batch.HighWaterMark() != 10 {
 			t.Fatal("expected highest offset (watermark) to be 10")
 		}
 	}

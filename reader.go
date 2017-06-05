@@ -382,7 +382,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 			break
 		}
 
-		if err = r.sendMessage(ctx, msg, batch.HighWatermark()); err != nil {
+		if err = r.sendMessage(ctx, msg, batch.HighWaterMark()); err != nil {
 			err = batch.Close()
 			break
 		}
