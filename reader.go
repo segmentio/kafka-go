@@ -28,6 +28,7 @@ type Reader struct {
 	cancel  context.CancelFunc
 	version int64
 	offset  int64
+	lag     int64
 	dirty   bool
 	closed  bool
 }
@@ -167,13 +168,13 @@ func (r *Reader) ReadMessage(ctx context.Context) (msg Message, err error) {
 		case <-ctx.Done():
 			err = ctx.Err()
 			return
-
 		case m := <-r.msgs:
 			if m.version >= version {
 				r.mutex.Lock()
 				if version == r.version {
 					r.offset = m.message.Offset + 1
 				}
+				r.lag = m.watermark - r.offset
 				r.mutex.Unlock()
 				msg = m.message
 				return
@@ -201,6 +202,15 @@ func (r *Reader) Offset() int64 {
 	offset := r.offset
 	r.mutex.Unlock()
 	return offset
+}
+
+// Lag returns the difference between the highest offset in a Kafka partition and the reader's
+// current offset. This can be used as a queue-depth indicator.
+func (r *Reader) Lag() int64 {
+	r.mutex.Lock()
+	lag := r.lag
+	r.mutex.Unlock()
+	return lag
 }
 
 // SetOffset changes the offset from which the next batch of messages will be
@@ -238,8 +248,9 @@ type reader struct {
 }
 
 type readerMessage struct {
-	version int64
-	message Message
+	version   int64
+	message   Message
+	watermark int64
 }
 
 type readerError struct {
@@ -371,8 +382,8 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 			break
 		}
 
-		if err = r.sendMessage(ctx, msg); err != nil {
-			batch.Close()
+		if err = r.sendMessage(ctx, msg, batch.HighWaterMark()); err != nil {
+			err = batch.Close()
 			break
 		}
 
@@ -382,9 +393,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	return offset, err
 }
 
-func (r *reader) sendMessage(ctx context.Context, msg Message) error {
+func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) error {
 	select {
-	case r.msgs <- readerMessage{version: r.version, message: msg}:
+	case r.msgs <- readerMessage{version: r.version, message: msg, watermark: watermark}:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()

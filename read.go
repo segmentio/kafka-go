@@ -215,7 +215,7 @@ func readSlice(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
 	return sz, nil
 }
 
-func readFetchResponseHeader(r *bufio.Reader, size int) (throttle int32, remain int, err error) {
+func readFetchResponseHeader(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, err error) {
 	var n int32
 	var p struct {
 		Partition           int32
@@ -273,6 +273,7 @@ func readFetchResponseHeader(r *bufio.Reader, size int) (throttle int32, remain 
 		return
 	}
 
+	watermark = p.HighwaterMarkOffset
 	return
 }
 

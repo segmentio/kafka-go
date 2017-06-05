@@ -17,21 +17,27 @@ import (
 //
 // Batches are safe to use concurrently from multiple goroutines.
 type Batch struct {
-	mutex    sync.Mutex
-	conn     *Conn
-	lock     *sync.Mutex
-	reader   *bufio.Reader
-	deadline time.Time
-	throttle time.Duration
-	remain   int
-	offset   int64
-	err      error
+	mutex         sync.Mutex
+	conn          *Conn
+	lock          *sync.Mutex
+	reader        *bufio.Reader
+	deadline      time.Time
+	throttle      time.Duration
+	remain        int
+	offset        int64
+	highWaterMark int64
+	err           error
 }
 
 // Throttle gives the throttling duration applied by the kafka server on the
 // connection.
 func (batch *Batch) Throttle() time.Duration {
 	return batch.throttle
+}
+
+// Watermark returns the current highest watermark in a partition.
+func (batch *Batch) HighWaterMark() int64 {
+	return batch.highWaterMark
 }
 
 // Offset returns the offset of the next message in the batch.
