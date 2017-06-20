@@ -28,9 +28,9 @@ type WriterConfig struct {
 
 	Balancer Balancer
 
-	Attempts int
+	MaxAttempts int
 
-	Capacity int
+	QueueCapacity int
 
 	BatchSize int
 
@@ -41,6 +41,8 @@ type WriterConfig struct {
 	WriteTimeout time.Duration
 
 	RebalanceInterval time.Duration
+
+	Async bool
 }
 
 func NewWriter(config WriterConfig) *Writer {
@@ -60,12 +62,12 @@ func NewWriter(config WriterConfig) *Writer {
 		config.Balancer = &RoundRobin{}
 	}
 
-	if config.Attempts == 0 {
-		config.Attempts = 10
+	if config.MaxAttempts == 0 {
+		config.MaxAttempts = 10
 	}
 
-	if config.Capacity == 0 {
-		config.Capacity = 100
+	if config.QueueCapacity == 0 {
+		config.QueueCapacity = 100
 	}
 
 	if config.BatchSize == 0 {
@@ -90,7 +92,7 @@ func NewWriter(config WriterConfig) *Writer {
 
 	w := &Writer{
 		config: config,
-		msgs:   make(chan writerMessage, config.Capacity),
+		msgs:   make(chan writerMessage, config.QueueCapacity),
 		done:   make(chan struct{}),
 	}
 
@@ -104,10 +106,10 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return nil
 	}
 
-	var res = make(chan error, 1)
+	var res = make(chan error, len(msgs))
 	var err error
 
-	for attempt := 0; attempt != w.config.Attempts; attempt++ {
+	for attempt := 0; attempt != w.config.MaxAttempts; attempt++ {
 		w.mutex.RLock()
 
 		if w.closed {
@@ -129,13 +131,17 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 		w.mutex.RUnlock()
 
+		if w.config.Async {
+			break
+		}
+
 		var retry []Message
 		for i := 0; i != len(msgs); i++ {
 			select {
 			case e := <-res:
 				if e != nil {
 					if we, ok := e.(*writerError); ok {
-						retry, err = append(retry, we.msgs...), we.err
+						retry, err = append(retry, we.msg), we.err
 					} else {
 						err = e
 					}
@@ -226,10 +232,7 @@ func (w *Writer) run() {
 			if len(partitions) != 0 {
 				writers[w.config.Balancer.Balance(wm.msg.Key, partitions...)].msgs <- wm
 			} else {
-				select {
-				default:
-				case wm.res <- err:
-				}
+				wm.res <- err
 			}
 
 		case <-ticker.C:
@@ -292,10 +295,7 @@ func (w *Writer) close(writer *writer) {
 
 		if w.closed {
 			for wm := range writer.msgs {
-				select {
-				case wm.res <- io.ErrClosedPipe:
-				default:
-				}
+				wm.res <- io.ErrClosedPipe
 			}
 		} else {
 			for wm := range writer.msgs {
@@ -336,7 +336,7 @@ func newWriter(partition int, config WriterConfig) *writer {
 		batchTimeout: config.BatchTimeout,
 		writeTimeout: config.WriteTimeout,
 		dialer:       config.Dialer,
-		msgs:         make(chan writerMessage, config.Capacity),
+		msgs:         make(chan writerMessage, config.QueueCapacity),
 	}
 }
 
@@ -384,13 +384,16 @@ func (w *writer) run() {
 				var err error
 				conn, err = w.write(conn, batch...)
 
-				for _, res := range resch {
-					select {
-					case res <- err:
-					default:
-						// The goroutine that generated tht message may have
-						// given up if its context was canceled, in that case
-						// blocking would result in a dead lock.
+				if err == nil {
+					for _, res := range resch {
+						res <- nil
+					}
+				} else {
+					for i, res := range resch {
+						res <- &writerError{
+							msg: batch[i],
+							err: err,
+						}
 					}
 				}
 
@@ -416,13 +419,6 @@ func (w *writer) write(conn *Conn, msgs ...Message) (ret *Conn, err error) {
 		conn.Close()
 	}
 
-	if err != nil {
-		err = &writerError{
-			msgs: copyMessages(msgs),
-			err:  err,
-		}
-	}
-
 	ret = conn
 	return
 }
@@ -442,8 +438,8 @@ type writerMessage struct {
 }
 
 type writerError struct {
-	msgs []Message
-	err  error
+	msg Message
+	err error
 }
 
 func (e *writerError) Cause() error {
@@ -460,10 +456,4 @@ func (e *writerError) Temporary() bool {
 
 func (e *writerError) Timeout() bool {
 	return isTimeout(e.err)
-}
-
-func copyMessages(msgs []Message) []Message {
-	cpy := make([]Message, len(msgs))
-	copy(cpy, msgs)
-	return cpy
 }
