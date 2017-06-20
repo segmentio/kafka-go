@@ -317,17 +317,11 @@ func (w *Writer) partitions() (partitions []int, err error) {
 		var conn *Conn
 		var plist []Partition
 
-		ctx, cancel := context.WithTimeout(context.Background(), w.config.ReadTimeout)
-
-		if conn, err = w.config.Dialer.DialContext(ctx, "tcp", broker); err != nil {
-			cancel()
+		if conn, err = w.config.Dialer.Dial("tcp", broker); err != nil {
 			continue
 		}
 
-		deadline, _ := ctx.Deadline()
-		cancel()
-		conn.SetReadDeadline(deadline)
-
+		conn.SetReadDeadline(time.Now().Add(w.config.ReadTimeout))
 		plist, err = conn.ReadPartitions(w.config.Topic)
 		conn.Close()
 
@@ -345,36 +339,14 @@ func (w *Writer) partitions() (partitions []int, err error) {
 }
 
 func (w *Writer) open(partition int) (writer *writer) {
-	writer = newWriter(partition, w.config)
-	w.join.Add(1)
-
-	go func() {
-		defer w.join.Done()
-		writer.run()
-	}()
-
-	return writer
+	return newWriter(partition, w.config)
 }
 
 func (w *Writer) close(writer *writer) {
-	writer.close()
 	w.join.Add(1)
-
 	go func() {
-		defer w.join.Done()
-		w.mutex.RLock()
-
-		if w.closed {
-			for wm := range writer.msgs {
-				wm.res <- io.ErrClosedPipe
-			}
-		} else {
-			for wm := range writer.msgs {
-				w.msgs <- wm
-			}
-		}
-
-		w.mutex.RUnlock()
+		writer.close()
+		w.join.Done()
 	}()
 }
 
@@ -396,10 +368,11 @@ type writer struct {
 	writeTimeout time.Duration
 	dialer       *Dialer
 	msgs         chan writerMessage
+	join         sync.WaitGroup
 }
 
 func newWriter(partition int, config WriterConfig) *writer {
-	return &writer{
+	w := &writer{
 		brokers:      config.Brokers,
 		topic:        config.Topic,
 		partition:    partition,
@@ -409,13 +382,19 @@ func newWriter(partition int, config WriterConfig) *writer {
 		dialer:       config.Dialer,
 		msgs:         make(chan writerMessage, config.QueueCapacity),
 	}
+	w.join.Add(1)
+	go w.run()
+	return w
 }
 
 func (w *writer) close() {
 	close(w.msgs)
+	w.join.Wait()
 }
 
 func (w *writer) run() {
+	defer w.join.Done()
+
 	ticker := time.NewTicker(w.batchTimeout / 10)
 	defer ticker.Stop()
 
@@ -451,55 +430,59 @@ func (w *writer) run() {
 		if mustFlush {
 			lastFlushAt = time.Now()
 
-			if len(batch) != 0 {
-				var err error
-				conn, err = w.write(conn, batch...)
-
-				if err == nil {
-					for _, res := range resch {
-						res <- nil
-					}
-				} else {
-					for i, res := range resch {
-						res <- &writerError{
-							msg: batch[i],
-							err: err,
-						}
-					}
-				}
-
-				batch = batch[:0]
+			if len(batch) == 0 {
+				continue
 			}
+
+			var err error
+			if conn, err = w.write(conn, batch, resch); err != nil {
+				conn.Close()
+				conn = nil
+			}
+
+			for i := range batch {
+				batch[i] = Message{}
+			}
+
+			for i := range resch {
+				resch[i] = nil
+			}
+
+			batch = batch[:0]
+			resch = resch[:0]
 		}
 	}
 }
 
-func (w *writer) write(conn *Conn, msgs ...Message) (ret *Conn, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), w.writeTimeout)
-	if conn == nil {
-		conn, err = w.dial(ctx)
-	}
-
-	deadline, _ := ctx.Deadline()
-	cancel()
-
-	if conn != nil {
-		conn.SetWriteDeadline(deadline)
-
-		_, err = conn.WriteMessages(msgs...)
-		conn.Close()
-	}
-
-	ret = conn
-	return
-}
-
-func (w *writer) dial(ctx context.Context) (conn *Conn, err error) {
+func (w *writer) dial() (conn *Conn, err error) {
 	for _, broker := range shuffledStrings(w.brokers) {
-		if conn, err = w.dialer.DialLeader(ctx, "tcp", broker, w.topic, w.partition); err == nil {
+		if conn, err = w.dialer.DialLeader(context.Background(), "tcp", broker, w.topic, w.partition); err == nil {
 			break
 		}
 	}
+	return
+}
+
+func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
+	if conn == nil {
+		if conn, err = w.dial(); err != nil {
+			return
+		}
+	}
+
+	conn.SetWriteDeadline(time.Now().Add(w.writeTimeout))
+
+	if _, err = conn.WriteMessages(batch...); err != nil {
+		for i, res := range resch {
+			res <- &writerError{msg: batch[i], err: err}
+		}
+	} else {
+		for _, res := range resch {
+			res <- nil
+		}
+	}
+
+	ret = conn
 	return
 }
 
