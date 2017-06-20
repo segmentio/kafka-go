@@ -1,21 +1,37 @@
 package kafka
 
-import "sync/atomic"
-
+// The Balancer interface provides an abstraction of the message distribution
+// logic used by Writer instances to route messages to the partitions available
+// on a kafka cluster.
+//
+// Instances of Balancer do not have to be safe to use concurrently by multiple
+// goroutines, the Writer implementation ensures that calls to Balance are
+// synchronized.
 type Balancer interface {
-	Balance(key []byte, partitions ...int) (partition int)
+	// Balance receives a message and a set of available partitions and
+	// returns the partition number that the message should be routed to.
+	Balance(msg Message, partitions ...int) (partition int)
 }
 
-type BalancerFunc func([]byte, ...int) int
+// BalancerFunc is an implementation of the Balancer interface that makes it
+// possible to use regular functions to distribute messages across paritions.
+type BalancerFunc func(Message, ...int) int
 
-func (f BalancerFunc) Balance(key []byte, partitions ...int) int {
-	return f(key, partitions...)
+// Balance calls f, satisfies the Balancer interface.
+func (f BalancerFunc) Balance(msg Message, partitions ...int) int {
+	return f(msg, partitions...)
 }
 
+// RoundRobin is an Balancer implementation that equally distributes messages
+// across all available partitions.
 type RoundRobin struct {
-	offset uint32
+	offset uint64
 }
 
-func (rr *RoundRobin) Balance(key []byte, partitions ...int) int {
-	return partitions[int(atomic.AddUint32(&rr.offset, 1))%len(partitions)]
+// Balance satisfies the Balancer interface.
+func (rr *RoundRobin) Balance(msg Message, partitions ...int) int {
+	length := uint64(len(partitions))
+	offset := rr.offset
+	rr.offset++
+	return partitions[offset%length]
 }

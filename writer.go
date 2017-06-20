@@ -3,11 +3,17 @@ package kafka
 import (
 	"context"
 	"io"
+	"math/rand"
 	"sort"
 	"sync"
 	"time"
 )
 
+// The Writer type provides the implementation of a producer of kafka messages
+// that automatically distributes messages across partitions of a single topic
+// using a configurable blancing policy.
+//
+// Instances of Writer are safe to use concurrently from multiple goroutines.
 type Writer struct {
 	config WriterConfig
 
@@ -19,32 +25,79 @@ type Writer struct {
 	done chan struct{}
 }
 
+// WriterConfig is a configuration type used to create new instances of Writer.
 type WriterConfig struct {
+	// The list of brokers used to discover the partitions available on the
+	// kafka cluster.
+	//
+	// This field is required, attempting to create a writer with an empty list
+	// of brokers will panic.
 	Brokers []string
 
+	// The topic that the writer will produce messages to.
+	//
+	// This field is required, attempting to create a writer with an empty topic
+	// will panic.
 	Topic string
 
+	// The dialer used by the writer to establish connections to the kafka
+	// cluster.
+	//
+	// If nil, the default dialer is used instead.
 	Dialer *Dialer
 
+	// The balancer used to distribute messages across partitions.
+	//
+	// The default is to use a round-robin distribution.
 	Balancer Balancer
 
+	// Limit on how many attempts will be made to deliver a message.
+	//
+	// The default is to try at most 10 times.
 	MaxAttempts int
 
+	// A hint on the capacity of the writer's internal messager queue.
+	//
+	// The default is to use a queue capacity of 100 messages.
 	QueueCapacity int
 
+	// Limit on how many messages will be buffered before being sent to a
+	// partition.
+	//
+	// The default is to use a target batch size of 100 messages.
 	BatchSize int
 
+	// Time limit on how often incomplete message batches will be flushed to
+	// kafka.
+	//
+	// The default is to flush at least every second.
 	BatchTimeout time.Duration
 
+	// Timeout for read operations performed by the Writer.
+	//
+	// Defaults to 10 seconds.
 	ReadTimeout time.Duration
 
+	// Timeout for write operation performed by the Writer.
+	//
+	// Defaults to 10 seconds.
 	WriteTimeout time.Duration
 
+	// This interval defines how often the list of partitions is refreshed from
+	// kafka. It allows the writer to automatically handle when new partitions
+	// are added to a topic.
+	//
+	// The default is to refresh partitions every 15 seconds.
 	RebalanceInterval time.Duration
 
+	// Setting this flag to true causes the WriteMessages method to never block.
+	// It also means that errors are ignored since the caller will not receive
+	// the returned value. Use this only if you don't care about garantees of
+	// whether the messages were written to kafka.
 	Async bool
 }
 
+// NewWriter creates and returns a new Writer configured with config.
 func NewWriter(config WriterConfig) *Writer {
 	if len(config.Brokers) == 0 {
 		panic("cannot create a kafka writer with an empty list of brokers")
@@ -101,6 +154,21 @@ func NewWriter(config WriterConfig) *Writer {
 	return w
 }
 
+// WriteMessages writes a batch of messages to the kafka topic configured on this
+// writer.
+//
+// Unless the writer was configured to write messages asynchronously, the method
+// blocks until all messages have been written, or until the maximum number of
+// attempts was reached.
+//
+// When the method returns an error, there's no way to know yet which messages
+// have succeeded of failed.
+//
+// The context passed as first argument may also be used to asynchronously
+// cancel the operation. Note that in this case there are no garantees made on
+// whether messages were written to kafka. The program should assume that the
+// whole batch failed and re-write the messages later (which could then cause
+// duplicates).
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	if len(msgs) == 0 {
 		return nil
@@ -174,6 +242,9 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	return err
 }
 
+// Close flushes all buffered messages and closes the writer. The call to Close
+// aborts any concurrent calls to WriteMessages, which then return with the
+// io.ErrClosedPipe error.
 func (w *Writer) Close() (err error) {
 	w.mutex.Lock()
 
@@ -230,7 +301,7 @@ func (w *Writer) run() {
 			}
 
 			if len(partitions) != 0 {
-				writers[w.config.Balancer.Balance(wm.msg.Key, partitions...)].msgs <- wm
+				writers[w.config.Balancer.Balance(wm.msg, partitions...)].msgs <- wm
 			} else {
 				wm.res <- err
 			}
@@ -242,7 +313,7 @@ func (w *Writer) run() {
 }
 
 func (w *Writer) partitions() (partitions []int, err error) {
-	for _, broker := range w.config.Brokers {
+	for _, broker := range shuffledStrings(w.config.Brokers) {
 		var conn *Conn
 		var plist []Partition
 
@@ -424,7 +495,7 @@ func (w *writer) write(conn *Conn, msgs ...Message) (ret *Conn, err error) {
 }
 
 func (w *writer) dial(ctx context.Context) (conn *Conn, err error) {
-	for _, broker := range w.brokers {
+	for _, broker := range shuffledStrings(w.brokers) {
 		if conn, err = w.dialer.DialLeader(ctx, "tcp", broker, w.topic, w.partition); err == nil {
 			break
 		}
@@ -457,3 +528,23 @@ func (e *writerError) Temporary() bool {
 func (e *writerError) Timeout() bool {
 	return isTimeout(e.err)
 }
+
+func shuffledStrings(list []string) []string {
+	shuffledList := make([]string, len(list))
+	copy(shuffledList, list)
+
+	shufflerMutex.Lock()
+
+	for i := range shuffledList {
+		j := shuffler.Intn(i + 1)
+		shuffledList[i], shuffledList[j] = shuffledList[j], shuffledList[i]
+	}
+
+	shufflerMutex.Unlock()
+	return shuffledList
+}
+
+var (
+	shufflerMutex = sync.Mutex{}
+	shuffler      = rand.New(rand.NewSource(time.Now().Unix()))
+)
