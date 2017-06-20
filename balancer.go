@@ -77,7 +77,7 @@ func (lb *LeastBytes) Balance(msg Message, partitions ...int) int {
 	}
 
 	c := &lb.counters[minIndex]
-	c.bytes += uint64(len(msg.Key) + len(msg.Value))
+	c.bytes += uint64(len(msg.Key)) + uint64(len(msg.Value))
 	return c.partition
 }
 
