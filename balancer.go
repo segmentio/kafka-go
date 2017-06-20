@@ -63,6 +63,7 @@ func (lb *LeastBytes) Balance(msg Message, partitions ...int) int {
 	for _, p := range partitions {
 		if c := lb.counterOf(p); c == nil {
 			lb.counters = lb.makeCounters(partitions...)
+			break
 		}
 	}
 
