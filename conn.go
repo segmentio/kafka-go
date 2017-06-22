@@ -442,8 +442,6 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 				return err
 			}
 
-			fmt.Printf("%#v\n", res)
-
 			brokers := make(map[int32]Broker, len(res.Brokers))
 			for _, b := range res.Brokers {
 				brokers[b.NodeID] = Broker{
