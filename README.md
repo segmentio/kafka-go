@@ -102,3 +102,41 @@ for {
 
 r.Close()
 ```
+
+## Writer
+
+To produce messages to Kafka, a program may use the low-level `Conn` API, but
+the package also provides a higher level `Writer` type which is more appropriate
+to use in most cases because it provides additional features:
+
+- Automatic retries and reconnections on errors.
+- Configurable distribution of messages across available partitions.
+- Synchronously or asynchronously writing messages to Kafka.
+- Asynchronous cancellation using contexts.
+- Flush pending messages on close to support graceful shutdowns.
+
+```go
+// make a writer that produces to topic-A, using the least-bytes distribution
+w := kafka.NewWriter(kafka.WriterConfig{
+	Brokers: []string{"localhost:9092"},
+	Topic:   "topic-A",
+    Balancer: &kafka.LeastBytes{},
+})
+
+w.WriteMessages(context.Background(),
+	kafka.Message{
+		Key:   []byte("Key-A"),
+		Value: []byte("Hello World!"),
+	},
+	kafka.Message{
+		Key:   []byte("Key-B"),
+		Value: []byte("One!"),
+	},
+	kafka.Message{
+		Key:   []byte("Key-C"),
+		Value: []byte("Two!"),
+	},
+)
+
+w.Close()
+```
