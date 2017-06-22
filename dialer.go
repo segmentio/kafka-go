@@ -155,6 +155,8 @@ func (d *Dialer) LookupLeader(ctx context.Context, network string, address strin
 				}
 			}
 		}
+
+		errch <- UnknownTopicOrPartition
 	}()
 
 	var brk Broker
@@ -220,7 +222,7 @@ type Resolver interface {
 }
 
 func sleep(ctx context.Context, duration time.Duration) bool {
-	if duration != 0 {
+	if duration == 0 {
 		select {
 		default:
 			return true
