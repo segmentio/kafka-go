@@ -183,4 +183,5 @@ func BenchmarkReader(b *testing.B) {
 	}
 
 	r.Close()
+	b.SetBytes(int64(len(benchmarkReaderPayload)))
 }
