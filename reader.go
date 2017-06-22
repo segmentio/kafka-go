@@ -143,7 +143,7 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	for {
 		r.mutex.Lock()
 
-		if r.version == 0 {
+		if !r.closed && r.version == 0 {
 			r.start()
 		}
 
