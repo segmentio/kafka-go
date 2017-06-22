@@ -166,9 +166,9 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 				case m.error != nil:
 				case version == r.version:
 					r.offset = m.message.Offset + 1
+					r.lag = m.watermark - r.offset
 				}
 
-				r.lag = m.watermark - r.offset
 				r.mutex.Unlock()
 				return m.message, m.error
 			}
