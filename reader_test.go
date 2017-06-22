@@ -136,9 +136,9 @@ func prepareReader(t *testing.T, ctx context.Context, r *Reader, msgs ...Message
 }
 
 var (
-	benchmarkReaderOnce   sync.Once
-	benchmarkReaderTopic  = makeTopic()
-	benchmarkReaderPaylod = make([]byte, 16*1024)
+	benchmarkReaderOnce    sync.Once
+	benchmarkReaderTopic   = makeTopic()
+	benchmarkReaderPayload = make([]byte, 16*1024)
 )
 
 func BenchmarkReader(b *testing.B) {
@@ -154,7 +154,7 @@ func BenchmarkReader(b *testing.B) {
 
 		msgs := make([]Message, 1000)
 		for i := range msgs {
-			msgs[i].Value = benchmarkReaderPaylod
+			msgs[i].Value = benchmarkReaderPayload
 		}
 
 		for i := 0; i != 10; i++ { // put 10K messages
