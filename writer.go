@@ -92,7 +92,7 @@ type WriterConfig struct {
 
 	// Setting this flag to true causes the WriteMessages method to never block.
 	// It also means that errors are ignored since the caller will not receive
-	// the returned value. Use this only if you don't care about garantees of
+	// the returned value. Use this only if you don't care about guarantees of
 	// whether the messages were written to kafka.
 	Async bool
 }
