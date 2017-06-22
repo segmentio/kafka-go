@@ -90,7 +90,7 @@ func NewReader(config ReaderConfig) *Reader {
 	}
 
 	if config.MaxBytes == 0 {
-		config.MaxBytes = 10e6 // 10 MB
+		config.MaxBytes = 1e6 // 1 MB
 	}
 
 	if config.MinBytes == 0 {
