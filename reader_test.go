@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -132,4 +133,54 @@ func prepareReader(t *testing.T, ctx context.Context, r *Reader, msgs ...Message
 	if _, err := conn.WriteMessages(msgs...); err != nil {
 		t.Fatal(err)
 	}
+}
+
+var (
+	benchmarkReaderOnce   sync.Once
+	benchmarkReaderTopic  = makeTopic()
+	benchmarkReaderPaylod = make([]byte, 16*1024)
+)
+
+func BenchmarkReader(b *testing.B) {
+	const broker = "localhost:9092"
+	ctx := context.Background()
+
+	benchmarkReaderOnce.Do(func() {
+		conn, err := DialLeader(ctx, "tcp", broker, benchmarkReaderTopic, 0)
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer conn.Close()
+
+		msgs := make([]Message, 1000)
+		for i := range msgs {
+			msgs[i].Value = benchmarkReaderPaylod
+		}
+
+		for i := 0; i != 10; i++ { // put 10K messages
+			if _, err := conn.WriteMessages(msgs...); err != nil {
+				b.Fatal(err)
+			}
+		}
+
+		b.ResetTimer()
+	})
+
+	r := NewReader(ReaderConfig{
+		Brokers:   []string{broker},
+		Topic:     benchmarkReaderTopic,
+		Partition: 0,
+		MinBytes:  1e3,
+		MaxBytes:  1e6,
+		MaxWait:   100 * time.Millisecond,
+	})
+
+	for i := 0; i != b.N; i++ {
+		if (i % 10000) == 0 {
+			r.SetOffset(0)
+		}
+		r.ReadMessage(ctx)
+	}
+
+	r.Close()
 }

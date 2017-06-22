@@ -19,17 +19,14 @@ type Reader struct {
 
 	// communication channels between the parent reader and its subreaders
 	msgs chan readerMessage
-	errs chan readerError
-	done chan struct{}
 
 	// mutable fields of the reader (synchronized on the mutex)
 	mutex   sync.Mutex
-	ctx     context.Context
+	join    sync.WaitGroup
 	cancel  context.CancelFunc
 	version int64
 	offset  int64
 	lag     int64
-	dirty   bool
 	closed  bool
 }
 
@@ -48,6 +45,10 @@ type ReaderConfig struct {
 	// An dialer used to open connections to the kafka server. This field is
 	// optional, if nil, the default dialer is used instead.
 	Dialer *Dialer
+
+	// The capacity of the internal message queue, defaults to 100 if none is
+	// set.
+	QueueCapacity int
 
 	// Min and max number of bytes to fetch from kafka in each request.
 	MinBytes int
@@ -100,16 +101,15 @@ func NewReader(config ReaderConfig) *Reader {
 		config.MaxWait = 10 * time.Second
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	if config.QueueCapacity == 0 {
+		config.QueueCapacity = 100
+	}
+
 	return &Reader{
 		config: config,
-		msgs:   make(chan readerMessage),
-		errs:   make(chan readerError),
-		done:   make(chan struct{}),
-		ctx:    ctx,
-		cancel: cancel,
+		msgs:   make(chan readerMessage, config.QueueCapacity),
+		cancel: func() {},
 		offset: -1,
-		dirty:  true,
 	}
 }
 
@@ -122,76 +122,56 @@ func (r *Reader) Config() ReaderConfig {
 // messages from it.
 func (r *Reader) Close() error {
 	r.mutex.Lock()
-	if !r.closed {
-		close(r.done)
-	}
+	closed := r.closed
 	r.closed = true
-	r.dirty = false
-	r.cancel()
 	r.mutex.Unlock()
+
+	r.cancel()
+	r.join.Wait()
+
+	if !closed {
+		close(r.msgs)
+	}
+
 	return nil
 }
 
 // ReadMessage reads and return the next message from the r. The method call
 // blocks until a message becomes available, or an error occurs. The program
 // may also specify a context to asynchronously cancel the blocking operation.
-func (r *Reader) ReadMessage(ctx context.Context) (msg Message, err error) {
+func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	for {
 		r.mutex.Lock()
 
-		if r.dirty {
-			subctx, cancel := context.WithCancel(context.Background())
-
-			r.cancel() // always cancel the previous reader
-			r.cancel = cancel
-			r.dirty = false
-			r.version++
-
-			go (&reader{
-				dialer:    r.config.Dialer,
-				brokers:   r.config.Brokers,
-				topic:     r.config.Topic,
-				partition: r.config.Partition,
-				minBytes:  r.config.MinBytes,
-				maxBytes:  r.config.MaxBytes,
-				maxWait:   r.config.MaxWait,
-				version:   r.version,
-				msgs:      r.msgs,
-				errs:      r.errs,
-			}).run(subctx, r.offset)
+		if r.version == 0 {
+			r.start()
 		}
 
-		rctx, version := r.ctx, r.version
+		version := r.version
 		r.mutex.Unlock()
 
 		select {
 		case <-ctx.Done():
-			err = ctx.Err()
-			return
-		case m := <-r.msgs:
+			return Message{}, ctx.Err()
+
+		case m, ok := <-r.msgs:
+			if !ok {
+				return Message{}, io.ErrClosedPipe
+			}
+
 			if m.version >= version {
 				r.mutex.Lock()
-				if version == r.version {
+
+				switch {
+				case m.error != nil:
+				case version == r.version:
 					r.offset = m.message.Offset + 1
 				}
+
 				r.lag = m.watermark - r.offset
 				r.mutex.Unlock()
-				msg = m.message
-				return
+				return m.message, m.error
 			}
-
-		case e := <-r.errs:
-			if e.version >= version {
-				err = e.error
-				return
-			}
-
-		case <-r.done:
-			err = io.ErrClosedPipe
-			return
-
-		case <-rctx.Done():
-			// The subreader was canceled, loop back to start a new one.
 		}
 	}
 }
@@ -220,15 +200,40 @@ func (r *Reader) Lag() int64 {
 func (r *Reader) SetOffset(offset int64) error {
 	var err error
 	r.mutex.Lock()
+
 	if r.closed {
 		err = io.ErrClosedPipe
 	} else if offset != r.offset {
 		r.offset = offset
-		r.dirty = true
-		r.cancel() // may wake up a blocked Read call to spawn a new reader
+
+		if r.version != 0 {
+			r.start()
+		}
 	}
+
 	r.mutex.Unlock()
 	return err
+}
+
+func (r *Reader) start() {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	r.cancel() // always cancel the previous reader
+	r.cancel = cancel
+	r.version++
+
+	r.join.Add(1)
+	go (&reader{
+		dialer:    r.config.Dialer,
+		brokers:   r.config.Brokers,
+		topic:     r.config.Topic,
+		partition: r.config.Partition,
+		minBytes:  r.config.MinBytes,
+		maxBytes:  r.config.MaxBytes,
+		maxWait:   r.config.MaxWait,
+		version:   r.version,
+		msgs:      r.msgs,
+	}).run(ctx, r.offset, &r.join)
 }
 
 // A reader reads messages from kafka and produces them on its channels, it's
@@ -244,21 +249,17 @@ type reader struct {
 	maxWait   time.Duration
 	version   int64
 	msgs      chan<- readerMessage
-	errs      chan<- readerError
 }
 
 type readerMessage struct {
 	version   int64
 	message   Message
 	watermark int64
+	error     error
 }
 
-type readerError struct {
-	version int64
-	error   error
-}
-
-func (r *reader) run(ctx context.Context, offset int64) {
+func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
+	defer join.Done()
 	// This is the reader's main loop, it only ends if the context is canceled
 	// and will keep attempting to reader messages otherwise.
 	//
@@ -404,7 +405,7 @@ func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) 
 
 func (r *reader) sendError(ctx context.Context, err error) error {
 	select {
-	case r.errs <- readerError{version: r.version, error: err}:
+	case r.msgs <- readerMessage{version: r.version, error: err}:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
