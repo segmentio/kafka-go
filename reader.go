@@ -196,6 +196,9 @@ func (r *Reader) Lag() int64 {
 // SetOffset changes the offset from which the next batch of messages will be
 // read.
 //
+// Setting the offset ot -1 means to seek to the first offset.
+// Setting the offset to -2 means to seek to the last offset.
+//
 // The method fails with io.ErrClosedPipe if the reader has already been closed.
 func (r *Reader) SetOffset(offset int64) error {
 	var err error
@@ -347,7 +350,16 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 		// This deadline controls how long the offset negotiation may take.
 		conn.SetDeadline(time.Now().Add(10 * time.Second))
 
-		if first, err = conn.ReadFirstOffset(); err != nil {
+		switch offset {
+		case -1:
+			first, err = conn.ReadFirstOffset()
+		case -2:
+			first, err = conn.ReadLastOffset()
+		default:
+			first = offset
+		}
+
+		if err != nil {
 			conn.Close()
 			conn = nil
 			break
