@@ -184,6 +184,9 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 // call ReadMessage to update the value returned by Lag, but still needs to get
 // an up to date estimation of how far behind the reader is. For example when
 // the consumer is not ready to process the next message.
+//
+// The function returns a lag of zero when the reader's current offset is
+// negative.
 func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	offch := make(chan int64, 1)
 	errch := make(chan error, 1)
@@ -219,8 +222,10 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 
 	select {
 	case off := <-offch:
-		if lag = off - r.Offset(); lag < 0 {
-			lag = 0
+		if cur := r.Offset(); cur >= 0 {
+			if lag = off - cur; lag < 0 {
+				lag = 0
+			}
 		}
 	case err = <-errch:
 	case <-ctx.Done():
