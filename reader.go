@@ -176,6 +176,60 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	}
 }
 
+// ReadLag returns the current lag of the reader by fetching the last offset of
+// the topic and partition and computing the difference between that value and
+// the offset of the last message returned by ReadMessage.
+//
+// This method is intended to be used in cases where a program may be unable to
+// call ReadMessage to update the value returned by Lag, but still needs to get
+// an up to date estimation of how far behind the reader is. For example when
+// the consumer is not ready to process the next message.
+func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
+	offch := make(chan int64, 1)
+	errch := make(chan error, 1)
+
+	go func() {
+		var off int64
+		var err error
+
+		for _, broker := range r.config.Brokers {
+			var conn *Conn
+
+			if conn, err = r.config.Dialer.DialLeader(ctx, "tcp", broker, r.config.Topic, r.config.Partition); err != nil {
+				continue
+			}
+
+			deadline, _ := ctx.Deadline()
+			conn.SetDeadline(deadline)
+
+			off, err = conn.ReadLastOffset()
+			conn.Close()
+
+			if err == nil {
+				break
+			}
+		}
+
+		if err != nil {
+			errch <- err
+		} else {
+			offch <- off
+		}
+	}()
+
+	select {
+	case off := <-offch:
+		if lag = off - r.Offset(); lag < 0 {
+			lag = 0
+		}
+	case err = <-errch:
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+
+	return
+}
+
 // Offset returns the current offset of the reader.
 func (r *Reader) Offset() int64 {
 	r.mutex.Lock()
@@ -184,8 +238,7 @@ func (r *Reader) Offset() int64 {
 	return offset
 }
 
-// Lag returns the difference between the highest offset in a Kafka partition and the reader's
-// current offset. This can be used as a queue-depth indicator.
+// Lag returns the lag of the last message returned by ReadMessage.
 func (r *Reader) Lag() int64 {
 	r.mutex.Lock()
 	lag := r.lag
