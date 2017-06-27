@@ -182,7 +182,8 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 //
 // This method is intended to be used in cases where a program may be unable to
 // call ReadMessage to update the value returned by Lag, but still needs to get
-// an up to date estimation of how far behind the reader is.
+// an up to date estimation of how far behind the reader is. For example when
+// the consumer is not ready to process the next message.
 func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	offch := make(chan int64, 1)
 	errch := make(chan error, 1)
