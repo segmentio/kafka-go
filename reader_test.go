@@ -136,8 +136,8 @@ func testReaderReadLag(t *testing.T, ctx context.Context, r *Reader) {
 
 	if lag, err := r.ReadLag(ctx); err != nil {
 		t.Error(err)
-	} else if lag != N+1 {
-		t.Errorf("the initial lag value is %d but was expected to be %d", lag, N+1)
+	} else if lag != 0 {
+		t.Errorf("the initial lag value is %d but was expected to be 0", lag)
 	}
 
 	for i := 0; i != N; i++ {
