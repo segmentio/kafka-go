@@ -17,18 +17,28 @@ func TestReader(t *testing.T) {
 		function func(*testing.T, context.Context, *Reader)
 	}{
 		{
-			scenario: "calling Read with a context that has been canceled should return an error",
+			scenario: "calling Read with a context that has been canceled returns an error",
 			function: testReaderReadCanceled,
 		},
 
 		{
-			scenario: "all messages of the stream should be made available when calling ReadMessage repeatedly",
+			scenario: "all messages of the stream are returned when calling ReadMessage repeatedly",
 			function: testReaderReadMessages,
 		},
 
 		{
-			scenario: "setting the offset to random values should return the expected messages when Read is called",
+			scenario: "setting the offset to random values returns the expected messages when Read is called",
 			function: testReaderSetRandomOffset,
+		},
+
+		{
+			scenario: "calling Lag returns the lag of the last message read from kafka",
+			function: testReaderLag,
+		},
+
+		{
+			scenario: "calling ReadLag returns the current lag of a reader",
+			function: testReaderReadLag,
 		},
 	}
 
@@ -98,6 +108,46 @@ func testReaderSetRandomOffset(t *testing.T, ctx context.Context, r *Reader) {
 		if v != offset {
 			t.Error("message at offset", offset, "has wrong value:", v)
 			return
+		}
+	}
+}
+
+func testReaderLag(t *testing.T, ctx context.Context, r *Reader) {
+	const N = 5
+	prepareReader(t, ctx, r, makeTestSequence(N)...)
+
+	if lag := r.Lag(); lag != 0 {
+		t.Errorf("the initial lag value is %d but was expected to be 0", lag)
+	}
+
+	for i := 0; i != N; i++ {
+		r.ReadMessage(ctx)
+		expect := int64(N - (i + 1))
+
+		if lag := r.Lag(); lag != expect {
+			t.Errorf("the lag value at offset %d is %d but was expected to be %d", i, lag, expect)
+		}
+	}
+}
+
+func testReaderReadLag(t *testing.T, ctx context.Context, r *Reader) {
+	const N = 5
+	prepareReader(t, ctx, r, makeTestSequence(N)...)
+
+	if lag, err := r.ReadLag(ctx); err != nil {
+		t.Error(err)
+	} else if lag != N+1 {
+		t.Errorf("the initial lag value is %d but was expected to be %d", lag, N+1)
+	}
+
+	for i := 0; i != N; i++ {
+		r.ReadMessage(ctx)
+		expect := int64(N - (i + 1))
+
+		if lag, err := r.ReadLag(ctx); err != nil {
+			t.Error(err)
+		} else if lag != expect {
+			t.Errorf("the lag value at offset %d is %d but was expected to be %d", i, lag, expect)
 		}
 	}
 }
