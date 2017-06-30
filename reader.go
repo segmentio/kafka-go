@@ -241,6 +241,7 @@ func (r *Reader) Offset() int64 {
 	r.mutex.Lock()
 	offset := r.offset
 	r.mutex.Unlock()
+	log.Printf("looking up offset of kafka reader for partition %d of %s: %d", r.config.Partition, r.config.Topic, offset)
 	return offset
 }
 
@@ -266,6 +267,12 @@ func (r *Reader) SetOffset(offset int64) error {
 	if r.closed {
 		err = io.ErrClosedPipe
 	} else if offset != r.offset {
+		log.Printf("setting the offset of the kafka reader for partition %d of %s from %d to %d",
+			r.config.Partition,
+			r.config.Topic,
+			r.offset,
+			offset,
+		)
 		r.offset = offset
 
 		if r.version != 0 {
@@ -342,6 +349,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			}
 		}
 
+		log.Printf("initializing kafka reader for partition %d of %s starting at offset %d", r.partition, r.topic, offset)
 		conn, start, err := r.initialize(ctx, offset)
 		switch err {
 		case nil:
@@ -383,11 +391,11 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			case nil, RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
-				log.Printf("no messages received from kafka within the allocated time for partition %d of %s", r.partition, r.topic)
+				log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, offset)
 				continue
 			case OffsetOutOfRange:
 				// We may be reading past the last offset, will retry later.
-				log.Printf("the kafka reader is reading past the last offset for partition %d of %s", r.partition, r.topic)
+				log.Printf("the kafka reader is reading past the last offset for partition %d of %s at offset %d", r.partition, r.topic, offset)
 			case context.Canceled:
 				// Another reader has taken over, we can safely quit.
 				conn.Close()
@@ -439,6 +447,7 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 			offset = first
 		}
 
+		log.Printf("the kafka reader for partition %d of %s is seeking to offset %d", r.partition, r.topic, offset)
 		if start, err = conn.Seek(offset, 1); err != nil {
 			conn.Close()
 			conn = nil
