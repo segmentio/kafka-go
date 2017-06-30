@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"sync"
 	"time"
@@ -321,6 +322,10 @@ type readerMessage struct {
 
 func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 	defer join.Done()
+
+	const backoffDelayMin = 100 * time.Millisecond
+	const backoffDelayMax = 1 * time.Second
+
 	// This is the reader's main loop, it only ends if the context is canceled
 	// and will keep attempting to reader messages otherwise.
 	//
@@ -332,7 +337,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 	// on a Read call after reading the first error.
 	for attempt := 0; true; attempt++ {
 		if attempt != 0 {
-			if !sleep(ctx, backoff(attempt, time.Second, time.Minute)) {
+			if !sleep(ctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
 				return
 			}
 		}
@@ -344,12 +349,15 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			// This would happen if the requested offset is passed the last
 			// offset on the partition leader. In that case we're just going
 			// to retry later hoping that enough data has been produced.
+			log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, OffsetOutOfRange)
 		default:
 			// Wait 4 attempts before reporting the first errors, this helps
 			// mitigate situations where the kafka server is temporarily
 			// unavailable.
 			if attempt >= 3 {
 				r.sendError(ctx, err)
+			} else {
+				log.Printf("error initializing the kafka reader for partition %d of %s:", r.partition, r.topic, err)
 			}
 			continue
 		}
@@ -366,7 +374,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 		errcount := 0
 	readLoop:
 		for {
-			if !sleep(ctx, backoff(errcount, 100*time.Millisecond, time.Second)) {
+			if !sleep(ctx, backoff(errcount, backoffDelayMin, backoffDelayMax)) {
 				conn.Close()
 				return
 			}
@@ -375,9 +383,11 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			case nil, RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
+				log.Printf("no messages received from kafka within the allocated time for partition %d of %s", r.partition, r.topic)
 				continue
 			case OffsetOutOfRange:
 				// We may be reading past the last offset, will retry later.
+				log.Printf("the kafka reader is reading past the last offset for partition %d of %s", r.partition, r.topic)
 			case context.Canceled:
 				// Another reader has taken over, we can safely quit.
 				conn.Close()
