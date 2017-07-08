@@ -55,6 +55,7 @@ func TestReader(t *testing.T) {
 				Topic:    makeTopic(),
 				MinBytes: 1,
 				MaxBytes: 10e6,
+				MaxWait:  100 * time.Millisecond,
 			})
 			defer r.Close()
 			testFunc(t, ctx, r)
@@ -136,8 +137,8 @@ func testReaderReadLag(t *testing.T, ctx context.Context, r *Reader) {
 
 	if lag, err := r.ReadLag(ctx); err != nil {
 		t.Error(err)
-	} else if lag != 0 {
-		t.Errorf("the initial lag value is %d but was expected to be 0", lag)
+	} else if lag != N {
+		t.Errorf("the initial lag value is %d but was expected to be %d", lag, N)
 	}
 
 	for i := 0; i != N; i++ {

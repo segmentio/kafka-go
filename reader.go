@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+const (
+	firstOffset = -1
+	lastOffset  = -2
+)
+
 // Reader provides a high-level API for consuming messages from kafka.
 //
 // A Reader automatically manages reconnections to a kafka server, and
@@ -110,7 +115,7 @@ func NewReader(config ReaderConfig) *Reader {
 		config: config,
 		msgs:   make(chan readerMessage, config.QueueCapacity),
 		cancel: func() {},
-		offset: -1,
+		offset: firstOffset,
 	}
 }
 
@@ -189,11 +194,16 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 // The function returns a lag of zero when the reader's current offset is
 // negative.
 func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
-	offch := make(chan int64, 1)
+	type offsets struct {
+		first int64
+		last  int64
+	}
+
+	offch := make(chan offsets, 1)
 	errch := make(chan error, 1)
 
 	go func() {
-		var off int64
+		var off offsets
 		var err error
 
 		for _, broker := range r.config.Brokers {
@@ -206,7 +216,7 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 			deadline, _ := ctx.Deadline()
 			conn.SetDeadline(deadline)
 
-			off, err = conn.ReadLastOffset()
+			off.first, off.last, err = conn.ReadOffsets()
 			conn.Close()
 
 			if err == nil {
@@ -223,10 +233,15 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 
 	select {
 	case off := <-offch:
-		if cur := r.Offset(); cur >= 0 {
-			if lag = off - cur; lag < 0 {
-				lag = 0
-			}
+		switch cur := r.Offset(); {
+		case cur == firstOffset:
+			lag = off.last - off.first
+
+		case cur == lastOffset:
+			lag = 0
+
+		default:
+			lag = off.last - cur
 		}
 	case err = <-errch:
 	case <-ctx.Done():
@@ -418,32 +433,28 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 	for i := 0; i != len(r.brokers) && conn == nil; i++ {
 		var broker = r.brokers[i]
 		var first int64
+		var last int64
 
 		if conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition); err != nil {
 			continue
 		}
 
-		// This deadline controls how long the offset negotiation may take.
 		conn.SetDeadline(time.Now().Add(10 * time.Second))
 
-		switch offset {
-		case -1:
-			first, err = conn.ReadFirstOffset()
-		case -2:
-			first, err = conn.ReadLastOffset()
-		default:
-			first = offset
-		}
-
-		if err != nil {
+		if first, last, err = conn.ReadOffsets(); err != nil {
 			conn.Close()
 			conn = nil
 			break
 		}
 
-		// In case the reader was configured with an offset before the first
-		// offset, skipping directly to the first offset.
-		if offset < first {
+		switch {
+		case offset == firstOffset:
+			offset = first
+
+		case offset == lastOffset:
+			offset = last
+
+		case offset < first:
 			offset = first
 		}
 
