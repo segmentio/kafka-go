@@ -63,6 +63,10 @@ type ReaderConfig struct {
 	// Maximum amount of time to wait for new data to come when fetching batches
 	// of messages from kafka.
 	MaxWait time.Duration
+
+	// If not nil, specifies a logger used to report internal changes within the
+	// reader.
+	Logger *log.Logger
 }
 
 // NewReader creates and returns a new Reader configured with config.
@@ -256,7 +260,9 @@ func (r *Reader) Offset() int64 {
 	r.mutex.Lock()
 	offset := r.offset
 	r.mutex.Unlock()
-	log.Printf("looking up offset of kafka reader for partition %d of %s: %d", r.config.Partition, r.config.Topic, offset)
+	r.withLogger(func(log *log.Logger) {
+		log.Printf("looking up offset of kafka reader for partition %d of %s: %d", r.config.Partition, r.config.Topic, offset)
+	})
 	return offset
 }
 
@@ -282,12 +288,10 @@ func (r *Reader) SetOffset(offset int64) error {
 	if r.closed {
 		err = io.ErrClosedPipe
 	} else if offset != r.offset {
-		log.Printf("setting the offset of the kafka reader for partition %d of %s from %d to %d",
-			r.config.Partition,
-			r.config.Topic,
-			r.offset,
-			offset,
-		)
+		r.withLogger(func(log *log.Logger) {
+			log.Printf("setting the offset of the kafka reader for partition %d of %s from %d to %d",
+				r.config.Partition, r.config.Topic, r.offset, offset)
+		})
 		r.offset = offset
 
 		if r.version != 0 {
@@ -297,6 +301,12 @@ func (r *Reader) SetOffset(offset int64) error {
 
 	r.mutex.Unlock()
 	return err
+}
+
+func (r *Reader) withLogger(do func(*log.Logger)) {
+	if r.config.Logger != nil {
+		do(r.config.Logger)
+	}
 }
 
 func (r *Reader) start() {
@@ -309,6 +319,7 @@ func (r *Reader) start() {
 	r.join.Add(1)
 	go (&reader{
 		dialer:    r.config.Dialer,
+		logger:    r.config.Logger,
 		brokers:   r.config.Brokers,
 		topic:     r.config.Topic,
 		partition: r.config.Partition,
@@ -325,6 +336,7 @@ func (r *Reader) start() {
 // them using the high level reader API.
 type reader struct {
 	dialer    *Dialer
+	logger    *log.Logger
 	brokers   []string
 	topic     string
 	partition int
@@ -364,7 +376,10 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			}
 		}
 
-		log.Printf("initializing kafka reader for partition %d of %s starting at offset %d", r.partition, r.topic, offset)
+		r.withLogger(func(log *log.Logger) {
+			log.Printf("initializing kafka reader for partition %d of %s starting at offset %d", r.partition, r.topic, offset)
+		})
+
 		conn, start, err := r.initialize(ctx, offset)
 		switch err {
 		case nil:
@@ -372,7 +387,9 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			// This would happen if the requested offset is passed the last
 			// offset on the partition leader. In that case we're just going
 			// to retry later hoping that enough data has been produced.
-			log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, OffsetOutOfRange)
+			r.withLogger(func(log *log.Logger) {
+				log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, OffsetOutOfRange)
+			})
 		default:
 			// Wait 4 attempts before reporting the first errors, this helps
 			// mitigate situations where the kafka server is temporarily
@@ -380,7 +397,9 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			if attempt >= 3 {
 				r.sendError(ctx, err)
 			} else {
-				log.Printf("error initializing the kafka reader for partition %d of %s:", r.partition, r.topic, err)
+				r.withLogger(func(log *log.Logger) {
+					log.Printf("error initializing the kafka reader for partition %d of %s:", r.partition, r.topic, err)
+				})
 			}
 			continue
 		}
@@ -406,11 +425,15 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			case nil, RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
-				log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, offset)
+				r.withLogger(func(log *log.Logger) {
+					log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, offset)
+				})
 				continue
 			case OffsetOutOfRange:
 				// We may be reading past the last offset, will retry later.
-				log.Printf("the kafka reader is reading past the last offset for partition %d of %s at offset %d", r.partition, r.topic, offset)
+				r.withLogger(func(log *log.Logger) {
+					log.Printf("the kafka reader is reading past the last offset for partition %d of %s at offset %d", r.partition, r.topic, offset)
+				})
 			case context.Canceled:
 				// Another reader has taken over, we can safely quit.
 				conn.Close()
@@ -458,7 +481,10 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 			offset = first
 		}
 
-		log.Printf("the kafka reader for partition %d of %s is seeking to offset %d", r.partition, r.topic, offset)
+		r.withLogger(func(log *log.Logger) {
+			log.Printf("the kafka reader for partition %d of %s is seeking to offset %d", r.partition, r.topic, offset)
+		})
+
 		if start, err = conn.Seek(offset, 1); err != nil {
 			conn.Close()
 			conn = nil
@@ -509,5 +535,11 @@ func (r *reader) sendError(ctx context.Context, err error) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+func (r *reader) withLogger(do func(*log.Logger)) {
+	if r.logger != nil {
+		do(r.logger)
 	}
 }
