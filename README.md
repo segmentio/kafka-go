@@ -30,7 +30,7 @@ APIs to interract with Kafka, mirroring concepts and implementing interfaces of
 the standard library to make it easy to use and integrate with existing
 software.
 
-## Connection
+## Connection [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Conn)
 
 The `Conn` type is the core of the `kafka-go` package, it wraps around a raw
 network connection to expose a low-level API to a Kafka server.
@@ -72,7 +72,7 @@ conn.Close()
 Because of its low level, the `Conn` type turns out to be a great building block
 for higher level abstractions, like the `Reader` for example.
 
-## Reader
+## Reader [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Reader)
 
 A `Reader` is another concept exposed by the `kafka-go` package, which intends
 to make it simpler to implement the typical use case of consuming from a single
@@ -103,7 +103,7 @@ for {
 r.Close()
 ```
 
-## Writer
+## Writer [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Writer)
 
 To produce messages to Kafka, a program may use the low-level `Conn` API, but
 the package also provides a higher level `Writer` type which is more appropriate
