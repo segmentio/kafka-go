@@ -38,7 +38,7 @@ network connection to expose a low-level API to a Kafka server.
 Here are examples of how to typically use a connection object:
 ```go
 // to produce messages
-topic := "my-topc"
+topic := "my-topic"
 partition := 0
 
 conn, _ := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
@@ -54,7 +54,7 @@ conn.Close()
 ```
 ```go
 // to consume messages
-topic := "my-topc"
+topic := "my-topic"
 partition := 0
 
 conn, _ := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
