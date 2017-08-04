@@ -38,7 +38,10 @@ network connection to expose a low-level API to a Kafka server.
 Here are examples of how to typically use a connection object:
 ```go
 // to produce messages
-conn, _ := kafka.DialContext(ctx, "tcp", "localhost:9092")
+topic := "my-topic"
+partition := 0
+
+conn, _ := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
 
 conn.SetWriteDeadline(time.Now().Add(10*time.Second))
 conn.WriteMessages(
@@ -51,14 +54,17 @@ conn.Close()
 ```
 ```go
 // to consume messages
-conn, _ := kafka.DialLeader(ctx, "tcp", "localhost:9092")
+topic := "my-topic"
+partition := 0
+
+conn, _ := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
 
 conn.SetReadDeadline(time.Now().Add(10*time.Second))
-batch := conn.ReadBatch(1e6) // fetch 1MB max
+batch := conn.ReadBatch(10e3, 1e6) // fetch 10KB min, 1MB max
 
 b := make([]byte, 10e3) // 10KB max per message
 for {
-    n, err := batch.Read(b)
+    _, err := batch.Read(b)
     if err != nil {
         break
     }
@@ -93,7 +99,7 @@ r := kafka.NewReader(kafka.ReaderConfig{
 r.SetOffset(42)
 
 for {
-    m, err := r.ReadMessage(ctx)
+    m, err := r.ReadMessage(context.Background())
     if err != nil {
         break
     }
