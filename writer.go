@@ -90,6 +90,11 @@ type WriterConfig struct {
 	// The default is to refresh partitions every 15 seconds.
 	RebalanceInterval time.Duration
 
+	// Number of acknowledges from partition replicas required before receiving
+	// a response to a produce request (default to -1, which means to wait for
+	// all replicas).
+	RequiredAcks int
+
 	// Setting this flag to true causes the WriteMessages method to never block.
 	// It also means that errors are ignored since the caller will not receive
 	// the returned value. Use this only if you don't care about guarantees of
@@ -363,6 +368,7 @@ type writer struct {
 	brokers      []string
 	topic        string
 	partition    int
+	requiredAcks int
 	batchSize    int
 	batchTimeout time.Duration
 	writeTimeout time.Duration
@@ -376,6 +382,7 @@ func newWriter(partition int, config WriterConfig) *writer {
 		brokers:      config.Brokers,
 		topic:        config.Topic,
 		partition:    partition,
+		requiredAcks: config.RequiredAcks,
 		batchSize:    config.BatchSize,
 		batchTimeout: config.BatchTimeout,
 		writeTimeout: config.WriteTimeout,
@@ -457,6 +464,7 @@ func (w *writer) run() {
 func (w *writer) dial() (conn *Conn, err error) {
 	for _, broker := range shuffledStrings(w.brokers) {
 		if conn, err = w.dialer.DialLeader(context.Background(), "tcp", broker, w.topic, w.partition); err == nil {
+			conn.SetRequiredAcks(w.requiredAcks)
 			break
 		}
 	}

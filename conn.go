@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -60,6 +61,9 @@ type Conn struct {
 
 	// correlation ID generator (synchronized on wlock)
 	correlationID int32
+
+	// number of replica acks required when publishing to a partition
+	requiredAcks int32
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -100,13 +104,14 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	}
 
 	c := &Conn{
-		conn:      conn,
-		rbuf:      *bufio.NewReader(conn),
-		wbuf:      *bufio.NewWriter(conn),
-		clientID:  config.ClientID,
-		topic:     config.Topic,
-		partition: int32(config.Partition),
-		offset:    -2,
+		conn:         conn,
+		rbuf:         *bufio.NewReader(conn),
+		wbuf:         *bufio.NewWriter(conn),
+		clientID:     config.ClientID,
+		topic:        config.Topic,
+		partition:    int32(config.Partition),
+		offset:       -2,
+		requiredAcks: -1,
 	}
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
@@ -518,6 +523,7 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 				c.topic,
 				c.partition,
 				deadlineToTimeout(deadline, now),
+				int16(atomic.LoadInt32(&c.requiredAcks)),
 				msgs...,
 			)
 		},
@@ -556,6 +562,18 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 	}
 
 	return n, err
+}
+
+// SetRequiredAcks sets the number of acknowledges from replicas that the
+// connection requests when producing messages.
+func (c *Conn) SetRequiredAcks(n int) error {
+	switch n {
+	case -1, 1:
+		atomic.StoreInt32(&c.requiredAcks, int32(n))
+		return nil
+	default:
+		return InvalidRequiredAcks
+	}
 }
 
 func (c *Conn) writeRequestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32, size int32) {

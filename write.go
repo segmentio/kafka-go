@@ -168,7 +168,7 @@ func writeListOffsetRequestV1(w *bufio.Writer, correleationID int32, clientID st
 	return w.Flush()
 }
 
-func writeProduceRequestV2(w *bufio.Writer, correleationID int32, clientID string, topic string, partition int32, timeout time.Duration, msgs ...Message) error {
+func writeProduceRequestV2(w *bufio.Writer, correleationID int32, clientID string, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
 	var size int32
 
 	for _, msg := range msgs {
@@ -199,7 +199,7 @@ func writeProduceRequestV2(w *bufio.Writer, correleationID int32, clientID strin
 		size
 
 	h.writeTo(w)
-	writeInt16(w, -1) // required acks
+	writeInt16(w, requiredAcks) // required acks
 	writeInt32(w, milliseconds(timeout))
 
 	// topic array
