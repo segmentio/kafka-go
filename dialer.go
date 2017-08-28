@@ -169,6 +169,35 @@ func (d *Dialer) LookupLeader(ctx context.Context, network string, address strin
 	return brk, err
 }
 
+// LookupPartitions returns the list of partitions that exist for the given topic.
+func (d *Dialer) LookupPartitions(ctx context.Context, network string, address string, topic string) ([]Partition, error) {
+	conn, err := d.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	prtch := make(chan []Partition, 1)
+	errch := make(chan error, 1)
+
+	go func() {
+		if prt, err := conn.ReadPartitions(topic); err != nil {
+			errch <- err
+		} else {
+			prtch <- prt
+		}
+	}()
+
+	var prt []Partition
+	select {
+	case prt = <-prtch:
+	case err = <-errch:
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+	return prt, err
+}
+
 func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {
 	if r := d.Resolver; r != nil {
 		host, port := splitHostPort(address)
