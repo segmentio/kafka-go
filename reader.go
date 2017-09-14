@@ -422,7 +422,10 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			}
 
 			switch offset, err = r.read(ctx, offset, conn); err {
-			case nil, RequestTimedOut:
+			case nil:
+				errcount = 0
+
+			case RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
 				r.withLogger(func(log *log.Logger) {
