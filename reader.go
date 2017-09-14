@@ -390,7 +390,6 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			r.withLogger(func(log *log.Logger) {
 				log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, OffsetOutOfRange)
 			})
-			continue
 		default:
 			// Wait 4 attempts before reporting the first errors, this helps
 			// mitigate situations where the kafka server is temporarily
@@ -423,7 +422,10 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			}
 
 			switch offset, err = r.read(ctx, offset, conn); err {
-			case nil, RequestTimedOut:
+			case nil:
+				errcount = 0
+
+			case RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
 				r.withLogger(func(log *log.Logger) {
