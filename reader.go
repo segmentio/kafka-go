@@ -429,7 +429,6 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 					r.withLogger(func(log *log.Logger) {
 						log.Printf("failed to close connection for partition %d of %s at offset %d", r.partition, r.topic, offset)
 					})
-					break readLoop
 				}
 
 				conn, start, err = r.initialize(ctx, offset)
