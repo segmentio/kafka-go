@@ -424,7 +424,16 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			switch offset, err = r.read(ctx, offset, conn); err {
 			case nil:
 				errcount = 0
+			case NotLeaderForPartition:
+				r.withLogger(func(log *log.Logger) {
+					log.Printf("failed to read from current broker for partition %d of %s at offset %d, not the leader", r.partition, r.topic, offset)
+				})
 
+				conn.Close()
+
+				// The next call to .initialize will re-establish a connection to the proper
+				// partition leader.
+				break readLoop
 			case RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
