@@ -507,7 +507,24 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	var err error
 
 	for {
-		if msg, err = batch.ReadMessage(); err != nil {
+		if msg, err = batch.ReadMessage(); err != nil && err == NotLeaderForPartition {
+			if err = batch.Close(); err != nil {
+				break
+			}
+
+			// Close the connection ignoring any errors it may cause.
+			conn.Close()
+
+			// The current connection is invalid for the selected partition likely caused
+			// by leader election. Try and re-initialize the connection
+			conn, _, err = r.initialize(ctx, offset)
+			if err != nil {
+				break
+			}
+
+			// read will re-initialize the batch with the new connection.
+			return r.read(ctx, offset, conn)
+		} else if err != nil {
 			err = batch.Close()
 			break
 		}
