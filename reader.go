@@ -89,17 +89,19 @@ type ReaderStats struct {
 	Timeouts   int64 `metric:"kafka.reader.timeout.count"   type:"counter"`
 	Errors     int64 `metric:"kafka.reader.error.count"     type:"counter"`
 
-	DialTime DurationStats `metric:"kafka.reader.dial.seconds"`
-	ReadTime DurationStats `metric:"kafka.reader.read.seconds"`
-	WaitTime DurationStats `metric:"kafka.reader.wait.seconds"`
+	DialTime   DurationStats `metric:"kafka.reader.dial.seconds"`
+	ReadTime   DurationStats `metric:"kafka.reader.read.seconds"`
+	WaitTime   DurationStats `metric:"kafka.reader.wait.seconds"`
+	FetchSize  SummaryStats  `metric:"kafka.reader.fetch.size"`
+	FetchBytes SummaryStats  `metric:"kafka.reader.fetch.bytes"`
 
-	Offset        int64 `metric:"kafka.reader.offset"          type:"gauge"`
-	Lag           int64 `metric:"kafka.reader.lag"             type:"gauge"`
-	MinBytes      int64 `metric:"kafka.reader.fetch_bytes.min" type:"gauge"`
-	MaxBytes      int64 `metric:"kafka.reader.fetch_bytes.max" type:"gauge"`
-	MaxWait       int64 `metric:"kafka.reader.fetch_wait.max"  type:"gauge"`
-	QueueLength   int64 `metric:"kafka.reader.queue.length"    type:"gauge"`
-	QueueCapacity int64 `metric:"kafka.reader.queue.capacity"  type:"gauge"`
+	Offset        int64         `metric:"kafka.reader.offset"          type:"gauge"`
+	Lag           int64         `metric:"kafka.reader.lag"             type:"gauge"`
+	MinBytes      int64         `metric:"kafka.reader.fetch_bytes.min" type:"gauge"`
+	MaxBytes      int64         `metric:"kafka.reader.fetch_bytes.max" type:"gauge"`
+	MaxWait       time.Duration `metric:"kafka.reader.fetch_wait.max"  type:"gauge"`
+	QueueLength   int64         `metric:"kafka.reader.queue.length"    type:"gauge"`
+	QueueCapacity int64         `metric:"kafka.reader.queue.capacity"  type:"gauge"`
 
 	ClientID  string `tag:"client_id"`
 	Topic     string `tag:"topic"`
@@ -117,6 +119,8 @@ type readerStats struct {
 	dialTime   summary
 	readTime   summary
 	waitTime   summary
+	fetchSize  summary
+	fetchBytes summary
 	offset     gauge
 	lag        gauge
 	partition  string
@@ -181,9 +185,11 @@ func NewReader(config ReaderConfig) *Reader {
 		stop:   stop,
 		offset: firstOffset,
 		stats: readerStats{
-			dialTime: makeSummary(),
-			readTime: makeSummary(),
-			waitTime: makeSummary(),
+			dialTime:   makeSummary(),
+			readTime:   makeSummary(),
+			waitTime:   makeSummary(),
+			fetchSize:  makeSummary(),
+			fetchBytes: makeSummary(),
 			// Generate the string representation of the partition number only
 			// once when the reader is created.
 			partition: strconv.Itoa(config.Partition),
@@ -394,13 +400,16 @@ func (r *Reader) Stats() ReaderStats {
 		Rebalances:    r.stats.rebalances.snapshot(),
 		Timeouts:      r.stats.timeouts.snapshot(),
 		Errors:        r.stats.errors.snapshot(),
-		DialTime:      r.stats.dialTime.snapshot(),
-		ReadTime:      r.stats.readTime.snapshot(),
-		WaitTime:      r.stats.waitTime.snapshot(),
+		DialTime:      r.stats.dialTime.snapshotDuration(),
+		ReadTime:      r.stats.readTime.snapshotDuration(),
+		WaitTime:      r.stats.waitTime.snapshotDuration(),
+		FetchSize:     r.stats.fetchSize.snapshot(),
+		FetchBytes:    r.stats.fetchBytes.snapshot(),
 		Offset:        r.stats.offset.snapshot(),
 		Lag:           r.stats.lag.snapshot(),
 		MinBytes:      int64(r.config.MinBytes),
 		MaxBytes:      int64(r.config.MaxBytes),
+		MaxWait:       r.config.MaxWait,
 		QueueLength:   int64(len(r.msgs)),
 		QueueCapacity: int64(cap(r.msgs)),
 		ClientID:      r.config.Dialer.ClientID,
@@ -615,7 +624,7 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 		conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition)
 		t1 := time.Now()
 		r.stats.dials.observe(1)
-		r.stats.dialTime.observe(t1.Sub(t0))
+		r.stats.dialTime.observeDuration(t1.Sub(t0))
 
 		if err != nil {
 			continue
@@ -665,11 +674,13 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	highWaterMark := batch.HighWaterMark()
 
 	t1 := time.Now()
-	r.stats.waitTime.observe(t1.Sub(t0))
+	r.stats.waitTime.observeDuration(t1.Sub(t0))
 	conn.SetReadDeadline(t1.Add(10 * time.Second))
 
 	var msg Message
 	var err error
+	var size int64
+	var bytes int64
 
 	for {
 		if msg, err = batch.ReadMessage(); err != nil {
@@ -677,8 +688,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 			break
 		}
 
+		n := int64(len(msg.Key) + len(msg.Value))
 		r.stats.messages.observe(1)
-		r.stats.bytes.observe(int64(len(msg.Key)) + int64(len(msg.Value)))
+		r.stats.bytes.observe(n)
 
 		if err = r.sendMessage(ctx, msg, highWaterMark); err != nil {
 			err = batch.Close()
@@ -688,10 +700,15 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 		offset = msg.Offset + 1
 		r.stats.offset.observe(offset)
 		r.stats.lag.observe(highWaterMark - offset)
+
+		size++
+		bytes += n
 	}
 
 	t2 := time.Now()
-	r.stats.readTime.observe(t2.Sub(t1))
+	r.stats.readTime.observeDuration(t2.Sub(t1))
+	r.stats.fetchSize.observe(size)
+	r.stats.fetchBytes.observe(bytes)
 	return offset, err
 }
 
