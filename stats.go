@@ -6,8 +6,16 @@ import (
 	"unsafe"
 )
 
+// SummaryStats is a data structure that carries a summary of observed values.
+// The average, minimum, and maximum are reported.
+type SummaryStats struct {
+	Avg int64 `metric:"avg" type:"gauge"`
+	Min int64 `metric:"min" type:"gauge"`
+	Max int64 `metric:"max" type:"gauge"`
+}
+
 // DurationStats is a data structure that carries a summary of observed duration
-// values. The average, minimum, maximum, sum, and count are reported.
+// values. The average, minimum, and maximum are reported.
 type DurationStats struct {
 	Avg time.Duration `metric:"avg" type:"gauge"`
 	Min time.Duration `metric:"min" type:"gauge"`
@@ -128,21 +136,40 @@ func makeSummary() summary {
 	}
 }
 
-func (s *summary) observe(v time.Duration) {
-	s.min.observe(int64(v))
-	s.max.observe(int64(v))
-	s.sum.observe(int64(v))
+func (s *summary) observe(v int64) {
+	s.min.observe(v)
+	s.max.observe(v)
+	s.sum.observe(v)
 	s.count.observe(1)
 }
 
-func (s *summary) snapshot() DurationStats {
+func (s *summary) observeDuration(v time.Duration) {
+	s.observe(int64(v))
+}
+
+func (s *summary) snapshot() SummaryStats {
+	avg := int64(0)
 	min := s.min.snapshot()
 	max := s.max.snapshot()
 	sum := s.sum.snapshot()
 	count := s.count.snapshot()
+
+	if count != 0 {
+		avg = int64(float64(sum) / float64(count))
+	}
+
+	return SummaryStats{
+		Avg: avg,
+		Min: min,
+		Max: max,
+	}
+}
+
+func (s *summary) snapshotDuration() DurationStats {
+	summary := s.snapshot()
 	return DurationStats{
-		Avg: time.Duration(float64(sum) / float64(count)),
-		Min: time.Duration(min),
-		Max: time.Duration(max),
+		Avg: time.Duration(summary.Avg),
+		Min: time.Duration(summary.Min),
+		Max: time.Duration(summary.Max),
 	}
 }
