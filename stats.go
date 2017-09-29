@@ -14,39 +14,6 @@ type DurationStats struct {
 	Max time.Duration `metric:"max" type:"gauge"`
 }
 
-type durationStats struct {
-	min   minimum
-	max   maximum
-	sum   counter
-	count counter
-}
-
-func makeDurationStats() durationStats {
-	return durationStats{
-		min: -1,
-		max: -1,
-	}
-}
-
-func (d *durationStats) observe(v time.Duration) {
-	d.min.observe(int64(v))
-	d.max.observe(int64(v))
-	d.sum.observe(int64(v))
-	d.count.observe(1)
-}
-
-func (d *durationStats) snapshot() DurationStats {
-	min := d.min.snapshot()
-	max := d.max.snapshot()
-	sum := d.sum.snapshot()
-	count := d.count.snapshot()
-	return DurationStats{
-		Avg: time.Duration(float64(sum) / float64(count)),
-		Min: time.Duration(min),
-		Max: time.Duration(max),
-	}
-}
-
 // counter is an atomic incrementing counter which gets reset on snapshot.
 type counter int64
 
@@ -145,4 +112,37 @@ func (m *maximum) snapshot() int64 {
 		v = 0
 	}
 	return v
+}
+
+type summary struct {
+	min   minimum
+	max   maximum
+	sum   counter
+	count counter
+}
+
+func makeSummary() summary {
+	return summary{
+		min: -1,
+		max: -1,
+	}
+}
+
+func (s *summary) observe(v time.Duration) {
+	s.min.observe(int64(v))
+	s.max.observe(int64(v))
+	s.sum.observe(int64(v))
+	s.count.observe(1)
+}
+
+func (s *summary) snapshot() DurationStats {
+	min := s.min.snapshot()
+	max := s.max.snapshot()
+	sum := s.sum.snapshot()
+	count := s.count.snapshot()
+	return DurationStats{
+		Avg: time.Duration(float64(sum) / float64(count)),
+		Min: time.Duration(min),
+		Max: time.Duration(max),
+	}
 }

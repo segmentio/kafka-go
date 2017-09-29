@@ -114,9 +114,9 @@ type readerStats struct {
 	rebalances counter
 	timeouts   counter
 	errors     counter
-	dialTime   durationStats
-	readTime   durationStats
-	waitTime   durationStats
+	dialTime   summary
+	readTime   summary
+	waitTime   summary
 	offset     gauge
 	lag        gauge
 	partition  string
@@ -181,6 +181,9 @@ func NewReader(config ReaderConfig) *Reader {
 		stop:   stop,
 		offset: firstOffset,
 		stats: readerStats{
+			dialTime: makeSummary(),
+			readTime: makeSummary(),
+			waitTime: makeSummary(),
 			// Generate the string representation of the partition number only
 			// once when the reader is created.
 			partition: strconv.Itoa(config.Partition),
