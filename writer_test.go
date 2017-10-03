@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -100,15 +101,35 @@ func testWriterRoundRobin1(t *testing.T) {
 	}
 }
 
+type fakeWriter struct{}
+
+func (f *fakeWriter) Messages() chan<- writerMessage {
+	ch := make(chan writerMessage, 1)
+
+	go func() {
+		msg := <-ch
+		msg.res <- &writerError{
+			err: errors.New("bad attempt"),
+		}
+	}()
+
+	return ch
+}
+
+func (f *fakeWriter) Close() {
+
+}
+
 func testWriterMaxAttemptsErr(t *testing.T) {
 	const topic = "test-nope"
 
 	w := newTestWriter(WriterConfig{
 		Topic:       topic,
 		MaxAttempts: 1,
-		Balancer: BalancerFunc(func(msg Message, p ...int) int {
-			return 1000
-		}),
+		Balancer:    &RoundRobin{},
+		NewPartitionWriter: func(p int, config WriterConfig) PartitionWriter {
+			return &fakeWriter{}
+		},
 	})
 	defer w.Close()
 
