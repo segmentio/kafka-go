@@ -242,7 +242,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		case <-timer.C:
 			// Only clear the error (so we retry the loop) if we have more retries, otherwise
 			// we risk silencing the error.
-			if attempt != w.config.MaxAttempts-1 {
+			if attempt < w.config.MaxAttempts {
 				err = nil
 			}
 		case <-ctx.Done():
