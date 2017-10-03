@@ -3,7 +3,6 @@ package kafka
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -109,13 +108,10 @@ func (f *fakeWriter) Messages() chan<- writerMessage {
 
 	go func() {
 		for {
-			fmt.Println("TRYING TO FETCH MSG")
 			msg := <-ch
-			fmt.Println("GOT MSG")
 			msg.res <- &writerError{
 				err: errors.New("bad attempt"),
 			}
-			panic("ERR")
 		}
 	}()
 
