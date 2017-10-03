@@ -111,6 +111,7 @@ func (f *fakeWriter) Messages() chan<- writerMessage {
 		msg.res <- &writerError{
 			err: errors.New("bad attempt"),
 		}
+		panic("SENT ERROR")
 	}()
 
 	return ch
