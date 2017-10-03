@@ -141,7 +141,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 		t.Error("expected error")
 		return
 	} else if err != nil {
-		if !strings.Contains(err.Error(), "failed to write message") {
+		if !strings.Contains(err.Error(), "bad attempt") {
 			t.Errorf("unexpected error: %s", err)
 			return
 		}
