@@ -190,7 +190,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	var res = make(chan error, len(msgs))
 	var err error
 
-	for attempt := 0; attempt != w.config.MaxAttempts; attempt++ {
+	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
 		w.mutex.RLock()
 
 		if w.closed {
@@ -242,7 +242,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		case <-timer.C:
 			// Only clear the error (so we retry the loop) if we have more retries, otherwise
 			// we risk silencing the error.
-			if attempt < w.config.MaxAttempts {
+			if attempt < w.config.MaxAttempts-1 {
 				err = nil
 			}
 		case <-ctx.Done():
