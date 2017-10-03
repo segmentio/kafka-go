@@ -28,7 +28,7 @@ type Writer struct {
 
 // WriterConfig is a configuration type used to create new instances of Writer.
 type WriterConfig struct {
-	NewPartitionWriter func(partition int, config WriterConfig) PartitionWriter
+	newPartitionWriter func(partition int, config WriterConfig) partitionWriter
 	// The list of brokers used to discover the partitions available on the
 	// kafka cluster.
 	//
@@ -122,9 +122,9 @@ func NewWriter(config WriterConfig) *Writer {
 		config.Balancer = &RoundRobin{}
 	}
 
-	if config.NewPartitionWriter == nil {
-		config.NewPartitionWriter = func(partition int, config WriterConfig) PartitionWriter {
-			return newPartitionWriter(partition, config)
+	if config.newPartitionWriter == nil {
+		config.newPartitionWriter = func(partition int, config WriterConfig) partitionWriter {
+			return newWriter(partition, config)
 		}
 	}
 
@@ -285,7 +285,7 @@ func (w *Writer) run() {
 	defer ticker.Stop()
 
 	var rebalance = true
-	var writers = make(map[int]PartitionWriter)
+	var writers = make(map[int]partitionWriter)
 	var partitions []int
 	var err error
 
@@ -363,11 +363,11 @@ func (w *Writer) partitions() (partitions []int, err error) {
 	return
 }
 
-func (w *Writer) open(partition int) PartitionWriter {
-	return w.config.NewPartitionWriter(partition, w.config)
+func (w *Writer) open(partition int) partitionWriter {
+	return w.config.newPartitionWriter(partition, w.config)
 }
 
-func (w *Writer) close(writer PartitionWriter) {
+func (w *Writer) close(writer partitionWriter) {
 	w.join.Add(1)
 	go func() {
 		writer.Close()
@@ -384,12 +384,12 @@ func diffp(new []int, old []int) (diff []int) {
 	return
 }
 
-type PartitionWriter interface {
+type partitionWriter interface {
 	Messages() chan<- writerMessage
 	Close()
 }
 
-type partitionWriter struct {
+type writer struct {
 	brokers      []string
 	topic        string
 	partition    int
@@ -402,8 +402,8 @@ type partitionWriter struct {
 	join         sync.WaitGroup
 }
 
-func newPartitionWriter(partition int, config WriterConfig) *partitionWriter {
-	w := &partitionWriter{
+func newWriter(partition int, config WriterConfig) *writer {
+	w := &writer{
 		brokers:      config.Brokers,
 		topic:        config.Topic,
 		partition:    partition,
@@ -419,16 +419,16 @@ func newPartitionWriter(partition int, config WriterConfig) *partitionWriter {
 	return w
 }
 
-func (w *partitionWriter) Close() {
+func (w *writer) Close() {
 	close(w.msgs)
 	w.join.Wait()
 }
 
-func (w *partitionWriter) Messages() chan<- writerMessage {
+func (w *writer) Messages() chan<- writerMessage {
 	return w.msgs
 }
 
-func (w *partitionWriter) run() {
+func (w *writer) run() {
 	defer w.join.Done()
 
 	ticker := time.NewTicker(w.batchTimeout / 10)
@@ -490,7 +490,7 @@ func (w *partitionWriter) run() {
 	}
 }
 
-func (w *partitionWriter) dial() (conn *Conn, err error) {
+func (w *writer) dial() (conn *Conn, err error) {
 	for _, broker := range shuffledStrings(w.brokers) {
 		if conn, err = w.dialer.DialLeader(context.Background(), "tcp", broker, w.topic, w.partition); err == nil {
 			conn.SetRequiredAcks(w.requiredAcks)
@@ -500,7 +500,7 @@ func (w *partitionWriter) dial() (conn *Conn, err error) {
 	return
 }
 
-func (w *partitionWriter) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
+func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
 	if conn == nil {
 		if conn, err = w.dial(); err != nil {
 			return
