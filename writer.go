@@ -419,7 +419,7 @@ func newWriter(partition int, config WriterConfig) *writer {
 	return w
 }
 
-func (w *writer) Close() {
+func (w *writer) close() {
 	close(w.msgs)
 	w.join.Wait()
 }
