@@ -105,7 +105,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 
 	w := newTestWriter(WriterConfig{
 		Topic:       topic,
-		MaxAttempts: 2,
+		MaxAttempts: 1,
 		Balancer: BalancerFunc(func(msg Message, p ...int) int {
 			return 1000
 		}),
