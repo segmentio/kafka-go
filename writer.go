@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"sort"
@@ -209,6 +210,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		var retry []Message
+
 		for i := 0; i != len(msgs); i++ {
 			select {
 			case e := <-res:
@@ -231,7 +233,11 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		timer := time.NewTimer(backoff(attempt+1, 100*time.Millisecond, 1*time.Second))
 		select {
 		case <-timer.C:
-			err = nil
+			// Only clear the error (so we retry the loop) if we have more retries, otherwise
+			// we risk silencing the error.
+			if attempt != w.config.MaxAttempts-1 {
+				err = nil
+			}
 		case <-ctx.Done():
 			err = ctx.Err()
 		case <-w.done:
@@ -240,6 +246,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		timer.Stop()
 
 		if err != nil {
+			err = fmt.Errorf("failed to write message: %s", err)
 			break
 		}
 	}
@@ -306,8 +313,21 @@ func (w *Writer) run() {
 			}
 
 			if len(partitions) != 0 {
-				writers[w.config.Balancer.Balance(wm.msg, partitions...)].msgs <- wm
+				selectedPartition := w.config.Balancer.Balance(wm.msg, partitions...)
+				if selectedPartition > len(writers) {
+					wm.res <- &writerError{
+						msg: wm.msg,
+						err: fmt.Errorf("balancer selected an invalid partition: %d", selectedPartition),
+					}
+				} else {
+					writers[selectedPartition].msgs <- wm
+				}
 			} else {
+				// No partitions were found because the topic doesn't exist.
+				if err != nil {
+					err = fmt.Errorf("failed to find any partitions for topic %s", w.config.Topic)
+				}
+
 				wm.res <- err
 			}
 
