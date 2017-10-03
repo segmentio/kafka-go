@@ -103,7 +103,7 @@ func testWriterRoundRobin1(t *testing.T) {
 
 type fakeWriter struct{}
 
-func (f *fakeWriter) Messages() chan<- writerMessage {
+func (f *fakeWriter) messages() chan<- writerMessage {
 	ch := make(chan writerMessage, 1)
 
 	go func() {
@@ -118,7 +118,7 @@ func (f *fakeWriter) Messages() chan<- writerMessage {
 	return ch
 }
 
-func (f *fakeWriter) Close() {
+func (f *fakeWriter) close() {
 
 }
 
@@ -141,7 +141,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 		t.Error("expected error")
 		return
 	} else if err != nil {
-		if !strings.Contains(err.Error(), "failed to write message") {
+		if !strings.Contains(err.Error(), "bad attempt") {
 			t.Errorf("unexpected error: %s", err)
 			return
 		}

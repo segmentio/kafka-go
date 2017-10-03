@@ -28,7 +28,6 @@ type Writer struct {
 
 // WriterConfig is a configuration type used to create new instances of Writer.
 type WriterConfig struct {
-	newPartitionWriter func(partition int, config WriterConfig) partitionWriter
 	// The list of brokers used to discover the partitions available on the
 	// kafka cluster.
 	//
@@ -102,6 +101,8 @@ type WriterConfig struct {
 	// the returned value. Use this only if you don't care about guarantees of
 	// whether the messages were written to kafka.
 	Async bool
+
+	newPartitionWriter func(partition int, config WriterConfig) partitionWriter
 }
 
 // NewWriter creates and returns a new Writer configured with config.
@@ -253,7 +254,6 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		timer.Stop()
 
 		if err != nil {
-			err = fmt.Errorf("failed to write message: %s", err)
 			break
 		}
 	}
@@ -321,7 +321,7 @@ func (w *Writer) run() {
 
 			if len(partitions) != 0 {
 				selectedPartition := w.config.Balancer.Balance(wm.msg, partitions...)
-				writers[selectedPartition].Messages() <- wm
+				writers[selectedPartition].messages() <- wm
 			} else {
 				// No partitions were found because the topic doesn't exist.
 				if err == nil {
@@ -370,7 +370,7 @@ func (w *Writer) open(partition int) partitionWriter {
 func (w *Writer) close(writer partitionWriter) {
 	w.join.Add(1)
 	go func() {
-		writer.Close()
+		writer.close()
 		w.join.Done()
 	}()
 }
@@ -385,8 +385,8 @@ func diffp(new []int, old []int) (diff []int) {
 }
 
 type partitionWriter interface {
-	Messages() chan<- writerMessage
-	Close()
+	messages() chan<- writerMessage
+	close()
 }
 
 type writer struct {
@@ -419,12 +419,12 @@ func newWriter(partition int, config WriterConfig) *writer {
 	return w
 }
 
-func (w *writer) Close() {
+func (w *writer) close() {
 	close(w.msgs)
 	w.join.Wait()
 }
 
-func (w *writer) Messages() chan<- writerMessage {
+func (w *writer) messages() chan<- writerMessage {
 	return w.msgs
 }
 
