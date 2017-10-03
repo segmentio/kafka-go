@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"sort"
@@ -27,6 +28,7 @@ type Writer struct {
 
 // WriterConfig is a configuration type used to create new instances of Writer.
 type WriterConfig struct {
+	newPartitionWriter func(partition int, config WriterConfig) partitionWriter
 	// The list of brokers used to discover the partitions available on the
 	// kafka cluster.
 	//
@@ -120,6 +122,12 @@ func NewWriter(config WriterConfig) *Writer {
 		config.Balancer = &RoundRobin{}
 	}
 
+	if config.newPartitionWriter == nil {
+		config.newPartitionWriter = func(partition int, config WriterConfig) partitionWriter {
+			return newWriter(partition, config)
+		}
+	}
+
 	if config.MaxAttempts == 0 {
 		config.MaxAttempts = 10
 	}
@@ -182,7 +190,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	var res = make(chan error, len(msgs))
 	var err error
 
-	for attempt := 0; attempt != w.config.MaxAttempts; attempt++ {
+	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
 		w.mutex.RLock()
 
 		if w.closed {
@@ -209,6 +217,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		var retry []Message
+
 		for i := 0; i != len(msgs); i++ {
 			select {
 			case e := <-res:
@@ -231,7 +240,11 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		timer := time.NewTimer(backoff(attempt+1, 100*time.Millisecond, 1*time.Second))
 		select {
 		case <-timer.C:
-			err = nil
+			// Only clear the error (so we retry the loop) if we have more retries, otherwise
+			// we risk silencing the error.
+			if attempt < w.config.MaxAttempts-1 {
+				err = nil
+			}
 		case <-ctx.Done():
 			err = ctx.Err()
 		case <-w.done:
@@ -240,6 +253,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		timer.Stop()
 
 		if err != nil {
+			err = fmt.Errorf("failed to write message: %s", err)
 			break
 		}
 	}
@@ -271,7 +285,7 @@ func (w *Writer) run() {
 	defer ticker.Stop()
 
 	var rebalance = true
-	var writers = make(map[int]*writer)
+	var writers = make(map[int]partitionWriter)
 	var partitions []int
 	var err error
 
@@ -306,8 +320,14 @@ func (w *Writer) run() {
 			}
 
 			if len(partitions) != 0 {
-				writers[w.config.Balancer.Balance(wm.msg, partitions...)].msgs <- wm
+				selectedPartition := w.config.Balancer.Balance(wm.msg, partitions...)
+				writers[selectedPartition].Messages() <- wm
 			} else {
+				// No partitions were found because the topic doesn't exist.
+				if err == nil {
+					err = fmt.Errorf("failed to find any partitions for topic %s", w.config.Topic)
+				}
+
 				wm.res <- err
 			}
 
@@ -343,14 +363,14 @@ func (w *Writer) partitions() (partitions []int, err error) {
 	return
 }
 
-func (w *Writer) open(partition int) (writer *writer) {
-	return newWriter(partition, w.config)
+func (w *Writer) open(partition int) partitionWriter {
+	return w.config.newPartitionWriter(partition, w.config)
 }
 
-func (w *Writer) close(writer *writer) {
+func (w *Writer) close(writer partitionWriter) {
 	w.join.Add(1)
 	go func() {
-		writer.close()
+		writer.Close()
 		w.join.Done()
 	}()
 }
@@ -362,6 +382,11 @@ func diffp(new []int, old []int) (diff []int) {
 		}
 	}
 	return
+}
+
+type partitionWriter interface {
+	Messages() chan<- writerMessage
+	Close()
 }
 
 type writer struct {
@@ -394,9 +419,13 @@ func newWriter(partition int, config WriterConfig) *writer {
 	return w
 }
 
-func (w *writer) close() {
+func (w *writer) Close() {
 	close(w.msgs)
 	w.join.Wait()
+}
+
+func (w *writer) Messages() chan<- writerMessage {
+	return w.msgs
 }
 
 func (w *writer) run() {
