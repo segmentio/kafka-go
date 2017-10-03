@@ -321,17 +321,10 @@ func (w *Writer) run() {
 
 			if len(partitions) != 0 {
 				selectedPartition := w.config.Balancer.Balance(wm.msg, partitions...)
-				if selectedPartition > len(writers) {
-					wm.res <- &writerError{
-						msg: wm.msg,
-						err: fmt.Errorf("balancer selected an invalid partition: %d", selectedPartition),
-					}
-				} else {
-					writers[selectedPartition].Messages() <- wm
-				}
+				writers[selectedPartition].Messages() <- wm
 			} else {
 				// No partitions were found because the topic doesn't exist.
-				if err != nil {
+				if err == nil {
 					err = fmt.Errorf("failed to find any partitions for topic %s", w.config.Topic)
 				}
 
