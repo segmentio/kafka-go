@@ -230,7 +230,7 @@ func (r *Reader) Close() error {
 // blocks until a message becomes available, or an error occurs. The program
 // may also specify a context to asynchronously cancel the blocking operation.
 func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
-	if atomic.CompareAndSwapUint32(&r.once, 0, 1) {
+	if r.config.ReadLagInterval > 0 && atomic.CompareAndSwapUint32(&r.once, 0, 1) {
 		go r.readLag(r.stctx)
 	}
 
