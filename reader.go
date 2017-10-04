@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,6 +39,8 @@ type Reader struct {
 	closed  bool
 
 	// reader stats are all made of atomic values, no need for synchronization.
+	once  uint32
+	stctx context.Context
 	stats readerStats
 }
 
@@ -176,14 +179,14 @@ func NewReader(config ReaderConfig) *Reader {
 		config.QueueCapacity = 100
 	}
 
-	ctx, stop := context.WithCancel(context.Background())
-
-	r := &Reader{
+	stctx, stop := context.WithCancel(context.Background())
+	return &Reader{
 		config: config,
 		msgs:   make(chan readerMessage, config.QueueCapacity),
 		cancel: func() {},
 		stop:   stop,
 		offset: firstOffset,
+		stctx:  stctx,
 		stats: readerStats{
 			dialTime:   makeSummary(),
 			readTime:   makeSummary(),
@@ -195,12 +198,6 @@ func NewReader(config ReaderConfig) *Reader {
 			partition: strconv.Itoa(config.Partition),
 		},
 	}
-
-	if config.ReadLagInterval > 0 {
-		go r.readLag(ctx)
-	}
-
-	return r
 }
 
 // Config returns the reader's configuration.
@@ -211,6 +208,8 @@ func (r *Reader) Config() ReaderConfig {
 // Close closes the stream, preventing the program from reading any more
 // messages from it.
 func (r *Reader) Close() error {
+	atomic.StoreUint32(&r.once, 1)
+
 	r.mutex.Lock()
 	closed := r.closed
 	r.closed = true
@@ -231,6 +230,10 @@ func (r *Reader) Close() error {
 // blocks until a message becomes available, or an error occurs. The program
 // may also specify a context to asynchronously cancel the blocking operation.
 func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
+	if r.config.ReadLagInterval > 0 && atomic.CompareAndSwapUint32(&r.once, 0, 1) {
+		go r.readLag(r.stctx)
+	}
+
 	for {
 		r.mutex.Lock()
 
