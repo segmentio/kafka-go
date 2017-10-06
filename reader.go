@@ -79,6 +79,10 @@ type ReaderConfig struct {
 	// If not nil, specifies a logger used to report internal changes within the
 	// reader.
 	Logger *log.Logger
+
+	// ErrorLogger is the logger used to report errors. If nil, the reader falls
+	// back to using Logger instead.
+	ErrorLogger *log.Logger
 }
 
 // ReaderStats is a data structure returned by a call to Reader.Stats that exposes
@@ -427,6 +431,14 @@ func (r *Reader) withLogger(do func(*log.Logger)) {
 	}
 }
 
+func (r *Reader) withErrorLogger(do func(*log.Logger)) {
+	if r.config.ErrorLogger != nil {
+		do(r.config.ErrorLogger)
+	} else {
+		r.withLogger(do)
+	}
+}
+
 func (r *Reader) readLag(ctx context.Context) {
 	ticker := time.NewTicker(r.config.ReadLagInterval)
 	defer ticker.Stop()
@@ -438,7 +450,7 @@ func (r *Reader) readLag(ctx context.Context) {
 
 		if err != nil {
 			r.stats.errors.observe(1)
-			r.withLogger(func(log *log.Logger) {
+			r.withErrorLogger(func(log *log.Logger) {
 				log.Printf("kafka reader failed to read lag of partition %d of %s", r.config.Partition, r.config.Topic)
 			})
 		} else {
@@ -462,17 +474,18 @@ func (r *Reader) start() {
 
 	r.join.Add(1)
 	go (&reader{
-		dialer:    r.config.Dialer,
-		logger:    r.config.Logger,
-		brokers:   r.config.Brokers,
-		topic:     r.config.Topic,
-		partition: r.config.Partition,
-		minBytes:  r.config.MinBytes,
-		maxBytes:  r.config.MaxBytes,
-		maxWait:   r.config.MaxWait,
-		version:   r.version,
-		msgs:      r.msgs,
-		stats:     &r.stats,
+		dialer:      r.config.Dialer,
+		logger:      r.config.Logger,
+		errorLogger: r.config.ErrorLogger,
+		brokers:     r.config.Brokers,
+		topic:       r.config.Topic,
+		partition:   r.config.Partition,
+		minBytes:    r.config.MinBytes,
+		maxBytes:    r.config.MaxBytes,
+		maxWait:     r.config.MaxWait,
+		version:     r.version,
+		msgs:        r.msgs,
+		stats:       &r.stats,
 	}).run(ctx, r.offset, &r.join)
 }
 
@@ -480,17 +493,18 @@ func (r *Reader) start() {
 // used as an way to asynchronously fetch messages while the main program reads
 // them using the high level reader API.
 type reader struct {
-	dialer    *Dialer
-	logger    *log.Logger
-	brokers   []string
-	topic     string
-	partition int
-	minBytes  int
-	maxBytes  int
-	maxWait   time.Duration
-	version   int64
-	msgs      chan<- readerMessage
-	stats     *readerStats
+	dialer      *Dialer
+	logger      *log.Logger
+	errorLogger *log.Logger
+	brokers     []string
+	topic       string
+	partition   int
+	minBytes    int
+	maxBytes    int
+	maxWait     time.Duration
+	version     int64
+	msgs        chan<- readerMessage
+	stats       *readerStats
 }
 
 type readerMessage struct {
@@ -533,7 +547,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			// This would happen if the requested offset is passed the last
 			// offset on the partition leader. In that case we're just going
 			// to retry later hoping that enough data has been produced.
-			r.withLogger(func(log *log.Logger) {
+			r.withErrorLogger(func(log *log.Logger) {
 				log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, OffsetOutOfRange)
 			})
 		default:
@@ -544,7 +558,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 				r.sendError(ctx, err)
 			} else {
 				r.stats.errors.observe(1)
-				r.withLogger(func(log *log.Logger) {
+				r.withErrorLogger(func(log *log.Logger) {
 					log.Printf("error initializing the kafka reader for partition %d of %s:", r.partition, r.topic, err)
 				})
 			}
@@ -572,7 +586,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			case nil:
 				errcount = 0
 			case NotLeaderForPartition:
-				r.withLogger(func(log *log.Logger) {
+				r.withErrorLogger(func(log *log.Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d, not the leader", r.partition, r.topic, offset)
 				})
 
@@ -585,14 +599,14 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			case RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
-				r.withLogger(func(log *log.Logger) {
+				r.withErrorLogger(func(log *log.Logger) {
 					log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, offset)
 				})
 				r.stats.timeouts.observe(1)
 				continue
 			case OffsetOutOfRange:
 				// We may be reading past the last offset, will retry later.
-				r.withLogger(func(log *log.Logger) {
+				r.withErrorLogger(func(log *log.Logger) {
 					log.Printf("the kafka reader is reading past the last offset for partition %d of %s at offset %d", r.partition, r.topic, offset)
 				})
 			case context.Canceled:
@@ -603,7 +617,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 				if _, ok := err.(Error); ok {
 					r.sendError(ctx, err)
 				} else {
-					r.withLogger(func(log *log.Logger) {
+					r.withErrorLogger(func(log *log.Logger) {
 						log.Printf("the kafka reader got an unknown error reading partition %d of %s at offset %d", r.partition, r.topic, offset)
 					})
 					r.stats.errors.observe(1)
@@ -736,5 +750,13 @@ func (r *reader) sendError(ctx context.Context, err error) error {
 func (r *reader) withLogger(do func(*log.Logger)) {
 	if r.logger != nil {
 		do(r.logger)
+	}
+}
+
+func (r *reader) withErrorLogger(do func(*log.Logger)) {
+	if r.errorLogger != nil {
+		do(r.errorLogger)
+	} else {
+		r.withLogger(do)
 	}
 }
