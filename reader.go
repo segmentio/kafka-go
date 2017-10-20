@@ -705,7 +705,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	conn.SetReadDeadline(deadline)
 
 	for {
-		if now := time.Now(); deadline.Sub(now) < (safetyTimeout / 10) {
+		if now := time.Now(); deadline.Sub(now) < (safetyTimeout / 2) {
 			deadline = now.Add(safetyTimeout)
 			conn.SetReadDeadline(deadline)
 		}
