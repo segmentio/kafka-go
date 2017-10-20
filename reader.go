@@ -559,7 +559,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			} else {
 				r.stats.errors.observe(1)
 				r.withErrorLogger(func(log *log.Logger) {
-					log.Printf("error initializing the kafka reader for partition %d of %s:", r.partition, r.topic, err)
+					log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, err)
 				})
 			}
 			continue
@@ -675,6 +675,8 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 			conn = nil
 			break
 		}
+
+		conn.SetDeadline(time.Time{})
 	}
 
 	return
@@ -692,14 +694,22 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 
 	t1 := time.Now()
 	r.stats.waitTime.observeDuration(t1.Sub(t0))
-	conn.SetReadDeadline(t1.Add(10 * time.Second))
 
 	var msg Message
 	var err error
 	var size int64
 	var bytes int64
 
+	const safetyTimeout = 10 * time.Second
+	deadline := time.Now().Add(safetyTimeout)
+	conn.SetReadDeadline(deadline)
+
 	for {
+		if now := time.Now(); deadline.Sub(now) < (safetyTimeout / 10) {
+			deadline = now.Add(safetyTimeout)
+			conn.SetReadDeadline(deadline)
+		}
+
 		if msg, err = batch.ReadMessage(); err != nil {
 			err = batch.Close()
 			break
@@ -721,6 +731,8 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 		size++
 		bytes += n
 	}
+
+	conn.SetReadDeadline(time.Time{})
 
 	t2 := time.Now()
 	r.stats.readTime.observeDuration(t2.Sub(t1))
