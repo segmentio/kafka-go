@@ -618,7 +618,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 					r.sendError(ctx, err)
 				} else {
 					r.withErrorLogger(func(log *log.Logger) {
-						log.Printf("the kafka reader got an unknown error reading partition %d of %s at offset %d", r.partition, r.topic, offset)
+						log.Printf("the kafka reader got an unknown error reading partition %d of %s at offset %d: %s", r.partition, r.topic, offset, err)
 					})
 					r.stats.errors.observe(1)
 					conn.Close()
