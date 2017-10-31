@@ -45,6 +45,11 @@ func TestReader(t *testing.T) {
 			scenario: "calling Stats returns accurate stats about the reader",
 			function: testReaderStats,
 		},
+
+		{ // https://github.com/segmentio/kafka-go/issues/30
+			scenario: "reading from an out-of-range offset waits until the context is cancelled",
+			function: testReaderOutOfRangeGetsCanceled,
+		},
 	}
 
 	for _, test := range tests {
@@ -221,6 +226,31 @@ func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
 		t.Error("bad stats:")
 		t.Log("expected:", expect)
 		t.Log("found:   ", stats)
+	}
+}
+
+func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Reader) {
+	prepareReader(t, ctx, r, makeTestSequence(10)...)
+
+	const D = 100 * time.Millisecond
+	t0 := time.Now()
+
+	ctx, cancel := context.WithTimeout(ctx, D)
+	defer cancel()
+
+	if err := r.SetOffset(42); err != nil {
+		t.Error(err)
+	}
+
+	_, err := r.ReadMessage(ctx)
+	if err != context.DeadlineExceeded {
+		t.Error("bad error:", err)
+	}
+
+	t1 := time.Now()
+
+	if d := t1.Sub(t0); d < D {
+		t.Error("ReadMessage returned too early after", d)
 	}
 }
 

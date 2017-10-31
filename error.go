@@ -94,7 +94,7 @@ func (e Error) Title() string {
 	case Unknown:
 		return "Unknown"
 	case OffsetOutOfRange:
-		return "Ouffset Out Of Range"
+		return "Offset Out Of Range"
 	case InvalidMessage:
 		return "Invalid Message"
 	case UnknownTopicOrPartition:
