@@ -254,7 +254,7 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 
 		case m, ok := <-r.msgs:
 			if !ok {
-				return Message{}, io.ErrClosedPipe
+				return Message{}, io.EOF
 			}
 
 			if m.version >= version {
@@ -268,6 +268,17 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 				}
 
 				r.mutex.Unlock()
+
+				switch m.error {
+				case nil:
+				case io.EOF:
+					// io.EOF is used as a marker to indicate that the stream
+					// has been closed, in case it was received from the inner
+					// reader we don't want to confuse the program and replace
+					// the error with io.ErrUnexpectedEOF.
+					m.error = io.ErrUnexpectedEOF
+				}
+
 				return m.message, m.error
 			}
 		}
