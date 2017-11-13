@@ -628,6 +628,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 					r.withErrorLogger(func(log *log.Logger) {
 						log.Printf("the kafka reader go an error while attempting to determine whether it was reading before the first offset or after the last offset of partition %d of %s: %s", r.partition, r.topic, err)
 					})
+					conn.Close()
 					break readLoop
 				}
 
