@@ -599,6 +599,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			switch offset, err = r.read(ctx, offset, conn); err {
 			case nil:
 				errcount = 0
+
 			case NotLeaderForPartition:
 				r.withErrorLogger(func(log *log.Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d, not the leader", r.partition, r.topic, offset)
@@ -610,6 +611,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 				// partition leader.
 				r.stats.rebalances.observe(1)
 				break readLoop
+
 			case RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
@@ -618,15 +620,42 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 				})
 				r.stats.timeouts.observe(1)
 				continue
+
 			case OffsetOutOfRange:
-				// We may be reading past the last offset, will retry later.
-				r.withErrorLogger(func(log *log.Logger) {
-					log.Printf("the kafka reader is reading past the last offset for partition %d of %s at offset %d", r.partition, r.topic, offset)
-				})
+				first, last, err := r.readOffsets(conn)
+
+				if err != nil {
+					r.withErrorLogger(func(log *log.Logger) {
+						log.Printf("the kafka reader got an error while attempting to determine whether it was reading before the first offset or after the last offset of partition %d of %s: %s", r.partition, r.topic, err)
+					})
+					conn.Close()
+					break readLoop
+				}
+
+				switch {
+				case offset < first:
+					r.withErrorLogger(func(log *log.Logger) {
+						log.Printf("the kafka reader is reading before the first offset for partition %d of %s, skipping from offset %d to %d (%d messages)", r.partition, r.topic, offset, first, first-offset)
+					})
+					offset, errcount = first, 0
+					continue // retry immediately so we don't keep falling behind due to the backoff
+
+				case offset < last:
+					errcount = 0
+					continue // more messages have already become available, retry immediately
+
+				default:
+					// We may be reading past the last offset, will retry later.
+					r.withErrorLogger(func(log *log.Logger) {
+						log.Printf("the kafka reader is reading passed the last offset for partition %d of %s at offset %d", r.partition, r.topic, offset)
+					})
+				}
+
 			case context.Canceled:
 				// Another reader has taken over, we can safely quit.
 				conn.Close()
 				return
+
 			default:
 				if _, ok := err.(Error); ok {
 					r.sendError(ctx, err)
@@ -661,9 +690,7 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 			continue
 		}
 
-		conn.SetDeadline(time.Now().Add(10 * time.Second))
-
-		if first, last, err = conn.ReadOffsets(); err != nil {
+		if first, last, err = r.readOffsets(conn); err != nil {
 			conn.Close()
 			conn = nil
 			break
@@ -753,6 +780,11 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	r.stats.fetchSize.observe(size)
 	r.stats.fetchBytes.observe(bytes)
 	return offset, err
+}
+
+func (r *reader) readOffsets(conn *Conn) (first int64, last int64, err error) {
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+	return conn.ReadOffsets()
 }
 
 func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) error {
