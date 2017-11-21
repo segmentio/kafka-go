@@ -451,7 +451,7 @@ func (r *Reader) withErrorLogger(do func(*log.Logger)) {
 	}
 }
 
-func (*Reader) activateReadLag() {
+func (r *Reader) activateReadLag() {
 	if r.config.ReadLagInterval > 0 && atomic.CompareAndSwapUint32(&r.once, 0, 1) {
 		go r.readLag(r.stctx)
 	}
