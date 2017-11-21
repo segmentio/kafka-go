@@ -384,6 +384,11 @@ func (r *Reader) Lag() int64 {
 // The method fails with io.ErrClosedPipe if the reader has already been closed.
 func (r *Reader) SetOffset(offset int64) error {
 	var err error
+
+	if r.config.ReadLagInterval > 0 && atomic.CompareAndSwapUint32(&r.once, 0, 1) {
+		go r.readLag(r.stctx)
+	}
+
 	r.mutex.Lock()
 
 	if r.closed {
