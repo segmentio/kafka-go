@@ -382,8 +382,8 @@ func (r *Reader) Lag() int64 {
 // The method fails with io.ErrClosedPipe if the reader has already been closed.
 func (r *Reader) SetOffset(offset int64) error {
 	var err error
-
 	r.mutex.Lock()
+
 	if r.closed {
 		err = io.ErrClosedPipe
 	} else if offset != r.offset {
