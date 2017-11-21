@@ -236,9 +236,7 @@ func (r *Reader) Close() error {
 //
 // The method returns io.EOF to indicate that the reader has been closed.
 func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
-	if r.config.ReadLagInterval > 0 && atomic.CompareAndSwapUint32(&r.once, 0, 1) {
-		go r.readLag(r.stctx)
-	}
+	r.activateReadLag()
 
 	for {
 		r.mutex.Lock()
@@ -398,6 +396,8 @@ func (r *Reader) SetOffset(offset int64) error {
 		if r.version != 0 {
 			r.start()
 		}
+
+		r.activateReadLag()
 	}
 
 	r.mutex.Unlock()
@@ -449,6 +449,12 @@ func (r *Reader) withErrorLogger(do func(*log.Logger)) {
 		do(r.config.ErrorLogger)
 	} else {
 		r.withLogger(do)
+	}
+}
+
+func (r *Reader) activateReadLag() {
+	if r.config.ReadLagInterval > 0 && atomic.CompareAndSwapUint32(&r.once, 0, 1) {
+		go r.readLag(r.stctx)
 	}
 }
 
