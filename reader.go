@@ -383,6 +383,7 @@ func (r *Reader) Lag() int64 {
 func (r *Reader) SetOffset(offset int64) error {
 	var err error
 
+	r.mutex.Lock()
 	if r.closed {
 		err = io.ErrClosedPipe
 	} else if offset != r.offset {
