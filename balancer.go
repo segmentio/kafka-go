@@ -21,7 +21,7 @@ type Balancer interface {
 }
 
 // BalancerFunc is an implementation of the Balancer interface that makes it
-// possible to use regular functions to distribute messages across paritions.
+// possible to use regular functions to distribute messages across partitions.
 type BalancerFunc func(Message, ...int) int
 
 // Balance calls f, satisfies the Balancer interface.
