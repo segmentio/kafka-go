@@ -472,8 +472,10 @@ func (w *writer) run() {
 
 			var err error
 			if conn, err = w.write(conn, batch, resch); err != nil {
-				conn.Close()
-				conn = nil
+				if conn != nil {
+					conn.Close()
+					conn = nil
+				}
 			}
 
 			for i := range batch {
