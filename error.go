@@ -104,7 +104,7 @@ func (e Error) Title() string {
 	case LeaderNotAvailable:
 		return "Leader Not Available"
 	case NotLeaderForPartition:
-		return "Not Leader For Patition"
+		return "Not Leader For Partition"
 	case RequestTimedOut:
 		return "Request Timed Out"
 	case BrokerNotAvailable:
