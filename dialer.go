@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"strconv"
 	"time"
@@ -55,6 +56,10 @@ type Dialer struct {
 
 	// Resolver optionally specifies an alternate resolver to use.
 	Resolver Resolver
+
+	// TLS enables Dialer to open secure connections.  If nil, standard net.Conn
+	// will be used.
+	TLS *tls.Config
 }
 
 // Dial connects to the address on the named network.
@@ -213,12 +218,19 @@ func (d *Dialer) dialContext(ctx context.Context, network string, address string
 			address = net.JoinHostPort(address, port)
 		}
 	}
-	return (&net.Dialer{
+
+	dialer := &net.Dialer{
 		LocalAddr:     d.LocalAddr,
 		DualStack:     d.DualStack,
 		FallbackDelay: d.FallbackDelay,
 		KeepAlive:     d.KeepAlive,
-	}).DialContext(ctx, network, address)
+	}
+
+	if d.TLS != nil {
+		return tls.DialWithDialer(dialer, network, address, d.TLS)
+	}
+
+	return dialer.DialContext(ctx, network, address)
 }
 
 // DefaultDialer is the default dialer used when none is specified.

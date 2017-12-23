@@ -27,5 +27,8 @@ _testmain.go
 # Emacs
 *~
 
+# Goland
+.idea
+
 # govendor
 /vendor/*/
