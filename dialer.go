@@ -219,18 +219,21 @@ func (d *Dialer) dialContext(ctx context.Context, network string, address string
 		}
 	}
 
-	dialer := &net.Dialer{
+	conn, err := (&net.Dialer{
 		LocalAddr:     d.LocalAddr,
 		DualStack:     d.DualStack,
 		FallbackDelay: d.FallbackDelay,
 		KeepAlive:     d.KeepAlive,
+	}).DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
 	}
 
 	if d.TLS != nil {
-		return tls.DialWithDialer(dialer, network, address, d.TLS)
+		return tls.Client(conn, d.TLS), nil
 	}
 
-	return dialer.DialContext(ctx, network, address)
+	return conn, nil
 }
 
 // DefaultDialer is the default dialer used when none is specified.
