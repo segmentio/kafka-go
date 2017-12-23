@@ -291,7 +291,7 @@ func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, 
 	// number of remaining bytes in the response and kafka should only truncate
 	// the trailing message.
 	//
-	// - TCP is already taking care of ensuring data integrirty, no need to
+	// - TCP is already taking care of ensuring data integrity, no need to
 	// waste resources doing it a second time so we just skip the message CRC.
 	//
 	if remain, err = discardN(r, remain, 8); err != nil {

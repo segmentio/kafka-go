@@ -292,7 +292,7 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // returned value of  the batch's Close method.
 //
 // While it is safe to call ReadBatch concurrently from multiple goroutines it
-// may be hard for the program to prodict the results as the connection offset
+// may be hard for the program to predict the results as the connection offset
 // will be read and written by multiple goroutines, they could read duplicates,
 // or messages may be seen by only some of the goroutines.
 //
