@@ -203,6 +203,29 @@ func (d *Dialer) LookupPartitions(ctx context.Context, network string, address s
 	return prt, err
 }
 
+// connectTLS returns a tls.Conn that has already completed the Handshake
+func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn) (tlsConn *tls.Conn, err error) {
+	tlsConn = tls.Client(conn, d.TLS)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		err = tlsConn.Handshake()
+	}()
+
+	select {
+	case <-ctx.Done():
+		conn.Close()
+		tlsConn.Close()
+		err = ctx.Err()
+		return
+
+	case <-done:
+	}
+
+	return
+}
+
 func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {
 	if r := d.Resolver; r != nil {
 		host, port := splitHostPort(address)
@@ -230,7 +253,7 @@ func (d *Dialer) dialContext(ctx context.Context, network string, address string
 	}
 
 	if d.TLS != nil {
-		return tls.Client(conn, d.TLS), nil
+		return d.connectTLS(ctx, conn)
 	}
 
 	return conn, nil

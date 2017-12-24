@@ -72,8 +72,7 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 	}
 }
 
-func TestDialerTLS(t *testing.T) {
-	t.Parallel()
+func tlsConfig(t *testing.T) *tls.Config {
 	const (
 		certPEM = `-----BEGIN CERTIFICATE-----
 MIID2zCCAsOgAwIBAgIJAMSqbewCgw4xMA0GCSqGSIb3DQEBCwUAMGAxCzAJBgNV
@@ -149,6 +148,29 @@ wE3YmpC3Q0g9r44nEbz4Bw==
 -----END CERTIFICATE-----`
 	)
 
+	// Define TLS configuration
+	certificate, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	caCertPool := x509.NewCertPool()
+	if ok := caCertPool.AppendCertsFromPEM([]byte(caPEM)); !ok {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	return &tls.Config{
+		Certificates:       []tls.Certificate{certificate},
+		RootCAs:            caCertPool,
+		InsecureSkipVerify: true,
+	}
+}
+
+func TestDialerTLS(t *testing.T) {
+	t.Parallel()
+
 	// Write a message to ensure the partition gets created.
 	topic := "test-dialer-LookupPartitions"
 	w := NewWriter(WriterConfig{
@@ -161,27 +183,9 @@ wE3YmpC3Q0g9r44nEbz4Bw==
 	// for some reason the partition isn't available right away.
 	time.Sleep(1 * time.Second)
 
-	// Define TLS configuration
-	certificate, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	caCertPool := x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM([]byte(caPEM)); !ok {
-		t.Errorf("unable to append cert to pool")
-		return
-	}
-
-	config := &tls.Config{
-		Certificates:       []tls.Certificate{certificate},
-		RootCAs:            caCertPool,
-		InsecureSkipVerify: true,
-	}
-
 	// Create an SSL proxy using the tls.Config that connects to the
 	// docker-composed kafka
+	config := tlsConfig(t)
 	l, err := tls.Listen("tcp", "127.0.0.1:", config)
 	if err != nil {
 		t.Error(err)
@@ -235,5 +239,59 @@ wE3YmpC3Q0g9r44nEbz4Bw==
 		},
 	}) {
 		t.Error("bad partitions:", partitions)
+	}
+}
+
+type MockConn struct {
+	net.Conn
+	done chan struct{}
+}
+
+func (m *MockConn) Read(b []byte) (n int, err error) {
+	select {
+	case <-time.After(time.Minute):
+	case <-m.done:
+		return 0, context.Canceled
+	}
+
+	return 0, io.EOF
+}
+
+func (m *MockConn) Write(b []byte) (n int, err error) {
+	select {
+	case <-time.After(time.Minute):
+	case <-m.done:
+		return 0, context.Canceled
+	}
+
+	return 0, io.EOF
+}
+
+func (m *MockConn) Close() error {
+	select {
+	case <-m.done:
+	default:
+		close(m.done)
+	}
+	return nil
+}
+
+func TestDialerConnectTLSHonorsContext(t *testing.T) {
+	config := tlsConfig(t)
+	d := &Dialer{
+		TLS: config,
+	}
+
+	conn := &MockConn{
+		done: make(chan struct{}),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*25)
+	defer cancel()
+
+	_, err := d.connectTLS(ctx, conn)
+	if context.DeadlineExceeded != err {
+		t.Errorf("expected err to be %v; got %v", context.DeadlineExceeded, err)
+		t.FailNow()
 	}
 }
