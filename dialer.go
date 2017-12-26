@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"strconv"
 	"time"
@@ -55,6 +56,10 @@ type Dialer struct {
 
 	// Resolver optionally specifies an alternate resolver to use.
 	Resolver Resolver
+
+	// TLS enables Dialer to open secure connections.  If nil, standard net.Conn
+	// will be used.
+	TLS *tls.Config
 }
 
 // Dial connects to the address on the named network.
@@ -198,6 +203,29 @@ func (d *Dialer) LookupPartitions(ctx context.Context, network string, address s
 	return prt, err
 }
 
+// connectTLS returns a tls.Conn that has already completed the Handshake
+func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn) (tlsConn *tls.Conn, err error) {
+	tlsConn = tls.Client(conn, d.TLS)
+	errch := make(chan error)
+
+	go func() {
+		defer close(errch)
+		errch <- tlsConn.Handshake()
+	}()
+
+	select {
+	case <-ctx.Done():
+		conn.Close()
+		tlsConn.Close()
+		<-errch // ignore possible error from Handshake
+		err = ctx.Err()
+
+	case err = <-errch:
+	}
+
+	return
+}
+
 func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {
 	if r := d.Resolver; r != nil {
 		host, port := splitHostPort(address)
@@ -213,12 +241,22 @@ func (d *Dialer) dialContext(ctx context.Context, network string, address string
 			address = net.JoinHostPort(address, port)
 		}
 	}
-	return (&net.Dialer{
+
+	conn, err := (&net.Dialer{
 		LocalAddr:     d.LocalAddr,
 		DualStack:     d.DualStack,
 		FallbackDelay: d.FallbackDelay,
 		KeepAlive:     d.KeepAlive,
 	}).DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+
+	if d.TLS != nil {
+		return d.connectTLS(ctx, conn)
+	}
+
+	return conn, nil
 }
 
 // DefaultDialer is the default dialer used when none is specified.
