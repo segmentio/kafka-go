@@ -120,7 +120,7 @@ func (e Error) Title() string {
 	case GroupLoadInProgress:
 		return "Group Load In Progress"
 	case GroupCoordinatorNotAvailable:
-		return "Group Corrdinator Not Available"
+		return "Group Coordinator Not Available"
 	case NotCoordinatorForGroup:
 		return "Not Coordinator For Group"
 	case InvalidTopic:

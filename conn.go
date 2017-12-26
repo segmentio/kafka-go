@@ -368,7 +368,7 @@ func (c *Conn) ReadFirstOffset() (int64, error) {
 	return c.readOffset(-2)
 }
 
-// ReadLastOffset returns the last offset available on the conncetion.
+// ReadLastOffset returns the last offset available on the connection.
 func (c *Conn) ReadLastOffset() (int64, error) {
 	return c.readOffset(-1)
 }

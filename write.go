@@ -102,11 +102,11 @@ func write(w *bufio.Writer, a interface{}) {
 // allocations that occur when building the data structures representing the
 // kafka protocol requests.
 
-func writeFetchRequestV1(w *bufio.Writer, correleationID int32, clientID string, topic string, partition int32, offset int64, minBytes int, maxBytes int, maxWait time.Duration) error {
+func writeFetchRequestV1(w *bufio.Writer, correlationID int32, clientID string, topic string, partition int32, offset int64, minBytes int, maxBytes int, maxWait time.Duration) error {
 	h := requestHeader{
 		ApiKey:        int16(fetchRequest),
 		ApiVersion:    int16(v1),
-		CorrelationID: correleationID,
+		CorrelationID: correlationID,
 		ClientID:      clientID,
 	}
 	h.Size = (h.size() - 4) +
@@ -138,11 +138,11 @@ func writeFetchRequestV1(w *bufio.Writer, correleationID int32, clientID string,
 	return w.Flush()
 }
 
-func writeListOffsetRequestV1(w *bufio.Writer, correleationID int32, clientID string, topic string, parition int32, time int64) error {
+func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID string, topic string, partition int32, time int64) error {
 	h := requestHeader{
 		ApiKey:        int16(listOffsetRequest),
 		ApiVersion:    int16(v1),
-		CorrelationID: correleationID,
+		CorrelationID: correlationID,
 		ClientID:      clientID,
 	}
 	h.Size = (h.size() - 4) +
@@ -162,13 +162,13 @@ func writeListOffsetRequestV1(w *bufio.Writer, correleationID int32, clientID st
 
 	// partition array
 	writeArrayLen(w, 1)
-	writeInt32(w, parition)
+	writeInt32(w, partition)
 	writeInt64(w, time)
 
 	return w.Flush()
 }
 
-func writeProduceRequestV2(w *bufio.Writer, correleationID int32, clientID string, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
+func writeProduceRequestV2(w *bufio.Writer, correlationID int32, clientID string, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
 	var size int32
 
 	for _, msg := range msgs {
@@ -185,7 +185,7 @@ func writeProduceRequestV2(w *bufio.Writer, correleationID int32, clientID strin
 	h := requestHeader{
 		ApiKey:        int16(produceRequest),
 		ApiVersion:    int16(v2),
-		CorrelationID: correleationID,
+		CorrelationID: correlationID,
 		ClientID:      clientID,
 	}
 	h.Size = (h.size() - 4) +

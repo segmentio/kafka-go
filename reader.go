@@ -89,7 +89,7 @@ type ReaderConfig struct {
 // details about the behavior of the reader.
 type ReaderStats struct {
 	Dials      int64 `metric:"kafka.reader.dial.count"      type:"counter"`
-	Fetches    int64 `metric:"kafak.reader.fetch.count"     type:"counter"`
+	Fetches    int64 `metric:"kafak.reader.fetch.count"     type:"counter"` // typo here, but I'm reluctant to fix it
 	Messages   int64 `metric:"kafka.reader.message.count"   type:"counter"`
 	Bytes      int64 `metric:"kafka.reader.message.bytes"   type:"counter"`
 	Rebalances int64 `metric:"kafka.reader.rebalance.count" type:"counter"`
@@ -585,7 +585,7 @@ func (r *reader) run(ctx context.Context, offset int64, join *sync.WaitGroup) {
 			continue
 		}
 
-		// Resetting the attempt counter ensures that if a failre occurs after
+		// Resetting the attempt counter ensures that if a failure occurs after
 		// a successful initialization we don't keep increasing the backoff
 		// timeout.
 		attempt = 0
