@@ -206,21 +206,21 @@ func (d *Dialer) LookupPartitions(ctx context.Context, network string, address s
 // connectTLS returns a tls.Conn that has already completed the Handshake
 func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn) (tlsConn *tls.Conn, err error) {
 	tlsConn = tls.Client(conn, d.TLS)
-	done := make(chan struct{})
+	errch := make(chan error)
 
 	go func() {
-		defer close(done)
-		err = tlsConn.Handshake()
+		defer close(errch)
+		errch <- tlsConn.Handshake()
 	}()
 
 	select {
 	case <-ctx.Done():
 		conn.Close()
 		tlsConn.Close()
+		<-errch // ignore possible error from Handshake
 		err = ctx.Err()
-		return
 
-	case <-done:
+	case err = <-errch:
 	}
 
 	return
