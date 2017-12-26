@@ -12,7 +12,7 @@ import (
 
 // The Writer type provides the implementation of a producer of kafka messages
 // that automatically distributes messages across partitions of a single topic
-// using a configurable blancing policy.
+// using a configurable balancing policy.
 //
 // Instances of Writer are safe to use concurrently from multiple goroutines.
 type Writer struct {
@@ -57,7 +57,7 @@ type WriterConfig struct {
 	// The default is to try at most 10 times.
 	MaxAttempts int
 
-	// A hint on the capacity of the writer's internal messager queue.
+	// A hint on the capacity of the writer's internal message queue.
 	//
 	// The default is to use a queue capacity of 100 messages.
 	QueueCapacity int
@@ -112,7 +112,7 @@ func NewWriter(config WriterConfig) *Writer {
 	}
 
 	if len(config.Topic) == 0 {
-		panic("cannot create a kafak writer with an empty topic")
+		panic("cannot create a kafka writer with an empty topic")
 	}
 
 	if config.Dialer == nil {
@@ -179,7 +179,7 @@ func NewWriter(config WriterConfig) *Writer {
 // have succeeded of failed.
 //
 // The context passed as first argument may also be used to asynchronously
-// cancel the operation. Note that in this case there are no garantees made on
+// cancel the operation. Note that in this case there are no guarantees made on
 // whether messages were written to kafka. The program should assume that the
 // whole batch failed and re-write the messages later (which could then cause
 // duplicates).
