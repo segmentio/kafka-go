@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	errInvalidWriteTopic     = errors.New("writes should NOT set Topic on kafka.Message")
-	errInvalidWritePartition = errors.New("writes should NOT set Partition on kafka.Message")
+	errInvalidWriteTopic     = errors.New("writes must NOT set Topic on kafka.Message")
+	errInvalidWritePartition = errors.New("writes must NOT set Partition on kafka.Message")
 )
 
 // Broker carries the metadata associated with a kafka broker.
