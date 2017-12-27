@@ -136,6 +136,293 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	return c
 }
 
+func writeHeader(w *bufio.Writer, clientID string, apiKey apiKey, apiVersion apiVersion, correlationID, size int32) {
+	h := requestHeader{
+		ApiKey:        int16(apiKey),
+		ApiVersion:    int16(apiVersion),
+		CorrelationID: correlationID,
+		ClientID:      clientID,
+	}
+	h.Size = h.size() - 4 + size
+
+	// write message
+	h.writeTo(w)
+}
+
+// describeGroups retrieves the specified groups
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
+func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsResponseV1, error) {
+	var response describeGroupsResponseV1
+
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, describeGroupsRequest, v1, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	for _, group := range response.Groups {
+		if group.ErrorCode != 0 {
+			return response, Error(group.ErrorCode)
+		}
+	}
+
+	return response, nil
+}
+
+// findCoordinator finds the coordinator for the specified group or transaction
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
+func (c *Conn) findCoordinator(request findCoordinatorRequestV1) (findCoordinatorResponseV1, error) {
+	var response findCoordinatorResponseV1
+
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, groupCoordinatorRequest, v1, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	if response.ErrorCode != 0 {
+		return response, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
+// heartbeat sends a heartbeat message required by consumer groups
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_Heartbeat
+func (c *Conn) heartbeat(request heartbeatRequestV1) (heartbeatResponseV1, error) {
+	var response heartbeatResponseV1
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, heartbeatRequest, v1, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	if response.ErrorCode != 0 {
+		return response, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
+// joinGroup attempts to join a consumer group
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_JoinGroup
+func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV2, error) {
+	var response joinGroupResponseV2
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, joinGroupRequest, v2, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	if response.ErrorCode != 0 {
+		return response, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
+// leaveGroup leaves the consumer from the consumer group
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_LeaveGroup
+func (c *Conn) leaveGroup(request leaveGroupRequestV1) (leaveGroupResponseV1, error) {
+	var response leaveGroupResponseV1
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, leaveGroupRequest, v1, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	if response.ErrorCode != 0 {
+		return response, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
+// listGroups lists all the consumer groups
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_ListGroups
+func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, error) {
+	var response listGroupsResponseV1
+
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, listGroupsRequest, v1, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	if response.ErrorCode != 0 {
+		return response, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
+// offsetCommit commits the specified topic partition offsets
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_OffsetCommit
+func (c *Conn) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error) {
+	var response offsetCommitResponseV3
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, offsetCommitRequest, v3, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	for _, r := range response.Responses {
+		for _, pr := range r.PartitionResponses {
+			if pr.ErrorCode != 0 {
+				return response, Error(pr.ErrorCode)
+			}
+		}
+	}
+
+	return response, nil
+}
+
+// offsetFetch fetches the offsets for the specified topic partitions
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_OffsetFetch
+func (c *Conn) offsetFetch(request offsetFetchRequestV3) (offsetFetchResponseV3, error) {
+	var response offsetFetchResponseV3
+
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, offsetFetchRequest, v3, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	if response.ErrorCode != 0 {
+		return response, Error(response.ErrorCode)
+	}
+	for _, r := range response.Responses {
+		for _, pr := range r.PartitionResponses {
+			if pr.ErrorCode != 0 {
+				return response, Error(pr.ErrorCode)
+			}
+		}
+	}
+
+	return response, nil
+}
+
+// syncGroups completes the handshake to join a consumer group
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_SyncGroup
+func (c *Conn) syncGroups(request syncGroupRequestV1) (syncGroupResponseV1, error) {
+	var response syncGroupResponseV1
+
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			w := &c.wbuf
+			writeHeader(w, c.clientID, syncGroupRequest, v1, id, request.size())
+			request.writeTo(w)
+			return w.Flush()
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return response, err
+	}
+	if response.ErrorCode != 0 {
+		return response, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
 // Close closes the kafka connection.
 func (c *Conn) Close() error {
 	return c.conn.Close()

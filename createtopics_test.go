@@ -199,19 +199,6 @@ func TestCreateTopicsResponseV2(t *testing.T) {
 	}
 }
 
-func writeHeader(w *bufio.Writer, clientID string, apiKey apiKey, apiVersion apiVersion, correlationID, size int32) {
-	h := requestHeader{
-		ApiKey:        int16(apiKey),
-		ApiVersion:    int16(apiVersion),
-		CorrelationID: correlationID,
-		ClientID:      clientID,
-	}
-	h.Size = h.size() - 4 + size
-
-	// write message
-	h.writeTo(w)
-}
-
 func (c *Conn) createTopics(request createTopicsRequestV2) (createTopicsResponseV2, error) {
 	var response createTopicsResponseV2
 

@@ -98,6 +98,10 @@ func makeTopic() string {
 	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
 }
 
+func makeGroupID() string {
+	return fmt.Sprintf("kafka-go-group-%016x", rand.Int63())
+}
+
 func TestConn(t *testing.T) {
 	t.Parallel()
 
@@ -168,6 +172,56 @@ func TestConn(t *testing.T) {
 		{
 			scenario: "write batch of messages and read the highest offset (watermark)",
 			function: testConnReadWatermarkFromBatch,
+		},
+
+		{
+			scenario: "describe groups retrieves all groups when no groupID specified",
+			function: testConnDescribeGroupRetrievesAllGroups,
+		},
+
+		{
+			scenario: "find the group coordinator",
+			function: testConnFindCoordinator,
+		},
+
+		{
+			scenario: "test join group with an invalid groupID",
+			function: testConnJoinGroupInvalidGroupID,
+		},
+
+		{
+			scenario: "test join group with an invalid sessionTimeout",
+			function: testConnJoinGroupInvalidSessionTimeout,
+		},
+
+		{
+			scenario: "test join group with an invalid refreshTimeout",
+			function: testConnJoinGroupInvalidRefreshTimeout,
+		},
+
+		{
+			scenario: "test heartbeat once group has been created",
+			function: testConnHeartbeatErr,
+		},
+
+		{
+			scenario: "test leave group returns error when called outside group",
+			function: testConnLeaveGroupErr,
+		},
+
+		{
+			scenario: "test sync group with bad memberID",
+			function: testConnSyncGroupErr,
+		},
+
+		{
+			scenario: "test list groups",
+			function: testConnListGroupsReturnsGroups,
+		},
+
+		{
+			scenario: "test fetch and commit offset",
+			function: testConnFetchAndCommitOffsets,
 		},
 	}
 
@@ -396,6 +450,252 @@ func testConnReadWatermarkFromBatch(t *testing.T, conn *Conn) {
 	}
 
 	batch.Close()
+}
+
+func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, memberID string, stop func()) {
+	// join the group
+	joinGroup, err := conn.joinGroup(joinGroupRequestV2{
+		GroupID:          groupID,
+		SessionTimeout:   int32(time.Minute / time.Millisecond),
+		RebalanceTimeout: int32(time.Second / time.Millisecond),
+		ProtocolType:     "roundrobin",
+		GroupProtocols: []joinGroupRequestGroupProtocolV2{
+			{
+				ProtocolName:     "roundrobin",
+				ProtocolMetadata: []byte("blah"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("bad joinGroup: %s", err)
+	}
+
+	// sync the group
+	_, err = conn.syncGroups(syncGroupRequestV1{
+		GroupID:      groupID,
+		GenerationID: joinGroup.GenerationID,
+		MemberID:     joinGroup.MemberID,
+		GroupAssignments: []syncGroupRequestGroupAssignmentV1{
+			{
+				MemberID:          joinGroup.MemberID,
+				MemberAssignments: []byte("blah"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("bad syncGroups: %s", err)
+	}
+
+	generationID = joinGroup.GenerationID
+	memberID = joinGroup.MemberID
+	stop = func() {
+		conn.leaveGroup(leaveGroupRequestV1{
+			GroupID:  groupID,
+			MemberID: joinGroup.MemberID,
+		})
+	}
+
+	return
+}
+
+func testConnDescribeGroupRetrievesAllGroups(t *testing.T, conn *Conn) {
+	groupID := makeGroupID()
+	_, _, stop1 := createGroup(t, conn, groupID)
+	defer stop1()
+
+	out, err := conn.describeGroups(describeGroupsRequestV1{
+		GroupIDs: []string{groupID},
+	})
+	if err != nil {
+		t.Fatalf("bad describeGroups: %s", err)
+	}
+
+	if v := len(out.Groups); v != 1 {
+		t.Fatalf("expected 1 group, got %v", v)
+	}
+	if id := out.Groups[0].GroupID; id != groupID {
+		t.Fatalf("bad group: got %v, expected %v", id, groupID)
+	}
+}
+
+func testConnFindCoordinator(t *testing.T, conn *Conn) {
+	groupID := makeGroupID()
+
+	for attempt := 0; attempt < 10; attempt++ {
+		if attempt != 0 {
+			time.Sleep(time.Millisecond * 50)
+		}
+		response, err := conn.findCoordinator(findCoordinatorRequestV1{CoordinatorKey: groupID})
+		if err != nil {
+			switch err {
+			case GroupCoordinatorNotAvailable:
+				continue
+			default:
+				t.Fatalf("bad findCoordinator: %s", err)
+			}
+		}
+
+		if response.Coordinator.NodeID == 0 {
+			t.Fatalf("bad NodeID")
+		}
+		if response.Coordinator.Host == "" {
+			t.Fatalf("bad Host")
+		}
+		if response.Coordinator.Port == 0 {
+			t.Fatalf("bad Port")
+		}
+		return
+	}
+}
+
+func testConnJoinGroupInvalidGroupID(t *testing.T, conn *Conn) {
+	_, err := conn.joinGroup(joinGroupRequestV2{})
+	if err != InvalidGroupId {
+		t.Fatalf("expected %v; got %v", InvalidGroupId, err)
+	}
+}
+
+func testConnJoinGroupInvalidSessionTimeout(t *testing.T, conn *Conn) {
+	_, err := conn.joinGroup(joinGroupRequestV2{
+		GroupID: makeGroupID(),
+	})
+	if err != InvalidSessionTimeout {
+		t.Fatalf("expected %v; got %v", InvalidSessionTimeout, err)
+	}
+}
+
+func testConnJoinGroupInvalidRefreshTimeout(t *testing.T, conn *Conn) {
+	_, err := conn.joinGroup(joinGroupRequestV2{
+		GroupID:        makeGroupID(),
+		SessionTimeout: int32(3 * time.Second / time.Millisecond),
+	})
+	if err != InvalidSessionTimeout {
+		t.Fatalf("expected %v; got %v", InvalidSessionTimeout, err)
+	}
+}
+
+func testConnHeartbeatErr(t *testing.T, conn *Conn) {
+	_, err := conn.syncGroups(syncGroupRequestV1{})
+	if err != UnknownMemberId {
+		t.Fatalf("expected %v; got %v", UnknownMemberId, err)
+	}
+}
+
+func testConnLeaveGroupErr(t *testing.T, conn *Conn) {
+	_, err := conn.leaveGroup(leaveGroupRequestV1{
+		GroupID: makeGroupID(),
+	})
+	if err != UnknownMemberId {
+		t.Fatalf("expected %v; got %v", UnknownMemberId, err)
+	}
+}
+
+func testConnSyncGroupErr(t *testing.T, conn *Conn) {
+	_, err := conn.syncGroups(syncGroupRequestV1{})
+	if err != UnknownMemberId {
+		t.Fatalf("expected %v; got %v", UnknownMemberId, err)
+	}
+}
+
+func testConnListGroupsReturnsGroups(t *testing.T, conn *Conn) {
+	group1 := makeGroupID()
+	_, _, stop1 := createGroup(t, conn, group1)
+	defer stop1()
+
+	group2 := makeGroupID()
+	_, _, stop2 := createGroup(t, conn, group2)
+	defer stop2()
+
+	out, err := conn.listGroups(listGroupsRequestV1{})
+	if err != nil {
+		t.Fatalf("bad err: %v", err)
+	}
+
+	containsGroup := func(groupID string) bool {
+		for _, group := range out.Groups {
+			if group.GroupID == groupID {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !containsGroup(group1) {
+		t.Fatalf("expected groups to contain group1")
+	}
+
+	if !containsGroup(group2) {
+		t.Fatalf("expected groups to contain group2")
+	}
+}
+
+func testConnFetchAndCommitOffsets(t *testing.T, conn *Conn) {
+	const N = 10
+	if _, err := conn.WriteMessages(makeTestSequence(N)...); err != nil {
+		t.Fatal(err)
+	}
+
+	groupID := makeGroupID()
+	generationID, memberID, stop := createGroup(t, conn, groupID)
+	defer stop()
+
+	request := offsetFetchRequestV3{
+		GroupID: groupID,
+		Topics: []offsetFetchRequestV3Topic{
+			{
+				Topic:      conn.topic,
+				Partitions: []int32{0},
+			},
+		},
+	}
+	fetch, err := conn.offsetFetch(request)
+	if err != nil {
+		t.Fatalf("bad err: %v", err)
+	}
+
+	if v := len(fetch.Responses); v != 1 {
+		t.Fatalf("expected 1 Response; got %v", v)
+	}
+
+	if v := len(fetch.Responses[0].PartitionResponses); v != 1 {
+		t.Fatalf("expected 1 PartitionResponses; got %v", v)
+	}
+
+	if offset := fetch.Responses[0].PartitionResponses[0].Offset; offset != -1 {
+		t.Fatalf("expected initial offset of -1; got %v", offset)
+	}
+
+	committedOffset := int64(N - 1)
+	_, err = conn.offsetCommit(offsetCommitRequestV3{
+		GroupID:       groupID,
+		GenerationID:  generationID,
+		MemberID:      memberID,
+		RetentionTime: int64(time.Hour / time.Millisecond),
+		Topics: []offsetCommitRequestV3Topic{
+			{
+				Topic: conn.topic,
+				Partitions: []offsetCommitRequestV3Partition{
+					{
+						Partition: 0,
+						Offset:    committedOffset,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("bad error: %v", err)
+	}
+
+	fetch, err = conn.offsetFetch(request)
+	if err != nil {
+		t.Fatalf("bad error: %v", err)
+	}
+
+	fetchedOffset := fetch.Responses[0].PartitionResponses[0].Offset
+	if committedOffset != fetchedOffset {
+		t.Fatalf("bad offset.  expected %v; got %v", committedOffset, fetchedOffset)
+	}
 }
 
 func testConnWriteReadConcurrently(t *testing.T, conn *Conn) {
