@@ -335,7 +335,7 @@ func testReaderSetsTopicAndPartition(t *testing.T, ctx context.Context, r *Reade
 			t.Errorf("expected message to contain topic, %v; got %v", r.config.Topic, m.Topic)
 			return
 		}
-		if m.Partition != int32(r.config.Partition) {
+		if m.Partition != r.config.Partition {
 			t.Errorf("expected partition to be set; expected 1, got %v", m.Partition)
 			return
 		}

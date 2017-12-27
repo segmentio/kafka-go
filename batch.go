@@ -144,10 +144,7 @@ func (batch *Batch) Read(b []byte) (int, error) {
 // it is less memory-efficient than Read, but has the advantage of never
 // failing with io.ErrShortBuffer.
 func (batch *Batch) ReadMessage() (Message, error) {
-	msg := Message{
-		Topic:     batch.conn.topic,
-		Partition: batch.conn.partition,
-	}
+	msg := Message{}
 	batch.mutex.Lock()
 
 	offset, timestamp, err := batch.readMessage(
@@ -162,6 +159,8 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	)
 
 	batch.mutex.Unlock()
+	msg.Topic = batch.conn.topic
+	msg.Partition = int(batch.conn.partition)
 	msg.Offset = offset
 	msg.Time = timestampToTime(timestamp)
 	return msg, err

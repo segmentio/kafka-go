@@ -8,7 +8,7 @@ import (
 // Message is a data structure representing kafka messages.
 type Message struct {
 	Topic     string
-	Partition int32
+	Partition int
 	Offset    int64
 	Key       []byte
 	Value     []byte
