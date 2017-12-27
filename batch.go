@@ -158,9 +158,12 @@ func (batch *Batch) ReadMessage() (Message, error) {
 		},
 	)
 
-	batch.mutex.Unlock()
+	// capture Topic and Partition before we Unlock to avoid edge case where 
+	// Batch.close is called during Batch.readMessage
 	msg.Topic = batch.conn.topic
 	msg.Partition = int(batch.conn.partition)
+
+	batch.mutex.Unlock()
 	msg.Offset = offset
 	msg.Time = timestampToTime(timestamp)
 	return msg, err
