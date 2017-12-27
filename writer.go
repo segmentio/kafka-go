@@ -505,6 +505,9 @@ func (w *writer) dial() (conn *Conn, err error) {
 func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
 	if conn == nil {
 		if conn, err = w.dial(); err != nil {
+			for i, res := range resch {
+				res <- &writerError{msg: batch[i], err: err}
+			}
 			return
 		}
 	}
