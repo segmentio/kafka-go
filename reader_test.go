@@ -254,6 +254,94 @@ func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Read
 	}
 }
 
+func createTopic(t *testing.T, topic string, partitions int32) {
+	conn, err := Dial("tcp", "localhost:9092")
+	if err != nil {
+		t.Error("bad conn")
+		return
+	}
+	defer conn.Close()
+
+	_, err = conn.createTopics(createTopicsRequestV2{
+		Topics: []createTopicsRequestV2Topic{
+			{
+				Topic:             topic,
+				NumPartitions:     partitions,
+				ReplicationFactor: 1,
+			},
+		},
+		Timeout: int32(30 * time.Second / time.Millisecond),
+	})
+	if err != nil {
+		t.Error("bad createTopics", err)
+		t.FailNow()
+	}
+}
+
+func TestReaderOnNonZeroPartition(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		scenario string
+		function func(*testing.T, context.Context, *Reader)
+	}{
+		{
+			scenario: "topic and partition should now be included in header",
+			function: testReaderSetsTopicAndPartition,
+		},
+	}
+
+	for _, test := range tests {
+		testFunc := test.function
+		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
+
+			topic := makeTopic()
+			createTopic(t, topic, 2)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			r := NewReader(ReaderConfig{
+				Brokers:   []string{"localhost:9092"},
+				Topic:     topic,
+				Partition: 1,
+				MinBytes:  1,
+				MaxBytes:  10e6,
+				MaxWait:   100 * time.Millisecond,
+			})
+			defer r.Close()
+			testFunc(t, ctx, r)
+		})
+	}
+}
+
+func testReaderSetsTopicAndPartition(t *testing.T, ctx context.Context, r *Reader) {
+	const N = 3
+	prepareReader(t, ctx, r, makeTestSequence(N)...)
+
+	for i := 0; i != N; i++ {
+		m, err := r.ReadMessage(ctx)
+		if err != nil {
+			t.Error("reading message failed:", err)
+			return
+		}
+
+		if m.Topic == "" {
+			t.Error("expected topic to be set")
+			return
+		}
+		if m.Topic != r.config.Topic {
+			t.Errorf("expected message to contain topic, %v; got %v", r.config.Topic, m.Topic)
+			return
+		}
+		if m.Partition != int32(r.config.Partition) {
+			t.Errorf("expected partition to be set; expected 1, got %v", m.Partition)
+			return
+		}
+	}
+}
+
 func makeTestSequence(n int) []Message {
 	msgs := make([]Message, n)
 	for i := 0; i != n; i++ {

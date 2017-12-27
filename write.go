@@ -58,6 +58,14 @@ func writeBytes(w *bufio.Writer, b []byte) {
 	w.Write(b)
 }
 
+func writeBool(w *bufio.Writer, b bool) {
+	v := int8(0)
+	if b {
+		v = 1
+	}
+	writeInt8(w, v)
+}
+
 func writeArrayLen(w *bufio.Writer, n int) {
 	writeInt32(w, int32(n))
 }
@@ -91,6 +99,8 @@ func write(w *bufio.Writer, a interface{}) {
 		writeString(w, v)
 	case []byte:
 		writeBytes(w, v)
+	case bool:
+		writeBool(w, v)
 	case writable:
 		v.writeTo(w)
 	default:
