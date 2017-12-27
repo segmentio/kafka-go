@@ -24,6 +24,8 @@ type Batch struct {
 	deadline      time.Time
 	throttle      time.Duration
 	remain        int
+	topic         string
+	partition     int
 	offset        int64
 	highWaterMark int64
 	err           error
@@ -158,12 +160,9 @@ func (batch *Batch) ReadMessage() (Message, error) {
 		},
 	)
 
-	// capture Topic and Partition before we Unlock to avoid edge case where 
-	// Batch.close is called during Batch.readMessage
-	msg.Topic = batch.conn.topic
-	msg.Partition = int(batch.conn.partition)
-
 	batch.mutex.Unlock()
+	msg.Topic = batch.topic
+	msg.Partition = batch.partition
 	msg.Offset = offset
 	msg.Time = timestampToTime(timestamp)
 	return msg, err

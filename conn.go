@@ -357,6 +357,8 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 		throttle:      duration(throttle),
 		lock:          lock,
 		remain:        remain,
+		topic:         c.topic,          // topic is copied to Batch to prevent race with Batch.close
+		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
 		highWaterMark: highWaterMark,
 		err:           err,
