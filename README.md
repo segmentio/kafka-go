@@ -146,3 +146,6 @@ w.WriteMessages(context.Background(),
 
 w.Close()
 ```
+
+**Note:** Even though kafka.Message contain ```Topic``` and ```Partition``` fields, they **MUST NOT** be 
+set when writing messages.  They are intended for read use only.   

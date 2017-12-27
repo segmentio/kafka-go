@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -11,6 +12,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+)
+
+var (
+	errInvalidWriteTopic     = errors.New("writes must NOT set Topic on kafka.Message")
+	errInvalidWritePartition = errors.New("writes must NOT set Partition on kafka.Message")
 )
 
 // Broker carries the metadata associated with a kafka broker.
@@ -505,6 +511,17 @@ func (c *Conn) Write(b []byte) (int, error) {
 func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 	if len(msgs) == 0 {
 		return 0, nil
+	}
+
+	// users may believe they can set the Topic and/or Partition
+	// on the kafka message.
+	for _, msg := range msgs {
+		if msg.Topic != "" && msg.Topic != c.topic {
+			return 0, errInvalidWriteTopic
+		}
+		if msg.Partition != 0 {
+			return 0, errInvalidWritePartition
+		}
 	}
 
 	n := 0

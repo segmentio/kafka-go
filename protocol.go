@@ -22,6 +22,7 @@ const (
 	syncGroupRequest        apiKey = 14
 	describeGroupsRequest   apiKey = 15
 	listGroupsRequest       apiKey = 16
+	createTopicsRequest     apiKey = 19
 )
 
 type apiVersion int16

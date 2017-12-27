@@ -18,6 +18,8 @@ func sizeof(a interface{}) int32 {
 		return 8
 	case string:
 		return sizeofString(v)
+	case bool:
+		return 1
 	case []byte:
 		return sizeofBytes(v)
 	case sizable:
@@ -30,8 +32,20 @@ func sizeofString(s string) int32 {
 	return 2 + int32(len(s))
 }
 
+func sizeofBool(_ bool) int32 {
+	return 1
+}
+
 func sizeofBytes(b []byte) int32 {
 	return 4 + int32(len(b))
+}
+
+func sizeofInt16(_ int16) int32 {
+	return 2
+}
+
+func sizeofInt32(_ int32) int32 {
+	return 4
 }
 
 func sizeofArray(n int, f func(int) int32) int32 {

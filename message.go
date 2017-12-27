@@ -7,10 +7,15 @@ import (
 
 // Message is a data structure representing kafka messages.
 type Message struct {
-	Offset int64
-	Key    []byte
-	Value  []byte
-	Time   time.Time
+	// Topic is reads only and MUST NOT be set when writing messages
+	Topic string
+
+	// Partition is reads only and MUST NOT be set when writing messages
+	Partition int
+	Offset    int64
+	Key       []byte
+	Value     []byte
+	Time      time.Time
 }
 
 func (msg Message) item() messageSetItem {
