@@ -7,7 +7,10 @@ import (
 
 // Message is a data structure representing kafka messages.
 type Message struct {
-	Topic     string
+	// Topic is reads only and MUST NOT be set when writing messages
+	Topic string
+
+	// Partition is reads only and MUST NOT be set when writing messages
 	Partition int
 	Offset    int64
 	Key       []byte
