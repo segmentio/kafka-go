@@ -514,7 +514,7 @@ func testConnDescribeGroupRetrievesAllGroups(t *testing.T, conn *Conn) {
 		t.Fatalf("expected 1 group, got %v", v)
 	}
 	if id := out.Groups[0].GroupID; id != groupID {
-		t.Fatalf("bad group: got %v, expected %v", id, groupID)
+		t.Errorf("bad group: got %v, expected %v", id, groupID)
 	}
 }
 
@@ -536,13 +536,13 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 		}
 
 		if response.Coordinator.NodeID == 0 {
-			t.Fatalf("bad NodeID")
+			t.Errorf("bad NodeID")
 		}
 		if response.Coordinator.Host == "" {
-			t.Fatalf("bad Host")
+			t.Errorf("bad Host")
 		}
 		if response.Coordinator.Port == 0 {
-			t.Fatalf("bad Port")
+			t.Errorf("bad Port")
 		}
 		return
 	}
@@ -621,11 +621,11 @@ func testConnListGroupsReturnsGroups(t *testing.T, conn *Conn) {
 	}
 
 	if !containsGroup(group1) {
-		t.Fatalf("expected groups to contain group1")
+		t.Errorf("expected groups to contain group1")
 	}
 
 	if !containsGroup(group2) {
-		t.Fatalf("expected groups to contain group2")
+		t.Errorf("expected groups to contain group2")
 	}
 }
 
