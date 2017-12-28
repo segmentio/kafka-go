@@ -156,12 +156,17 @@ func (t *createTopicsResponseV2) readFrom(r *bufio.Reader, size int) (remain int
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(r *bufio.Reader, size int) (remain int, err error) {
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
 		var topic createTopicsResponseV2TopicError
-		remain, err = (&topic).readFrom(r, size)
+		if fnRemain, fnErr = (&topic).readFrom(r, size); err != nil {
+			return
+		}
 		t.TopicErrors = append(t.TopicErrors, topic)
 		return
-	})
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
+		return
+	}
 
 	return
 }

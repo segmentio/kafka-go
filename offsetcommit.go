@@ -123,16 +123,17 @@ func (t *offsetCommitResponseV3Response) readFrom(r *bufio.Reader, size int) (re
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(r *bufio.Reader, withSize int) (withRemain int, withErr error) {
+	fn := func(r *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
 		item := offsetCommitResponseV3PartitionResponse{}
-		withRemain, withErr = (&item).readFrom(r, withSize)
-		if withErr != nil {
+		if fnRemain, fnErr = (&item).readFrom(r, withSize); fnErr != nil {
 			return
 		}
-
 		t.PartitionResponses = append(t.PartitionResponses, item)
 		return
-	})
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
+		return
+	}
 
 	return
 }
@@ -160,16 +161,17 @@ func (t *offsetCommitResponseV3) readFrom(r *bufio.Reader, size int) (remain int
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(r *bufio.Reader, withSize int) (withRemain int, withErr error) {
+	fn := func(r *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
 		item := offsetCommitResponseV3Response{}
-		withRemain, withErr = (&item).readFrom(r, withSize)
-		if withErr != nil {
+		if fnRemain, fnErr = (&item).readFrom(r, withSize); fnErr != nil {
 			return
 		}
-
 		t.Responses = append(t.Responses, item)
 		return
-	})
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
+		return
+	}
 
 	return
 }

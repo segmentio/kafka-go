@@ -47,8 +47,8 @@ type listGroupsResponseV1 struct {
 	ThrottleTimeMS int32
 
 	// ErrorCode holds response error code
-	ErrorCode      int16
-	Groups         []ListGroupsResponseGroupV1
+	ErrorCode int16
+	Groups    []ListGroupsResponseGroupV1
 }
 
 func (t listGroupsResponseV1) size() int32 {
@@ -71,12 +71,17 @@ func (t *listGroupsResponseV1) readFrom(r *bufio.Reader, size int) (remain int, 
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(withReader *bufio.Reader, withSize int) (withRemain int, withErr error) {
+	fn := func(withReader *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
 		var item ListGroupsResponseGroupV1
-		withRemain, withErr = (&item).readFrom(withReader, withSize)
+		if fnRemain, fnErr = (&item).readFrom(withReader, withSize); err != nil {
+			return
+		}
 		t.Groups = append(t.Groups, item)
 		return
-	})
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
+		return
+	}
 
 	return
 }

@@ -131,12 +131,17 @@ func (t *describeGroupsResponseGroupV1) readFrom(r *bufio.Reader, size int) (rem
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(r *bufio.Reader, size int) (remain int, err error) {
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
 		item := describeGroupsResponseMemberV1{}
-		remain, err = (&item).readFrom(r, size)
+		if fnRemain, fnErr = (&item).readFrom(r, size); err != nil {
+			return
+		}
 		t.Members = append(t.Members, item)
 		return
-	})
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
+		return
+	}
 
 	return
 }
@@ -165,12 +170,17 @@ func (t *describeGroupsResponseV1) readFrom(r *bufio.Reader, size int) (remain i
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(r *bufio.Reader, size int) (remain int, err error) {
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
 		item := describeGroupsResponseGroupV1{}
-		remain, err = (&item).readFrom(r, size)
+		if fnRemain, fnErr = (&item).readFrom(r, size); fnErr != nil {
+			return
+		}
 		t.Groups = append(t.Groups, item)
 		return
-	})
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
+		return
+	}
 
 	return
 }

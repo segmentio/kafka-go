@@ -107,16 +107,18 @@ func (t *offsetFetchResponseV3Response) readFrom(r *bufio.Reader, size int) (rem
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(r *bufio.Reader, size int) (remain int, err error) {
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
 		item := offsetFetchResponseV3PartitionResponse{}
-		remain, err = (&item).readFrom(r, size)
-		if err != nil {
+		if fnRemain, fnErr = (&item).readFrom(r, size); err != nil {
 			return
 		}
-
 		t.PartitionResponses = append(t.PartitionResponses, item)
 		return
-	})
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
+		return
+	}
+
 	return
 }
 
@@ -150,17 +152,15 @@ func (t *offsetFetchResponseV3) readFrom(r *bufio.Reader, size int) (remain int,
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(r *bufio.Reader, withSize int) (withRemain int, withErr error) {
+	fn := func(r *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
 		item := offsetFetchResponseV3Response{}
-		withRemain, withErr = (&item).readFrom(r, withSize)
-		if withErr != nil {
+		if fnRemain, fnErr = (&item).readFrom(r, withSize); fnErr != nil {
 			return
 		}
-
 		t.Responses = append(t.Responses, item)
 		return
-	})
-	if err != nil {
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
 		return
 	}
 
