@@ -153,11 +153,11 @@ func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsRe
 		},
 	)
 	if err != nil {
-		return response, err
+		return describeGroupsResponseV1{}, err
 	}
 	for _, group := range response.Groups {
 		if group.ErrorCode != 0 {
-			return response, Error(group.ErrorCode)
+			return describeGroupsResponseV1{}, Error(group.ErrorCode)
 		}
 	}
 
@@ -181,10 +181,10 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV1) (findCoordinato
 		},
 	)
 	if err != nil {
-		return response, err
+		return findCoordinatorResponseV1{}, err
 	}
 	if response.ErrorCode != 0 {
-		return response, Error(response.ErrorCode)
+		return findCoordinatorResponseV1{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -207,10 +207,10 @@ func (c *Conn) heartbeat(request heartbeatRequestV1) (heartbeatResponseV1, error
 		},
 	)
 	if err != nil {
-		return response, err
+		return heartbeatResponseV1{}, err
 	}
 	if response.ErrorCode != 0 {
-		return response, Error(response.ErrorCode)
+		return heartbeatResponseV1{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -233,10 +233,10 @@ func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV2, error
 		},
 	)
 	if err != nil {
-		return response, err
+		return joinGroupResponseV2{}, err
 	}
 	if response.ErrorCode != 0 {
-		return response, Error(response.ErrorCode)
+		return joinGroupResponseV2{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -259,10 +259,10 @@ func (c *Conn) leaveGroup(request leaveGroupRequestV1) (leaveGroupResponseV1, er
 		},
 	)
 	if err != nil {
-		return response, err
+		return leaveGroupResponseV1{}, err
 	}
 	if response.ErrorCode != 0 {
-		return response, Error(response.ErrorCode)
+		return leaveGroupResponseV1{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -285,10 +285,10 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 		},
 	)
 	if err != nil {
-		return response, err
+		return listGroupsResponseV1{}, err
 	}
 	if response.ErrorCode != 0 {
-		return response, Error(response.ErrorCode)
+		return listGroupsResponseV1{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -311,12 +311,12 @@ func (c *Conn) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponse
 		},
 	)
 	if err != nil {
-		return response, err
+		return offsetCommitResponseV3{}, err
 	}
 	for _, r := range response.Responses {
 		for _, pr := range r.PartitionResponses {
 			if pr.ErrorCode != 0 {
-				return response, Error(pr.ErrorCode)
+				return offsetCommitResponseV3{}, Error(pr.ErrorCode)
 			}
 		}
 	}
@@ -341,15 +341,15 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV3) (offsetFetchResponseV3,
 		},
 	)
 	if err != nil {
-		return response, err
+		return offsetFetchResponseV3{}, err
 	}
 	if response.ErrorCode != 0 {
-		return response, Error(response.ErrorCode)
+		return offsetFetchResponseV3{}, Error(response.ErrorCode)
 	}
 	for _, r := range response.Responses {
 		for _, pr := range r.PartitionResponses {
 			if pr.ErrorCode != 0 {
-				return response, Error(pr.ErrorCode)
+				return offsetFetchResponseV3{}, Error(pr.ErrorCode)
 			}
 		}
 	}
@@ -374,10 +374,10 @@ func (c *Conn) syncGroups(request syncGroupRequestV1) (syncGroupResponseV1, erro
 		},
 	)
 	if err != nil {
-		return response, err
+		return syncGroupResponseV1{}, err
 	}
 	if response.ErrorCode != 0 {
-		return response, Error(response.ErrorCode)
+		return syncGroupResponseV1{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
