@@ -37,34 +37,12 @@ func (t groupAssignment) writeTo(w *bufio.Writer) {
 }
 
 func (t *groupAssignment) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	t.Topics = map[string][]int32{}
-	var count int16
-
 	if remain, err = readInt16(r, size, &t.Version); err != nil {
 		return
 	}
-	if remain, err = readInt16(r, remain, &count); err != nil {
+	if remain, err = readMapStringInt32(r, remain, &t.Topics); err != nil {
 		return
 	}
-
-	for i := 0; i < int(count); i++ {
-		var topic string
-		var partitions []int32
-
-		if remain, err = readString(r, remain, &topic); err != nil {
-			return
-		}
-
-		remain, err = readArrayWith(r, remain, func(r *bufio.Reader, size int) (remain int, err error) {
-			var partition int32
-			remain, err = readInt32(r, size, &partition)
-			partitions = append(partitions, partition)
-			return
-		})
-
-		t.Topics[topic] = partitions
-	}
-
 	if remain, err = readBytes(r, remain, &t.UserData); err != nil {
 		return
 	}

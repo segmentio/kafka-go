@@ -42,19 +42,9 @@ func (t *protocolMetadata) readFrom(r *bufio.Reader, size int) (remain int, err 
 	if remain, err = readInt16(r, size, &t.Version); err != nil {
 		return
 	}
-
-	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		var topic string
-		if fnRemain, fnErr = readString(r, size, &topic); fnErr != nil {
-			return
-		}
-		t.Topics = append(t.Topics, topic)
+	if remain, err = readStringArray(r, remain, &t.Topics); err != nil {
 		return
 	}
-	if remain, err = readArrayWith(r, remain, fn); err != nil {
-		return
-	}
-
 	if remain, err = readBytes(r, remain, &t.UserData); err != nil {
 		return
 	}
