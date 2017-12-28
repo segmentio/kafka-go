@@ -136,19 +136,6 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	return c
 }
 
-func writeHeader(w *bufio.Writer, clientID string, apiKey apiKey, apiVersion apiVersion, correlationID, size int32) {
-	h := requestHeader{
-		ApiKey:        int16(apiKey),
-		ApiVersion:    int16(apiVersion),
-		CorrelationID: correlationID,
-		ClientID:      clientID,
-	}
-	h.Size = h.size() - 4 + size
-
-	// write message
-	h.writeTo(w)
-}
-
 // describeGroups retrieves the specified groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
@@ -157,10 +144,7 @@ func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsRe
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, describeGroupsRequest, v1, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(describeGroupsRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -188,10 +172,7 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV1) (findCoordinato
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, groupCoordinatorRequest, v1, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(groupCoordinatorRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -217,10 +198,7 @@ func (c *Conn) heartbeat(request heartbeatRequestV1) (heartbeatResponseV1, error
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, heartbeatRequest, v1, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(heartbeatRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -246,10 +224,7 @@ func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV2, error
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, joinGroupRequest, v2, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(joinGroupRequest, v2, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -275,10 +250,7 @@ func (c *Conn) leaveGroup(request leaveGroupRequestV1) (leaveGroupResponseV1, er
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, leaveGroupRequest, v1, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(leaveGroupRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -304,10 +276,7 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, listGroupsRequest, v1, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(listGroupsRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -333,10 +302,7 @@ func (c *Conn) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponse
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, offsetCommitRequest, v3, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(offsetCommitRequest, v3, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -366,10 +332,7 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV3) (offsetFetchResponseV3,
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, offsetFetchRequest, v3, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(offsetFetchRequest, v3, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -402,10 +365,7 @@ func (c *Conn) syncGroups(request syncGroupRequestV1) (syncGroupResponseV1, erro
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, syncGroupRequest, v1, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(syncGroupRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {

@@ -209,10 +209,7 @@ func (c *Conn) createTopics(request createTopicsRequestV2) (createTopicsResponse
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, createTopicsRequest, v2, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(createTopicsRequest, v2, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
