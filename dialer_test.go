@@ -37,18 +37,19 @@ func TestDialer(t *testing.T) {
 }
 
 func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
+	const topic = "test-dialer-LookupPartitions"
+
+	createTopic(t, topic, 1)
+
 	// Write a message to ensure the partition gets created.
 	w := NewWriter(WriterConfig{
 		Brokers: []string{"localhost:9092"},
-		Topic:   "test-dialer-LookupPartitions",
+		Topic:   topic,
 	})
 	w.WriteMessages(ctx, Message{})
 	w.Close()
 
-	// for some reason the partition isn't available right away.
-	time.Sleep(1 * time.Second)
-
-	partitions, err := d.LookupPartitions(ctx, "tcp", "localhost:9092", "test-dialer-LookupPartitions")
+	partitions, err := d.LookupPartitions(ctx, "tcp", "localhost:9092", topic)
 
 	if err != nil {
 		t.Error(err)
@@ -171,17 +172,17 @@ wE3YmpC3Q0g9r44nEbz4Bw==
 func TestDialerTLS(t *testing.T) {
 	t.Parallel()
 
+	const topic = "test-dialer-LookupPartitions"
+
+	createTopic(t, topic, 1)
+
 	// Write a message to ensure the partition gets created.
-	topic := "test-dialer-LookupPartitions"
 	w := NewWriter(WriterConfig{
 		Brokers: []string{"localhost:9092"},
 		Topic:   topic,
 	})
 	w.WriteMessages(context.Background(), Message{})
 	w.Close()
-
-	// for some reason the partition isn't available right away.
-	time.Sleep(1 * time.Second)
 
 	// Create an SSL proxy using the tls.Config that connects to the
 	// docker-composed kafka

@@ -10,6 +10,8 @@ import (
 )
 
 func TestWriter(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		scenario string
 		function func(*testing.T)
@@ -30,10 +32,6 @@ func TestWriter(t *testing.T) {
 		},
 	}
 
-	t.Parallel()
-	// Kafka takes a while to create the initial topics and partitions...
-	time.Sleep(15 * time.Second)
-
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
@@ -51,8 +49,11 @@ func newTestWriter(config WriterConfig) *Writer {
 }
 
 func testWriterClose(t *testing.T) {
+	const topic = "test-writer-0"
+
+	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
-		Topic: "test-writer-0",
+		Topic: topic,
 	})
 
 	if err := w.Close(); err != nil {
@@ -63,6 +64,7 @@ func testWriterClose(t *testing.T) {
 func testWriterRoundRobin1(t *testing.T) {
 	const topic = "test-writer-1"
 
+	createTopic(t, topic, 1)
 	offset, err := readOffset(topic, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +127,7 @@ func (f *fakeWriter) close() {
 func testWriterMaxAttemptsErr(t *testing.T) {
 	const topic = "test-writer-1"
 
+	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
 		Topic:       topic,
 		MaxAttempts: 1,

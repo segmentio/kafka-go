@@ -272,7 +272,12 @@ func createTopic(t *testing.T, topic string, partitions int32) {
 		},
 		Timeout: int32(30 * time.Second / time.Millisecond),
 	})
-	if err != nil {
+	switch err {
+	case nil:
+		// ok
+	case TopicAlreadyExists:
+		// ok
+	default:
 		t.Error("bad createTopics", err)
 		t.FailNow()
 	}
