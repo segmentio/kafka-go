@@ -148,4 +148,18 @@ w.Close()
 ```
 
 **Note:** Even though kafka.Message contain ```Topic``` and ```Partition``` fields, they **MUST NOT** be 
-set when writing messages.  They are intended for read use only.   
+set when writing messages.  They are intended for read use only.
+
+### Compatibility with Sarama
+
+If you're switching from Sarama and need/want to use the same algorithm for message
+partitioning, you can use the ```kafka.Hash``` balancer.  ```kafka.Hash``` routes
+messages to the same partitions that sarama's default partitioner would route to.
+
+```go
+w := kafka.NewWriter(kafka.WriterConfig{
+	Brokers: []string{"localhost:9092"},
+	Topic:   "topic-A",
+	Balancer: &kafka.Hash{},
+})
+```
