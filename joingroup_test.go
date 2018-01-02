@@ -7,20 +7,17 @@ import (
 	"testing"
 )
 
-func TestMemberMetadata(t *testing.T) {
+func TestProtocolMetadata(t *testing.T) {
 	item := protocolMetadata{
 		Version:  1,
 		Topics:   []string{"a", "b"},
 		UserData: []byte(`blah`),
 	}
 
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
-	item.writeTo(w)
-	w.Flush()
+	data := item.bytes()
 
 	var found protocolMetadata
-	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
+	remain, err := (&found).readFrom(bufio.NewReader(bytes.NewReader(data)), len(data))
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
