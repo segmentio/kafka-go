@@ -78,8 +78,8 @@ type joinGroupRequestV2 struct {
 	// for each member to rejoin when rebalancing the group in ms
 	RebalanceTimeout int32
 
-	// MemberID assigned by the group coordinator or null if joining for the
-	// first time.
+	// MemberID assigned by the group coordinator or the zero string if joining
+	// for the first time.
 	MemberID string
 
 	// ProtocolType holds the unique name for class of protocols implemented by group

@@ -6,7 +6,8 @@ type leaveGroupRequestV1 struct {
 	// GroupID holds the unique group identifier
 	GroupID string
 
-	// MemberID assigned by the group coordinator or null if joining for the first time.
+	// MemberID assigned by the group coordinator or the zero string if joining
+	// for the first time.
 	MemberID string
 }
 
