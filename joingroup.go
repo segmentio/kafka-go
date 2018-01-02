@@ -6,8 +6,8 @@ import (
 )
 
 type memberProtocolMetadata struct {
-	// MemberID assigned by the group coordinator or null if joining for the
-	// first time.
+	// MemberID assigned by the group coordinator or the zero string if joining
+	// for the first time.
 	MemberID string
 	Metadata protocolMetadata
 }
