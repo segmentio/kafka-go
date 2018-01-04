@@ -131,7 +131,7 @@ type Hash struct {
 
 func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
 	if msg.Key == nil {
-		return (&h.rr).Balance(msg, partitions...)
+		return h.rr.Balance(msg, partitions...)
 	}
 
 	hasher := fnv1aPool.Get().(hash.Hash32)
@@ -139,7 +139,7 @@ func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
 
 	hasher.Reset()
 	if _, err := hasher.Write(msg.Key); err != nil {
-		return (&h.rr).Balance(msg, partitions...)
+		return h.rr.Balance(msg, partitions...)
 	}
 
 	// uses same algorithm that Sarama's hashPartitioner uses
