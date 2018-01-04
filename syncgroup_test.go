@@ -39,6 +39,22 @@ func TestGroupAssignment(t *testing.T) {
 	}
 }
 
+func TestGroupAssignmentReadsFromZeroSize(t *testing.T) {
+	var item groupAssignment
+	remain, err := (&item).readFrom(bufio.NewReader(bytes.NewReader(nil)), 0)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	if remain != 0 {
+		t.Errorf("expected 0 remain, got %v", remain)
+		t.FailNow()
+	}
+	if item.Topics == nil {
+		t.Error("expected non nil Topics to be assigned")
+	}
+}
+
 func TestSyncGroupResponseV1(t *testing.T) {
 	item := syncGroupResponseV1{
 		ThrottleTimeMS:    1,

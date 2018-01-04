@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"math/rand"
+	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -254,7 +255,7 @@ func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Read
 	}
 }
 
-func createTopic(t *testing.T, topic string, partitions int32) {
+func createTopic(t *testing.T, topic string, partitions int) {
 	conn, err := Dial("tcp", "localhost:9092")
 	if err != nil {
 		t.Error("bad conn")
@@ -266,7 +267,7 @@ func createTopic(t *testing.T, topic string, partitions int32) {
 		Topics: []createTopicsRequestV2Topic{
 			{
 				Topic:             topic,
-				NumPartitions:     partitions,
+				NumPartitions:     int32(partitions),
 				ReplicationFactor: 1,
 			},
 		},
@@ -429,4 +430,604 @@ func BenchmarkReader(b *testing.B) {
 
 	r.Close()
 	b.SetBytes(int64(len(benchmarkReaderPayload)))
+}
+
+func TestConsumerGroup(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		scenario string
+		function func(*testing.T, context.Context, *Reader)
+	}{
+		{
+			scenario: "Close immediately after NewReader",
+			function: testConsumerGroupImmediateClose,
+		},
+
+		{
+			scenario: "Close immediately after NewReader",
+			function: testConsumerGroupSimple,
+		},
+	}
+
+	for _, test := range tests {
+		testFunc := test.function
+		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			topic := makeTopic()
+			createTopic(t, topic, 1)
+
+			r := NewReader(ReaderConfig{
+				Brokers:  []string{"localhost:9092"},
+				Topic:    topic,
+				GroupID:  makeGroupID(),
+				MinBytes: 1,
+				MaxBytes: 10e6,
+				MaxWait:  100 * time.Millisecond,
+			})
+			defer r.Close()
+			testFunc(t, ctx, r)
+		})
+	}
+
+	const broker = "localhost:9092"
+
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+
+	r := NewReader(ReaderConfig{
+		Brokers: []string{broker},
+		Topic:   topic,
+		GroupID: makeGroupID(),
+	})
+	r.Close()
+}
+
+func testConsumerGroupImmediateClose(t *testing.T, ctx context.Context, r *Reader) {
+	if err := r.Close(); err != nil {
+		t.Fatalf("bad err: %v", err)
+	}
+}
+
+func testConsumerGroupSimple(t *testing.T, ctx context.Context, r *Reader) {
+	if err := r.Close(); err != nil {
+		t.Fatalf("bad err: %v", err)
+	}
+}
+
+func TestReaderSetOffsetWhenConsumerGroupsEnabled(t *testing.T) {
+	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
+	if err := r.SetOffset(-1); err != errNotAvailable {
+		t.Fatalf("expected %v; got %v", errNotAvailable, err)
+	}
+}
+
+func TestReaderOffsetWhenConsumerGroupsEnabled(t *testing.T) {
+	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
+	if offset := r.Offset(); offset != -1 {
+		t.Fatalf("expected -1; got %v", offset)
+	}
+}
+
+func TestReaderLagWhenConsumerGroupsEnabled(t *testing.T) {
+	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
+	if offset := r.Lag(); offset != -1 {
+		t.Fatalf("expected -1; got %v", offset)
+	}
+}
+
+func TestReaderPartitionWhenConsumerGroupsEnabled(t *testing.T) {
+	invoke := func() (boom bool) {
+		defer func() {
+			if r := recover(); r != nil {
+				boom = true
+			}
+		}()
+
+		NewReader(ReaderConfig{
+			GroupID:   "set",
+			Partition: 1,
+		})
+		return false
+	}
+
+	if !invoke() {
+		t.Fatalf("expected panic; but NewReader worked?!")
+	}
+
+}
+
+func TestExtractTopics(t *testing.T) {
+	newMeta := func(memberID string, topics ...string) memberGroupMetadata {
+		return memberGroupMetadata{
+			MemberID: memberID,
+			Metadata: groupMetadata{
+				Topics: topics,
+			},
+		}
+	}
+
+	testCases := map[string]struct {
+		Members []memberGroupMetadata
+		Topics  []string
+	}{
+		"nil": {},
+		"single member, single topic": {
+			Members: []memberGroupMetadata{
+				newMeta("a", "topic"),
+			},
+			Topics: []string{"topic"},
+		},
+		"two members, single topic": {
+			Members: []memberGroupMetadata{
+				newMeta("a", "topic"),
+				newMeta("b", "topic"),
+			},
+			Topics: []string{"topic"},
+		},
+		"two members, two topics": {
+			Members: []memberGroupMetadata{
+				newMeta("a", "topic-1"),
+				newMeta("b", "topic-2"),
+			},
+			Topics: []string{"topic-1", "topic-2"},
+		},
+		"three members, three shared topics": {
+			Members: []memberGroupMetadata{
+				newMeta("a", "topic-1", "topic-2"),
+				newMeta("b", "topic-2", "topic-3"),
+				newMeta("c", "topic-3", "topic-1"),
+			},
+			Topics: []string{"topic-1", "topic-2", "topic-3"},
+		},
+	}
+
+	for label, tc := range testCases {
+		t.Run(label, func(t *testing.T) {
+			topics := extractTopics(tc.Members)
+			if !reflect.DeepEqual(tc.Topics, topics) {
+				t.Errorf("expected %v; got %v", tc.Topics, topics)
+			}
+		})
+	}
+}
+
+func TestReaderAssignTopicPartitions(t *testing.T) {
+	conn := &MockConn{
+		partitions: []Partition{
+			{
+				Topic: "topic-1",
+				ID:    0,
+			},
+			{
+				Topic: "topic-1",
+				ID:    1,
+			},
+			{
+				Topic: "topic-1",
+				ID:    2,
+			},
+			{
+				Topic: "topic-2",
+				ID:    0,
+			},
+		},
+	}
+
+	newJoinGroupResponseV2 := func(topicsByMemberID map[string][]string) joinGroupResponseV2 {
+		resp := joinGroupResponseV2{
+			GroupProtocol: roundrobinStrategy{}.ProtocolName(),
+		}
+
+		for memberID, topics := range topicsByMemberID {
+			resp.Members = append(resp.Members, joinGroupResponseMemberV2{
+				MemberID: memberID,
+				MemberMetadata: groupMetadata{
+					Topics: topics,
+				}.bytes(),
+			})
+		}
+
+		return resp
+	}
+
+	testCases := map[string]struct {
+		Members     joinGroupResponseV2
+		Assignments memberGroupAssignments
+	}{
+		"nil": {
+			Members:     newJoinGroupResponseV2(nil),
+			Assignments: memberGroupAssignments{},
+		},
+		"one member, one topic": {
+			Members: newJoinGroupResponseV2(map[string][]string{
+				"member-1": {"topic-1"},
+			}),
+			Assignments: memberGroupAssignments{
+				"member-1": map[string][]int32{
+					"topic-1": {0, 1, 2},
+				},
+			},
+		},
+		"one member, two topics": {
+			Members: newJoinGroupResponseV2(map[string][]string{
+				"member-1": {"topic-1", "topic-2"},
+			}),
+			Assignments: memberGroupAssignments{
+				"member-1": map[string][]int32{
+					"topic-1": {0, 1, 2},
+					"topic-2": {0},
+				},
+			},
+		},
+		"two members, one topic": {
+			Members: newJoinGroupResponseV2(map[string][]string{
+				"member-1": {"topic-1"},
+				"member-2": {"topic-1"},
+			}),
+			Assignments: memberGroupAssignments{
+				"member-1": map[string][]int32{
+					"topic-1": {0, 2},
+				},
+				"member-2": map[string][]int32{
+					"topic-1": {1},
+				},
+			},
+		},
+		"two members, two unshared topics": {
+			Members: newJoinGroupResponseV2(map[string][]string{
+				"member-1": {"topic-1"},
+				"member-2": {"topic-2"},
+			}),
+			Assignments: memberGroupAssignments{
+				"member-1": map[string][]int32{
+					"topic-1": {0, 1, 2},
+				},
+				"member-2": map[string][]int32{
+					"topic-2": {0},
+				},
+			},
+		},
+	}
+
+	for label, tc := range testCases {
+		t.Run(label, func(t *testing.T) {
+			r := &Reader{}
+			assignments, err := r.assignTopicPartitions(conn, tc.Members)
+			if err != nil {
+				t.Fatalf("bad err: %v", err)
+			}
+			if !reflect.DeepEqual(tc.Assignments, assignments) {
+				t.Errorf("expected %v; got %v", tc.Assignments, assignments)
+			}
+		})
+	}
+}
+
+func TestReaderConsumerGroup(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		scenario       string
+		partitions     int
+		commitInterval time.Duration
+		function       func(*testing.T, context.Context, *Reader)
+	}{
+		{
+			scenario:   "basic handshake",
+			partitions: 1,
+			function:   testReaderConsumerGroupHandshake,
+		},
+
+		{
+			scenario:   "verify offset committed",
+			partitions: 1,
+			function:   testReaderConsumerGroupVerifyOffsetCommitted,
+		},
+
+		{
+			scenario:       "verify offset committed when using interval committer",
+			partitions:     1,
+			commitInterval: 400 * time.Millisecond,
+			function:       testReaderConsumerGroupVerifyPeriodicOffsetCommitter,
+		},
+
+		{
+			scenario:       "verify outstanding offsets committed on close",
+			partitions:     1,
+			commitInterval: time.Minute,
+			function:       testReaderConsumerGroupVerifyCommitsOnClose,
+		},
+
+		{
+			scenario:   "read content across partitions",
+			partitions: 3,
+			function:   testReaderConsumerGroupReadContentAcrossPartitions,
+		},
+
+		{
+			scenario:   "rebalance two readers",
+			partitions: 2,
+			function:   testReaderConsumerGroupRebalance,
+		},
+
+		{
+			scenario:   "rebalance two readers across topics; reader 1 => topic 1, reader 2 => topic 2",
+			partitions: 2,
+			function:   testReaderConsumerGroupRebalanceAcrossTopics,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
+
+			topic := makeTopic()
+			createTopic(t, topic, test.partitions)
+
+			groupID := makeGroupID()
+			r := NewReader(ReaderConfig{
+				Brokers:           []string{"localhost:9092"},
+				Topic:             topic,
+				GroupID:           groupID,
+				HeartbeatInterval: time.Second,
+				CommitInterval:    test.commitInterval,
+				SessionTimeout:    time.Second * 6,
+				RetentionTime:     time.Hour,
+				MinBytes:          1,
+				MaxBytes:          1e6,
+			})
+			defer r.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			test.function(t, ctx, r)
+		})
+	}
+}
+
+func testReaderConsumerGroupHandshake(t *testing.T, ctx context.Context, r *Reader) {
+	prepareReader(t, context.Background(), r, makeTestSequence(5)...)
+
+	m, err := r.ReadMessage(ctx)
+	if err != nil {
+		t.Errorf("bad err: %v", err)
+	}
+	if m.Topic != r.config.Topic {
+		t.Errorf("topic not set")
+	}
+	if m.Offset != 0 {
+		t.Errorf("offset not set")
+	}
+
+	m, err = r.ReadMessage(ctx)
+	if err != nil {
+		t.Errorf("bad err: %v", err)
+	}
+	if m.Topic != r.config.Topic {
+		t.Errorf("topic not set")
+	}
+	if m.Offset != 1 {
+		t.Errorf("offset not set")
+	}
+}
+
+func testReaderConsumerGroupVerifyOffsetCommitted(t *testing.T, ctx context.Context, r *Reader) {
+	prepareReader(t, context.Background(), r, makeTestSequence(3)...)
+
+	if _, err := r.ReadMessage(ctx); err != nil {
+		t.Errorf("bad err: %v", err) // skip the first message
+	}
+
+	m, err := r.ReadMessage(ctx)
+	if err != nil {
+		t.Errorf("bad err: %v", err)
+	}
+
+	if err := r.CommitMessage(m); err != nil {
+		t.Errorf("bad commit message: %v", err)
+	}
+
+	offsets, err := r.fetchOffsets(map[string][]int32{
+		r.config.Topic: {0},
+	})
+	if err != nil {
+		t.Errorf("bad fetchOffsets: %v", err)
+	}
+
+	if expected := map[int]int64{0: m.Offset + 1}; !reflect.DeepEqual(expected, offsets) {
+		t.Errorf("expected %v; got %v", expected, offsets)
+	}
+}
+
+func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx context.Context, r *Reader) {
+	prepareReader(t, context.Background(), r, makeTestSequence(3)...)
+
+	if _, err := r.ReadMessage(ctx); err != nil {
+		t.Errorf("bad err: %v", err) // skip the first message
+	}
+
+	m, err := r.ReadMessage(ctx)
+	if err != nil {
+		t.Errorf("bad err: %v", err)
+	}
+
+	started := time.Now()
+	if err := r.CommitMessage(m); err != nil {
+		t.Errorf("bad commit message: %v", err)
+	}
+	if elapsed := time.Now().Sub(started); elapsed > 10*time.Millisecond {
+		t.Errorf("background commits should happen nearly instantly")
+	}
+
+	// wait for committer to pick up the commits
+	time.Sleep(r.config.CommitInterval * 3)
+
+	offsets, err := r.fetchOffsets(map[string][]int32{
+		r.config.Topic: {0},
+	})
+	if err != nil {
+		t.Errorf("bad fetchOffsets: %v", err)
+	}
+
+	if expected := map[int]int64{0: m.Offset + 1}; !reflect.DeepEqual(expected, offsets) {
+		t.Errorf("expected %v; got %v", expected, offsets)
+	}
+}
+
+func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Context, r *Reader) {
+	prepareReader(t, context.Background(), r, makeTestSequence(3)...)
+
+	if _, err := r.ReadMessage(ctx); err != nil {
+		t.Errorf("bad err: %v", err) // skip the first message
+	}
+
+	m, err := r.ReadMessage(ctx)
+	if err != nil {
+		t.Errorf("bad err: %v", err)
+	}
+
+	if err := r.CommitMessage(m); err != nil {
+		t.Errorf("bad commit message: %v", err)
+	}
+
+	if err := r.Close(); err != nil {
+		t.Errorf("bad Close: %v", err)
+	}
+
+	r2 := NewReader(r.config)
+	defer r2.Close()
+
+	offsets, err := r2.fetchOffsets(map[string][]int32{
+		r.config.Topic: {0},
+	})
+	if err != nil {
+		t.Errorf("bad fetchOffsets: %v", err)
+	}
+
+	if expected := map[int]int64{0: m.Offset + 1}; !reflect.DeepEqual(expected, offsets) {
+		t.Errorf("expected %v; got %v", expected, offsets)
+	}
+}
+
+func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx context.Context, r *Reader) {
+	const N = 12
+
+	writer := NewWriter(WriterConfig{
+		Brokers:   r.config.Brokers,
+		Topic:     r.config.Topic,
+		Dialer:    r.config.Dialer,
+		Balancer:  &RoundRobin{},
+		BatchSize: 1,
+	})
+	if err := writer.WriteMessages(ctx, makeTestSequence(N)...); err != nil {
+		t.Fatalf("bad write messages: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("bad write err: %v", err)
+	}
+
+	partitions := map[int]struct{}{}
+	for i := 0; i < N; i++ {
+		m, err := r.ReadMessage(ctx)
+		if err != nil {
+			t.Errorf("bad error: %s", err)
+		}
+		partitions[m.Partition] = struct{}{}
+	}
+
+	if v := len(partitions); v != 3 {
+		t.Errorf("expected messages across 3 partitions; got messages across %v partitions", v)
+	}
+}
+
+func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Reader) {
+	r2 := NewReader(r.config)
+	defer r.Close()
+
+	const (
+		N          = 12
+		partitions = 2
+	)
+
+	// rebalance should result in 12 message in each of the partitions
+	writer := NewWriter(WriterConfig{
+		Brokers:   r.config.Brokers,
+		Topic:     r.config.Topic,
+		Dialer:    r.config.Dialer,
+		Balancer:  &RoundRobin{},
+		BatchSize: 1,
+	})
+	if err := writer.WriteMessages(ctx, makeTestSequence(N*partitions)...); err != nil {
+		t.Fatalf("bad write messages: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("bad write err: %v", err)
+	}
+
+	// after rebalance, each reader should have a partition to itself
+	for i := 0; i < N; i++ {
+		if _, err := r2.ReadMessage(ctx); err != nil {
+			t.Errorf("expect to read from reader 2")
+		}
+		if _, err := r.ReadMessage(ctx); err != nil {
+			t.Errorf("expect to read from reader 1")
+		}
+	}
+}
+
+func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Context, r *Reader) {
+	// create a second reader that shares the groupID, but reads from a different topic
+	topic2 := makeTopic()
+	createTopic(t, topic2, 1)
+
+	r2 := NewReader(ReaderConfig{
+		Brokers:           r.config.Brokers,
+		Topic:             topic2,
+		GroupID:           r.config.GroupID,
+		HeartbeatInterval: r.config.HeartbeatInterval,
+		SessionTimeout:    r.config.SessionTimeout,
+		RetentionTime:     r.config.RetentionTime,
+		MinBytes:          r.config.MinBytes,
+		MaxBytes:          r.config.MaxBytes,
+		Logger:            r.config.Logger,
+	})
+	defer r.Close()
+	prepareReader(t, ctx, r2, makeTestSequence(1)...)
+
+	const (
+		N = 12
+	)
+
+	// write messages across both partitions
+	writer := NewWriter(WriterConfig{
+		Brokers:   r.config.Brokers,
+		Topic:     r.config.Topic,
+		Dialer:    r.config.Dialer,
+		Balancer:  &RoundRobin{},
+		BatchSize: 1,
+	})
+	if err := writer.WriteMessages(ctx, makeTestSequence(N)...); err != nil {
+		t.Fatalf("bad write messages: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("bad write err: %v", err)
+	}
+
+	// after rebalance, r2 should read topic2 and r1 should read ALL of the original topic
+	if _, err := r2.ReadMessage(ctx); err != nil {
+		t.Errorf("expect to read from reader 2")
+	}
+
+	// all N messages on the original topic should be read by the original reader
+	for i := 0; i < N; i++ {
+		if _, err := r.ReadMessage(ctx); err != nil {
+			t.Errorf("expect to read from reader 1")
+		}
+	}
 }
