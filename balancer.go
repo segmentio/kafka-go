@@ -118,15 +118,20 @@ var (
 	}
 )
 
-// Hash is a Balancer implementation that routes messages to the partition
-// based on the FNV-1a hash of the key.  This ensures that messages with the
-// same key end up on the same partition.
+// Hash is a Balancer that uses the provided hash function to determine which
+// partition to route messages to.  This ensures that messages with the same key
+// are routed to the same partition.
 //
-// Note that this is the same algorithm used by the Sarama Producer and ensures
-// that messages produced by kafka-go will be delivered to the same topics that
-// the Sarama producer would be delivered to
+// The logic to calculate the partition is:
+//
+// 		hasher.Sum32() % len(partitions) => partition
+//
+// By default, Hash uses the FNV-1a algorithm.  This is the same algorithm used
+// by the Sarama Producer and ensures that messages produced by kafka-go will
+// be delivered to the same topics that the Sarama producer would be delivered to
 type Hash struct {
-	rr RoundRobin
+	rr     RoundRobin
+	Hasher hash.Hash32
 }
 
 func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
@@ -134,12 +139,15 @@ func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
 		return h.rr.Balance(msg, partitions...)
 	}
 
-	hasher := fnv1aPool.Get().(hash.Hash32)
-	defer fnv1aPool.Put(hasher)
+	hasher := h.Hasher
+	if hasher == nil {
+		hasher = fnv1aPool.Get().(hash.Hash32)
+		defer fnv1aPool.Put(hasher)
+	}
 
 	hasher.Reset()
 	if _, err := hasher.Write(msg.Key); err != nil {
-		return h.rr.Balance(msg, partitions...)
+		panic(err)
 	}
 
 	// uses same algorithm that Sarama's hashPartitioner uses
