@@ -7,31 +7,6 @@ import (
 	"testing"
 )
 
-func TestProtocolMetadata(t *testing.T) {
-	item := protocolMetadata{
-		Version:  1,
-		Topics:   []string{"a", "b"},
-		UserData: []byte(`blah`),
-	}
-
-	data := item.bytes()
-
-	var found protocolMetadata
-	remain, err := (&found).readFrom(bufio.NewReader(bytes.NewReader(data)), len(data))
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	if remain != 0 {
-		t.Errorf("expected 0 remain, got %v", remain)
-		t.FailNow()
-	}
-	if !reflect.DeepEqual(item, found) {
-		t.Error("expected item and found to be the same")
-		t.FailNow()
-	}
-}
-
 func TestJoinGroupResponseV1(t *testing.T) {
 	item := joinGroupResponseV2{
 		ThrottleTimeMS: 1,

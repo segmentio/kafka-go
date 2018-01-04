@@ -2,54 +2,7 @@ package kafka
 
 import (
 	"bufio"
-	"bytes"
 )
-
-type memberProtocolMetadata struct {
-	// MemberID assigned by the group coordinator or the zero string if joining
-	// for the first time.
-	MemberID string
-	Metadata protocolMetadata
-}
-
-type protocolMetadata struct {
-	Version  int16
-	Topics   []string
-	UserData []byte
-}
-
-func (t protocolMetadata) size() int32 {
-	return sizeofInt16(t.Version) +
-		sizeofStringArray(t.Topics) +
-		sizeofBytes(t.UserData)
-}
-
-func (t protocolMetadata) writeTo(w *bufio.Writer) {
-	writeInt16(w, t.Version)
-	writeStringArray(w, t.Topics)
-	writeBytes(w, t.UserData)
-}
-
-func (t protocolMetadata) bytes() []byte {
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
-	t.writeTo(w)
-	w.Flush()
-	return buf.Bytes()
-}
-
-func (t *protocolMetadata) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt16(r, size, &t.Version); err != nil {
-		return
-	}
-	if remain, err = readStringArray(r, remain, &t.Topics); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.UserData); err != nil {
-		return
-	}
-	return
-}
 
 type joinGroupRequestGroupProtocolV2 struct {
 	ProtocolName     string
