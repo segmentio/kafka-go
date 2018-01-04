@@ -156,12 +156,17 @@ func (t *createTopicsResponseV2) readFrom(r *bufio.Reader, size int) (remain int
 		return
 	}
 
-	remain, err = readArrayWith(r, remain, func(r *bufio.Reader, size int) (remain int, err error) {
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
 		var topic createTopicsResponseV2TopicError
-		remain, err = (&topic).readFrom(r, size)
+		if fnRemain, fnErr = (&topic).readFrom(r, size); err != nil {
+			return
+		}
 		t.TopicErrors = append(t.TopicErrors, topic)
 		return
-	})
+	}
+	if remain, err = readArrayWith(r, remain, fn); err != nil {
+		return
+	}
 
 	return
 }
@@ -199,28 +204,12 @@ func TestCreateTopicsResponseV2(t *testing.T) {
 	}
 }
 
-func writeHeader(w *bufio.Writer, clientID string, apiKey apiKey, apiVersion apiVersion, correlationID, size int32) {
-	h := requestHeader{
-		ApiKey:        int16(apiKey),
-		ApiVersion:    int16(apiVersion),
-		CorrelationID: correlationID,
-		ClientID:      clientID,
-	}
-	h.Size = h.size() - 4 + size
-
-	// write message
-	h.writeTo(w)
-}
-
 func (c *Conn) createTopics(request createTopicsRequestV2) (createTopicsResponseV2, error) {
 	var response createTopicsResponseV2
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			w := &c.wbuf
-			writeHeader(w, c.clientID, createTopicsRequest, v2, id, request.size())
-			request.writeTo(w)
-			return w.Flush()
+			return c.writeRequest(createTopicsRequest, v2, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {

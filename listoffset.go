@@ -98,6 +98,8 @@ func (p *partitionOffsetV1) readFrom(r *bufio.Reader, sz int) (remain int, err e
 	if remain, err = readInt64(r, remain, &p.Timestamp); err != nil {
 		return
 	}
-	remain, err = readInt64(r, remain, &p.Offset)
+	if remain, err = readInt64(r, remain, &p.Offset); err != nil {
+		return
+	}
 	return
 }

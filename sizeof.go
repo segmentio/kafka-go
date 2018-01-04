@@ -28,6 +28,22 @@ func sizeof(a interface{}) int32 {
 	panic(fmt.Sprintf("unsupported type: %T", a))
 }
 
+func sizeofInt8(_ int8) int32 {
+	return 1
+}
+
+func sizeofInt16(_ int16) int32 {
+	return 2
+}
+
+func sizeofInt32(_ int32) int32 {
+	return 4
+}
+
+func sizeofInt64(_ int64) int32 {
+	return 8
+}
+
 func sizeofString(s string) int32 {
 	return 2 + int32(len(s))
 }
@@ -38,14 +54,6 @@ func sizeofBool(_ bool) int32 {
 
 func sizeofBytes(b []byte) int32 {
 	return 4 + int32(len(b))
-}
-
-func sizeofInt16(_ int16) int32 {
-	return 2
-}
-
-func sizeofInt32(_ int32) int32 {
-	return 4
 }
 
 func sizeofArray(n int, f func(int) int32) int32 {

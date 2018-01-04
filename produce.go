@@ -106,6 +106,8 @@ func (p *produceResponsePartitionV2) readFrom(r *bufio.Reader, sz int) (remain i
 	if remain, err = readInt64(r, remain, &p.Offset); err != nil {
 		return
 	}
-	remain, err = readInt64(r, remain, &p.Timestamp)
+	if remain, err = readInt64(r, remain, &p.Timestamp); err != nil {
+		return
+	}
 	return
 }

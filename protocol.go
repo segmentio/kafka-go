@@ -31,6 +31,7 @@ const (
 	v0 apiVersion = 0
 	v1 apiVersion = 1
 	v2 apiVersion = 2
+	v3 apiVersion = 3
 )
 
 type requestHeader struct {

@@ -124,6 +124,58 @@ func readArrayWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int) (int, er
 	return sz, err
 }
 
+func readStringArray(r *bufio.Reader, sz int, v *[]string) (remain int, err error) {
+	var content []string
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
+		var value string
+		if fnRemain, fnErr = readString(r, size, &value); fnErr != nil {
+			return
+		}
+		content = append(content, value)
+		return
+	}
+	if remain, err = readArrayWith(r, sz, fn); err != nil {
+		return
+	}
+
+	*v = content
+	return
+}
+
+func readMapStringInt32(r *bufio.Reader, sz int, v *map[string][]int32) (remain int, err error) {
+	var len int16
+	if remain, err = readInt16(r, sz, &len); err != nil {
+		return
+	}
+
+	content := make(map[string][]int32, len)
+	for i := 0; i < int(len); i++ {
+		var key string
+		var values []int32
+
+		if remain, err = readString(r, remain, &key); err != nil {
+			return
+		}
+
+		fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
+			var value int32
+			if fnRemain, fnErr = readInt32(r, size, &value); fnErr != nil {
+				return
+			}
+			values = append(values, value)
+			return
+		}
+		if remain, err = readArrayWith(r, remain, fn); err != nil {
+			return
+		}
+
+		content[key] = values
+	}
+	*v = content
+
+	return
+}
+
 func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
 	switch v := a.(type) {
 	case *int8:
