@@ -1,6 +1,11 @@
 package kafka
 
-import "sort"
+import (
+	"hash"
+	"hash/fnv"
+	"sort"
+	"sync"
+)
 
 // The Balancer interface provides an abstraction of the message distribution
 // logic used by Writer instances to route messages to the partitions available
@@ -102,5 +107,54 @@ func (lb *LeastBytes) makeCounters(partitions ...int) (counters []leastBytesCoun
 	sort.Slice(counters, func(i int, j int) bool {
 		return counters[i].partition < counters[j].partition
 	})
+	return
+}
+
+var (
+	fnv1aPool = &sync.Pool{
+		New: func() interface{} {
+			return fnv.New32a()
+		},
+	}
+)
+
+// Hash is a Balancer that uses the provided hash function to determine which
+// partition to route messages to.  This ensures that messages with the same key
+// are routed to the same partition.
+//
+// The logic to calculate the partition is:
+//
+// 		hasher.Sum32() % len(partitions) => partition
+//
+// By default, Hash uses the FNV-1a algorithm.  This is the same algorithm used
+// by the Sarama Producer and ensures that messages produced by kafka-go will
+// be delivered to the same topics that the Sarama producer would be delivered to
+type Hash struct {
+	rr     RoundRobin
+	Hasher hash.Hash32
+}
+
+func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
+	if msg.Key == nil {
+		return h.rr.Balance(msg, partitions...)
+	}
+
+	hasher := h.Hasher
+	if hasher == nil {
+		hasher = fnv1aPool.Get().(hash.Hash32)
+		defer fnv1aPool.Put(hasher)
+	}
+
+	hasher.Reset()
+	if _, err := hasher.Write(msg.Key); err != nil {
+		panic(err)
+	}
+
+	// uses same algorithm that Sarama's hashPartitioner uses
+	partition = int(hasher.Sum32()) % len(partitions)
+	if partition < 0 {
+		partition = -partition
+	}
+
 	return
 }
