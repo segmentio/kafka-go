@@ -452,26 +452,62 @@ func testConnReadWatermarkFromBatch(t *testing.T, conn *Conn) {
 	batch.Close()
 }
 
-func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, memberID string, stop func()) {
-	// join the group
-	joinGroup, err := conn.joinGroup(joinGroupRequestV2{
-		GroupID:          groupID,
-		SessionTimeout:   int32(time.Minute / time.Millisecond),
-		RebalanceTimeout: int32(time.Second / time.Millisecond),
-		ProtocolType:     "roundrobin",
-		GroupProtocols: []joinGroupRequestGroupProtocolV2{
-			{
-				ProtocolName:     "roundrobin",
-				ProtocolMetadata: []byte("blah"),
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("bad joinGroup: %s", err)
+func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
+	// ensure that kafka has allocated a group coordinator.  oddly, issue doesn't
+	// appear to happen if the kafka been running for a while.
+	const maxAttempts = 20
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		_, err := conn.findCoordinator(findCoordinatorRequestV1{
+			CoordinatorKey: groupID,
+		})
+		switch err {
+		case nil:
+			return
+		case GroupCoordinatorNotAvailable:
+			time.Sleep(250 * time.Millisecond)
+		default:
+			t.Fatalf("unable to find coordinator for group: %v", err)
+		}
 	}
 
+	t.Fatalf("unable to connect to coordinator after %v attempts", maxAttempts)
+}
+
+func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, memberID string, stop func()) {
+	waitForCoordinator(t, conn, groupID)
+
+	join := func() (joinGroup joinGroupResponseV2) {
+		var err error
+		for attempt := 0; attempt < 10; attempt++ {
+			joinGroup, err = conn.joinGroup(joinGroupRequestV2{
+				GroupID:          groupID,
+				SessionTimeout:   int32(time.Minute / time.Millisecond),
+				RebalanceTimeout: int32(time.Second / time.Millisecond),
+				ProtocolType:     "roundrobin",
+				GroupProtocols: []joinGroupRequestGroupProtocolV2{
+					{
+						ProtocolName:     "roundrobin",
+						ProtocolMetadata: []byte("blah"),
+					},
+				},
+			})
+			switch err {
+			case nil:
+				return
+			case NotCoordinatorForGroup:
+				time.Sleep(250 * time.Millisecond)
+			default:
+				t.Fatalf("bad joinGroup: %s", err)
+			}
+		}
+		return
+	}
+
+	// join the group
+	joinGroup := join()
+
 	// sync the group
-	_, err = conn.syncGroups(syncGroupRequestV1{
+	_, err := conn.syncGroups(syncGroupRequestV1{
 		GroupID:      groupID,
 		GenerationID: joinGroup.GenerationID,
 		MemberID:     joinGroup.MemberID,
@@ -550,50 +586,69 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 
 func testConnJoinGroupInvalidGroupID(t *testing.T, conn *Conn) {
 	_, err := conn.joinGroup(joinGroupRequestV2{})
-	if err != InvalidGroupId {
-		t.Fatalf("expected %v; got %v", InvalidGroupId, err)
+	if err != InvalidGroupId && err != NotCoordinatorForGroup {
+		t.Fatalf("expected %v or %v; got %v", InvalidGroupId, NotCoordinatorForGroup, err)
 	}
 }
 
 func testConnJoinGroupInvalidSessionTimeout(t *testing.T, conn *Conn) {
+	groupID := makeGroupID()
+	waitForCoordinator(t, conn, groupID)
+
 	_, err := conn.joinGroup(joinGroupRequestV2{
-		GroupID: makeGroupID(),
+		GroupID: groupID,
 	})
-	if err != InvalidSessionTimeout {
-		t.Fatalf("expected %v; got %v", InvalidSessionTimeout, err)
+	if err != InvalidSessionTimeout && err != NotCoordinatorForGroup {
+		t.Fatalf("expected %v or %v; got %v", InvalidSessionTimeout, NotCoordinatorForGroup, err)
 	}
 }
 
 func testConnJoinGroupInvalidRefreshTimeout(t *testing.T, conn *Conn) {
+	groupID := makeGroupID()
+	waitForCoordinator(t, conn, groupID)
+
 	_, err := conn.joinGroup(joinGroupRequestV2{
-		GroupID:        makeGroupID(),
+		GroupID:        groupID,
 		SessionTimeout: int32(3 * time.Second / time.Millisecond),
 	})
-	if err != InvalidSessionTimeout {
-		t.Fatalf("expected %v; got %v", InvalidSessionTimeout, err)
+	if err != InvalidSessionTimeout && err != NotCoordinatorForGroup {
+		t.Fatalf("expected %v or %v; got %v", InvalidSessionTimeout, NotCoordinatorForGroup, err)
 	}
 }
 
 func testConnHeartbeatErr(t *testing.T, conn *Conn) {
-	_, err := conn.syncGroups(syncGroupRequestV1{})
-	if err != UnknownMemberId {
-		t.Fatalf("expected %v; got %v", UnknownMemberId, err)
+	groupID := makeGroupID()
+	createGroup(t, conn, groupID)
+
+	_, err := conn.syncGroups(syncGroupRequestV1{
+		GroupID: groupID,
+	})
+	if err != UnknownMemberId && err != NotCoordinatorForGroup {
+		t.Fatalf("expected %v or %v; got %v", UnknownMemberId, NotCoordinatorForGroup, err)
 	}
 }
 
 func testConnLeaveGroupErr(t *testing.T, conn *Conn) {
+	groupID := makeGroupID()
+	waitForCoordinator(t, conn, groupID)
+
 	_, err := conn.leaveGroup(leaveGroupRequestV1{
-		GroupID: makeGroupID(),
+		GroupID: groupID,
 	})
-	if err != UnknownMemberId {
-		t.Fatalf("expected %v; got %v", UnknownMemberId, err)
+	if err != UnknownMemberId && err != NotCoordinatorForGroup {
+		t.Fatalf("expected %v or %v; got %v", UnknownMemberId, NotCoordinatorForGroup, err)
 	}
 }
 
 func testConnSyncGroupErr(t *testing.T, conn *Conn) {
-	_, err := conn.syncGroups(syncGroupRequestV1{})
-	if err != UnknownMemberId {
-		t.Fatalf("expected %v; got %v", UnknownMemberId, err)
+	groupID := makeGroupID()
+	waitForCoordinator(t, conn, groupID)
+
+	_, err := conn.syncGroups(syncGroupRequestV1{
+		GroupID: groupID,
+	})
+	if err != UnknownMemberId && err != NotCoordinatorForGroup {
+		t.Fatalf("expected %v or %v; got %v", UnknownMemberId, NotCoordinatorForGroup, err)
 	}
 }
 
