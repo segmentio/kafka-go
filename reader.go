@@ -1062,8 +1062,8 @@ func NewReader(config ReaderConfig) *Reader {
 			panic(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
 		}
 
-		if config.SessionTimeout < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
+		if config.SessionTimeout < 0 || (config.SessionTimeout/time.Millisecond) >= math.MaxInt32 {
+			panic(fmt.Sprintf("SessionTimeout out of bounds: %d", config.SessionTimeout))
 		}
 
 		if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
