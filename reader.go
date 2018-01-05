@@ -47,7 +47,7 @@ const (
 
 	// defaultRebalanceTimeout contains the amount of time the coordinator will wait
 	// for consumers to issue a join group once a rebalance has been requested
-	defaultRebalanceTimeout = 10 * time.Second
+	defaultRebalanceTimeout = 30 * time.Second
 
 	// defaultRetentionTime holds the length of time a the consumer group will be
 	// saved by kafka
@@ -185,7 +185,7 @@ func (r *Reader) newJoinGroupRequestV2() (joinGroupRequestV2, error) {
 		GroupID:          r.config.GroupID,
 		MemberID:         memberID,
 		SessionTimeout:   int32(r.config.SessionTimeout / time.Millisecond),
-		RebalanceTimeout: int32(defaultRebalanceTimeout / time.Millisecond),
+		RebalanceTimeout: int32(r.config.RebalanceTimeout / time.Millisecond),
 		ProtocolType:     defaultProtocolType,
 	}
 
@@ -953,6 +953,15 @@ type ReaderConfig struct {
 	// Only used when GroupID is set
 	SessionTimeout time.Duration
 
+	// RebalanceTimeout optionally sets the length of time the coordinator will wait
+	// for members to join as part of a rebalance.  For kafka servers under higher
+	// load, it may be useful to set this value higher.
+	//
+	// Default: 30s
+	//
+	// Only used when GroupID is set
+	RebalanceTimeout time.Duration
+
 	// RetentionTime optionally sets the length of time the consumer group will be saved
 	// by the broker
 	//
@@ -1057,6 +1066,10 @@ func NewReader(config ReaderConfig) *Reader {
 			panic(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
 		}
 
+		if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
+			panic(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
+		}
+
 		if config.RetentionTime < 0 || (config.RetentionTime/time.Millisecond) >= math.MaxInt32 {
 			panic(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
 		}
@@ -1092,6 +1105,10 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.SessionTimeout == 0 {
 		config.SessionTimeout = defaultSessionTimeout
+	}
+
+	if config.RebalanceTimeout == 0 {
+		config.RebalanceTimeout = defaultRebalanceTimeout
 	}
 
 	if config.RetentionTime == 0 {
