@@ -72,7 +72,7 @@ type Reader struct {
 	stop         context.CancelFunc
 	done         chan struct{}
 	commits      chan Message
-	version      int64
+	version      int64 // version holds the generation of the spawned readers
 	offset       int64
 	lag          int64
 	closed       bool
@@ -495,7 +495,7 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 	return offsetsByPartition, nil
 }
 
-func (r *Reader) subscribe(subs map[string][]int32, ready func()) error {
+func (r *Reader) subscribe(subs map[string][]int32) error {
 	// always clear prior subscriptions
 	r.unsubscribe()
 
@@ -511,8 +511,6 @@ func (r *Reader) subscribe(subs map[string][]int32, ready func()) error {
 	r.mutex.Lock()
 	r.start(offsetsByPartition)
 	r.mutex.Unlock()
-
-	ready() // mark the Reader as ready to go
 
 	r.withErrorLogger(func(l *log.Logger) {
 		l.Printf("subscribed to partitions: %+v", offsetsByPartition)
@@ -812,9 +810,8 @@ func (r *Reader) commitLoop(stop <-chan struct{}, done chan<- struct{}) {
 	}
 }
 
-func (r *Reader) run(ready func()) {
+func (r *Reader) run() {
 	defer close(r.done)
-	defer ready() // ensures ready called when GroupID == ""
 
 	const (
 		backoffDelayMin = 100 * time.Millisecond
@@ -853,7 +850,7 @@ func (r *Reader) run(ready func()) {
 		go r.commitLoop(commitStop, commitDone)
 
 		// subscribe to assignments
-		if err := r.subscribe(assignments, ready); err != nil {
+		if err := r.subscribe(assignments); err != nil {
 			r.withErrorLogger(func(l *log.Logger) {
 				l.Printf("subscribe failed for consumer group, %v: %v\n", r.config.GroupID, err)
 			})
@@ -1111,6 +1108,13 @@ func NewReader(config ReaderConfig) *Reader {
 		readerStatsPartition = -1
 	}
 
+	// when configured as a consume group, start version as 1 to ensure that only
+	// the rebalance function will start readers
+	version := int64(0)
+	if config.GroupID != "" {
+		version = 1
+	}
+
 	stctx, stop := context.WithCancel(context.Background())
 	r := &Reader{
 		config:  config,
@@ -1131,21 +1135,10 @@ func NewReader(config ReaderConfig) *Reader {
 			// once when the reader is created.
 			partition: strconv.Itoa(readerStatsPartition),
 		},
+		version: version,
 	}
 
-	// When using consumer groups, we want to ensure that the rebalancer
-	// has first dibs on starting reader goroutines.  To that end, we
-	// provide the rebalancer a ready func() that it will call to indicate
-	// its done what it needs to do (which may be nothing when GroupID == "")
-	readCtx, ready := context.WithCancel(context.Background())
-	defer ready()
-
-	go r.run(ready)
-
-	select {
-	case <-stctx.Done():
-	case <-readCtx.Done():
-	}
+	go r.run()
 
 	return r
 }
