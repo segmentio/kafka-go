@@ -637,7 +637,7 @@ func (r *Reader) heartbeat() error {
 	return nil
 }
 
-func (r *Reader) hbLoop(stop <-chan struct{}, done chan<- struct{}) {
+func (r *Reader) heartbeatLoop(stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 
 	r.withLogger(func(l *log.Logger) {
@@ -844,7 +844,7 @@ func (r *Reader) run() {
 
 		// start the heartbeat
 		hbStop, hbDone := make(chan struct{}), make(chan struct{})
-		go r.hbLoop(hbStop, hbDone)
+		go r.heartbeatLoop(hbStop, hbDone)
 
 		commitStop, commitDone := make(chan struct{}), make(chan struct{})
 		go r.commitLoop(commitStop, commitDone)
