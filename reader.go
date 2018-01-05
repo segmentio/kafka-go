@@ -945,7 +945,7 @@ type ReaderConfig struct {
 	// Only used when GroupID is set
 	CommitInterval time.Duration
 
-	// HeartbeatInterval optionally sets the length of time that may pass without a heartbeat
+	// SessionTimeout optionally sets the length of time that may pass without a heartbeat
 	// before the coordinator considers the consumer dead and initiates a rebalance.
 	//
 	// Default: 30s
