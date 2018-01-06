@@ -1787,7 +1787,7 @@ func (r *reader) withErrorLogger(do func(*log.Logger)) {
 // extractTopics returns the unique list of topics represented by the set of
 // provided members
 func extractTopics(members []memberGroupMetadata) []string {
-	visited := map[string]struct{}{}
+	var visited = map[string]struct{}{}
 	var topics []string
 
 	for _, member := range members {
