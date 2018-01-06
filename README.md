@@ -115,7 +115,7 @@ r.Close()
 To enable consumer groups, simplify specify the GroupID in the ReaderConfig.
 
 ```go
-// make a new reader that consumes from topic-A, partition 0, at offset 42
+// make a new reader that consumes from topic-A
 r := kafka.NewReader(kafka.ReaderConfig{
     Brokers:   []string{"localhost:9092"},
     GroupID:   "consumer-group-id",
@@ -152,7 +152,7 @@ by setting CommitInterval on the ReaderConfig.
 
 
 ```go
-// make a new reader that consumes from topic-A, partition 0, at offset 42
+// make a new reader that consumes from topic-A
 r := kafka.NewReader(kafka.ReaderConfig{
     Brokers:        []string{"localhost:9092"},
     GroupID:        "consumer-group-id",
