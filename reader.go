@@ -806,14 +806,11 @@ func (r *Reader) commitLoop(stop <-chan struct{}) {
 	}
 }
 
-func (r *Reader) runOnce() {
+func (r *Reader) runOnce() error {
 	// rebalance and fetch subscriptions
 	assignments, err := r.rebalance()
 	if err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("rebalance failed for consumer group, %v: %v", r.config.GroupID, err)
-		})
-		return
+		return fmt.Errorf("rebalance failed for consumer group, %v: %v", r.config.GroupID, err)
 	}
 
 	rg := &runGroup{}
@@ -823,15 +820,13 @@ func (r *Reader) runOnce() {
 
 	// subscribe to assignments
 	if err := r.subscribe(assignments); err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("subscribe failed for consumer group, %v: %v\n", r.config.GroupID, err)
-		})
-
 		rg.Stop()
-		return
+		return fmt.Errorf("subscribe failed for consumer group, %v: %v\n", r.config.GroupID, err)
 	}
 
 	rg.Wait()
+
+	return nil
 }
 
 func (r *Reader) run() {
@@ -846,7 +841,11 @@ func (r *Reader) run() {
 	})
 
 	for {
-		r.runOnce()
+		if err := r.runOnce(); err != nil {
+			r.withErrorLogger(func(l *log.Logger) {
+				l.Println(err)
+			})
+		}
 
 		select {
 		case <-r.stctx.Done():
