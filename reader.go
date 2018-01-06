@@ -174,7 +174,7 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 	}
 
 	for _, strategy := range allStrategies {
-		meta, err := strategy.ProtocolMetadata([]string{r.config.Topic})
+		meta, err := strategy.GroupMetadata([]string{r.config.Topic})
 		if err != nil {
 			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
 		}

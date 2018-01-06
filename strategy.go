@@ -7,8 +7,13 @@ type strategy interface {
 	// ProtocolName of strategy
 	ProtocolName() string
 
-	// ProtocolMetadata returns the metadata for the protocol
-	ProtocolMetadata(topics []string) (groupMetadata, error)
+	// ProtocolMetadata provides the strategy an opportunity to embed custom
+	// UserData into the metadata.
+	//
+	// Will be used by JoinGroup to begin the consumer group handshake.
+	//
+	// See https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-JoinGroupRequest
+	GroupMetadata(topics []string) (groupMetadata, error)
 
 	// DefineMemberships returns which members will be consuming
 	// which topic partitions
@@ -40,7 +45,7 @@ func (r rangeStrategy) ProtocolName() string {
 	return "range"
 }
 
-func (r rangeStrategy) ProtocolMetadata(topics []string) (groupMetadata, error) {
+func (r rangeStrategy) GroupMetadata(topics []string) (groupMetadata, error) {
 	return groupMetadata{
 		Version: 1,
 		Topics:  topics,
@@ -96,7 +101,7 @@ func (r roundrobinStrategy) ProtocolName() string {
 	return "roundrobin"
 }
 
-func (r roundrobinStrategy) ProtocolMetadata(topics []string) (groupMetadata, error) {
+func (r roundrobinStrategy) GroupMetadata(topics []string) (groupMetadata, error) {
 	return groupMetadata{
 		Version: 1,
 		Topics:  topics,
