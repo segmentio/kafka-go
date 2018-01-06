@@ -6,7 +6,7 @@ import (
 )
 
 // runGroup is a collection of goroutines working together. If any one goroutine
-// stops, then all goroutines must be stopped.
+// stops, then all goroutines will be stopped.
 //
 // A zero runGroup is valid
 type runGroup struct {

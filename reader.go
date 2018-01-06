@@ -578,10 +578,10 @@ func (r *Reader) heartbeat() error {
 
 func (r *Reader) heartbeatLoop(stop <-chan struct{}) {
 	r.withLogger(func(l *log.Logger) {
-		l.Printf("started heartbeat group, %v [%v]", r.config.GroupID, r.config.HeartbeatInterval)
+		l.Printf("started heartbeat for group, %v [%v]", r.config.GroupID, r.config.HeartbeatInterval)
 	})
 	defer r.withLogger(func(l *log.Logger) {
-		l.Println("stopped heartbeat group,", r.config.GroupID)
+		l.Println("stopped heartbeat for group,", r.config.GroupID)
 	})
 
 	ticker := time.NewTicker(r.config.HeartbeatInterval)
@@ -727,10 +727,10 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 // commitLoop processes commits off the commit chan
 func (r *Reader) commitLoop(stop <-chan struct{}) {
 	r.withLogger(func(l *log.Logger) {
-		l.Println("started commit group,", r.config.GroupID)
+		l.Println("started commit for group,", r.config.GroupID)
 	})
 	defer r.withLogger(func(l *log.Logger) {
-		l.Println("stopped commit group,", r.config.GroupID)
+		l.Println("stopped commit for group,", r.config.GroupID)
 	})
 
 	conn, err := r.connect(r.stctx)
@@ -753,10 +753,10 @@ func (r *Reader) commitLoop(stop <-chan struct{}) {
 // consumer group.  handshake will be called whenever the group is disrupted
 // (member join, member leave, coordinator changed, etc)
 func (r *Reader) handshake() error {
-	// always clear prior subscriptions
+	// always clear prior to subscribe
 	r.unsubscribe()
 
-	// rebalance and fetch subscriptions
+	// rebalance and fetch assignments
 	assignments, err := r.rebalance()
 	if err != nil {
 		return fmt.Errorf("rebalance failed for consumer group, %v: %v", r.config.GroupID, err)
