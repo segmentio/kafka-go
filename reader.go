@@ -107,9 +107,9 @@ func (r *Reader) membership() (generationID int32, memberID string) {
 //
 // Only used when config.GroupID != ""
 func (r *Reader) lookupCoordinator() (string, error) {
-	conn, err := r.broker()
+	conn, err := r.connect()
 	if err != nil {
-		return "", fmt.Errorf("unable to connect to any broker for group, %v: %v\n", r.config.GroupID, err)
+		return "", fmt.Errorf("unable to coordinator to any connect for group, %v: %v\n", r.config.GroupID, err)
 	}
 	defer conn.Close()
 
@@ -271,7 +271,7 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 //  * InvalidSessionTimeout:
 //  * GroupAuthorizationFailed:
 func (r *Reader) joinGroup() (memberGroupAssignments, error) {
-	conn, err := r.connect(r.stctx)
+	conn, err := r.coordinator()
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func (r *Reader) makeSyncGroupRequestV1(memberAssignments memberGroupAssignments
 //  * RebalanceInProgress:
 //  * GroupAuthorizationFailed:
 func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string][]int32, error) {
-	conn, err := r.connect(r.stctx)
+	conn, err := r.coordinator()
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +446,7 @@ func (r *Reader) unsubscribe() error {
 }
 
 func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
-	conn, err := r.connect(r.stctx)
+	conn, err := r.coordinator()
 	if err != nil {
 		return nil, err
 	}
@@ -489,7 +489,7 @@ func (r *Reader) subscribe(subs map[string][]int32) error {
 
 	offsetsByPartition, err := r.fetchOffsets(subs)
 	if err != nil {
-		if conn, err := r.connect(r.stctx); err == nil {
+		if conn, err := r.coordinator(); err == nil {
 			// make an attempt at leaving the group
 			_ = r.leaveGroup(conn)
 			conn.Close()
@@ -509,8 +509,8 @@ func (r *Reader) subscribe(subs map[string][]int32) error {
 	return nil
 }
 
-// broker returns a connection to ANY broker
-func (r *Reader) broker() (conn *Conn, err error) {
+// connect returns a connection to ANY broker
+func (r *Reader) connect() (conn *Conn, err error) {
 	for _, broker := range r.config.Brokers {
 		if conn, err = r.config.Dialer.Dial("tcp", broker); err == nil {
 			return
@@ -519,15 +519,15 @@ func (r *Reader) broker() (conn *Conn, err error) {
 	return // err will be non-nil
 }
 
-// connect returns a connection to the coordinator for this group
-func (r *Reader) connect(ctx context.Context) (*Conn, error) {
+// coordinator returns a connection to the coordinator for this group
+func (r *Reader) coordinator() (*Conn, error) {
 	r.mutex.Lock()
 	address := r.address
 	r.mutex.Unlock()
 
-	conn, err := r.config.Dialer.DialContext(ctx, "tcp", address)
+	conn, err := r.config.Dialer.DialContext(r.stctx, "tcp", address)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to broker, %v", address)
+		return nil, fmt.Errorf("unable to connect to coordinator, %v", address)
 	}
 
 	return conn, nil
@@ -551,7 +551,7 @@ func (r *Reader) waitThrottleTime(throttleTimeMS int32) {
 // heartbeat sends heartbeat to coordinator at the interval defined by
 // ReaderConfig.HeartbeatInterval
 func (r *Reader) heartbeat() error {
-	conn, err := r.connect(r.stctx)
+	conn, err := r.coordinator()
 	if err != nil {
 		return fmt.Errorf("heartbeat: unable to connect to coordinator: %v", err)
 	}
@@ -733,10 +733,10 @@ func (r *Reader) commitLoop(stop <-chan struct{}) {
 		l.Println("stopped commit for group,", r.config.GroupID)
 	})
 
-	conn, err := r.connect(r.stctx)
+	conn, err := r.coordinator()
 	if err != nil {
 		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to connect to broker for commit loop: %v", err)
+			l.Printf("unable to connect to coordinator for commit loop: %v", err)
 		})
 		return
 	}
