@@ -1093,6 +1093,15 @@ func (r *Reader) Close() error {
 	r.stop()
 	r.join.Wait()
 
+	if r.useConsumerGroup() {
+		// gracefully attempt to leave the consumer group on close
+		if generationID, membershipID := r.membership(); generationID > 0 && membershipID != "" {
+			if conn, err := r.coordinator(); err == nil {
+				_ = r.leaveGroup(conn)
+			}
+		}
+	}
+
 	<-r.done
 
 	if !closed {
