@@ -183,8 +183,8 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 	return request, nil
 }
 
-// newMemberProtocolMetadata maps encoded member metadata ([]byte) into memberGroupMetadata
-func (r *Reader) newMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]memberGroupMetadata, error) {
+// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into memberGroupMetadata
+func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]memberGroupMetadata, error) {
 	members := make([]memberGroupMetadata, 0, len(in))
 	for _, item := range in {
 		metadata := groupMetadata{}
@@ -220,7 +220,7 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 		return nil, fmt.Errorf("unable to find selected strategy, %v, for group, %v", group.GroupProtocol, r.config.GroupID)
 	}
 
-	members, err := r.newMemberProtocolMetadata(group.Members)
+	members, err := r.makeMemberProtocolMetadata(group.Members)
 	if err != nil {
 		return nil, fmt.Errorf("unable to construct MemberProtocolMetadata: %v", err)
 	}
@@ -321,7 +321,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	return assignments, nil
 }
 
-func (r *Reader) newSyncGroupRequestV1(memberAssignments memberGroupAssignments) syncGroupRequestV1 {
+func (r *Reader) makeSyncGroupRequestV1(memberAssignments memberGroupAssignments) syncGroupRequestV1 {
 	generationID, memberID := r.membership()
 	request := syncGroupRequestV1{
 		GroupID:      r.config.GroupID,
@@ -363,7 +363,7 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 	}
 	defer conn.Close()
 
-	request := r.newSyncGroupRequestV1(memberAssignments)
+	request := r.makeSyncGroupRequestV1(memberAssignments)
 	response, err := conn.syncGroups(request)
 	if err != nil {
 		switch err {
