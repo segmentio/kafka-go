@@ -444,12 +444,12 @@ func (r *Reader) rebalance() (map[string][]int32, error) {
 		return nil, err
 	}
 
-	subs, err := r.syncGroup(members)
+	assignments, err := r.syncGroup(members)
 	if err != nil {
 		return nil, err
 	}
 
-	return subs, nil
+	return assignments, nil
 }
 
 func (r *Reader) unsubscribe() error {
