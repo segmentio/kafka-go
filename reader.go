@@ -506,11 +506,13 @@ func (r *Reader) waitThrottleTime(throttleTimeMS int32) {
 		return
 	}
 
+	t := time.NewTimer(time.Duration(throttleTimeMS) * time.Millisecond)
+	defer t.Stop()
+
 	select {
 	case <-r.stctx.Done():
 		return
-
-	case <-time.After(time.Duration(throttleTimeMS) * time.Millisecond):
+	case <-t.C:
 	}
 }
 
