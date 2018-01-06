@@ -813,11 +813,6 @@ func (r *Reader) commitLoop(stop <-chan struct{}, done chan<- struct{}) {
 func (r *Reader) run() {
 	defer close(r.done)
 
-	const (
-		backoffDelayMin = 100 * time.Millisecond
-		backoffDelayMax = 3 * time.Second
-	)
-
 	if r.config.GroupID == "" {
 		return
 	}
@@ -827,12 +822,6 @@ func (r *Reader) run() {
 	})
 
 	for attempt := 0; true; attempt++ {
-		if attempt != 0 {
-			if !sleep(r.stctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
-				return
-			}
-		}
-
 		// rebalance and fetch subscriptions
 		assignments, err := r.rebalance()
 		if err != nil {
