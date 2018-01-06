@@ -120,7 +120,6 @@ r := kafka.NewReader(kafka.ReaderConfig{
     Brokers:   []string{"localhost:9092"},
     GroupID:   "consumer-group-id",
     Topic:     "topic-A",
-    Partition: 0,
     MinBytes:  10e3, // 10KB
     MaxBytes:  10e6, // 10MB
 })
@@ -158,7 +157,6 @@ r := kafka.NewReader(kafka.ReaderConfig{
     Brokers:        []string{"localhost:9092"},
     GroupID:        "consumer-group-id",
     Topic:          "topic-A",
-    Partition:      0,
     MinBytes:       10e3, // 10KB
     MaxBytes:       10e6, // 10MB
     CommitInterval: time.Second, // flushes commits to Kafka every second
