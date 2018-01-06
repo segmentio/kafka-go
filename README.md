@@ -114,6 +114,8 @@ r.Close()
 ```kafka-go``` also supports Kafka consumer groups including broker managed offsets.
 To enable consumer groups, simplify specify the GroupID in the ReaderConfig.
 
+ReadMessage automatically commits offsets when using consumer groups.
+
 ```go
 // make a new reader that consumes from topic-A
 r := kafka.NewReader(kafka.ReaderConfig{
@@ -130,7 +132,6 @@ for {
         break
     }
     fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
-    r.CommitMessage(m)
 }
 
 r.Close()
@@ -143,6 +144,22 @@ There are a number of limitations when using consumer groups:
 * ```(*Reader).Lag``` will always return ```-1``` when GroupID is set
 * ```(*Reader).ReadLag``` will return an error when GroupID is set
 * ```(*Reader).Stats``` will return a partition of ```-1``` when GroupID is set
+
+### Explicit Commits
+
+```kafka-go``` also supports explicit commits.  Instead of calling ```ReadMessage```,
+call ```FetchMessage``` followed by ```CommitMessage```.
+
+```go
+for {
+    m, err := r.FetchMessage(context.Background())
+    if err != nil {
+        break
+    }
+    fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
+    m.CommitMessage(m)
+}
+```
 
 ### Managing Commits
 

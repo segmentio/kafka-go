@@ -820,11 +820,11 @@ func testReaderConsumerGroupHandshake(t *testing.T, ctx context.Context, r *Read
 func testReaderConsumerGroupVerifyOffsetCommitted(t *testing.T, ctx context.Context, r *Reader) {
 	prepareReader(t, context.Background(), r, makeTestSequence(3)...)
 
-	if _, err := r.ReadMessage(ctx); err != nil {
+	if _, err := r.FetchMessage(ctx); err != nil {
 		t.Errorf("bad err: %v", err) // skip the first message
 	}
 
-	m, err := r.ReadMessage(ctx)
+	m, err := r.FetchMessage(ctx)
 	if err != nil {
 		t.Errorf("bad err: %v", err)
 	}
@@ -848,11 +848,11 @@ func testReaderConsumerGroupVerifyOffsetCommitted(t *testing.T, ctx context.Cont
 func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx context.Context, r *Reader) {
 	prepareReader(t, context.Background(), r, makeTestSequence(3)...)
 
-	if _, err := r.ReadMessage(ctx); err != nil {
+	if _, err := r.FetchMessage(ctx); err != nil {
 		t.Errorf("bad err: %v", err) // skip the first message
 	}
 
-	m, err := r.ReadMessage(ctx)
+	m, err := r.FetchMessage(ctx)
 	if err != nil {
 		t.Errorf("bad err: %v", err)
 	}
@@ -883,11 +883,11 @@ func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx cont
 func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Context, r *Reader) {
 	prepareReader(t, context.Background(), r, makeTestSequence(3)...)
 
-	if _, err := r.ReadMessage(ctx); err != nil {
+	if _, err := r.FetchMessage(ctx); err != nil {
 		t.Errorf("bad err: %v", err) // skip the first message
 	}
 
-	m, err := r.ReadMessage(ctx)
+	m, err := r.FetchMessage(ctx)
 	if err != nil {
 		t.Errorf("bad err: %v", err)
 	}
@@ -934,7 +934,7 @@ func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx contex
 
 	partitions := map[int]struct{}{}
 	for i := 0; i < N; i++ {
-		m, err := r.ReadMessage(ctx)
+		m, err := r.FetchMessage(ctx)
 		if err != nil {
 			t.Errorf("bad error: %s", err)
 		}
@@ -972,10 +972,10 @@ func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Read
 
 	// after rebalance, each reader should have a partition to itself
 	for i := 0; i < N; i++ {
-		if _, err := r2.ReadMessage(ctx); err != nil {
+		if _, err := r2.FetchMessage(ctx); err != nil {
 			t.Errorf("expect to read from reader 2")
 		}
-		if _, err := r.ReadMessage(ctx); err != nil {
+		if _, err := r.FetchMessage(ctx); err != nil {
 			t.Errorf("expect to read from reader 1")
 		}
 	}
@@ -1020,13 +1020,13 @@ func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Cont
 	}
 
 	// after rebalance, r2 should read topic2 and r1 should read ALL of the original topic
-	if _, err := r2.ReadMessage(ctx); err != nil {
+	if _, err := r2.FetchMessage(ctx); err != nil {
 		t.Errorf("expect to read from reader 2")
 	}
 
 	// all N messages on the original topic should be read by the original reader
 	for i := 0; i < N; i++ {
-		if _, err := r.ReadMessage(ctx); err != nil {
+		if _, err := r.FetchMessage(ctx); err != nil {
 			t.Errorf("expect to read from reader 1")
 		}
 	}

@@ -1116,7 +1116,33 @@ func (r *Reader) Close() error {
 // may also specify a context to asynchronously cancel the blocking operation.
 //
 // The method returns io.EOF to indicate that the reader has been closed.
+//
+// If consumer groups are used, ReadMessage will automatically commit the
+// offset when called.
 func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
+	m, err := r.FetchMessage(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+
+	if r.useConsumerGroup() {
+		if err := r.CommitMessage(m); err != nil {
+			return Message{}, err
+		}
+	}
+
+	return m, nil
+}
+
+// FetchMessage reads and return the next message from the r. The method call
+// blocks until a message becomes available, or an error occurs. The program
+// may also specify a context to asynchronously cancel the blocking operation.
+//
+// The method returns io.EOF to indicate that the reader has been closed.
+//
+// FetchMessage does not commit offsets automatically when using consumer groups.
+// Use CommitMessage to commit the offset.
+func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 	r.activateReadLag()
 
 	for {
