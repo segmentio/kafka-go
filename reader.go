@@ -246,6 +246,19 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 	return strategy.AssignGroups(members, partitions), nil
 }
 
+func (r *Reader) leaveGroup(conn *Conn) error {
+	_, memberID := r.membership()
+	_, err := conn.leaveGroup(leaveGroupRequestV1{
+		GroupID:  r.config.GroupID,
+		MemberID: memberID,
+	})
+	if err != nil {
+		return fmt.Errorf("leave group failed for group, %v, and member, %v: %v", r.config.GroupID, memberID, err)
+	}
+
+	return nil
+}
+
 // joinGroup attempts to join the reader to the consumer group.
 // Returns memberGroupAssignments is this Reader was selected as
 // the leader.  Otherwise, memberGroupAssignments will be nil.
@@ -306,6 +319,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
 		v, err := r.assignTopicPartitions(conn, response)
 		if err != nil {
+			_ = r.leaveGroup(conn)
 			return nil, err
 		}
 		assignments = v
@@ -372,13 +386,19 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 	response, err := conn.syncGroups(request)
 	if err != nil {
 		switch err {
+		case RebalanceInProgress:
+			// don't leave the group
+			return nil, fmt.Errorf("syncGroup failed: %v", err)
+
 		case UnknownMemberId:
 			r.mutex.Lock()
 			r.memberID = ""
 			r.mutex.Unlock()
+			_ = r.leaveGroup(conn)
 			return nil, fmt.Errorf("syncGroup failed: %v", err)
 
 		default:
+			_ = r.leaveGroup(conn)
 			return nil, fmt.Errorf("syncGroup failed: %v", err)
 		}
 	}
@@ -386,6 +406,7 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 	assignments := groupAssignment{}
 	reader := bufio.NewReader(bytes.NewReader(response.MemberAssignments))
 	if _, err := (&assignments).readFrom(reader, len(response.MemberAssignments)); err != nil {
+		_ = r.leaveGroup(conn)
 		return nil, fmt.Errorf("unable to read SyncGroup response for group, %v: %v\n", r.config.GroupID, err)
 	}
 
@@ -468,6 +489,12 @@ func (r *Reader) subscribe(subs map[string][]int32) error {
 
 	offsetsByPartition, err := r.fetchOffsets(subs)
 	if err != nil {
+		if conn, err := r.connect(r.stctx); err == nil {
+			// make an attempt at leaving the group
+			_ = r.leaveGroup(conn)
+			conn.Close()
+		}
+
 		return err
 	}
 
@@ -768,7 +795,10 @@ func (r *Reader) commitLoop(stop <-chan struct{}) {
 	}
 }
 
-func (r *Reader) runOnce() error {
+// handshake performs the necessary incantations to join this Reader to the desired
+// consumer group.  handshake will be called whenever the group is disrupted
+// (member join, member leave, coordinator changed, etc)
+func (r *Reader) handshake() error {
 	// always clear prior subscriptions
 	r.unsubscribe()
 
@@ -794,6 +824,8 @@ func (r *Reader) runOnce() error {
 	return nil
 }
 
+// run provides the main consumer group management loop.  Each iteration performs the
+// handshake to join the Reader to the consumer group.
 func (r *Reader) run() {
 	defer close(r.done)
 
@@ -806,7 +838,7 @@ func (r *Reader) run() {
 	})
 
 	for {
-		if err := r.runOnce(); err != nil {
+		if err := r.handshake(); err != nil {
 			r.withErrorLogger(func(l *log.Logger) {
 				l.Println(err)
 			})
