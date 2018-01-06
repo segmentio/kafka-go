@@ -104,10 +104,7 @@ func (r *Reader) membership() (generationID int32, memberID string) {
 func (r *Reader) lookupCoordinator() (string, error) {
 	conn, err := r.broker()
 	if err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to connect to any broker for group, %v: %v\n", r.config.GroupID, err)
-		})
-		return "", err
+		return "", fmt.Errorf("unable to connect to any broker for group, %v: %v\n", r.config.GroupID, err)
 	}
 	defer conn.Close()
 
@@ -115,25 +112,7 @@ func (r *Reader) lookupCoordinator() (string, error) {
 		CoordinatorKey: r.config.GroupID,
 	})
 	if err != nil {
-		switch err {
-		case GroupCoordinatorNotAvailable:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("coordinator for group, %v, not available.  will retry\n", r.config.GroupID)
-			})
-			return "", err
-
-		case GroupAuthorizationFailed:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("consumer not authorized to connect to group, %v: %v %v\n", r.config.GroupID, err, out.ErrorMessage)
-			})
-			return "", err
-
-		default:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("unable to find coordinator for group, %v: %v\n", r.config.GroupID, err)
-			})
-			return "", err
-		}
+		return "", fmt.Errorf("unable to find coordinator for group, %v: %v", r.config.GroupID, err)
 	}
 
 	address := fmt.Sprintf("%v:%v", out.Coordinator.Host, out.Coordinator.Port)
@@ -211,10 +190,7 @@ func (r *Reader) newMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]me
 		metadata := groupMetadata{}
 		reader := bufio.NewReader(bytes.NewReader(item.MemberMetadata))
 		if remain, err := (&metadata).readFrom(reader, len(item.MemberMetadata)); err != nil || remain != 0 {
-			r.withErrorLogger(func(l *log.Logger) {
-				log.Printf("unable to read metadata for member, %v: %v\n", item.MemberID, err)
-			})
-			return nil, errors.New("unable to read metadata for member")
+			return nil, fmt.Errorf("unable to read metadata for member, %v: %v\n", item.MemberID, err)
 		}
 
 		member := memberGroupMetadata{
@@ -238,29 +214,21 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
+
 	strategy, ok := findStrategy(group.GroupProtocol, allStrategies)
 	if !ok {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to find selected strategy, %v, for group, %v\n", group.GroupProtocol, r.config.GroupID)
-		})
-		return nil, errors.New("selected strategy not found")
+		return nil, fmt.Errorf("unable to find selected strategy, %v, for group, %v", group.GroupProtocol, r.config.GroupID)
 	}
 
 	members, err := r.newMemberProtocolMetadata(group.Members)
 	if err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to construct MemberProtocolMetadata: %v\n", err)
-		})
-		return nil, err
+		return nil, fmt.Errorf("unable to construct MemberProtocolMetadata: %v", err)
 	}
 
 	topics := extractTopics(members)
 	partitions, err := conn.ReadPartitions(topics...)
 	if err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to read partitions: %v\n", err)
-		})
-		return nil, err
+		return nil, fmt.Errorf("unable to read partitions: %v", err)
 	}
 
 	r.withLogger(func(l *log.Logger) {
@@ -530,10 +498,7 @@ func (r *Reader) connect(ctx context.Context) (*Conn, error) {
 
 	conn, err := r.config.Dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to connect to broker, %v\n", address)
-		})
-		return nil, err
+		return nil, fmt.Errorf("unable to connect to broker, %v", address)
 	}
 
 	return conn, nil
