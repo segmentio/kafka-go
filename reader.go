@@ -71,7 +71,7 @@ type Reader struct {
 	cancel       context.CancelFunc
 	stop         context.CancelFunc
 	done         chan struct{}
-	commits      chan Message
+	commits      chan []Message
 	version      int64 // version holds the generation of the spawned readers
 	offset       int64
 	lag          int64
@@ -647,7 +647,7 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 		case <-stop:
 			return
 
-		case m, ok := <-r.commits:
+		case msgs, ok := <-r.commits:
 			if !ok {
 				r.withErrorLogger(func(l *log.Logger) {
 					l.Println("reader commit channel unexpectedly closed")
@@ -655,9 +655,8 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 				return
 			}
 
-			offsetsByTopicAndPartition := map[string]map[int]int64{
-				m.Topic: {m.Partition: m.Offset},
-			}
+			offsetsByTopicAndPartition := map[string]map[int]int64{}
+			mergeOffsets(offsetsByTopicAndPartition, msgs...)
 
 			if err := r.commitOffsets(conn, offsetsByTopicAndPartition); err != nil {
 				r.withErrorLogger(func(l *log.Logger) {
@@ -665,6 +664,22 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 				})
 				return
 			}
+		}
+	}
+}
+
+// mergeOffsets updates the accumulator with the offsets specified in the
+// provided messages
+func mergeOffsets(accumulator map[string]map[int]int64, msgs ...Message) {
+	for _, m := range msgs {
+		offsetsByPartition, ok := accumulator[m.Topic]
+		if !ok {
+			offsetsByPartition = map[int]int64{}
+			accumulator[m.Topic] = offsetsByPartition
+		}
+
+		if offset, ok := offsetsByPartition[m.Partition]; !ok || m.Offset > offset {
+			offsetsByPartition[m.Partition] = m.Offset
 		}
 	}
 }
@@ -700,7 +715,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 			}
 			offsetsByTopicAndPartition = map[string]map[int]int64{}
 
-		case m, ok := <-r.commits:
+		case msgs, ok := <-r.commits:
 			if !ok {
 				r.withErrorLogger(func(l *log.Logger) {
 					l.Println("reader commit channel unexpectedly closed")
@@ -708,18 +723,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 				return
 			}
 
-			offsetsByPartition, ok := offsetsByTopicAndPartition[m.Topic]
-			if !ok {
-				offsetsByPartition = map[int]int64{}
-				offsetsByTopicAndPartition[m.Topic] = offsetsByPartition
-			}
-
-			if offset, ok := offsetsByPartition[m.Partition]; ok && offset >= m.Offset {
-				// offsets should only increase
-				continue
-			}
-
-			offsetsByPartition[m.Partition] = m.Offset
+			mergeOffsets(offsetsByTopicAndPartition, msgs...)
 		}
 	}
 }
@@ -1052,7 +1056,7 @@ func NewReader(config ReaderConfig) *Reader {
 		msgs:    make(chan readerMessage, config.QueueCapacity),
 		cancel:  func() {},
 		done:    make(chan struct{}),
-		commits: make(chan Message),
+		commits: make(chan []Message),
 		stop:    stop,
 		offset:  firstOffset,
 		stctx:   stctx,
@@ -1126,7 +1130,7 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	}
 
 	if r.useConsumerGroup() {
-		if err := r.CommitMessage(m); err != nil {
+		if err := r.CommitMessages(ctx, m); err != nil {
 			return Message{}, err
 		}
 	}
@@ -1141,7 +1145,7 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 // The method returns io.EOF to indicate that the reader has been closed.
 //
 // FetchMessage does not commit offsets automatically when using consumer groups.
-// Use CommitMessage to commit the offset.
+// Use CommitMessages to commit the offset.
 func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 	r.activateReadLag()
 
@@ -1441,15 +1445,21 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 	}
 }
 
-func (r *Reader) CommitMessage(m Message) error {
+func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+
 	if !r.useConsumerGroup() {
 		return errNotAvailable
 	}
 
 	select {
+	case <-ctx.Done():
+		return ctx.Err()
 	case <-r.stctx.Done():
 		return r.stctx.Err()
-	case r.commits <- m:
+	case r.commits <- msgs:
 		return nil
 	}
 }

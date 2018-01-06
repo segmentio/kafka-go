@@ -829,7 +829,7 @@ func testReaderConsumerGroupVerifyOffsetCommitted(t *testing.T, ctx context.Cont
 		t.Errorf("bad err: %v", err)
 	}
 
-	if err := r.CommitMessage(m); err != nil {
+	if err := r.CommitMessages(ctx, m); err != nil {
 		t.Errorf("bad commit message: %v", err)
 	}
 
@@ -858,7 +858,7 @@ func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx cont
 	}
 
 	started := time.Now()
-	if err := r.CommitMessage(m); err != nil {
+	if err := r.CommitMessages(ctx, m); err != nil {
 		t.Errorf("bad commit message: %v", err)
 	}
 	if elapsed := time.Now().Sub(started); elapsed > 10*time.Millisecond {
@@ -892,7 +892,7 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 		t.Errorf("bad err: %v", err)
 	}
 
-	if err := r.CommitMessage(m); err != nil {
+	if err := r.CommitMessages(ctx, m); err != nil {
 		t.Errorf("bad commit message: %v", err)
 	}
 
@@ -1029,5 +1029,77 @@ func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Cont
 		if _, err := r.FetchMessage(ctx); err != nil {
 			t.Errorf("expect to read from reader 1")
 		}
+	}
+}
+
+func TestMergeOffsets(t *testing.T) {
+	const topic = "topic"
+
+	newMessage := func(partition int, offset int64) Message {
+		return Message{
+			Topic:     topic,
+			Partition: partition,
+			Offset:    offset,
+		}
+	}
+
+	tests := map[string]struct {
+		Given    map[string]map[int]int64
+		Messages []Message
+		Expected map[string]map[int]int64
+	}{
+		"nil": {},
+		"empty given, single message": {
+			Given:    map[string]map[int]int64{},
+			Messages: []Message{newMessage(0, 0)},
+			Expected: map[string]map[int]int64{
+				topic: {0: 0},
+			},
+		},
+		"ignores earlier offsets": {
+			Given: map[string]map[int]int64{
+				topic: {0: 1},
+			},
+			Messages: []Message{newMessage(0, 0)},
+			Expected: map[string]map[int]int64{
+				topic: {0: 1},
+			},
+		},
+		"uses latest offset": {
+			Given: map[string]map[int]int64{},
+			Messages: []Message{
+				newMessage(0, 2),
+				newMessage(0, 3),
+				newMessage(0, 1),
+			},
+			Expected: map[string]map[int]int64{
+				topic: {0: 3},
+			},
+		},
+		"uses latest offset, across multiple topics": {
+			Given: map[string]map[int]int64{},
+			Messages: []Message{
+				newMessage(0, 2),
+				newMessage(0, 3),
+				newMessage(0, 1),
+				newMessage(1, 5),
+				newMessage(1, 6),
+			},
+			Expected: map[string]map[int]int64{
+				topic: {
+					0: 3,
+					1: 6,
+				},
+			},
+		},
+	}
+
+	for label, test := range tests {
+		t.Run(label, func(t *testing.T) {
+			mergeOffsets(test.Given, test.Messages...)
+			if !reflect.DeepEqual(test.Expected, test.Given) {
+				t.Errorf("expected %v; got %v", test.Expected, test.Given)
+			}
+		})
 	}
 }
