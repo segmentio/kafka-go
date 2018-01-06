@@ -637,9 +637,7 @@ func (r *Reader) heartbeat() error {
 	return nil
 }
 
-func (r *Reader) heartbeatLoop(stop <-chan struct{}, done chan<- struct{}) {
-	defer close(done)
-
+func (r *Reader) heartbeatLoop(stop <-chan struct{}) {
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("started heartbeat group, %v [%v]", r.config.GroupID, r.config.HeartbeatInterval)
 	})
@@ -784,9 +782,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 	}
 }
 
-func (r *Reader) commitLoop(stop <-chan struct{}, done chan<- struct{}) {
-	defer close(done)
-
+func (r *Reader) commitLoop(stop <-chan struct{}) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("started commit group,", r.config.GroupID)
 	})
@@ -820,12 +816,10 @@ func (r *Reader) runOnce() {
 		return
 	}
 
-	// start the heartbeat
-	hbStop, hbDone := make(chan struct{}), make(chan struct{})
-	go r.heartbeatLoop(hbStop, hbDone)
-
-	commitStop, commitDone := make(chan struct{}), make(chan struct{})
-	go r.commitLoop(commitStop, commitDone)
+	rg := &runGroup{}
+	rg = rg.WithContext(r.stctx)
+	rg.Go(r.heartbeatLoop)
+	rg.Go(r.commitLoop)
 
 	// subscribe to assignments
 	if err := r.subscribe(assignments); err != nil {
@@ -833,39 +827,11 @@ func (r *Reader) runOnce() {
 			l.Printf("subscribe failed for consumer group, %v: %v\n", r.config.GroupID, err)
 		})
 
-		close(hbStop)
-		close(commitStop)
-		<-hbDone
-		<-commitDone
-
+		rg.Stop()
 		return
 	}
 
-	select {
-	case <-hbDone:
-		close(commitStop)
-		<-commitDone
-		r.withLogger(func(l *log.Logger) {
-			l.Println("heartbeat goroutine closed")
-		})
-
-	case <-commitDone:
-		close(hbStop)
-		<-hbDone
-		r.withLogger(func(l *log.Logger) {
-			l.Println("heartbeat goroutine closed")
-		})
-
-	case <-r.stctx.Done():
-		r.withLogger(func(l *log.Logger) {
-			l.Println("consumer group detected stop request")
-		})
-
-		close(hbStop)
-		close(commitStop)
-		<-hbDone
-		<-commitDone
-	}
+	rg.Wait()
 }
 
 func (r *Reader) run() {
