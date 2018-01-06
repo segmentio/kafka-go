@@ -80,6 +80,10 @@ type Reader struct {
 	generationID int32  // generationID of group
 	memberID     string // memberID of group
 
+	// offsetStash should only be managed by the commitLoopInterval.  We store
+	// it here so that it survives rebalances
+	offsetStash offsetStash
+
 	// reader stats are all made of atomic values, no need for synchronization.
 	once  uint32
 	stctx context.Context
@@ -669,6 +673,11 @@ func (o offsetStash) reset() {
 	}
 }
 
+// isEmpty returns true if the offsetStash contains no entries
+func (o offsetStash) isEmpty() bool {
+	return len(o) == 0
+}
+
 // commitLoopImmediate handles each commit synchronously
 func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{}) {
 	for {
@@ -703,11 +712,11 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 	ticker := time.NewTicker(r.config.HeartbeatInterval)
 	defer ticker.Stop()
 
-	offsetsByTopicAndPartition := offsetStash{}
-
 	defer func() {
 		// commits any outstanding offsets on close
-		r.commitOffsets(conn, offsetsByTopicAndPartition)
+		if err := r.commitOffsets(conn, r.offsetStash); err == nil {
+			r.offsetStash.reset()
+		}
 	}()
 
 	for {
@@ -716,17 +725,17 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 			return
 
 		case <-ticker.C:
-			if len(offsetsByTopicAndPartition) == 0 {
+			if len(r.offsetStash) == 0 {
 				continue
 			}
 
-			if err := r.commitOffsets(conn, offsetsByTopicAndPartition); err != nil {
+			if err := r.commitOffsets(conn, r.offsetStash); err != nil {
 				r.withErrorLogger(func(l *log.Logger) {
 					l.Printf("unable to commit offset: %v", err)
 				})
 				return
 			}
-			offsetsByTopicAndPartition.reset()
+			r.offsetStash.reset()
 
 		case msgs, ok := <-r.commits:
 			if !ok {
@@ -736,7 +745,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 				return
 			}
 
-			offsetsByTopicAndPartition.merge(msgs...)
+			r.offsetStash.merge(msgs...)
 		}
 	}
 }
@@ -1083,7 +1092,8 @@ func NewReader(config ReaderConfig) *Reader {
 			// once when the reader is created.
 			partition: strconv.Itoa(readerStatsPartition),
 		},
-		version: version,
+		version:     version,
+		offsetStash: offsetStash{},
 	}
 
 	go r.run()
