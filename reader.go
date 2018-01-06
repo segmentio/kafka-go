@@ -470,7 +470,7 @@ func (r *Reader) subscribe(subs map[string][]int32) error {
 	r.start(offsetsByPartition)
 	r.mutex.Unlock()
 
-	r.withErrorLogger(func(l *log.Logger) {
+	r.withLogger(func(l *log.Logger) {
 		l.Printf("subscribed to partitions: %+v", offsetsByPartition)
 	})
 
