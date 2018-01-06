@@ -457,9 +457,6 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 }
 
 func (r *Reader) subscribe(subs map[string][]int32) error {
-	// always clear prior subscriptions
-	r.unsubscribe()
-
 	if len(subs[r.config.Topic]) == 0 {
 		return nil
 	}
@@ -765,6 +762,9 @@ func (r *Reader) commitLoop(stop <-chan struct{}) {
 }
 
 func (r *Reader) runOnce() error {
+	// always clear prior subscriptions
+	r.unsubscribe()
+
 	// rebalance and fetch subscriptions
 	assignments, err := r.rebalance()
 	if err != nil {
