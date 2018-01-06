@@ -129,7 +129,7 @@ for {
     if err != nil {
         break
     }
-    fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
+    fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
     r.CommitMessage(m)
 }
 
