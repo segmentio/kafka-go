@@ -548,13 +548,12 @@ func (r *Reader) waitThrottleTime(throttleTimeMS int32) {
 	}
 }
 
+// heartbeat sends heartbeat to coordinator at the interval defined by
+// ReaderConfig.HeartbeatInterval
 func (r *Reader) heartbeat() error {
 	conn, err := r.connect(r.stctx)
 	if err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Println("heartbeat: unable to connect to coordinator:", err)
-		})
-		return err
+		return fmt.Errorf("heartbeat: unable to connect to coordinator: %v", err)
 	}
 	defer conn.Close()
 
@@ -569,56 +568,7 @@ func (r *Reader) heartbeat() error {
 		MemberID:     memberID,
 	})
 	if err != nil {
-		switch err {
-		case GroupCoordinatorNotAvailable:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Println("heartbeat: coordinator not available for group,", r.config.GroupID)
-			})
-			return err
-
-		case NotCoordinatorForGroup:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Println("heartbeat: not connected to coordinator for group,", r.config.GroupID)
-			})
-			return err
-
-		case IllegalGeneration:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Println("heartbeat: illegal generation for group,", r.config.GroupID)
-			})
-			return err
-
-		case UnknownMemberId:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("heartbeat: unknown member id for group, %v.  generationID=%v, memberID=%v\n",
-					r.config.GroupID,
-					generationID,
-					memberID,
-				)
-			})
-			r.mutex.Lock()
-			r.memberID = ""
-			r.mutex.Unlock()
-			return err
-
-		case RebalanceInProgress:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Println("heartbeat: rebalance in progress")
-			})
-			return err
-
-		case GroupAuthorizationFailed:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Println("heartbeat: group authorization failed")
-			})
-			return err
-
-		default:
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Println("heartbeat: unexpected error sending heartbeat")
-			})
-			return err
-		}
+		return fmt.Errorf("heartbeat failed: %v", err)
 	}
 
 	r.waitThrottleTime(resp.ThrottleTimeMS)
@@ -690,6 +640,7 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetsByTopicAndPartition 
 	return nil
 }
 
+// commitLoopImmediate handles each commit synchronously
 func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{}) {
 	for {
 		select {
@@ -718,6 +669,8 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 	}
 }
 
+// commitLoopInterval handles each commit asynchronously with a period defined
+// by ReaderConfig.CommitInterval
 func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) {
 	ticker := time.NewTicker(r.config.HeartbeatInterval)
 	defer ticker.Stop()
@@ -771,6 +724,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 	}
 }
 
+// commitLoop processes commits off the commit chan
 func (r *Reader) commitLoop(stop <-chan struct{}) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("started commit group,", r.config.GroupID)
