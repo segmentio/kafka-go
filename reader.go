@@ -640,6 +640,35 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetsByTopicAndPartition 
 	return nil
 }
 
+// offsetStash holds offsets by topic => partition => offset
+type offsetStash map[string]map[int]int64
+
+// merge updates the offsetStash with the offsets from the provided messages
+func (o offsetStash) merge(msgs ...Message) {
+	if o == nil {
+		return
+	}
+
+	for _, m := range msgs {
+		offsetsByPartition, ok := o[m.Topic]
+		if !ok {
+			offsetsByPartition = map[int]int64{}
+			o[m.Topic] = offsetsByPartition
+		}
+
+		if offset, ok := offsetsByPartition[m.Partition]; !ok || m.Offset > offset {
+			offsetsByPartition[m.Partition] = m.Offset
+		}
+	}
+}
+
+// reset clears the contents of the offsetStash
+func (o offsetStash) reset() {
+	for key := range o {
+		delete(o, key)
+	}
+}
+
 // commitLoopImmediate handles each commit synchronously
 func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{}) {
 	for {
@@ -655,8 +684,8 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 				return
 			}
 
-			offsetsByTopicAndPartition := map[string]map[int]int64{}
-			mergeOffsets(offsetsByTopicAndPartition, msgs...)
+			offsetsByTopicAndPartition := offsetStash{}
+			offsetsByTopicAndPartition.merge(msgs...)
 
 			if err := r.commitOffsets(conn, offsetsByTopicAndPartition); err != nil {
 				r.withErrorLogger(func(l *log.Logger) {
@@ -668,29 +697,13 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 	}
 }
 
-// mergeOffsets updates the accumulator with the offsets specified in the
-// provided messages
-func mergeOffsets(accumulator map[string]map[int]int64, msgs ...Message) {
-	for _, m := range msgs {
-		offsetsByPartition, ok := accumulator[m.Topic]
-		if !ok {
-			offsetsByPartition = map[int]int64{}
-			accumulator[m.Topic] = offsetsByPartition
-		}
-
-		if offset, ok := offsetsByPartition[m.Partition]; !ok || m.Offset > offset {
-			offsetsByPartition[m.Partition] = m.Offset
-		}
-	}
-}
-
 // commitLoopInterval handles each commit asynchronously with a period defined
 // by ReaderConfig.CommitInterval
 func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) {
 	ticker := time.NewTicker(r.config.HeartbeatInterval)
 	defer ticker.Stop()
 
-	offsetsByTopicAndPartition := map[string]map[int]int64{}
+	offsetsByTopicAndPartition := offsetStash{}
 
 	defer func() {
 		// commits any outstanding offsets on close
@@ -713,7 +726,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 				})
 				return
 			}
-			offsetsByTopicAndPartition = map[string]map[int]int64{}
+			offsetsByTopicAndPartition.reset()
 
 		case msgs, ok := <-r.commits:
 			if !ok {
@@ -723,7 +736,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 				return
 			}
 
-			mergeOffsets(offsetsByTopicAndPartition, msgs...)
+			offsetsByTopicAndPartition.merge(msgs...)
 		}
 	}
 }

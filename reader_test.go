@@ -1032,7 +1032,7 @@ func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Cont
 	}
 }
 
-func TestMergeOffsets(t *testing.T) {
+func TestOffsetStash(t *testing.T) {
 	const topic = "topic"
 
 	newMessage := func(partition int, offset int64) Message {
@@ -1044,40 +1044,40 @@ func TestMergeOffsets(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		Given    map[string]map[int]int64
+		Given    offsetStash
 		Messages []Message
-		Expected map[string]map[int]int64
+		Expected offsetStash
 	}{
 		"nil": {},
 		"empty given, single message": {
-			Given:    map[string]map[int]int64{},
+			Given:    offsetStash{},
 			Messages: []Message{newMessage(0, 0)},
-			Expected: map[string]map[int]int64{
+			Expected: offsetStash{
 				topic: {0: 0},
 			},
 		},
 		"ignores earlier offsets": {
-			Given: map[string]map[int]int64{
+			Given: offsetStash{
 				topic: {0: 1},
 			},
 			Messages: []Message{newMessage(0, 0)},
-			Expected: map[string]map[int]int64{
+			Expected: offsetStash{
 				topic: {0: 1},
 			},
 		},
 		"uses latest offset": {
-			Given: map[string]map[int]int64{},
+			Given: offsetStash{},
 			Messages: []Message{
 				newMessage(0, 2),
 				newMessage(0, 3),
 				newMessage(0, 1),
 			},
-			Expected: map[string]map[int]int64{
+			Expected: offsetStash{
 				topic: {0: 3},
 			},
 		},
 		"uses latest offset, across multiple topics": {
-			Given: map[string]map[int]int64{},
+			Given: offsetStash{},
 			Messages: []Message{
 				newMessage(0, 2),
 				newMessage(0, 3),
@@ -1085,7 +1085,7 @@ func TestMergeOffsets(t *testing.T) {
 				newMessage(1, 5),
 				newMessage(1, 6),
 			},
-			Expected: map[string]map[int]int64{
+			Expected: offsetStash{
 				topic: {
 					0: 3,
 					1: 6,
@@ -1096,7 +1096,7 @@ func TestMergeOffsets(t *testing.T) {
 
 	for label, test := range tests {
 		t.Run(label, func(t *testing.T) {
-			mergeOffsets(test.Given, test.Messages...)
+			test.Given.merge(test.Messages...)
 			if !reflect.DeepEqual(test.Expected, test.Given) {
 				t.Errorf("expected %v; got %v", test.Expected, test.Given)
 			}
