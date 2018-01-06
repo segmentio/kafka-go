@@ -192,10 +192,7 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 	for _, strategy := range allStrategies {
 		meta, err := strategy.ProtocolMetadata([]string{r.config.Topic})
 		if err != nil {
-			r.withErrorLogger(func(l *log.Logger) {
-				log.Printf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
-			})
-			return joinGroupRequestV2{}, err
+			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
 		}
 
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV2{
@@ -276,6 +273,17 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 	return strategy.AssignGroups(members, partitions), nil
 }
 
+// joinGroup attempts to join the reader to the consumer group.
+// Returns memberGroupAssignments is this Reader was selected as
+// the leader.  Otherwise, memberGroupAssignments will be nil.
+//
+// Possible kafka error codes returned:
+//  * GroupLoadInProgress:
+//  * GroupCoordinatorNotAvailable:
+//  * NotCoordinatorForGroup:
+//  * InconsistentGroupProtocol:
+//  * InvalidSessionTimeout:
+//  * GroupAuthorizationFailed:
 func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	conn, err := r.connect(r.stctx)
 	if err != nil {
@@ -288,55 +296,42 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 		return nil, err
 	}
 
-	group, err := conn.joinGroup(request)
+	response, err := conn.joinGroup(request)
 	if err != nil {
 		switch err {
 		case UnknownMemberId:
 			r.mutex.Lock()
 			r.memberID = ""
 			r.mutex.Unlock()
-			r.withLogger(func(l *log.Logger) {
-				l.Printf("joinGroup failed: %v\n", err)
-			})
-			return nil, err
+			return nil, fmt.Errorf("joinGroup failed: %v", err)
 
-			// all possible error codes returned by join group
-		//case GroupLoadInProgress:
-		//case GroupCoordinatorNotAvailable:
-		//case NotCoordinatorForGroup:
-		//case InconsistentGroupProtocol:
-		//case InvalidSessionTimeout:
-		//case GroupAuthorizationFailed:
 		default:
-			r.withLogger(func(l *log.Logger) {
-				l.Printf("joinGroup failed: %v\n", err)
-			})
-			return nil, err
+			return nil, fmt.Errorf("joinGroup failed: %v", err)
 		}
 	}
 
-	// Extract our membership and generationID from the group
+	// Extract our membership and generationID from the response
 	r.mutex.Lock()
 	oldGenerationID := r.generationID
 	oldMemberID := r.memberID
-	r.generationID = group.GenerationID
-	r.memberID = group.MemberID
+	r.generationID = response.GenerationID
+	r.memberID = response.MemberID
 	r.mutex.Unlock()
 
-	if oldGenerationID != group.GenerationID || oldMemberID != group.MemberID {
+	if oldGenerationID != response.GenerationID || oldMemberID != response.MemberID {
 		r.withLogger(func(l *log.Logger) {
-			l.Printf("group membership changed.  generationID: %v => %v, memberID: '%v' => '%v'\n",
+			l.Printf("response membership changed.  generationID: %v => %v, memberID: '%v' => '%v'\n",
 				oldGenerationID,
-				group.GenerationID,
+				response.GenerationID,
 				oldMemberID,
-				group.MemberID,
+				response.MemberID,
 			)
 		})
 	}
 
 	var assignments memberGroupAssignments
-	if iAmLeader := group.MemberID == group.LeaderID; iAmLeader {
-		v, err := r.assignTopicPartitions(conn, group)
+	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
+		v, err := r.assignTopicPartitions(conn, response)
 		if err != nil {
 			return nil, err
 		}
@@ -352,7 +347,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	}
 
 	r.withLogger(func(l *log.Logger) {
-		l.Printf("joinGroup succeeded for group, %v.  generationID=%v, memberID=%v\n", r.config.GroupID, group.GenerationID, group.MemberID)
+		l.Printf("joinGroup succeeded for response, %v.  generationID=%v, memberID=%v\n", r.config.GroupID, response.GenerationID, response.MemberID)
 	})
 
 	return assignments, nil
@@ -383,6 +378,16 @@ func (r *Reader) newSyncGroupRequestV1(memberAssignments memberGroupAssignments)
 	return request
 }
 
+// syncGroup completes the consumer group handshake by accepting the
+// memberAssignments (if this Reader is the leader) and returning this
+// Readers subscriptions topic => partitions
+//
+// Possible kafka error codes returned:
+//  * GroupCoordinatorNotAvailable:
+//  * NotCoordinatorForGroup:
+//  * IllegalGeneration:
+//  * RebalanceInProgress:
+//  * GroupAuthorizationFailed:
 func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string][]int32, error) {
 	conn, err := r.connect(r.stctx)
 	if err != nil {
@@ -398,29 +403,17 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 			r.mutex.Lock()
 			r.memberID = ""
 			r.mutex.Unlock()
-			return nil, err
+			return nil, fmt.Errorf("syncGroup failed: %v", err)
 
-			// other possible return codes for sync group
-		//case GroupCoordinatorNotAvailable:
-		//case NotCoordinatorForGroup:
-		//case IllegalGeneration:
-		//case RebalanceInProgress:
-		//case GroupAuthorizationFailed:
 		default:
-			r.withLogger(func(l *log.Logger) {
-				l.Printf("joinGroup failed: %v\n", err)
-			})
-			return nil, err
+			return nil, fmt.Errorf("syncGroup failed: %v", err)
 		}
 	}
 
 	assignments := groupAssignment{}
 	reader := bufio.NewReader(bytes.NewReader(response.MemberAssignments))
 	if _, err := (&assignments).readFrom(reader, len(response.MemberAssignments)); err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to read SyncGroup response for group, %v: %v\n", r.config.GroupID, err)
-		})
-		return nil, err
+		return nil, fmt.Errorf("unable to read SyncGroup response for group, %v: %v\n", r.config.GroupID, err)
 	}
 
 	r.withLogger(func(l *log.Logger) {
