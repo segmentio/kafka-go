@@ -21,6 +21,12 @@ const (
 	lastOffset  = -2
 )
 
+const (
+	// defaultCommitRetries holds the number commit attempts to make
+	// before giving up
+	defaultCommitRetries = 3
+)
+
 var (
 	// errNotAvailable returned when func called that is not supported in cluster mode
 	errNotAvailable = errors.New("not available when GroupID is set")
@@ -608,8 +614,8 @@ type offsetCommitter interface {
 	offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error)
 }
 
-func (r *Reader) commitOffsets(conn offsetCommitter, offsetsByTopicAndPartition map[string]map[int]int64) error {
-	if len(offsetsByTopicAndPartition) == 0 {
+func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) error {
+	if len(offsetStash) == 0 {
 		return nil
 	}
 
@@ -621,7 +627,7 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetsByTopicAndPartition 
 		RetentionTime: int64(r.config.RetentionTime / time.Millisecond),
 	}
 
-	for topic, partitions := range offsetsByTopicAndPartition {
+	for topic, partitions := range offsetStash {
 		t := offsetCommitRequestV3Topic{Topic: topic}
 		for partition, offset := range partitions {
 			t.Partitions = append(t.Partitions, offsetCommitRequestV3Partition{
@@ -633,15 +639,37 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetsByTopicAndPartition 
 	}
 
 	if _, err := conn.offsetCommit(request); err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to commit offsets for group, %v: %v", r.config.GroupID, err)
-		})
+		return fmt.Errorf("unable to commit offsets for group, %v: %v", r.config.GroupID, err)
 	}
 
 	r.withLogger(func(l *log.Logger) {
-		l.Printf("committed offsets: %v", offsetsByTopicAndPartition)
+		l.Printf("committed offsets: %v", offsetStash)
 	})
+
 	return nil
+}
+
+// commitOffsetsWithRetry attempts to commit the specified offsets and retries
+// up to the specified number of times
+func (r *Reader) commitOffsetsWithRetry(conn offsetCommitter, offsetStash offsetStash, retries int) (err error) {
+	const (
+		backoffDelayMin = 100 * time.Millisecond
+		backoffDelayMax = 5 * time.Second
+	)
+
+	for attempt := 0; attempt < retries; attempt++ {
+		if attempt != 0 {
+			if !sleep(r.stctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
+				return
+			}
+		}
+
+		if err = r.commitOffsets(conn, offsetStash); err == nil {
+			return
+		}
+	}
+
+	return // err will not be nil
 }
 
 // offsetStash holds offsets by topic => partition => offset
@@ -696,7 +724,7 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 			offsetsByTopicAndPartition := offsetStash{}
 			offsetsByTopicAndPartition.merge(msgs...)
 
-			if err := r.commitOffsets(conn, offsetsByTopicAndPartition); err != nil {
+			if err := r.commitOffsetsWithRetry(conn, offsetsByTopicAndPartition, defaultCommitRetries); err != nil {
 				r.withErrorLogger(func(l *log.Logger) {
 					l.Printf("unable to commit offset: %v", err)
 				})
@@ -714,7 +742,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 
 	defer func() {
 		// commits any outstanding offsets on close
-		if err := r.commitOffsets(conn, r.offsetStash); err == nil {
+		if err := r.commitOffsetsWithRetry(conn, r.offsetStash, defaultCommitRetries); err == nil {
 			r.offsetStash.reset()
 		}
 	}()
@@ -729,7 +757,7 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 				continue
 			}
 
-			if err := r.commitOffsets(conn, r.offsetStash); err != nil {
+			if err := r.commitOffsetsWithRetry(conn, r.offsetStash, defaultCommitRetries); err != nil {
 				r.withErrorLogger(func(l *log.Logger) {
 					l.Printf("unable to commit offset: %v", err)
 				})

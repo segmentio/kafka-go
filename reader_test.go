@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"io"
 	"math/rand"
 	"reflect"
 	"strconv"
@@ -1099,6 +1100,64 @@ func TestOffsetStash(t *testing.T) {
 			test.Given.merge(test.Messages...)
 			if !reflect.DeepEqual(test.Expected, test.Given) {
 				t.Errorf("expected %v; got %v", test.Expected, test.Given)
+			}
+		})
+	}
+}
+
+type mockOffsetCommitter struct {
+	invocations int
+	failCount   int
+	err         error
+}
+
+func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error) {
+	m.invocations++
+
+	if m.failCount > 0 {
+		m.failCount--
+		return offsetCommitResponseV3{}, io.EOF
+	}
+
+	return offsetCommitResponseV3{}, nil
+}
+
+func TestCommitOffsetsWithRetry(t *testing.T) {
+	offsets := offsetStash{"topic": {0: 0}}
+
+	tests := map[string]struct {
+		Fails       int
+		Invocations int
+		HasError    bool
+	}{
+		"happy path": {
+			Invocations: 1,
+		},
+		"1 retry": {
+			Fails:       1,
+			Invocations: 2,
+		},
+		"out of retries": {
+			Fails:       defaultCommitRetries + 1,
+			Invocations: defaultCommitRetries,
+			HasError:    true,
+		},
+	}
+
+	for label, test := range tests {
+		t.Run(label, func(t *testing.T) {
+			conn := &mockOffsetCommitter{failCount: test.Fails}
+
+			r := &Reader{stctx: context.Background()}
+			err := r.commitOffsetsWithRetry(conn, offsets, defaultCommitRetries)
+			switch {
+			case test.HasError && err == nil:
+				t.Error("bad err: expected not nil; got nil")
+			case !test.HasError && err != nil:
+				t.Errorf("bad err: expected nil; got %v", err)
+			}
+			if test.Invocations != conn.invocations {
+				t.Errorf("expected %v retries; got %v", test.Invocations, conn.invocations)
 			}
 		})
 	}
