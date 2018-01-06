@@ -86,6 +86,11 @@ type Reader struct {
 	stats readerStats
 }
 
+// useConsumerGroup indicates the Reader is part of a consumer group
+func (r *Reader) useConsumerGroup() bool {
+	return r.config.GroupID != ""
+}
+
 // membership returns the group generationID and memberID of the reader.
 //
 // Only used when config.GroupID != ""
@@ -1178,7 +1183,7 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 // The function returns a lag of zero when the reader's current offset is
 // negative.
 func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
-	if r.config.GroupID != "" {
+	if r.useConsumerGroup() {
 		return 0, errNotAvailable
 	}
 
@@ -1241,7 +1246,7 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 
 // Offset returns the current offset of the reader.
 func (r *Reader) Offset() int64 {
-	if r.config.GroupID != "" {
+	if r.useConsumerGroup() {
 		return -1
 	}
 
@@ -1256,7 +1261,7 @@ func (r *Reader) Offset() int64 {
 
 // Lag returns the lag of the last message returned by ReadMessage.
 func (r *Reader) Lag() int64 {
-	if r.config.GroupID != "" {
+	if r.useConsumerGroup() {
 		return -1
 	}
 
@@ -1274,7 +1279,7 @@ func (r *Reader) Lag() int64 {
 //
 // The method fails with io.ErrClosedPipe if the reader has already been closed.
 func (r *Reader) SetOffset(offset int64) error {
-	if r.config.GroupID != "" {
+	if r.useConsumerGroup() {
 		return errNotAvailable
 	}
 
