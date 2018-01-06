@@ -738,28 +738,9 @@ func TestReaderConsumerGroup(t *testing.T) {
 		},
 
 		{
-			scenario:       "verify outstanding offsets committed on close",
-			partitions:     1,
-			commitInterval: time.Minute,
-			function:       testReaderConsumerGroupVerifyCommitsOnClose,
-		},
-
-		{
-			scenario:   "read content across partitions",
-			partitions: 3,
-			function:   testReaderConsumerGroupReadContentAcrossPartitions,
-		},
-
-		{
-			scenario:   "rebalance two readers",
-			partitions: 2,
-			function:   testReaderConsumerGroupRebalance,
-		},
-
-		{
-			scenario:   "rebalance two readers across topics; reader 1 => topic 1, reader 2 => topic 2",
-			partitions: 2,
-			function:   testReaderConsumerGroupRebalanceAcrossTopics,
+			scenario:   "rebalance across a many partitions and consumers",
+			partitions: 8,
+			function:   testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers,
 		},
 	}
 
@@ -777,7 +758,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 				GroupID:           groupID,
 				HeartbeatInterval: time.Second,
 				CommitInterval:    test.commitInterval,
-				SessionTimeout:    time.Second * 6,
+				RebalanceTimeout:  8 * time.Second,
 				RetentionTime:     time.Hour,
 				MinBytes:          1,
 				MaxBytes:          1e6,
@@ -1030,6 +1011,52 @@ func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Cont
 		if _, err := r.FetchMessage(ctx); err != nil {
 			t.Errorf("expect to read from reader 1")
 		}
+	}
+}
+
+func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing.T, ctx context.Context, r *Reader) {
+	// I've rebalanced up to 100 servers, but the rebalance can take upwards
+	// of a minute and that seems too long for unit tests.  Also, setting this
+	// to a larger number seems to make the kafka broker unresponsive.
+	// TODO research if there's a way to reduce rebalance time across many partitions
+	const N = 8
+
+	var readers []*Reader
+
+	for i := 0; i < N-1; i++ {
+		reader := NewReader(r.config)
+		readers = append(readers, reader)
+	}
+	defer func() {
+		for _, r := range readers {
+			r.Close()
+		}
+	}()
+
+	// write messages across both partitions
+	writer := NewWriter(WriterConfig{
+		Brokers:   r.config.Brokers,
+		Topic:     r.config.Topic,
+		Dialer:    r.config.Dialer,
+		Balancer:  &RoundRobin{},
+		BatchSize: 1,
+	})
+	if err := writer.WriteMessages(ctx, makeTestSequence(N*3)...); err != nil {
+		t.Fatalf("bad write messages: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("bad write err: %v", err)
+	}
+
+	// all N messages on the original topic should be read by the original reader
+	for i := 0; i < N-1; i++ {
+		if _, err := readers[i].FetchMessage(ctx); err != nil {
+			t.Errorf("reader %v expected to read 1 message", i)
+		}
+	}
+
+	if _, err := r.FetchMessage(ctx); err != nil {
+		t.Errorf("expect to read from original reader")
 	}
 }
 
