@@ -176,9 +176,9 @@ func (r *Reader) refreshCoordinator() (err error) {
 	return nil
 }
 
-// newJoinGroupRequestV2 handles the logic of constructing a joinGroup
+// makeJoinGroupRequestV2 handles the logic of constructing a joinGroup
 // request
-func (r *Reader) newJoinGroupRequestV2() (joinGroupRequestV2, error) {
+func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 	_, memberID := r.membership()
 
 	request := joinGroupRequestV2{
@@ -283,7 +283,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	}
 	defer conn.Close()
 
-	request, err := r.newJoinGroupRequestV2()
+	request, err := r.makeJoinGroupRequestV2()
 	if err != nil {
 		return nil, err
 	}
