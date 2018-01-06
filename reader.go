@@ -797,7 +797,7 @@ func (r *Reader) runOnce() error {
 func (r *Reader) run() {
 	defer close(r.done)
 
-	if r.config.GroupID == "" {
+	if !r.useConsumerGroup() {
 		return
 	}
 
@@ -1358,7 +1358,7 @@ func (r *Reader) activateReadLag() {
 	if r.config.ReadLagInterval > 0 && atomic.CompareAndSwapUint32(&r.once, 0, 1) {
 		// read lag will only be calculated when not using consumer groups
 		// todo discuss how capturing read lag should interact with rebalancing
-		if r.config.GroupID == "" {
+		if !r.useConsumerGroup() {
 			go r.readLag(r.stctx)
 		}
 	}
@@ -1421,7 +1421,7 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 }
 
 func (r *Reader) CommitMessage(m Message) error {
-	if r.config.GroupID == "" {
+	if !r.useConsumerGroup() {
 		return errNotAvailable
 	}
 
