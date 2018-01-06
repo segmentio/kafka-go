@@ -810,6 +810,64 @@ func (r *Reader) commitLoop(stop <-chan struct{}, done chan<- struct{}) {
 	}
 }
 
+func (r *Reader) runOnce() {
+	// rebalance and fetch subscriptions
+	assignments, err := r.rebalance()
+	if err != nil {
+		r.withErrorLogger(func(l *log.Logger) {
+			l.Printf("rebalance failed for consumer group, %v: %v", r.config.GroupID, err)
+		})
+		return
+	}
+
+	// start the heartbeat
+	hbStop, hbDone := make(chan struct{}), make(chan struct{})
+	go r.heartbeatLoop(hbStop, hbDone)
+
+	commitStop, commitDone := make(chan struct{}), make(chan struct{})
+	go r.commitLoop(commitStop, commitDone)
+
+	// subscribe to assignments
+	if err := r.subscribe(assignments); err != nil {
+		r.withErrorLogger(func(l *log.Logger) {
+			l.Printf("subscribe failed for consumer group, %v: %v\n", r.config.GroupID, err)
+		})
+
+		close(hbStop)
+		close(commitStop)
+		<-hbDone
+		<-commitDone
+
+		return
+	}
+
+	select {
+	case <-hbDone:
+		close(commitStop)
+		<-commitDone
+		r.withLogger(func(l *log.Logger) {
+			l.Println("heartbeat goroutine closed")
+		})
+
+	case <-commitDone:
+		close(hbStop)
+		<-hbDone
+		r.withLogger(func(l *log.Logger) {
+			l.Println("heartbeat goroutine closed")
+		})
+
+	case <-r.stctx.Done():
+		r.withLogger(func(l *log.Logger) {
+			l.Println("consumer group detected stop request")
+		})
+
+		close(hbStop)
+		close(commitStop)
+		<-hbDone
+		<-commitDone
+	}
+}
+
 func (r *Reader) run() {
 	defer close(r.done)
 
@@ -821,62 +879,13 @@ func (r *Reader) run() {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
-	for attempt := 0; true; attempt++ {
-		// rebalance and fetch subscriptions
-		assignments, err := r.rebalance()
-		if err != nil {
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("rebalance failed for consumer group, %v: %v", r.config.GroupID, err)
-			})
-			continue
-		}
-
-		// start the heartbeat
-		hbStop, hbDone := make(chan struct{}), make(chan struct{})
-		go r.heartbeatLoop(hbStop, hbDone)
-
-		commitStop, commitDone := make(chan struct{}), make(chan struct{})
-		go r.commitLoop(commitStop, commitDone)
-
-		// subscribe to assignments
-		if err := r.subscribe(assignments); err != nil {
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("subscribe failed for consumer group, %v: %v\n", r.config.GroupID, err)
-			})
-
-			close(hbStop)
-			close(commitStop)
-			<-hbDone
-			<-commitDone
-
-			continue
-		}
+	for {
+		r.runOnce()
 
 		select {
-		case <-hbDone:
-			close(commitStop)
-			<-commitDone
-			r.withLogger(func(l *log.Logger) {
-				l.Println("heartbeat goroutine closed")
-			})
-
-		case <-commitDone:
-			close(hbStop)
-			<-hbDone
-			r.withLogger(func(l *log.Logger) {
-				l.Println("heartbeat goroutine closed")
-			})
-
 		case <-r.stctx.Done():
-			r.withLogger(func(l *log.Logger) {
-				l.Println("consumer group detected stop request")
-			})
-
-			close(hbStop)
-			close(commitStop)
-			<-hbDone
-			<-commitDone
 			return
+		default:
 		}
 	}
 }
