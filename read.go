@@ -143,8 +143,8 @@ func readStringArray(r *bufio.Reader, sz int, v *[]string) (remain int, err erro
 }
 
 func readMapStringInt32(r *bufio.Reader, sz int, v *map[string][]int32) (remain int, err error) {
-	var len int16
-	if remain, err = readInt16(r, sz, &len); err != nil {
+	var len int32
+	if remain, err = readInt32(r, sz, &len); err != nil {
 		return
 	}
 

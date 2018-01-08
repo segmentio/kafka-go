@@ -109,6 +109,78 @@ for {
 r.Close()
 ```
 
+### Consumer Groups
+
+```kafka-go``` also supports Kafka consumer groups including broker managed offsets.
+To enable consumer groups, simplify specify the GroupID in the ReaderConfig.
+
+ReadMessage automatically commits offsets when using consumer groups.
+
+```go
+// make a new reader that consumes from topic-A
+r := kafka.NewReader(kafka.ReaderConfig{
+    Brokers:   []string{"localhost:9092"},
+    GroupID:   "consumer-group-id",
+    Topic:     "topic-A",
+    MinBytes:  10e3, // 10KB
+    MaxBytes:  10e6, // 10MB
+})
+
+for {
+    m, err := r.ReadMessage(context.Background())
+    if err != nil {
+        break
+    }
+    fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
+}
+
+r.Close()
+```
+
+There are a number of limitations when using consumer groups:
+
+* ```(*Reader).SetOffset``` will return an error when GroupID is set
+* ```(*Reader).Offset``` will always return ```-1``` when GroupID is set
+* ```(*Reader).Lag``` will always return ```-1``` when GroupID is set
+* ```(*Reader).ReadLag``` will return an error when GroupID is set
+* ```(*Reader).Stats``` will return a partition of ```-1``` when GroupID is set
+
+### Explicit Commits
+
+```kafka-go``` also supports explicit commits.  Instead of calling ```ReadMessage```,
+call ```FetchMessage``` followed by ```CommitMessages```.
+
+```go
+ctx := context.Background()
+for {
+    m, err := r.FetchMessage(ctx)
+    if err != nil {
+        break
+    }
+    fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
+    m.CommitMessages(ctx, m)
+}
+```
+
+### Managing Commits
+
+By default, CommitMessages will synchronously commit offsets to Kafka.  For
+improved performance, you can instead periodically commit offsets to Kafka
+by setting CommitInterval on the ReaderConfig.
+
+
+```go
+// make a new reader that consumes from topic-A
+r := kafka.NewReader(kafka.ReaderConfig{
+    Brokers:        []string{"localhost:9092"},
+    GroupID:        "consumer-group-id",
+    Topic:          "topic-A",
+    MinBytes:       10e3, // 10KB
+    MaxBytes:       10e6, // 10MB
+    CommitInterval: time.Second, // flushes commits to Kafka every second
+})
+```
+
 ## Writer [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Writer)
 
 To produce messages to Kafka, a program may use the low-level `Conn` API, but

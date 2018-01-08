@@ -245,7 +245,8 @@ func TestDialerTLS(t *testing.T) {
 
 type MockConn struct {
 	net.Conn
-	done chan struct{}
+	done       chan struct{}
+	partitions []Partition
 }
 
 func (m *MockConn) Read(b []byte) (n int, err error) {
@@ -275,6 +276,10 @@ func (m *MockConn) Close() error {
 		close(m.done)
 	}
 	return nil
+}
+
+func (m *MockConn) ReadPartitions(topics ...string) (partitions []Partition, err error) {
+	return m.partitions, err
 }
 
 func TestDialerConnectTLSHonorsContext(t *testing.T) {

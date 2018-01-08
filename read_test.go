@@ -55,7 +55,7 @@ func TestReadMapStringInt32(t *testing.T) {
 			buf := bytes.NewBuffer(nil)
 
 			w := bufio.NewWriter(buf)
-			writeInt16(w, int16(len(test.Data)))
+			writeInt32(w, int32(len(test.Data)))
 			for key, values := range test.Data {
 				writeString(w, key)
 				writeInt32Array(w, values)

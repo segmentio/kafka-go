@@ -26,7 +26,7 @@ func (t groupAssignment) size() int32 {
 
 func (t groupAssignment) writeTo(w *bufio.Writer) {
 	writeInt16(w, t.Version)
-	writeInt16(w, int16(len(t.Topics)))
+	writeInt32(w, int32(len(t.Topics)))
 
 	for topic, partitions := range t.Topics {
 		writeString(w, topic)
@@ -37,6 +37,14 @@ func (t groupAssignment) writeTo(w *bufio.Writer) {
 }
 
 func (t *groupAssignment) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+	// I came across this case when testing for compatibility with bsm/sarama-cluster. It
+	// appears in some cases, sarama-cluster can send a nil array entry. Admittedly, I
+	// didn't look too closely at it.
+	if size == 0 {
+		t.Topics = map[string][]int32{}
+		return 0, nil
+	}
+
 	if remain, err = readInt16(r, size, &t.Version); err != nil {
 		return
 	}
