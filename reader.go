@@ -1467,6 +1467,11 @@ func (r *Reader) readLag(ctx context.Context) {
 }
 
 func (r *Reader) start(offsetsByPartition map[int]int64) {
+	if r.closed {
+		// don't start child reader if parent Reader is closed
+		return
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r.cancel() // always cancel the previous reader
