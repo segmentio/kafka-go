@@ -1085,7 +1085,7 @@ func NewReader(config ReaderConfig) *Reader {
 		msgs:    make(chan readerMessage, config.QueueCapacity),
 		cancel:  func() {},
 		done:    make(chan struct{}),
-		commits: make(chan commitRequest, config.QueueCapacity),
+		commits: make(chan commitRequest),
 		stop:    stop,
 		offset:  firstOffset,
 		stctx:   stctx,
