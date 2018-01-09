@@ -679,10 +679,6 @@ type offsetStash map[string]map[int]int64
 
 // merge updates the offsetStash with the offsets from the provided messages
 func (o offsetStash) merge(commits []commit) {
-	if o == nil {
-		return
-	}
-
 	for _, c := range commits {
 		offsetsByPartition, ok := o[c.topic]
 		if !ok {
