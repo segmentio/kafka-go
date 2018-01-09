@@ -1124,7 +1124,7 @@ func TestOffsetStash(t *testing.T) {
 
 	for label, test := range tests {
 		t.Run(label, func(t *testing.T) {
-			test.Given.merge(test.Messages...)
+			test.Given.merge(makeCommits(test.Messages...))
 			if !reflect.DeepEqual(test.Expected, test.Given) {
 				t.Errorf("expected %v; got %v", test.Expected, test.Given)
 			}
