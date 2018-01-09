@@ -1247,6 +1247,28 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 	}
 }
 
+// CommitMessages commits the list of messages passed as argument. The program
+// may pass a context to asynchronously cancel the commit operation when it was
+// configured to be blocking.
+func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
+	if !r.useConsumerGroup() {
+		return errNotAvailable
+	}
+
+	if len(msgs) == 0 {
+		return nil
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-r.stctx.Done():
+		return r.stctx.Err()
+	case r.commits <- msgs:
+		return nil
+	}
+}
+
 // ReadLag returns the current lag of the reader by fetching the last offset of
 // the topic and partition and computing the difference between that value and
 // the offset of the last message returned by ReadMessage.
@@ -1498,25 +1520,6 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 				stats:       &r.stats,
 			}).run(ctx, offset)
 		}(ctx, partition, offset, &r.join)
-	}
-}
-
-func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
-	if len(msgs) == 0 {
-		return nil
-	}
-
-	if !r.useConsumerGroup() {
-		return errNotAvailable
-	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-r.stctx.Done():
-		return r.stctx.Err()
-	case r.commits <- msgs:
-		return nil
 	}
 }
 
