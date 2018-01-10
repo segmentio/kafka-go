@@ -483,9 +483,6 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 		for _, partition := range partitions {
 			if partition == pr.Partition {
 				offset := pr.Offset
-				if offset >= 0 {
-					offset++ // advance to next offset
-				}
 				offsetsByPartition[int(partition)] = offset
 			}
 		}
