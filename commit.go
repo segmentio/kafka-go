@@ -14,7 +14,7 @@ func makeCommit(msg Message) commit {
 	return commit{
 		topic:     msg.Topic,
 		partition: msg.Partition,
-		offset:    msg.Offset,
+		offset:    msg.Offset + 1,
 	}
 }
 
