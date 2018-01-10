@@ -1081,16 +1081,16 @@ func TestOffsetStash(t *testing.T) {
 			Given:    offsetStash{},
 			Messages: []Message{newMessage(0, 0)},
 			Expected: offsetStash{
-				topic: {0: 0},
+				topic: {0: 1},
 			},
 		},
 		"ignores earlier offsets": {
 			Given: offsetStash{
-				topic: {0: 1},
+				topic: {0: 2},
 			},
 			Messages: []Message{newMessage(0, 0)},
 			Expected: offsetStash{
-				topic: {0: 1},
+				topic: {0: 2},
 			},
 		},
 		"uses latest offset": {
@@ -1101,7 +1101,7 @@ func TestOffsetStash(t *testing.T) {
 				newMessage(0, 1),
 			},
 			Expected: offsetStash{
-				topic: {0: 3},
+				topic: {0: 4},
 			},
 		},
 		"uses latest offset, across multiple topics": {
@@ -1115,8 +1115,8 @@ func TestOffsetStash(t *testing.T) {
 			},
 			Expected: offsetStash{
 				topic: {
-					0: 3,
-					1: 6,
+					0: 4,
+					1: 7,
 				},
 			},
 		},
