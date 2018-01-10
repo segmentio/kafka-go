@@ -77,7 +77,7 @@ type Reader struct {
 	cancel       context.CancelFunc
 	stop         context.CancelFunc
 	done         chan struct{}
-	commits      chan []Message
+	commits      chan commitRequest
 	version      int64 // version holds the generation of the spawned readers
 	offset       int64
 	lag          int64
@@ -96,10 +96,12 @@ type Reader struct {
 	stats readerStats
 }
 
-// useConsumerGroup indicates the Reader is part of a consumer group
-func (r *Reader) useConsumerGroup() bool {
-	return r.config.GroupID != ""
-}
+// useConsumerGroup indicates whether the Reader is part of a consumer group.
+func (r *Reader) useConsumerGroup() bool { return r.config.GroupID != "" }
+
+// useSyncCommits indicates whether the Reader is configured to perform sync or
+// async commits.
+func (r *Reader) useSyncCommits() bool { return r.config.CommitInterval == 0 }
 
 // membership returns the group generationID and memberID of the reader.
 //
@@ -676,20 +678,16 @@ func (r *Reader) commitOffsetsWithRetry(conn offsetCommitter, offsetStash offset
 type offsetStash map[string]map[int]int64
 
 // merge updates the offsetStash with the offsets from the provided messages
-func (o offsetStash) merge(msgs ...Message) {
-	if o == nil {
-		return
-	}
-
-	for _, m := range msgs {
-		offsetsByPartition, ok := o[m.Topic]
+func (o offsetStash) merge(commits []commit) {
+	for _, c := range commits {
+		offsetsByPartition, ok := o[c.topic]
 		if !ok {
 			offsetsByPartition = map[int]int64{}
-			o[m.Topic] = offsetsByPartition
+			o[c.topic] = offsetsByPartition
 		}
 
-		if offset, ok := offsetsByPartition[m.Partition]; !ok || m.Offset > offset {
-			offsetsByPartition[m.Partition] = m.Offset
+		if offset, ok := offsetsByPartition[c.partition]; !ok || c.offset > offset {
+			offsetsByPartition[c.partition] = c.offset
 		}
 	}
 }
@@ -701,35 +699,19 @@ func (o offsetStash) reset() {
 	}
 }
 
-// isEmpty returns true if the offsetStash contains no entries
-func (o offsetStash) isEmpty() bool {
-	return len(o) == 0
-}
-
 // commitLoopImmediate handles each commit synchronously
 func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{}) {
+	offsetsByTopicAndPartition := offsetStash{}
+
 	for {
 		select {
 		case <-stop:
 			return
 
-		case msgs, ok := <-r.commits:
-			if !ok {
-				r.withErrorLogger(func(l *log.Logger) {
-					l.Println("reader commit channel unexpectedly closed")
-				})
-				return
-			}
-
-			offsetsByTopicAndPartition := offsetStash{}
-			offsetsByTopicAndPartition.merge(msgs...)
-
-			if err := r.commitOffsetsWithRetry(conn, offsetsByTopicAndPartition, defaultCommitRetries); err != nil {
-				r.withErrorLogger(func(l *log.Logger) {
-					l.Printf("unable to commit offset: %v", err)
-				})
-				return
-			}
+		case req := <-r.commits:
+			offsetsByTopicAndPartition.merge(req.commits)
+			req.errch <- r.commitOffsetsWithRetry(conn, offsetsByTopicAndPartition, defaultCommitRetries)
+			offsetsByTopicAndPartition.reset()
 		}
 	}
 }
@@ -740,40 +722,25 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 	ticker := time.NewTicker(r.config.HeartbeatInterval)
 	defer ticker.Stop()
 
-	defer func() {
-		// commits any outstanding offsets on close
-		if err := r.commitOffsetsWithRetry(conn, r.offsetStash, defaultCommitRetries); err == nil {
+	commit := func() {
+		if err := r.commitOffsetsWithRetry(conn, r.offsetStash, defaultCommitRetries); err != nil {
+			r.withErrorLogger(func(l *log.Logger) { l.Print(err) })
+		} else {
 			r.offsetStash.reset()
 		}
-	}()
+	}
 
 	for {
 		select {
 		case <-stop:
+			commit()
 			return
 
 		case <-ticker.C:
-			if len(r.offsetStash) == 0 {
-				continue
-			}
+			commit()
 
-			if err := r.commitOffsetsWithRetry(conn, r.offsetStash, defaultCommitRetries); err != nil {
-				r.withErrorLogger(func(l *log.Logger) {
-					l.Printf("unable to commit offset: %v", err)
-				})
-				return
-			}
-			r.offsetStash.reset()
-
-		case msgs, ok := <-r.commits:
-			if !ok {
-				r.withErrorLogger(func(l *log.Logger) {
-					l.Println("reader commit channel unexpectedly closed")
-				})
-				return
-			}
-
-			r.offsetStash.merge(msgs...)
+		case req := <-r.commits:
+			r.offsetStash.merge(req.commits)
 		}
 	}
 }
@@ -1106,7 +1073,7 @@ func NewReader(config ReaderConfig) *Reader {
 		msgs:    make(chan readerMessage, config.QueueCapacity),
 		cancel:  func() {},
 		done:    make(chan struct{}),
-		commits: make(chan []Message),
+		commits: make(chan commitRequest),
 		stop:    stop,
 		offset:  firstOffset,
 		stctx:   stctx,
@@ -1244,6 +1211,47 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 				return m.message, m.error
 			}
 		}
+	}
+}
+
+// CommitMessages commits the list of messages passed as argument. The program
+// may pass a context to asynchronously cancel the commit operation when it was
+// configured to be blocking.
+func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
+	if !r.useConsumerGroup() {
+		return errNotAvailable
+	}
+
+	var errch <-chan error
+	var sync = r.useSyncCommits()
+	var creq = commitRequest{
+		commits: makeCommits(msgs...),
+	}
+
+	if sync {
+		ch := make(chan error, 1)
+		errch, creq.errch = ch, ch
+	}
+
+	select {
+	case r.commits <- creq:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-r.stctx.Done():
+		// This context is used to ensure we don't allow commits after the
+		// reader was closed.
+		return io.ErrClosedPipe
+	}
+
+	if !sync {
+		return nil
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errch:
+		return err
 	}
 }
 
@@ -1498,25 +1506,6 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 				stats:       &r.stats,
 			}).run(ctx, offset)
 		}(ctx, partition, offset, &r.join)
-	}
-}
-
-func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
-	if len(msgs) == 0 {
-		return nil
-	}
-
-	if !r.useConsumerGroup() {
-		return errNotAvailable
-	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-r.stctx.Done():
-		return r.stctx.Err()
-	case r.commits <- msgs:
-		return nil
 	}
 }
 
