@@ -723,10 +723,10 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 	defer ticker.Stop()
 
 	commit := func() {
-		if err := r.commitOffsetStash(conn); err != nil {
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Print(err)
-			})
+		if err := r.commitOffsetsWithRetry(conn, r.offsetStash, defaultCommitRetries); err != nil {
+			r.withErrorLogger(func(l *log.Logger) { l.Print(err) })
+		} else {
+			r.offsetStash.reset()
 		}
 	}
 
@@ -743,14 +743,6 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 			r.offsetStash.merge(req.commits)
 		}
 	}
-}
-
-func (r *Reader) commitOffsetStash(conn offsetCommitter) error {
-	err := r.commitOffsetsWithRetry(conn, r.offsetStash, defaultCommitRetries)
-	if err == nil {
-		r.offsetStash.reset()
-	}
-	return err
 }
 
 // commitLoop processes commits off the commit chan
