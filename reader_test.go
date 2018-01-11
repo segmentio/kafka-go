@@ -738,9 +738,33 @@ func TestReaderConsumerGroup(t *testing.T) {
 		},
 
 		{
-			scenario:   "rebalance across a many partitions and consumers",
+			scenario:   "rebalance across many partitions and consumers",
 			partitions: 8,
 			function:   testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers,
+		},
+
+		{
+			scenario:   "consumer group commits on close",
+			partitions: 3,
+			function:   testReaderConsumerGroupVerifyCommitsOnClose,
+		},
+
+		{
+			scenario:   "consumer group rebalance",
+			partitions: 3,
+			function:   testReaderConsumerGroupRebalance,
+		},
+
+		{
+			scenario:   "consumer group rebalance across topics",
+			partitions: 3,
+			function:   testReaderConsumerGroupRebalanceAcrossTopics,
+		},
+
+		{
+			scenario:   "consumer group reads content across partitions",
+			partitions: 3,
+			function:   testReaderConsumerGroupReadContentAcrossPartitions,
 		},
 	}
 
