@@ -559,13 +559,7 @@ func (r *Reader) waitThrottleTime(throttleTimeMS int32) {
 
 // heartbeat sends heartbeat to coordinator at the interval defined by
 // ReaderConfig.HeartbeatInterval
-func (r *Reader) heartbeat() error {
-	conn, err := r.coordinator()
-	if err != nil {
-		return fmt.Errorf("heartbeat: unable to connect to coordinator: %v", err)
-	}
-	defer conn.Close()
-
+func (r *Reader) heartbeat(conn *Conn) error {
 	generationID, memberID := r.membership()
 	if generationID == 0 && memberID == "" {
 		return nil
@@ -585,26 +579,28 @@ func (r *Reader) heartbeat() error {
 	return nil
 }
 
-func (r *Reader) heartbeatLoop(stop <-chan struct{}) {
-	r.withLogger(func(l *log.Logger) {
-		l.Printf("started heartbeat for group, %v [%v]", r.config.GroupID, r.config.HeartbeatInterval)
-	})
-	defer r.withLogger(func(l *log.Logger) {
-		l.Println("stopped heartbeat for group,", r.config.GroupID)
-	})
+func (r *Reader) heartbeatLoop(conn *Conn) func(stop <-chan struct{}) {
+	return func(stop <-chan struct{}) {
+		r.withLogger(func(l *log.Logger) {
+			l.Printf("started heartbeat for group, %v [%v]", r.config.GroupID, r.config.HeartbeatInterval)
+		})
+		defer r.withLogger(func(l *log.Logger) {
+			l.Println("stopped heartbeat for group,", r.config.GroupID)
+		})
 
-	ticker := time.NewTicker(r.config.HeartbeatInterval)
-	defer ticker.Stop()
+		ticker := time.NewTicker(r.config.HeartbeatInterval)
+		defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			if err := r.heartbeat(); err != nil {
+		for {
+			select {
+			case <-ticker.C:
+				if err := r.heartbeat(conn); err != nil {
+					return
+				}
+
+			case <-stop:
 				return
 			}
-
-		case <-stop:
-			return
 		}
 	}
 }
@@ -743,27 +739,20 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 }
 
 // commitLoop processes commits off the commit chan
-func (r *Reader) commitLoop(stop <-chan struct{}) {
-	r.withLogger(func(l *log.Logger) {
-		l.Println("started commit for group,", r.config.GroupID)
-	})
-	defer r.withLogger(func(l *log.Logger) {
-		l.Println("stopped commit for group,", r.config.GroupID)
-	})
-
-	conn, err := r.coordinator()
-	if err != nil {
-		r.withErrorLogger(func(l *log.Logger) {
-			l.Printf("unable to connect to coordinator for commit loop: %v", err)
+func (r *Reader) commitLoop(conn *Conn) func(stop <-chan struct{}) {
+	return func(stop <-chan struct{}) {
+		r.withLogger(func(l *log.Logger) {
+			l.Println("started commit for group,", r.config.GroupID)
 		})
-		return
-	}
-	defer conn.Close()
+		defer r.withLogger(func(l *log.Logger) {
+			l.Println("stopped commit for group,", r.config.GroupID)
+		})
 
-	if r.config.CommitInterval == 0 {
-		r.commitLoopImmediate(conn, stop)
-	} else {
-		r.commitLoopInterval(conn, stop)
+		if r.config.CommitInterval == 0 {
+			r.commitLoopImmediate(conn, stop)
+		} else {
+			r.commitLoopInterval(conn, stop)
+		}
 	}
 }
 
@@ -780,10 +769,16 @@ func (r *Reader) handshake() error {
 		return fmt.Errorf("rebalance failed for consumer group, %v: %v", r.config.GroupID, err)
 	}
 
+	conn, err := r.coordinator()
+	if err != nil {
+		return fmt.Errorf("heartbeat: unable to connect to coordinator: %v", err)
+	}
+	defer conn.Close()
+
 	rg := &runGroup{}
 	rg = rg.WithContext(r.stctx)
-	rg.Go(r.heartbeatLoop)
-	rg.Go(r.commitLoop)
+	rg.Go(r.heartbeatLoop(conn))
+	rg.Go(r.commitLoop(conn))
 
 	// subscribe to assignments
 	if err := r.subscribe(assignments); err != nil {
