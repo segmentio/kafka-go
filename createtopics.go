@@ -5,43 +5,102 @@ import (
 	"time"
 )
 
-type createTopicsRequestV2ConfigEntry = ConfigEntry
-
 type ConfigEntry struct {
 	ConfigName  string
 	ConfigValue string
 }
 
-func (t ConfigEntry) size() int32 {
+func (c ConfigEntry) toCreateTopicsRequestV2ConfigEntry() createTopicsRequestV2ConfigEntry {
+	return createTopicsRequestV2ConfigEntry{
+		ConfigName: c.ConfigName,
+		ConfigValue: c.ConfigValue,
+	}
+}
+
+type createTopicsRequestV2ConfigEntry struct {
+	ConfigName  string
+	ConfigValue string
+}
+
+func (t createTopicsRequestV2ConfigEntry) size() int32 {
 	return sizeofString(t.ConfigName) +
 		sizeofString(t.ConfigValue)
 }
 
-func (t ConfigEntry) writeTo(w *bufio.Writer) {
+func (t createTopicsRequestV2ConfigEntry) writeTo(w *bufio.Writer) {
 	writeString(w, t.ConfigName)
 	writeString(w, t.ConfigValue)
 }
 
-type  createTopicsRequestV2ReplicaAssignment = ReplicaAssignment
-
 type ReplicaAssignment struct {
+	Partition int
+	Replicas  int
+}
+
+func (a ReplicaAssignment) toCreateTopicsRequestV2ReplicaAssignment() createTopicsRequestV2ReplicaAssignment {
+	return createTopicsRequestV2ReplicaAssignment{
+		Partition: int32(a.Partition),
+		Replicas: int32(a.Replicas),
+	}
+}
+
+type createTopicsRequestV2ReplicaAssignment struct {
 	Partition int32
 	Replicas  int32
 }
 
-func (t ReplicaAssignment) size() int32 {
+func (t createTopicsRequestV2ReplicaAssignment) size() int32 {
 	return sizeofInt32(t.Partition) +
 		sizeofInt32(t.Replicas)
 }
 
-func (t ReplicaAssignment) writeTo(w *bufio.Writer) {
+func (t createTopicsRequestV2ReplicaAssignment) writeTo(w *bufio.Writer) {
 	writeInt32(w, t.Partition)
 	writeInt32(w, t.Replicas)
 }
 
-type createTopicsRequestV2Topic = TopicConfig
-
 type TopicConfig struct {
+	// Topic name
+	Topic string
+
+	// NumPartitions created. -1 indicates unset.
+	NumPartitions int
+
+	// ReplicationFactor for the topic. -1 indicates unset.
+	ReplicationFactor int
+
+	// ReplicaAssignments among kafka brokers for this topic partitions. If this
+	// is set num_partitions and replication_factor must be unset.
+	ReplicaAssignments []ReplicaAssignment
+
+	// ConfigEntries holds topic level configuration for topic to be set.
+	ConfigEntries []ConfigEntry
+}
+
+func (t TopicConfig) toCreateTopicsRequestV2Topic() createTopicsRequestV2Topic {
+	var requestV2ReplicaAssignments []createTopicsRequestV2ReplicaAssignment
+	for _, a := range t.ReplicaAssignments {
+		requestV2ReplicaAssignments = append(
+			requestV2ReplicaAssignments,
+			a.toCreateTopicsRequestV2ReplicaAssignment())
+	}
+	var requestV2ConfigEntries []createTopicsRequestV2ConfigEntry
+	for _, c := range t.ConfigEntries {
+		requestV2ConfigEntries = append(
+			requestV2ConfigEntries,
+			c.toCreateTopicsRequestV2ConfigEntry())
+	}
+
+	return createTopicsRequestV2Topic{
+		Topic: t.Topic,
+		NumPartitions: int32(t.NumPartitions),
+		ReplicationFactor: int16(t.ReplicationFactor),
+		ReplicaAssignments: requestV2ReplicaAssignments,
+		ConfigEntries: requestV2ConfigEntries,
+	}
+}
+
+type createTopicsRequestV2Topic struct {
 	// Topic name
 	Topic string
 
@@ -53,13 +112,13 @@ type TopicConfig struct {
 
 	// ReplicaAssignments among kafka brokers for this topic partitions. If this
 	// is set num_partitions and replication_factor must be unset.
-	ReplicaAssignments []ReplicaAssignment
+	ReplicaAssignments []createTopicsRequestV2ReplicaAssignment
 
 	// ConfigEntries holds topic level configuration for topic to be set.
-	ConfigEntries []ConfigEntry
+	ConfigEntries []createTopicsRequestV2ConfigEntry
 }
 
-func (t TopicConfig) size() int32 {
+func (t createTopicsRequestV2Topic) size() int32 {
 	return sizeofString(t.Topic) +
 		sizeofInt32(t.NumPartitions) +
 		sizeofInt16(t.ReplicationFactor) +
@@ -67,7 +126,7 @@ func (t TopicConfig) size() int32 {
 		sizeofArray(len(t.ConfigEntries), func(i int) int32 { return t.ConfigEntries[i].size() })
 }
 
-func (t TopicConfig) writeTo(w *bufio.Writer) {
+func (t createTopicsRequestV2Topic) writeTo(w *bufio.Writer) {
 	writeString(w, t.Topic)
 	writeInt32(w, t.NumPartitions)
 	writeInt16(w, t.ReplicationFactor)
@@ -79,7 +138,7 @@ func (t TopicConfig) writeTo(w *bufio.Writer) {
 type createTopicsRequestV2 struct {
 	// Topics contains n array of single topic creation requests. Can not
 	// have multiple entries for the same topic.
-	Topics []TopicConfig
+	Topics []createTopicsRequestV2Topic
 
 	// Timeout ms to wait for a topic to be completely created on the
 	// controller node. Values <= 0 will trigger topic creation and return immediately
@@ -203,8 +262,15 @@ func (c *Conn) createTopics(request createTopicsRequestV2) (createTopicsResponse
 // operational semantics. In other words, if CreateTopics is invoked with a
 // configuration for an existing topic, it will have no effect.
 func (c *Conn) CreateTopics(topics ...TopicConfig) error {
+	var requestV2Topics []createTopicsRequestV2Topic
+	for _, t := range topics {
+		requestV2Topics = append(
+			requestV2Topics,
+			t.toCreateTopicsRequestV2Topic())
+	}
+
 	_, err := c.createTopics(createTopicsRequestV2{
-		Topics: topics,
+		Topics: requestV2Topics,
 		Timeout: int32(30 * time.Second / time.Millisecond),
 	})
 
