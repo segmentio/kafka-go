@@ -24,6 +24,9 @@ type Writer struct {
 	join sync.WaitGroup
 	msgs chan writerMessage
 	done chan struct{}
+
+	// writer stats are all made of atomic values, no need for synchronization.
+	stats writerStats
 }
 
 // WriterConfig is a configuration type used to create new instances of Writer.
@@ -102,7 +105,52 @@ type WriterConfig struct {
 	// whether the messages were written to kafka.
 	Async bool
 
-	newPartitionWriter func(partition int, config WriterConfig) partitionWriter
+	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
+}
+
+// WriterStats is a data structure returned by a call to Writer.Stats that
+// exposes details about the behavior of the writer.
+type WriterStats struct {
+	Dials      int64 `metric:"kafka.writer.dial.count"      type:"counter"`
+	Writes     int64 `metric:"kafka.writer.write.count"     type:"counter"`
+	Messages   int64 `metric:"kafka.writer.message.count"   type:"counter"`
+	Bytes      int64 `metric:"kafka.writer.message.bytes"   type:"counter"`
+	Rebalances int64 `metric:"kafka.writer.rebalance.count" type:"counter"`
+	Errors     int64 `metric:"kafka.writer.error.count"     type:"counter"`
+
+	DialTime  DurationStats `metric:"kafka.writer.dial.seconds"`
+	WriteTime DurationStats `metric:"kafka.writer.write.seconds"`
+	WaitTime  DurationStats `metric:"kafka.writer.wait.seconds"`
+	Retries   SummaryStats  `metric:"kafka.writer.retries.count"`
+	BatchSize SummaryStats  `metric:"kafka.writer.batch.size"`
+
+	MaxAttempts       int64         `metric:"kafka.writer.attempts.max"       type:"gauge"`
+	MaxBatchSize      int64         `metric:"kafka.writer.batch.max"          type:"gauge"`
+	BatchTimeout      time.Duration `metric:"kafka.writer.batch.timeout"      type:"gauge"`
+	ReadTimeout       time.Duration `metric:"kafka.writer.read.timeout"       type:"gauge"`
+	WriteTimeout      time.Duration `metric:"kafka.writer.write.timeout"      type:"gauge"`
+	RebalanceInterval time.Duration `metric:"kafka.writer.rebalance.interval" type:"gauge"`
+	RequiredAcks      int64         `metric:"kafka.writer.acks.required"      type:"gauge"`
+	Async             bool          `metric:"kafka.writer.async"              type:"gauge"`
+	QueueLength       int64         `metric:"kafka.writer.queue.length"       type:"gauge"`
+	QueueCapacity     int64         `metric:"kafka.writer.queue.capacity"     type:"gauge"`
+
+	ClientID string `tag:"client_id"`
+	Topic    string `tag:"topic"`
+}
+
+type writerStats struct {
+	dials      counter
+	writes     counter
+	messages   counter
+	bytes      counter
+	rebalances counter
+	errors     counter
+	dialTime   summary
+	writeTime  summary
+	waitTime   summary
+	retries    summary
+	batchSize  summary
 }
 
 // NewWriter creates and returns a new Writer configured with config.
@@ -124,8 +172,8 @@ func NewWriter(config WriterConfig) *Writer {
 	}
 
 	if config.newPartitionWriter == nil {
-		config.newPartitionWriter = func(partition int, config WriterConfig) partitionWriter {
-			return newWriter(partition, config)
+		config.newPartitionWriter = func(partition int, config WriterConfig, stats *writerStats) partitionWriter {
+			return newWriter(partition, config, stats)
 		}
 	}
 
@@ -161,6 +209,12 @@ func NewWriter(config WriterConfig) *Writer {
 		config: config,
 		msgs:   make(chan writerMessage, config.QueueCapacity),
 		done:   make(chan struct{}),
+		stats: writerStats{
+			dialTime:  makeSummary(),
+			writeTime: makeSummary(),
+			waitTime:  makeSummary(),
+			retries:   makeSummary(),
+		},
 	}
 
 	w.join.Add(1)
@@ -190,6 +244,8 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 	var res = make(chan error, len(msgs))
 	var err error
+
+	t0 := time.Now()
 
 	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
 		w.mutex.RLock()
@@ -224,6 +280,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			case e := <-res:
 				if e != nil {
 					if we, ok := e.(*writerError); ok {
+						w.stats.retries.observe(1)
 						retry, err = append(retry, we.msg), we.err
 					} else {
 						err = e
@@ -258,7 +315,45 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 	}
 
+	t1 := time.Now()
+	w.stats.writeTime.observeDuration(t1.Sub(t0))
+
 	return err
+}
+
+// Stats returns a snapshot of the writer stats since the last time the method
+// was called, or since the writer was created if it is called for the first
+// time.
+//
+// A typical use of this method is to spawn a goroutine that will periodically
+// call Stats on a kafka writer and report the metrics to a stats collection
+// system.
+func (w *Writer) Stats() WriterStats {
+	return WriterStats{
+		Dials:             w.stats.dials.snapshot(),
+		Writes:            w.stats.writes.snapshot(),
+		Messages:          w.stats.messages.snapshot(),
+		Bytes:             w.stats.bytes.snapshot(),
+		Rebalances:        w.stats.rebalances.snapshot(),
+		Errors:            w.stats.errors.snapshot(),
+		DialTime:          w.stats.dialTime.snapshotDuration(),
+		WriteTime:         w.stats.writeTime.snapshotDuration(),
+		WaitTime:          w.stats.waitTime.snapshotDuration(),
+		Retries:           w.stats.retries.snapshot(),
+		BatchSize:         w.stats.batchSize.snapshot(),
+		MaxAttempts:       int64(w.config.MaxAttempts),
+		MaxBatchSize:      int64(w.config.BatchSize),
+		BatchTimeout:      w.config.BatchTimeout,
+		ReadTimeout:       w.config.ReadTimeout,
+		WriteTimeout:      w.config.WriteTimeout,
+		RebalanceInterval: w.config.RebalanceInterval,
+		RequiredAcks:      int64(w.config.RequiredAcks),
+		Async:             w.config.Async,
+		QueueLength:       int64(len(w.msgs)),
+		QueueCapacity:     int64(cap(w.msgs)),
+		ClientID:          w.config.Dialer.ClientID,
+		Topic:             w.config.Topic,
+	}
 }
 
 // Close flushes all buffered messages and closes the writer. The call to Close
@@ -291,6 +386,7 @@ func (w *Writer) run() {
 
 	for {
 		if rebalance {
+			w.stats.rebalances.observe(1)
 			rebalance = false
 
 			var newPartitions []int
@@ -364,7 +460,7 @@ func (w *Writer) partitions() (partitions []int, err error) {
 }
 
 func (w *Writer) open(partition int) partitionWriter {
-	return w.config.newPartitionWriter(partition, w.config)
+	return w.config.newPartitionWriter(partition, w.config, &w.stats)
 }
 
 func (w *Writer) close(writer partitionWriter) {
@@ -400,9 +496,10 @@ type writer struct {
 	dialer       *Dialer
 	msgs         chan writerMessage
 	join         sync.WaitGroup
+	stats        *writerStats
 }
 
-func newWriter(partition int, config WriterConfig) *writer {
+func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
 	w := &writer{
 		brokers:      config.Brokers,
 		topic:        config.Topic,
@@ -413,6 +510,7 @@ func newWriter(partition int, config WriterConfig) *writer {
 		writeTimeout: config.WriteTimeout,
 		dialer:       config.Dialer,
 		msgs:         make(chan writerMessage, config.QueueCapacity),
+		stats:        stats,
 	}
 	w.join.Add(1)
 	go w.run()
@@ -494,7 +592,11 @@ func (w *writer) run() {
 
 func (w *writer) dial() (conn *Conn, err error) {
 	for _, broker := range shuffledStrings(w.brokers) {
+		t0 := time.Now()
 		if conn, err = w.dialer.DialLeader(context.Background(), "tcp", broker, w.topic, w.partition); err == nil {
+			t1 := time.Now()
+			w.stats.dials.observe(1)
+			w.stats.dialTime.observeDuration(t1.Sub(t0))
 			conn.SetRequiredAcks(w.requiredAcks)
 			break
 		}
@@ -503,8 +605,10 @@ func (w *writer) dial() (conn *Conn, err error) {
 }
 
 func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
+	w.stats.writes.observe(1)
 	if conn == nil {
 		if conn, err = w.dial(); err != nil {
+			w.stats.errors.observe(1)
 			for i, res := range resch {
 				res <- &writerError{msg: batch[i], err: err}
 			}
@@ -512,17 +616,27 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 		}
 	}
 
+	t0 := time.Now()
 	conn.SetWriteDeadline(time.Now().Add(w.writeTimeout))
 
 	if _, err = conn.WriteMessages(batch...); err != nil {
+		w.stats.errors.observe(1)
 		for i, res := range resch {
 			res <- &writerError{msg: batch[i], err: err}
 		}
 	} else {
+		for _, m := range batch {
+			w.stats.messages.observe(1)
+			w.stats.bytes.observe(int64(len(m.Key) + len(m.Value)))
+		}
 		for _, res := range resch {
 			res <- nil
 		}
 	}
+
+	t1 := time.Now()
+	w.stats.waitTime.observeDuration(t1.Sub(t0))
+	w.stats.batchSize.observe(int64(len(batch)))
 
 	ret = conn
 	return
