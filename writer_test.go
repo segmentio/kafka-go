@@ -132,7 +132,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 		Topic:       topic,
 		MaxAttempts: 1,
 		Balancer:    &RoundRobin{},
-		newPartitionWriter: func(p int, config WriterConfig) partitionWriter {
+		newPartitionWriter: func(p int, config WriterConfig, stats *writerStats) partitionWriter {
 			return &fakeWriter{}
 		},
 	})
