@@ -29,7 +29,7 @@ const (
 
 var (
 	// errNotAvailable returned when func called that is not supported in cluster mode
-	errNotAvailable = errors.New("not available when GroupID is set")
+	errNotAvailable = errors.New("unavailable when GroupID is not set")
 )
 
 const (
