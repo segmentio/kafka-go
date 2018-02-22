@@ -29,7 +29,8 @@ const (
 
 var (
 	// errNotAvailable returned when func called that is not supported in cluster mode
-	errNotAvailable = errors.New("unavailable when GroupID is not set")
+	errOnlyAvailableWithGroup = errors.New("unavailable when GroupID is not set")
+	errNotAvailableWithGroup  = errors.New("unavailable when GroupID is set")
 )
 
 const (
@@ -1211,7 +1212,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 // configured to be blocking.
 func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 	if !r.useConsumerGroup() {
-		return errNotAvailable
+		return errOnlyAvailableWithGroup
 	}
 
 	var errch <-chan error
@@ -1260,7 +1261,7 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 // negative.
 func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	if r.useConsumerGroup() {
-		return 0, errNotAvailable
+		return 0, errNotAvailableWithGroup
 	}
 
 	type offsets struct {
@@ -1356,7 +1357,7 @@ func (r *Reader) Lag() int64 {
 // The method fails with io.ErrClosedPipe if the reader has already been closed.
 func (r *Reader) SetOffset(offset int64) error {
 	if r.useConsumerGroup() {
-		return errNotAvailable
+		return errNotAvailableWithGroup
 	}
 
 	var err error
