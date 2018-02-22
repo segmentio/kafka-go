@@ -502,8 +502,8 @@ func testConsumerGroupSimple(t *testing.T, ctx context.Context, r *Reader) {
 
 func TestReaderSetOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if err := r.SetOffset(-1); err != errNotAvailable {
-		t.Fatalf("expected %v; got %v", errNotAvailable, err)
+	if err := r.SetOffset(-1); err != errNotAvailableWithGroup {
+		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
 	}
 }
 
