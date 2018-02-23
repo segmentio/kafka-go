@@ -15,7 +15,10 @@ type Message struct {
 	Offset    int64
 	Key       []byte
 	Value     []byte
-	Time      time.Time
+
+	// If not set at the creation, Time will be automatically set when
+	// writing the message.
+	Time time.Time
 }
 
 func (msg Message) item() messageSetItem {
