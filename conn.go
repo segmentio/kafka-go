@@ -762,14 +762,19 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 		return 0, nil
 	}
 
-	// users may believe they can set the Topic and/or Partition
-	// on the kafka message.
+	writeTime := time.Now()
 	for _, msg := range msgs {
+		// users may believe they can set the Topic and/or Partition
+		// on the kafka message.
 		if msg.Topic != "" && msg.Topic != c.topic {
 			return 0, errInvalidWriteTopic
 		}
 		if msg.Partition != 0 {
 			return 0, errInvalidWritePartition
+		}
+
+		if msg.Time.IsZero() {
+			msg.Time = writeTime
 		}
 	}
 
