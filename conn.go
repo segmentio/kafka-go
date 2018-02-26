@@ -136,6 +136,14 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	return c
 }
 
+// DeleteTopics deletes the specified topics.
+func (c *Conn) DeleteTopics(topics ...string) error {
+	_, err := c.deleteTopics(deleteTopicsRequestV1{
+		Topics: topics,
+	})
+	return err
+}
+
 // describeGroups retrieves the specified groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups

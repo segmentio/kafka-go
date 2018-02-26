@@ -23,6 +23,7 @@ const (
 	describeGroupsRequest   apiKey = 15
 	listGroupsRequest       apiKey = 16
 	createTopicsRequest     apiKey = 19
+	deleteTopicsRequest     apiKey = 20
 )
 
 type apiVersion int16
