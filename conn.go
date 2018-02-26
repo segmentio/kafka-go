@@ -139,8 +139,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 // DeleteTopics deletes the specified topics.
 func (c *Conn) DeleteTopics(topics ...string) error {
 	_, err := c.deleteTopics(deleteTopicsRequestV1{
-		Topics:  topics,
-		Timeout: int32(30 * time.Second / time.Millisecond),
+		Topics: topics,
 	})
 	return err
 }

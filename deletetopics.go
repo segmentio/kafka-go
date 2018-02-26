@@ -99,6 +99,11 @@ func (c *Conn) deleteTopics(request deleteTopicsRequestV1) (deleteTopicsResponse
 	var response deleteTopicsResponseV1
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
+			if request.Timeout == 0 {
+				now := time.Now()
+				deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+				request.Timeout = milliseconds(deadlineToTimeout(deadline, now))
+			}
 			return c.writeRequest(deleteTopicsRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {

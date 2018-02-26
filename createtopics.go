@@ -12,7 +12,7 @@ type ConfigEntry struct {
 
 func (c ConfigEntry) toCreateTopicsRequestV2ConfigEntry() createTopicsRequestV2ConfigEntry {
 	return createTopicsRequestV2ConfigEntry{
-		ConfigName: c.ConfigName,
+		ConfigName:  c.ConfigName,
 		ConfigValue: c.ConfigValue,
 	}
 }
@@ -40,7 +40,7 @@ type ReplicaAssignment struct {
 func (a ReplicaAssignment) toCreateTopicsRequestV2ReplicaAssignment() createTopicsRequestV2ReplicaAssignment {
 	return createTopicsRequestV2ReplicaAssignment{
 		Partition: int32(a.Partition),
-		Replicas: int32(a.Replicas),
+		Replicas:  int32(a.Replicas),
 	}
 }
 
@@ -92,11 +92,11 @@ func (t TopicConfig) toCreateTopicsRequestV2Topic() createTopicsRequestV2Topic {
 	}
 
 	return createTopicsRequestV2Topic{
-		Topic: t.Topic,
-		NumPartitions: int32(t.NumPartitions),
-		ReplicationFactor: int16(t.ReplicationFactor),
+		Topic:              t.Topic,
+		NumPartitions:      int32(t.NumPartitions),
+		ReplicationFactor:  int16(t.ReplicationFactor),
 		ReplicaAssignments: requestV2ReplicaAssignments,
-		ConfigEntries: requestV2ConfigEntries,
+		ConfigEntries:      requestV2ConfigEntries,
 	}
 }
 
@@ -236,8 +236,13 @@ func (t *createTopicsResponseV2) readFrom(r *bufio.Reader, size int) (remain int
 func (c *Conn) createTopics(request createTopicsRequestV2) (createTopicsResponseV2, error) {
 	var response createTopicsResponseV2
 
-	err := c.readOperation(
+	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
+			if request.Timeout == 0 {
+				now := time.Now()
+				deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+				request.Timeout = milliseconds(deadlineToTimeout(deadline, now))
+			}
 			return c.writeRequest(createTopicsRequest, v2, id, request)
 		},
 		func(deadline time.Time, size int) error {
@@ -271,7 +276,6 @@ func (c *Conn) CreateTopics(topics ...TopicConfig) error {
 
 	_, err := c.createTopics(createTopicsRequestV2{
 		Topics: requestV2Topics,
-		Timeout: int32(30 * time.Second / time.Millisecond),
 	})
 
 	switch err {
