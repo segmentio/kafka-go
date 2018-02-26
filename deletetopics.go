@@ -10,7 +10,7 @@ type deleteTopicsRequestV1 struct {
 	// Topics holds the topic names
 	Topics []string
 
-	// Timeout holds th time in ms to wait for a topic to be completely deleted
+	// Timeout holds the time in ms to wait for a topic to be completely deleted
 	// on the controller node. Values <= 0 will trigger topic deletion and return
 	// immediately.
 	Timeout int32
