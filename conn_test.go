@@ -223,6 +223,16 @@ func TestConn(t *testing.T) {
 			scenario: "test fetch and commit offset",
 			function: testConnFetchAndCommitOffsets,
 		},
+
+		{
+			scenario: "test delete topics",
+			function: testDeleteTopics,
+		},
+
+		{
+			scenario: "test delete topics with an invalid topic",
+			function: testDeleteTopicsInvalidTopic,
+		},
 	}
 
 	const (
@@ -827,6 +837,62 @@ func testConnReadEmptyWithDeadline(t *testing.T, conn *Conn) {
 
 	if !isTimeout(err) {
 		t.Error("expected timeout error but got", err)
+	}
+}
+
+func testDeleteTopics(t *testing.T, conn *Conn) {
+	topic1 := makeTopic()
+	topic2 := makeTopic()
+	err := conn.CreateTopics(
+		TopicConfig{
+			Topic:             topic1,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+		TopicConfig{
+			Topic:             topic2,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+	)
+	if err != nil {
+		t.Fatalf("bad CreateTopics: %v", err)
+	}
+	err = conn.DeleteTopics(topic1, topic2)
+	if err != nil {
+		t.Fatalf("bad DeleteTopics: %v", err)
+	}
+	partitions, err := conn.ReadPartitions(topic1, topic2)
+	if err != nil {
+		t.Fatalf("bad ReadPartitions: %v", err)
+	}
+	if len(partitions) != 0 {
+		t.Fatal("exepected partitions to be empty ")
+	}
+}
+
+func testDeleteTopicsInvalidTopic(t *testing.T, conn *Conn) {
+	topic := makeTopic()
+	err := conn.CreateTopics(
+		TopicConfig{
+			Topic:             topic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+	)
+	if err != nil {
+		t.Fatalf("bad CreateTopics: %v", err)
+	}
+	err = conn.DeleteTopics("invalid-topic", topic)
+	if err != UnknownTopicOrPartition {
+		t.Fatalf("expected UnknownTopicOrPartition error, but got %v", err)
+	}
+	partitions, err := conn.ReadPartitions(topic)
+	if err != nil {
+		t.Fatalf("bad ReadPartitions: %v", err)
+	}
+	if len(partitions) != 0 {
+		t.Fatal("exepected partitions to be empty")
 	}
 }
 
