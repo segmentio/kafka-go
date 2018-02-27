@@ -511,14 +511,14 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 // wrong.
 //
 // While it is safe to call Read concurrently from multiple goroutines it may
-// be hard for the program to prodict the results as the connection offset will
+// be hard for the program to predict the results as the connection offset will
 // be read and written by multiple goroutines, they could read duplicates, or
 // messages may be seen by only some of the goroutines.
 //
 // The method fails with io.ErrShortBuffer if the buffer passed as argument is
 // too small to hold the message value.
 //
-// This method is provided to satisfies the net.Conn interface but is much less
+// This method is provided to satisfy the net.Conn interface but is much less
 // efficient than using the more general purpose ReadBatch method.
 func (c *Conn) Read(b []byte) (int, error) {
 	batch := c.ReadBatch(1, len(b))
@@ -535,7 +535,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 // failing with io.ErrShortBuffer.
 //
 // While it is safe to call Read concurrently from multiple goroutines it may
-// be hard for the program to prodict the results as the connection offset will
+// be hard for the program to predict the results as the connection offset will
 // be read and written by multiple goroutines, they could read duplicates, or
 // messages may be seen by only some of the goroutines.
 //
