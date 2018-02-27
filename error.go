@@ -343,6 +343,13 @@ func silentEOF(err error) error {
 	return err
 }
 
+func dontExpectEOF(err error) error {
+	if err == io.EOF {
+		err = io.ErrUnexpectedEOF
+	}
+	return err
+}
+
 func coalesceErrors(errs ...error) error {
 	for _, err := range errs {
 		if err != nil {

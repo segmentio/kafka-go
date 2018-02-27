@@ -576,7 +576,7 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 
 	offset, err := c.Seek(c.Offset())
 	if err != nil {
-		return &Batch{err: err}
+		return &Batch{err: dontExpectEOF(err)}
 	}
 
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
@@ -596,12 +596,12 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 		)
 	})
 	if err != nil {
-		return &Batch{err: err}
+		return &Batch{err: dontExpectEOF(err)}
 	}
 
 	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
 	if err != nil {
-		return &Batch{err: err}
+		return &Batch{err: dontExpectEOF(err)}
 	}
 
 	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
@@ -616,7 +616,7 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
 		highWaterMark: highWaterMark,
-		err:           err,
+		err:           dontExpectEOF(err),
 	}
 }
 
@@ -658,15 +658,7 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 			return writeListOffsetRequestV1(&c.wbuf, id, c.clientID, c.topic, c.partition, t)
 		},
 		func(deadline time.Time, size int) error {
-			// Under some circumstances kafka may return no topics in response
-			// to the list offset request (like when the coordinator is
-			// unreachable).
-			//
-			// To handle this case we use this flag to know whether we found a
-			// response or not.
-			found := false
-
-			err := expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
+			return expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
 				// We skip the topic name because we've made a request for
 				// a single topic.
 				size, err := discardString(r, size)
@@ -685,20 +677,10 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 					if p.ErrorCode != 0 {
 						return size, Error(p.ErrorCode)
 					}
-					offset, found = p.Offset, true
+					offset = p.Offset
 					return size, nil
 				})
 			}))
-
-			if err != nil {
-				return err
-			}
-
-			if !found {
-				return UnknownTopicOrPartition
-			}
-
-			return nil
 		},
 	)
 	return
