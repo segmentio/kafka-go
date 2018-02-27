@@ -125,7 +125,7 @@ func (r *Reader) lookupCoordinator() (string, error) {
 	}
 	defer conn.Close()
 
-	out, err := conn.findCoordinator(findCoordinatorRequestV1{
+	out, err := conn.findCoordinator(findCoordinatorRequestV0{
 		CoordinatorKey: r.config.GroupID,
 	})
 	if err != nil {
@@ -172,12 +172,12 @@ func (r *Reader) refreshCoordinator() (err error) {
 	return nil
 }
 
-// makeJoinGroupRequestV2 handles the logic of constructing a joinGroup
+// makejoinGroupRequestV1 handles the logic of constructing a joinGroup
 // request
-func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
+func (r *Reader) makejoinGroupRequestV1() (joinGroupRequestV1, error) {
 	_, memberID := r.membership()
 
-	request := joinGroupRequestV2{
+	request := joinGroupRequestV1{
 		GroupID:          r.config.GroupID,
 		MemberID:         memberID,
 		SessionTimeout:   int32(r.config.SessionTimeout / time.Millisecond),
@@ -188,10 +188,10 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 	for _, strategy := range allStrategies {
 		meta, err := strategy.GroupMetadata([]string{r.config.Topic})
 		if err != nil {
-			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
+			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
 		}
 
-		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV2{
+		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName:     strategy.ProtocolName(),
 			ProtocolMetadata: meta.bytes(),
 		})
@@ -201,7 +201,7 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 }
 
 // makeMemberProtocolMetadata maps encoded member metadata ([]byte) into memberGroupMetadata
-func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]memberGroupMetadata, error) {
+func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]memberGroupMetadata, error) {
 	members := make([]memberGroupMetadata, 0, len(in))
 	for _, item := range in {
 		metadata := groupMetadata{}
@@ -227,7 +227,7 @@ type partitionReader interface {
 
 // assignTopicPartitions uses the selected strategy to assign members to their
 // various partitions
-func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (memberGroupAssignments, error) {
+func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV1) (memberGroupAssignments, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
@@ -260,7 +260,7 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 
 func (r *Reader) leaveGroup(conn *Conn) error {
 	_, memberID := r.membership()
-	_, err := conn.leaveGroup(leaveGroupRequestV1{
+	_, err := conn.leaveGroup(leaveGroupRequestV0{
 		GroupID:  r.config.GroupID,
 		MemberID: memberID,
 	})
@@ -289,7 +289,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	}
 	defer conn.Close()
 
-	request, err := r.makeJoinGroupRequestV2()
+	request, err := r.makejoinGroupRequestV1()
 	if err != nil {
 		return nil, err
 	}
@@ -352,19 +352,19 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	return assignments, nil
 }
 
-func (r *Reader) makeSyncGroupRequestV1(memberAssignments memberGroupAssignments) syncGroupRequestV1 {
+func (r *Reader) makesyncGroupRequestV0(memberAssignments memberGroupAssignments) syncGroupRequestV0 {
 	generationID, memberID := r.membership()
-	request := syncGroupRequestV1{
+	request := syncGroupRequestV0{
 		GroupID:      r.config.GroupID,
 		GenerationID: generationID,
 		MemberID:     memberID,
 	}
 
 	if memberAssignments != nil {
-		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV1, 0, 1)
+		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV0, 0, 1)
 
 		for memberID, topics := range memberAssignments {
-			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV1{
+			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
 				MemberID: memberID,
 				MemberAssignments: groupAssignment{
 					Version: 1,
@@ -394,7 +394,7 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 	}
 	defer conn.Close()
 
-	request := r.makeSyncGroupRequestV1(memberAssignments)
+	request := r.makesyncGroupRequestV0(memberAssignments)
 	response, err := conn.syncGroups(request)
 	if err != nil {
 		switch err {
@@ -465,9 +465,9 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 	defer conn.Close()
 
 	partitions := subs[r.config.Topic]
-	offsets, err := conn.offsetFetch(offsetFetchRequestV3{
+	offsets, err := conn.offsetFetch(offsetFetchRequestV1{
 		GroupID: r.config.GroupID,
-		Topics: []offsetFetchRequestV3Topic{
+		Topics: []offsetFetchRequestV1Topic{
 			{
 				Topic:      r.config.Topic,
 				Partitions: partitions,
@@ -565,7 +565,7 @@ func (r *Reader) heartbeat(conn *Conn) error {
 		return nil
 	}
 
-	resp, err := conn.heartbeat(heartbeatRequestV1{
+	_, err := conn.heartbeat(heartbeatRequestV0{
 		GroupID:      r.config.GroupID,
 		GenerationID: generationID,
 		MemberID:     memberID,
@@ -573,8 +573,6 @@ func (r *Reader) heartbeat(conn *Conn) error {
 	if err != nil {
 		return fmt.Errorf("heartbeat failed: %v", err)
 	}
-
-	r.waitThrottleTime(resp.ThrottleTimeMS)
 
 	return nil
 }

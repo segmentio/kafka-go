@@ -264,8 +264,8 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	}
 	defer conn.Close()
 
-	_, err = conn.createTopics(createTopicsRequestV2{
-		Topics: []createTopicsRequestV2Topic{
+	_, err = conn.createTopics(createTopicsRequestV0{
+		Topics: []createTopicsRequestV0Topic{
 			{
 				Topic:             topic,
 				NumPartitions:     int32(partitions),
@@ -619,13 +619,13 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 		},
 	}
 
-	newJoinGroupResponseV2 := func(topicsByMemberID map[string][]string) joinGroupResponseV2 {
-		resp := joinGroupResponseV2{
+	newJoinGroupResponseV1 := func(topicsByMemberID map[string][]string) joinGroupResponseV1 {
+		resp := joinGroupResponseV1{
 			GroupProtocol: roundrobinStrategy{}.ProtocolName(),
 		}
 
 		for memberID, topics := range topicsByMemberID {
-			resp.Members = append(resp.Members, joinGroupResponseMemberV2{
+			resp.Members = append(resp.Members, joinGroupResponseMemberV1{
 				MemberID: memberID,
 				MemberMetadata: groupMetadata{
 					Topics: topics,
@@ -637,15 +637,15 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		Members     joinGroupResponseV2
+		Members     joinGroupResponseV1
 		Assignments memberGroupAssignments
 	}{
 		"nil": {
-			Members:     newJoinGroupResponseV2(nil),
+			Members:     newJoinGroupResponseV1(nil),
 			Assignments: memberGroupAssignments{},
 		},
 		"one member, one topic": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 			}),
 			Assignments: memberGroupAssignments{
@@ -655,7 +655,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"one member, two topics": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1", "topic-2"},
 			}),
 			Assignments: memberGroupAssignments{
@@ -666,7 +666,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"two members, one topic": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-1"},
 			}),
@@ -680,7 +680,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"two members, two unshared topics": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-2"},
 			}),

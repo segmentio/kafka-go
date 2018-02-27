@@ -66,7 +66,7 @@ func (t groupAssignment) bytes() []byte {
 	return buf.Bytes()
 }
 
-type syncGroupRequestGroupAssignmentV1 struct {
+type syncGroupRequestGroupAssignmentV0 struct {
 	// MemberID assigned by the group coordinator
 	MemberID string
 
@@ -76,17 +76,17 @@ type syncGroupRequestGroupAssignmentV1 struct {
 	MemberAssignments []byte
 }
 
-func (t syncGroupRequestGroupAssignmentV1) size() int32 {
+func (t syncGroupRequestGroupAssignmentV0) size() int32 {
 	return sizeofString(t.MemberID) +
 		sizeofBytes(t.MemberAssignments)
 }
 
-func (t syncGroupRequestGroupAssignmentV1) writeTo(w *bufio.Writer) {
+func (t syncGroupRequestGroupAssignmentV0) writeTo(w *bufio.Writer) {
 	writeString(w, t.MemberID)
 	writeBytes(w, t.MemberAssignments)
 }
 
-type syncGroupRequestV1 struct {
+type syncGroupRequestV0 struct {
 	// GroupID holds the unique group identifier
 	GroupID string
 
@@ -96,29 +96,24 @@ type syncGroupRequestV1 struct {
 	// MemberID assigned by the group coordinator
 	MemberID string
 
-	GroupAssignments []syncGroupRequestGroupAssignmentV1
+	GroupAssignments []syncGroupRequestGroupAssignmentV0
 }
 
-func (t syncGroupRequestV1) size() int32 {
+func (t syncGroupRequestV0) size() int32 {
 	return sizeofString(t.GroupID) +
 		sizeofInt32(t.GenerationID) +
 		sizeofString(t.MemberID) +
 		sizeofArray(len(t.GroupAssignments), func(i int) int32 { return t.GroupAssignments[i].size() })
 }
 
-func (t syncGroupRequestV1) writeTo(w *bufio.Writer) {
+func (t syncGroupRequestV0) writeTo(w *bufio.Writer) {
 	writeString(w, t.GroupID)
 	writeInt32(w, t.GenerationID)
 	writeString(w, t.MemberID)
 	writeArray(w, len(t.GroupAssignments), func(i int) { t.GroupAssignments[i].writeTo(w) })
 }
 
-type syncGroupResponseV1 struct {
-	// ThrottleTimeMS holds the duration in milliseconds for which the request
-	// was throttled due to quota violation (Zero if the request did not violate
-	// any quota)
-	ThrottleTimeMS int32
-
+type syncGroupResponseV0 struct {
 	// ErrorCode holds response error code
 	ErrorCode int16
 
@@ -128,23 +123,18 @@ type syncGroupResponseV1 struct {
 	MemberAssignments []byte
 }
 
-func (t syncGroupResponseV1) size() int32 {
-	return sizeofInt32(t.ThrottleTimeMS) +
-		sizeofInt16(t.ErrorCode) +
+func (t syncGroupResponseV0) size() int32 {
+	return sizeofInt16(t.ErrorCode) +
 		sizeofBytes(t.MemberAssignments)
 }
 
-func (t syncGroupResponseV1) writeTo(w *bufio.Writer) {
-	writeInt32(w, t.ThrottleTimeMS)
+func (t syncGroupResponseV0) writeTo(w *bufio.Writer) {
 	writeInt16(w, t.ErrorCode)
 	writeBytes(w, t.MemberAssignments)
 }
 
-func (t *syncGroupResponseV1) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	if remain, err = readInt32(r, sz, &t.ThrottleTimeMS); err != nil {
-		return
-	}
-	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
+func (t *syncGroupResponseV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
+	if remain, err = readInt16(r, sz, &t.ErrorCode); err != nil {
 		return
 	}
 	if remain, err = readBytes(r, remain, &t.MemberAssignments); err != nil {

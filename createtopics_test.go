@@ -7,14 +7,12 @@ import (
 	"testing"
 )
 
-func TestCreateTopicsResponseV2(t *testing.T) {
-	item := createTopicsResponseV2{
-		ThrottleTimeMS: 1,
-		TopicErrors: []createTopicsResponseV2TopicError{
+func TestCreateTopicsResponseV0(t *testing.T) {
+	item := createTopicsResponseV0{
+		TopicErrors: []createTopicsResponseV0TopicError{
 			{
-				Topic:        "topic",
-				ErrorCode:    2,
-				ErrorMessage: "topic error",
+				Topic:     "topic",
+				ErrorCode: 2,
 			},
 		},
 	}
@@ -24,7 +22,7 @@ func TestCreateTopicsResponseV2(t *testing.T) {
 	item.writeTo(w)
 	w.Flush()
 
-	var found createTopicsResponseV2
+	var found createTopicsResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
 	if err != nil {
 		t.Error(err)
