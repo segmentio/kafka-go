@@ -125,14 +125,12 @@ func (r *Reader) lookupCoordinator() (string, error) {
 	}
 	defer conn.Close()
 
-	out, err := conn.findCoordinator(findCoordinatorRequestV1{
-		CoordinatorKey: r.config.GroupID,
-	})
+	coordinator, err := conn.findCoordinator(r.config.GroupID)
 	if err != nil {
 		return "", fmt.Errorf("unable to find coordinator for group, %v: %v", r.config.GroupID, err)
 	}
 
-	address := fmt.Sprintf("%v:%v", out.Coordinator.Host, out.Coordinator.Port)
+	address := fmt.Sprintf("%v:%v", coordinator.Host, coordinator.Port)
 	return address, nil
 }
 
@@ -172,12 +170,11 @@ func (r *Reader) refreshCoordinator() (err error) {
 	return nil
 }
 
-// makeJoinGroupRequestV2 handles the logic of constructing a joinGroup
-// request
-func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
+// makeJoinGroupConfig handles the logic of constructing a joinGroup configuration
+func (r *Reader) makeJoinGroupConfig() (joinGroupConfig, error) {
 	_, memberID := r.membership()
 
-	request := joinGroupRequestV2{
+	config := joinGroupConfig{
 		GroupID:          r.config.GroupID,
 		MemberID:         memberID,
 		SessionTimeout:   int32(r.config.SessionTimeout / time.Millisecond),
@@ -188,20 +185,20 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 	for _, strategy := range allStrategies {
 		meta, err := strategy.GroupMetadata([]string{r.config.Topic})
 		if err != nil {
-			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
+			return joinGroupConfig{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
 		}
 
-		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV2{
+		config.GroupProtocols = append(config.GroupProtocols, joinGroupConfigGroupProtocol{
 			ProtocolName:     strategy.ProtocolName(),
 			ProtocolMetadata: meta.bytes(),
 		})
 	}
 
-	return request, nil
+	return config, nil
 }
 
 // makeMemberProtocolMetadata maps encoded member metadata ([]byte) into memberGroupMetadata
-func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]memberGroupMetadata, error) {
+func (r *Reader) makeMemberProtocolMetadata(in []consumerGroupMember) ([]memberGroupMetadata, error) {
 	members := make([]memberGroupMetadata, 0, len(in))
 	for _, item := range in {
 		metadata := groupMetadata{}
@@ -227,7 +224,7 @@ type partitionReader interface {
 
 // assignTopicPartitions uses the selected strategy to assign members to their
 // various partitions
-func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (memberGroupAssignments, error) {
+func (r *Reader) assignTopicPartitions(conn partitionReader, group consumerGroup) (memberGroupAssignments, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
@@ -260,10 +257,7 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 
 func (r *Reader) leaveGroup(conn *Conn) error {
 	_, memberID := r.membership()
-	_, err := conn.leaveGroup(leaveGroupRequestV1{
-		GroupID:  r.config.GroupID,
-		MemberID: memberID,
-	})
+	err := conn.leaveGroup(memberID, r.config.GroupID)
 	if err != nil {
 		return fmt.Errorf("leave group failed for group, %v, and member, %v: %v", r.config.GroupID, memberID, err)
 	}
@@ -289,12 +283,12 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	}
 	defer conn.Close()
 
-	request, err := r.makeJoinGroupRequestV2()
+	config, err := r.makeJoinGroupConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	response, err := conn.joinGroup(request)
+	group, err := conn.joinGroup(config)
 	if err != nil {
 		switch err {
 		case UnknownMemberId:
@@ -312,24 +306,24 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	r.mutex.Lock()
 	oldGenerationID := r.generationID
 	oldMemberID := r.memberID
-	r.generationID = response.GenerationID
-	r.memberID = response.MemberID
+	r.generationID = group.GenerationID
+	r.memberID = group.MemberID
 	r.mutex.Unlock()
 
-	if oldGenerationID != response.GenerationID || oldMemberID != response.MemberID {
+	if oldGenerationID != group.GenerationID || oldMemberID != group.MemberID {
 		r.withLogger(func(l *log.Logger) {
 			l.Printf("response membership changed.  generationID: %v => %v, memberID: '%v' => '%v'\n",
 				oldGenerationID,
-				response.GenerationID,
+				group.GenerationID,
 				oldMemberID,
-				response.MemberID,
+				group.MemberID,
 			)
 		})
 	}
 
 	var assignments memberGroupAssignments
-	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
-		v, err := r.assignTopicPartitions(conn, response)
+	if iAmLeader := group.MemberID == group.LeaderID; iAmLeader {
+		v, err := r.assignTopicPartitions(conn, group)
 		if err != nil {
 			_ = r.leaveGroup(conn)
 			return nil, err
@@ -346,7 +340,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	}
 
 	r.withLogger(func(l *log.Logger) {
-		l.Printf("joinGroup succeeded for response, %v.  generationID=%v, memberID=%v\n", r.config.GroupID, response.GenerationID, response.MemberID)
+		l.Printf("joinGroup succeeded for response, %v.  generationID=%v, memberID=%v\n", r.config.GroupID, group.GenerationID, group.MemberID)
 	})
 
 	return assignments, nil

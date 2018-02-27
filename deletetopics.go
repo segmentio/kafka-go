@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"fmt"
 	"time"
 )
 
@@ -95,7 +96,19 @@ func (t deleteTopicsResponseV1TopicErrorCode) writeTo(w *bufio.Writer) {
 // deleteTopics deletes the specified topics.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_DeleteTopics
-func (c *Conn) deleteTopics(request deleteTopicsRequestV1) (deleteTopicsResponseV1, error) {
+func (c *Conn) deleteTopics(version apiVersion, topics ...string) error {
+	switch {
+	case version >= v1:
+		_, err := c.deleteTopicsV1(deleteTopicsRequestV1{
+			Topics: topics,
+		})
+		return err
+	default:
+		return fmt.Errorf("unsupported api version %d for DeleteTopics", version)
+	}
+}
+
+func (c *Conn) deleteTopicsV1(request deleteTopicsRequestV1) (deleteTopicsResponseV1, error) {
 	var response deleteTopicsResponseV1
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {

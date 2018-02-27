@@ -7,10 +7,9 @@ import (
 	"testing"
 )
 
-func TestLeaveGroupResponseV1(t *testing.T) {
-	item := leaveGroupResponseV1{
-		ThrottleTimeMS: 1,
-		ErrorCode:      2,
+func TestLeaveGroupResponseV0(t *testing.T) {
+	item := leaveGroupResponseV0{
+		ErrorCode: 2,
 	}
 
 	buf := bytes.NewBuffer(nil)
@@ -18,7 +17,7 @@ func TestLeaveGroupResponseV1(t *testing.T) {
 	item.writeTo(w)
 	w.Flush()
 
-	var found leaveGroupResponseV1
+	var found leaveGroupResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
 	if err != nil {
 		t.Error(err)

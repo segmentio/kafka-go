@@ -398,3 +398,24 @@ func readMessage(r *bufio.Reader, sz int, min int64,
 		}
 	}
 }
+
+func readPartitionOffset(r *bufio.Reader, version apiVersion, size int) (int64, int, error) {
+	switch {
+	case version >= v1:
+		return readPartitionOffsetV1(r, size)
+	default:
+		return 0, 0, fmt.Errorf("unsupported version %d partitionOffset", version)
+	}
+}
+
+func readPartitionOffsetV1(r *bufio.Reader, size int) (int64, int, error) {
+	var p partitionOffsetV1
+	size, err := p.readFrom(r, size)
+	if err != nil {
+		return 0, size, err
+	}
+	if p.ErrorCode != 0 {
+		return 0, size, Error(p.ErrorCode)
+	}
+	return p.Offset, size, nil
+}
