@@ -235,3 +235,53 @@ w := kafka.NewWriter(kafka.WriterConfig{
 	Balancer: &kafka.Hash{},
 })
 ```
+
+## TLS Support
+
+For a bare bones Conn type or in the Reader/Writer configs you can specify a dialer option for TLS support. If the TLS field is nil, it will not connect with TLS. 
+
+### Connection
+
+```go
+dialer := &kafka.Dialer{
+    Timeout:   10 * time.Second,
+    DualStack: true,
+    TLS:       &tls.Config{...tls config...},
+}
+
+conn, err := dialer.DialContext(ctx, "tcp", "localhost:9093")
+```
+
+### Reader
+
+```go
+dialer := &kafka.Dialer{
+    Timeout:   10 * time.Second,
+    DualStack: true,
+    TLS:       &tls.Config{...tls config...},
+}
+
+r := kafka.NewReader(kafka.ReaderConfig{
+    Brokers:        []string{"localhost:9093"},
+    GroupID:        "consumer-group-id",
+    Topic:          "topic-A",
+    Dialer:         dialer,
+})
+```
+
+### Writer 
+
+```go
+dialer := &kafka.Dialer{
+    Timeout:   10 * time.Second,
+    DualStack: true,
+    TLS:       &tls.Config{...tls config...},
+}
+
+w := kafka.NewWriter(kafka.WriterConfig{
+	Brokers: []string{"localhost:9093"},
+	Topic:   "topic-A",
+	Balancer: &kafka.Hash{},
+	Dialer:   dialer,
+})
+```
