@@ -666,9 +666,16 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 					return size, err
 				}
 
+				// Under some circumstances kafka may return no partitions in
+				// the response (like when the coordinator is unreachable).
+				//
+				// To handle this case we use this flag to know whether we found
+				// a response or not.
+				found := false
+
 				// Reading the array of partitions, there will be only one
 				// partition which gives the offset we're looking for.
-				return readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
+				remain, err := readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
 					var p partitionOffsetV1
 					size, err := p.readFrom(r, size)
 					if err != nil {
@@ -677,9 +684,19 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 					if p.ErrorCode != 0 {
 						return size, Error(p.ErrorCode)
 					}
-					offset = p.Offset
+					offset, found = p.Offset, true
 					return size, nil
 				})
+
+				if err != nil {
+					return remain, err
+				}
+
+				if !found {
+					return remain, UnknownTopicOrPartition
+				}
+
+				return remain, nil
 			}))
 		},
 	)
