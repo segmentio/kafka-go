@@ -658,7 +658,15 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 			return writeListOffsetRequestV1(&c.wbuf, id, c.clientID, c.topic, c.partition, t)
 		},
 		func(deadline time.Time, size int) error {
-			return expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
+			// Under some circumstances kafka may return no topics in response
+			// to the list offset request (like when the coordinator is
+			// unreachable).
+			//
+			// To handle this case we use this flag to know whether we found a
+			// response or not.
+			found := false
+
+			err := expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
 				// We skip the topic name because we've made a request for
 				// a single topic.
 				size, err := discardString(r, size)
@@ -666,16 +674,9 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 					return size, err
 				}
 
-				// Under some circumstances kafka may return no partitions in
-				// the response (like when the coordinator is unreachable).
-				//
-				// To handle this case we use this flag to know whether we found
-				// a response or not.
-				found := false
-
 				// Reading the array of partitions, there will be only one
 				// partition which gives the offset we're looking for.
-				remain, err := readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
+				return readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
 					var p partitionOffsetV1
 					size, err := p.readFrom(r, size)
 					if err != nil {
@@ -687,17 +688,17 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 					offset, found = p.Offset, true
 					return size, nil
 				})
-
-				if err != nil {
-					return remain, err
-				}
-
-				if !found {
-					return remain, UnknownTopicOrPartition
-				}
-
-				return remain, nil
 			}))
+
+			if err != nil {
+				return err
+			}
+
+			if !found {
+				return UnknownTopicOrPartition
+			}
+
+			return nil
 		},
 	)
 	return
