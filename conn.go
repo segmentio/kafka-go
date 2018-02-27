@@ -576,7 +576,7 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 
 	offset, err := c.Seek(c.Offset())
 	if err != nil {
-		return &Batch{err: err}
+		return &Batch{err: dontExpectEOF(err)}
 	}
 
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
@@ -596,12 +596,12 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 		)
 	})
 	if err != nil {
-		return &Batch{err: err}
+		return &Batch{err: dontExpectEOF(err)}
 	}
 
 	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
 	if err != nil {
-		return &Batch{err: err}
+		return &Batch{err: dontExpectEOF(err)}
 	}
 
 	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
@@ -616,7 +616,7 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
 		highWaterMark: highWaterMark,
-		err:           err,
+		err:           dontExpectEOF(err),
 	}
 }
 
