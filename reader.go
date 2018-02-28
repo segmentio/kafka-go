@@ -604,7 +604,7 @@ func (r *Reader) heartbeatLoop(conn *Conn) func(stop <-chan struct{}) {
 }
 
 type offsetCommitter interface {
-	offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error)
+	offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error)
 }
 
 func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) error {
@@ -613,7 +613,7 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) er
 	}
 
 	generationID, memberID := r.membership()
-	request := offsetCommitRequestV3{
+	request := offsetCommitRequestV2{
 		GroupID:       r.config.GroupID,
 		GenerationID:  generationID,
 		MemberID:      memberID,
@@ -621,9 +621,9 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) er
 	}
 
 	for topic, partitions := range offsetStash {
-		t := offsetCommitRequestV3Topic{Topic: topic}
+		t := offsetCommitRequestV2Topic{Topic: topic}
 		for partition, offset := range partitions {
-			t.Partitions = append(t.Partitions, offsetCommitRequestV3Partition{
+			t.Partitions = append(t.Partitions, offsetCommitRequestV2Partition{
 				Partition: int32(partition),
 				Offset:    offset,
 			})

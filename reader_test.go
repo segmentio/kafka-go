@@ -1162,15 +1162,15 @@ type mockOffsetCommitter struct {
 	err         error
 }
 
-func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error) {
+func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
 	m.invocations++
 
 	if m.failCount > 0 {
 		m.failCount--
-		return offsetCommitResponseV3{}, io.EOF
+		return offsetCommitResponseV2{}, io.EOF
 	}
 
-	return offsetCommitResponseV3{}, nil
+	return offsetCommitResponseV2{}, nil
 }
 
 func TestCommitOffsetsWithRetry(t *testing.T) {

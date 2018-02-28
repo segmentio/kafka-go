@@ -7,13 +7,12 @@ import (
 	"testing"
 )
 
-func TestOffsetCommitResponseV3(t *testing.T) {
-	item := offsetCommitResponseV3{
-		ThrottleTimeMS: 1,
-		Responses: []offsetCommitResponseV3Response{
+func TestOffsetCommitResponseV2(t *testing.T) {
+	item := offsetCommitResponseV2{
+		Responses: []offsetCommitResponseV2Response{
 			{
 				Topic: "a",
-				PartitionResponses: []offsetCommitResponseV3PartitionResponse{
+				PartitionResponses: []offsetCommitResponseV2PartitionResponse{
 					{
 						Partition: 1,
 						ErrorCode: 2,
@@ -28,7 +27,7 @@ func TestOffsetCommitResponseV3(t *testing.T) {
 	item.writeTo(w)
 	w.Flush()
 
-	var found offsetCommitResponseV3
+	var found offsetCommitResponseV2
 	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
 	if err != nil {
 		t.Error(err)

@@ -731,15 +731,15 @@ func testConnFetchAndCommitOffsets(t *testing.T, conn *Conn) {
 	}
 
 	committedOffset := int64(N - 1)
-	_, err = conn.offsetCommit(offsetCommitRequestV3{
+	_, err = conn.offsetCommit(offsetCommitRequestV2{
 		GroupID:       groupID,
 		GenerationID:  generationID,
 		MemberID:      memberID,
 		RetentionTime: int64(time.Hour / time.Millisecond),
-		Topics: []offsetCommitRequestV3Topic{
+		Topics: []offsetCommitRequestV2Topic{
 			{
 				Topic: conn.topic,
-				Partitions: []offsetCommitRequestV3Partition{
+				Partitions: []offsetCommitRequestV2Partition{
 					{
 						Partition: 0,
 						Offset:    committedOffset,

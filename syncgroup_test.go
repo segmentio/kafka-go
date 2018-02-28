@@ -55,7 +55,7 @@ func TestGroupAssignmentReadsFromZeroSize(t *testing.T) {
 	}
 }
 
-func TestsyncGroupResponseV0(t *testing.T) {
+func TestSyncGroupResponseV0(t *testing.T) {
 	item := syncGroupResponseV0{
 		ErrorCode:         2,
 		MemberAssignments: []byte(`blah`),

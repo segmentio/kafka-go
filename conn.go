@@ -305,12 +305,12 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 // offsetCommit commits the specified topic partition offsets
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_OffsetCommit
-func (c *Conn) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error) {
-	var response offsetCommitResponseV3
+func (c *Conn) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+	var response offsetCommitResponseV2
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(offsetCommitRequest, v3, id, request)
+			return c.writeRequest(offsetCommitRequest, v2, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -319,12 +319,12 @@ func (c *Conn) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponse
 		},
 	)
 	if err != nil {
-		return offsetCommitResponseV3{}, err
+		return offsetCommitResponseV2{}, err
 	}
 	for _, r := range response.Responses {
 		for _, pr := range r.PartitionResponses {
 			if pr.ErrorCode != 0 {
-				return offsetCommitResponseV3{}, Error(pr.ErrorCode)
+				return offsetCommitResponseV2{}, Error(pr.ErrorCode)
 			}
 		}
 	}
