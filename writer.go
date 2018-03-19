@@ -26,7 +26,8 @@ type Writer struct {
 	done chan struct{}
 
 	// writer stats are all made of atomic values, no need for synchronization.
-	stats writerStats
+	// Use a pointer to ensure 64-bit alignment of the values.
+	stats *writerStats
 }
 
 // WriterConfig is a configuration type used to create new instances of Writer.
@@ -139,6 +140,11 @@ type WriterStats struct {
 	Topic    string `tag:"topic"`
 }
 
+// writerStats is a struct that contains statistics on a writer.
+//
+// Since atomic is used to mutate the statistics the values must be 64-bit aligned.
+// This is easily accomplished by always allocating this struct directly, (i.e. using a pointer to the struct).
+// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 type writerStats struct {
 	dials      counter
 	writes     counter
@@ -209,7 +215,7 @@ func NewWriter(config WriterConfig) *Writer {
 		config: config,
 		msgs:   make(chan writerMessage, config.QueueCapacity),
 		done:   make(chan struct{}),
-		stats: writerStats{
+		stats: &writerStats{
 			dialTime:  makeSummary(),
 			writeTime: makeSummary(),
 			waitTime:  makeSummary(),
@@ -460,7 +466,7 @@ func (w *Writer) partitions() (partitions []int, err error) {
 }
 
 func (w *Writer) open(partition int) partitionWriter {
-	return w.config.newPartitionWriter(partition, w.config, &w.stats)
+	return w.config.newPartitionWriter(partition, w.config, w.stats)
 }
 
 func (w *Writer) close(writer partitionWriter) {

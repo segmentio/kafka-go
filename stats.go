@@ -3,7 +3,6 @@ package kafka
 import (
 	"sync/atomic"
 	"time"
-	"unsafe"
 )
 
 // SummaryStats is a data structure that carries a summary of observed values.
@@ -23,10 +22,13 @@ type DurationStats struct {
 }
 
 // counter is an atomic incrementing counter which gets reset on snapshot.
+//
+// Since atomic is used to mutate the statistic the value must be 64-bit aligned.
+// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 type counter int64
 
 func (c *counter) ptr() *int64 {
-	return (*int64)(unsafe.Pointer(c))
+	return (*int64)(c)
 }
 
 func (c *counter) observe(v int64) {
@@ -42,10 +44,13 @@ func (c *counter) snapshot() int64 {
 
 // gauge is an atomic integer that may be set to any arbitrary value, the value
 // does not change after a snapshot.
+//
+// Since atomic is used to mutate the statistic the value must be 64-bit aligned.
+// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 type gauge int64
 
 func (g *gauge) ptr() *int64 {
-	return (*int64)(unsafe.Pointer(g))
+	return (*int64)(g)
 }
 
 func (g *gauge) observe(v int64) {
@@ -58,10 +63,13 @@ func (g *gauge) snapshot() int64 {
 
 // minimum is an atomic integral type that keeps track of the minimum of all
 // values that it observed between snapshots.
+//
+// Since atomic is used to mutate the statistic the value must be 64-bit aligned.
+// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 type minimum int64
 
 func (m *minimum) ptr() *int64 {
-	return (*int64)(unsafe.Pointer(m))
+	return (*int64)(m)
 }
 
 func (m *minimum) observe(v int64) {
@@ -91,10 +99,13 @@ func (m *minimum) snapshot() int64 {
 
 // maximum is an atomic integral type that keeps track of the maximum of all
 // values that it observed between snapshots.
+//
+// Since atomic is used to mutate the statistic the value must be 64-bit aligned.
+// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 type maximum int64
 
 func (m *maximum) ptr() *int64 {
-	return (*int64)(unsafe.Pointer(m))
+	return (*int64)(m)
 }
 
 func (m *maximum) observe(v int64) {
