@@ -93,7 +93,9 @@ type Reader struct {
 	// reader stats are all made of atomic values, no need for synchronization.
 	once  uint32
 	stctx context.Context
-	stats readerStats
+	// reader stats are all made of atomic values, no need for synchronization.
+	// Use a pointer to ensure 64-bit alignment of the values.
+	stats *readerStats
 }
 
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
@@ -936,6 +938,7 @@ type ReaderStats struct {
 	Partition string `tag:"partition"`
 }
 
+// readerStats is a struct that contains statistics on a reader.
 type readerStats struct {
 	dials      counter
 	fetches    counter
@@ -1069,7 +1072,7 @@ func NewReader(config ReaderConfig) *Reader {
 		stop:    stop,
 		offset:  firstOffset,
 		stctx:   stctx,
-		stats: readerStats{
+		stats: &readerStats{
 			dialTime:   makeSummary(),
 			readTime:   makeSummary(),
 			waitTime:   makeSummary(),
@@ -1495,7 +1498,7 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 				maxWait:     r.config.MaxWait,
 				version:     r.version,
 				msgs:        r.msgs,
-				stats:       &r.stats,
+				stats:       r.stats,
 			}).run(ctx, offset)
 		}(ctx, partition, offset, &r.join)
 	}
