@@ -430,7 +430,7 @@ func (w *Writer) run() {
 					err = fmt.Errorf("failed to find any partitions for topic %s", w.config.Topic)
 				}
 
-				wm.res <- err
+				wm.res <- &writerError{msg: wm.msg, err: err}
 			}
 
 		case <-ticker.C:
