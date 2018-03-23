@@ -1063,7 +1063,7 @@ func NewReader(config ReaderConfig) *Reader {
 		msgs:    make(chan readerMessage, config.QueueCapacity),
 		cancel:  func() {},
 		done:    make(chan struct{}),
-		commits: make(chan commitRequest),
+		commits: make(chan commitRequest, config.QueueCapacity),
 		stop:    stop,
 		offset:  firstOffset,
 		stctx:   stctx,
