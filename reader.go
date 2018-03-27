@@ -485,7 +485,11 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 		for _, partition := range partitions {
 			if partition == pr.Partition {
 				offset := pr.Offset
-				offsetsByPartition[int(partition)] = offset
+				if offset == firstOffset && r.config.Latest {
+					offsetsByPartition[int(partition)] = lastOffset
+				} else {
+					offsetsByPartition[int(partition)] = offset
+				}
 			}
 		}
 	}
@@ -824,6 +828,9 @@ func (r *Reader) run() {
 // ReaderConfig is a configuration object used to create new instances of
 // Reader.
 type ReaderConfig struct {
+	// If the reading should be started from the latest offset instead of the earliest one
+	Latest bool
+
 	// The list of broker addresses used to connect to the kafka cluster.
 	Brokers []string
 
