@@ -771,7 +771,8 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 	}
 
 	writeTime := time.Now()
-	for _, msg := range msgs {
+	n := 0
+	for i, msg := range msgs {
 		// users may believe they can set the Topic and/or Partition
 		// on the kafka message.
 		if msg.Topic != "" && msg.Topic != c.topic {
@@ -782,12 +783,9 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 		}
 
 		if msg.Time.IsZero() {
-			msg.Time = writeTime
+			msgs[i].Time = writeTime
 		}
-	}
 
-	n := 0
-	for _, msg := range msgs {
 		n += len(msg.Key) + len(msg.Value)
 	}
 
