@@ -422,6 +422,10 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 		return nil, fmt.Errorf("unable to read SyncGroup response for group, %v: %v\n", r.config.GroupID, err)
 	}
 
+	if len(assignments.Topics) == 0 {
+		return nil, fmt.Errorf("received empty assignments for group, %v", r.config.GroupID)
+	}
+
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("sync group finished for group, %v\n", r.config.GroupID)
 	})
