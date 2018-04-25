@@ -540,7 +540,7 @@ func (r *Reader) coordinator() (*Conn, error) {
 
 	conn, err := r.config.Dialer.DialContext(r.stctx, "tcp", address)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to coordinator, %v", address)
+		return nil, fmt.Errorf("unable to connect to coordinator, %v: %v", address, err)
 	}
 
 	return conn, nil
