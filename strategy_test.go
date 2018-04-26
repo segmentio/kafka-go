@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -196,6 +197,39 @@ func TestRangeAssignGroups(t *testing.T) {
 				t.Error(buf.String())
 			}
 		})
+	}
+}
+
+// For 66 members, 213 partitions, each member should get 213/66 = 3.22 partitions.
+// This means that in practice, each member should get either 3 or 4 partitions
+// assigned to it. Any other number is a failure.
+func TestRangeAssignGroupsUnbalanced(t *testing.T) {
+	members := []memberGroupMetadata{}
+	for i := 0; i < 66; i++ {
+		members = append(members, memberGroupMetadata{
+			MemberID: strconv.Itoa(i),
+			Metadata: groupMetadata{
+				Topics: []string{"topic-1"},
+			},
+		})
+	}
+	partitions := []Partition{}
+	for i := 0; i < 213; i++ {
+		partitions = append(partitions, Partition{
+			ID:    i,
+			Topic: "topic-1",
+		})
+	}
+
+	assignments := rangeStrategy{}.AssignGroups(members, partitions)
+	if len(assignments) != len(members) {
+		t.Fatalf("Assignment count mismatch: %d != %d", len(assignments), len(members))
+	}
+
+	for _, m := range assignments {
+		if len(m["topic-1"]) < 3 || len(m["topic-1"]) > 4 {
+			t.Fatalf("Expected assignment of 3 or 4 partitions, got %d", len(m["topic-1"]))
+		}
 	}
 }
 
