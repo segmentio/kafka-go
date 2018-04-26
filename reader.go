@@ -268,12 +268,6 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 		return fmt.Errorf("leave group failed for group, %v, and member, %v: %v", r.config.GroupID, memberID, err)
 	}
 
-	// Clear the member ID and generation ID on leave
-	r.mutex.Lock()
-	r.memberID = ""
-	r.generationID = 0
-	r.mutex.Unlock()
-
 	return nil
 }
 
@@ -429,7 +423,6 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 	}
 
 	if len(assignments.Topics) == 0 {
-		_ = r.leaveGroup(conn)
 		return nil, fmt.Errorf("received empty assignments for group, %v", r.config.GroupID)
 	}
 
@@ -547,7 +540,7 @@ func (r *Reader) coordinator() (*Conn, error) {
 
 	conn, err := r.config.Dialer.DialContext(r.stctx, "tcp", address)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to coordinator, %v: %v", address, err)
+		return nil, fmt.Errorf("unable to connect to coordinator, %v", address)
 	}
 
 	return conn, nil
