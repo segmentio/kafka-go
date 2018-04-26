@@ -250,6 +250,9 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("using '%v' strategy to assign group, %v\n", group.GroupProtocol, r.config.GroupID)
+		for _, member := range members {
+			l.Printf("found member: %v/%#v", member.MemberID, member.Metadata)
+		}
 		for _, partition := range partitions {
 			l.Printf("found topic/partition: %v/%v", partition.Topic, partition.ID)
 		}
