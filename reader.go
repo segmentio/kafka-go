@@ -339,7 +339,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 		}
 		assignments = v
 
-		r.withErrorLogger(func(l *log.Logger) {
+		r.withLogger(func(l *log.Logger) {
 			for memberID, assignment := range assignments {
 				for topic, partitions := range assignment {
 					l.Printf("assigned member/topic/partitions %v/%v/%v\n", memberID, topic, partitions)
