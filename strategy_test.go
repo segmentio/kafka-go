@@ -141,10 +141,10 @@ func TestRangeAssignGroups(t *testing.T) {
 			},
 			Partitions: newPartitions(1, "topic-1"),
 			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+				"a": map[string][]int32{},
+				"b": map[string][]int32{
 					"topic-1": {0},
 				},
-				"b": map[string][]int32{},
 			},
 		},
 		"multiple members, one topic, multiple partitions": {
@@ -155,10 +155,10 @@ func TestRangeAssignGroups(t *testing.T) {
 			Partitions: newPartitions(3, "topic-1"),
 			Expected: memberGroupAssignments{
 				"a": map[string][]int32{
-					"topic-1": {0, 1},
+					"topic-1": {0},
 				},
 				"b": map[string][]int32{
-					"topic-1": {2},
+					"topic-1": {1, 2},
 				},
 			},
 		},
@@ -171,10 +171,10 @@ func TestRangeAssignGroups(t *testing.T) {
 			Expected: memberGroupAssignments{
 				"a": map[string][]int32{
 					"topic-1": {0, 1, 2},
-					"topic-2": {0, 1},
+					"topic-2": {0},
 				},
 				"b": map[string][]int32{
-					"topic-2": {2},
+					"topic-2": {1, 2},
 					"topic-3": {0, 1, 2},
 				},
 			},
