@@ -268,6 +268,12 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 		return fmt.Errorf("leave group failed for group, %v, and member, %v: %v", r.config.GroupID, memberID, err)
 	}
 
+	// Clear the member ID and generation ID on leave
+	r.mutex.Lock()
+	r.memberID = ""
+	r.generationID = 0
+	r.mutex.Unlock()
+
 	return nil
 }
 
