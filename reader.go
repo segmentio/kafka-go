@@ -372,6 +372,10 @@ func (r *Reader) makesyncGroupRequestV0(memberAssignments memberGroupAssignments
 				}.bytes(),
 			})
 		}
+
+		r.withErrorLogger(func(logger *log.Logger) {
+			logger.Printf("Syncing %d assignments for generation %d as member %s", len(request.GroupAssignments), generationID, memberID)
+		})
 	}
 
 	return request
@@ -423,7 +427,8 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 	}
 
 	if len(assignments.Topics) == 0 {
-		return nil, fmt.Errorf("received empty assignments for group, %v", r.config.GroupID)
+		generation, memberID := r.membership()
+		return nil, fmt.Errorf("received empty assignments for group, %v as member %s for generation %d", r.config.GroupID, memberID, generation)
 	}
 
 	r.withLogger(func(l *log.Logger) {
