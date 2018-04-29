@@ -12,8 +12,8 @@ type commit struct {
 // its topic, partition, and offset from the message.
 func makeCommit(msg Message) commit {
 	return commit{
-		topic:     msg.Topic,
-		partition: msg.Partition,
+		topic:     msg.Topic(),
+		partition: msg.Partition(),
 		offset:    msg.Offset + 1,
 	}
 }

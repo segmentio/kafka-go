@@ -334,16 +334,16 @@ func testReaderSetsTopicAndPartition(t *testing.T, ctx context.Context, r *Reade
 			return
 		}
 
-		if m.Topic == "" {
+		if m.Topic() == "" {
 			t.Error("expected topic to be set")
 			return
 		}
-		if m.Topic != r.config.Topic {
-			t.Errorf("expected message to contain topic, %v; got %v", r.config.Topic, m.Topic)
+		if m.Topic() != r.config.Topic {
+			t.Errorf("expected message to contain topic, %v; got %v", r.config.Topic, m.Topic())
 			return
 		}
-		if m.Partition != r.config.Partition {
-			t.Errorf("expected partition to be set; expected 1, got %v", m.Partition)
+		if m.Partition() != r.config.Partition {
+			t.Errorf("expected partition to be set; expected 1, got %v", m.Partition())
 			return
 		}
 	}
@@ -804,7 +804,7 @@ func testReaderConsumerGroupHandshake(t *testing.T, ctx context.Context, r *Read
 	if err != nil {
 		t.Errorf("bad err: %v", err)
 	}
-	if m.Topic != r.config.Topic {
+	if m.Topic() != r.config.Topic {
 		t.Errorf("topic not set")
 	}
 	if m.Offset != 0 {
@@ -815,7 +815,7 @@ func testReaderConsumerGroupHandshake(t *testing.T, ctx context.Context, r *Read
 	if err != nil {
 		t.Errorf("bad err: %v", err)
 	}
-	if m.Topic != r.config.Topic {
+	if m.Topic() != r.config.Topic {
 		t.Errorf("topic not set")
 	}
 	if m.Offset != 1 {
@@ -944,7 +944,7 @@ func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx contex
 		if err != nil {
 			t.Errorf("bad error: %s", err)
 		}
-		partitions[m.Partition] = struct{}{}
+		partitions[m.Partition()] = struct{}{}
 	}
 
 	if v := len(partitions); v != 3 {
@@ -1089,9 +1089,9 @@ func TestOffsetStash(t *testing.T) {
 
 	newMessage := func(partition int, offset int64) Message {
 		return Message{
-			Topic:     topic,
-			Partition: partition,
 			Offset:    offset,
+			topic:     topic,
+			partition: partition,
 		}
 	}
 

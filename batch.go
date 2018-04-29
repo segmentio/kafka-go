@@ -161,8 +161,8 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	)
 
 	batch.mutex.Unlock()
-	msg.Topic = batch.topic
-	msg.Partition = batch.partition
+	msg.topic = batch.topic
+	msg.partition = batch.partition
 	msg.Offset = offset
 	msg.Time = timestampToTime(timestamp)
 	return msg, err
