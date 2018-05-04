@@ -1637,6 +1637,8 @@ func (r *reader) run(ctx context.Context, offset int64) {
 					r.withErrorLogger(func(log *log.Logger) {
 						log.Printf("the kafka reader is reading before the first offset for partition %d of %s, skipping from offset %d to %d (%d messages)", r.partition, r.topic, offset, first, first-offset)
 					})
+					// seek connection to first offset
+					conn.Seek(0, 0)
 					offset, errcount = first, 0
 					continue // retry immediately so we don't keep falling behind due to the backoff
 
