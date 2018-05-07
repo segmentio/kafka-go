@@ -1711,7 +1711,7 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 			log.Printf("the kafka reader for partition %d of %s is seeking to offset %d", r.partition, r.topic, offset)
 		})
 
-		if start, err = conn.Seek(offset, 1); err != nil {
+		if start, err = conn.Seek(offset, SeekAbsolute); err != nil {
 			conn.Close()
 			conn = nil
 			break

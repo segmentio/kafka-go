@@ -462,24 +462,38 @@ func (c *Conn) Offset() (offset int64, whence int) {
 	return
 }
 
-// Seek changes the offset of the connection to offset, interpreted according to
-// whence: 0 means relative to the first offset, 1 means relative to the current
-// offset, and 2 means relative to the last offset.
-// The method returns the new absoluate offset of the connection.
+const (
+	SeekStart    = 0 // Seek relative to the first offset available in the partition.
+	SeekAbsolute = 1 // Seek to an absolute offset.
+	SeekEnd      = 2 // Seek relative to the last offset available in the partition.
+	SeekCurrent  = 3 // Seek relative to the current offset.
+)
+
+// Seek sets the offset for the next read or write operation according to whence, which
+// should be one of SeekStart, SeekAbsolute, SeekEnd, or SeekCurrent.
+// When seeking relative to the end, the offset is subtracted from the current offset.
+// Note that for historical reasons, these do not align with the usual whence constants
+// as in lseek(2) or os.Seek.
+// The method returns the new absolute offset of the connection.
 func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
-	case 0, 1, 2:
+	case SeekStart, SeekAbsolute, SeekEnd, SeekCurrent:
 	default:
-		return 0, fmt.Errorf("the whence value has to be 0, 1, or 2 (whence = %d)", whence)
+		return 0, fmt.Errorf("whence must be one of 0, 1, 2, 3, or 4. (whence = %d)", whence)
 	}
 
-	if whence == 1 {
+	if whence == SeekAbsolute {
 		c.mutex.Lock()
 		unchanged := offset == c.offset
 		c.mutex.Unlock()
 		if unchanged {
 			return offset, nil
 		}
+	}
+	if whence == SeekCurrent {
+		c.mutex.Lock()
+		offset = c.offset + offset
+		c.mutex.Unlock()
 	}
 
 	first, last, err := c.ReadOffsets()
@@ -488,9 +502,9 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	switch whence {
-	case 0:
+	case SeekStart:
 		offset = first + offset
-	case 2:
+	case SeekEnd:
 		offset = last - offset
 	}
 
