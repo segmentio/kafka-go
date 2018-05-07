@@ -140,6 +140,11 @@ func TestConn(t *testing.T) {
 		},
 
 		{
+			scenario: "ensure the connection can seek relative to the current offset",
+			function: testConnSeekCurrentOffset,
+		},
+
+		{
 			scenario: "ensure the connection can seek to a random offset",
 			function: testConnSeekRandomOffset,
 		},
@@ -346,7 +351,7 @@ func testConnSeekFirstOffset(t *testing.T, conn *Conn) {
 		}
 	}
 
-	offset, err := conn.Seek(0, 0)
+	offset, err := conn.Seek(0, SeekStart)
 	if err != nil {
 		t.Error(err)
 	}
@@ -363,12 +368,38 @@ func testConnSeekLastOffset(t *testing.T, conn *Conn) {
 		}
 	}
 
-	offset, err := conn.Seek(0, 2)
+	offset, err := conn.Seek(0, SeekEnd)
 	if err != nil {
 		t.Error(err)
 	}
 
 	if offset != 10 {
+		t.Error("bad offset:", offset)
+	}
+}
+
+func testConnSeekCurrentOffset(t *testing.T, conn *Conn) {
+	for i := 0; i != 10; i++ {
+		if _, err := conn.Write([]byte(strconv.Itoa(i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	offset, err := conn.Seek(5, SeekStart)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if offset != 5 {
+		t.Error("bad offset:", offset)
+	}
+
+	offset, err = conn.Seek(-2, SeekCurrent)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if offset != 3 {
 		t.Error("bad offset:", offset)
 	}
 }
@@ -380,7 +411,7 @@ func testConnSeekRandomOffset(t *testing.T, conn *Conn) {
 		}
 	}
 
-	offset, err := conn.Seek(3, 1)
+	offset, err := conn.Seek(3, SeekAbsolute)
 	if err != nil {
 		t.Error(err)
 	}
@@ -946,7 +977,7 @@ func BenchmarkConn(b *testing.B) {
 
 	for _, benchmark := range benchmarks {
 		b.Run(benchmark.scenario, func(b *testing.B) {
-			if _, err := conn.Seek(0, 0); err != nil {
+			if _, err := conn.Seek(0, SeekStart); err != nil {
 				b.Error(err)
 				return
 			}
@@ -957,7 +988,7 @@ func BenchmarkConn(b *testing.B) {
 
 func benchmarkConnSeek(b *testing.B, conn *Conn, _ []byte) {
 	for i := 0; i != b.N; i++ {
-		if _, err := conn.Seek(int64(i%benchmarkMessageCount), 1); err != nil {
+		if _, err := conn.Seek(int64(i%benchmarkMessageCount), SeekAbsolute); err != nil {
 			b.Error(err)
 			return
 		}
@@ -970,7 +1001,7 @@ func benchmarkConnRead(b *testing.B, conn *Conn, a []byte) {
 
 	for i != b.N {
 		if (i % benchmarkMessageCount) == 0 {
-			if _, err := conn.Seek(0, 0); err != nil {
+			if _, err := conn.Seek(0, SeekStart); err != nil {
 				b.Error(err)
 				return
 			}
@@ -1004,7 +1035,7 @@ func benchmarkConnReadBatch(b *testing.B, conn *Conn, a []byte) {
 				b.Error(err)
 				return
 			}
-			if _, err = conn.Seek(0, 0); err != nil {
+			if _, err = conn.Seek(0, SeekStart); err != nil {
 				b.Error(err)
 				return
 			}
