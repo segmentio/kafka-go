@@ -82,7 +82,7 @@ for higher level abstractions, like the `Reader` for example.
 
 A `Reader` is another concept exposed by the `kafka-go` package, which intends
 to make it simpler to implement the typical use case of consuming from a single
-topic-partition pair.  
+topic-partition pair.
 A `Reader` also automatically handles reconnections and offset management, and
 exposes an API that supports asynchronous cancellations and timeouts using Go
 contexts.
@@ -157,7 +157,7 @@ for {
     if err != nil {
         break
     }
-    fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
+    fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic(), m.Partition(), m.Offset, string(m.Key), string(m.Value))
     m.CommitMessages(ctx, m)
 }
 ```
@@ -219,9 +219,6 @@ w.WriteMessages(context.Background(),
 w.Close()
 ```
 
-**Note:** Even though kafka.Message contain ```Topic``` and ```Partition``` fields, they **MUST NOT** be 
-set when writing messages.  They are intended for read use only.
-
 ### Compatibility with Sarama
 
 If you're switching from Sarama and need/want to use the same algorithm for message
@@ -238,7 +235,7 @@ w := kafka.NewWriter(kafka.WriterConfig{
 
 ## TLS Support
 
-For a bare bones Conn type or in the Reader/Writer configs you can specify a dialer option for TLS support. If the TLS field is nil, it will not connect with TLS. 
+For a bare bones Conn type or in the Reader/Writer configs you can specify a dialer option for TLS support. If the TLS field is nil, it will not connect with TLS.
 
 ### Connection
 
@@ -269,7 +266,7 @@ r := kafka.NewReader(kafka.ReaderConfig{
 })
 ```
 
-### Writer 
+### Writer
 
 ```go
 dialer := &kafka.Dialer{
