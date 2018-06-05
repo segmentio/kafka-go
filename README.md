@@ -158,7 +158,7 @@ for {
         break
     }
     fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
-    m.CommitMessages(ctx, m)
+    r.CommitMessages(ctx, m)
 }
 ```
 
