@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+const compressionCodecMask int8 = 0x03
+
+// CompressionCodec represents the compression codec available in Kafka
+// See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
+type CompressionCodec int8
+
+const (
+	CompressionNone CompressionCodec = iota
+	CompressionGZIP
+	CompressionSnappy
+	CompressionLZ4
+)
+
 // Message is a data structure representing kafka messages.
 type Message struct {
 	// Topic is reads only and MUST NOT be set when writing messages
@@ -19,6 +32,9 @@ type Message struct {
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
 	Time time.Time
+
+	// Compression codec used by the message. Default to none.
+	CompressionCodec int8
 }
 
 func (msg Message) item() messageSetItem {
@@ -32,10 +48,11 @@ func (msg Message) item() messageSetItem {
 
 func (msg Message) message() message {
 	m := message{
-		MagicByte: 1,
-		Key:       msg.Key,
-		Value:     msg.Value,
-		Timestamp: timestamp(msg.Time),
+		MagicByte:  1,
+		Key:        msg.Key,
+		Value:      msg.Value,
+		Timestamp:  timestamp(msg.Time),
+		Attributes: msg.CompressionCodec & compressionCodecMask,
 	}
 	m.CRC = m.crc32()
 	return m
