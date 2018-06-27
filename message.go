@@ -25,6 +25,21 @@ const (
 	CompressionLZ4
 )
 
+func (c CompressionCodec) String() string {
+	switch c {
+	case CompressionNone:
+		return "none"
+	case CompressionGZIP:
+		return "gzip"
+	case CompressionSnappy:
+		return "snappy"
+	case CompressionLZ4:
+		return "lz4"
+	default:
+		return "unknown"
+	}
+}
+
 // Message is a data structure representing kafka messages.
 type Message struct {
 	// Topic is reads only and MUST NOT be set when writing messages
@@ -40,7 +55,10 @@ type Message struct {
 	// writing the message.
 	Time time.Time
 
+	// Compression codec used to encode the message value
 	CompressionCodec CompressionCodec
+
+	// Compression level for the codec if supported (only gzip)
 	CompressionLevel int
 }
 
