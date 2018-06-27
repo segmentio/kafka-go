@@ -38,7 +38,7 @@ type Message struct {
 	// writing the message.
 	Time time.Time
 
-	CompressionCodec int8
+	CompressionCodec CompressionCodec
 	CompressionLevel int
 }
 
@@ -57,23 +57,23 @@ func (msg Message) message() message {
 		Key:        msg.Key,
 		Value:      msg.Value,
 		Timestamp:  timestamp(msg.Time),
-		Attributes: msg.CompressionCodec & compressionCodecMask,
+		Attributes: int8(msg.CompressionCodec) & compressionCodecMask,
 	}
 	m.CRC = m.crc32()
 	return m
 }
 
-func (msg Message) encode(codec CompressionCodec, level int) (Message, error) {
+func (msg Message) encode() (Message, error) {
 	var err error
-	switch codec {
+	switch msg.CompressionCodec {
 	case CompressionNone:
 		return msg, nil
 	case CompressionGZIP:
 		var buf bytes.Buffer
 		var writer *gzip.Writer
 
-		if level != defaultCompressionLevel {
-			writer, err = gzip.NewWriterLevel(&buf, level)
+		if msg.CompressionLevel != defaultCompressionLevel {
+			writer, err = gzip.NewWriterLevel(&buf, msg.CompressionLevel)
 			if err != nil {
 				return msg, err
 			}
