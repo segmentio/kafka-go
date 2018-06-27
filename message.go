@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"time"
+
+	"github.com/eapache/go-xerial-snappy"
 )
 
 const compressionCodecMask int8 = 0x03
@@ -88,12 +90,17 @@ func (msg Message) encode() (Message, error) {
 		}
 		msg.Value = buf.Bytes()
 		return msg, nil
+	case CompressionSnappy:
+		msg.Value = snappy.Encode(msg.Value)
+		return msg, nil
 	default:
 		return msg, fmt.Errorf("compression codec not supported.")
 	}
 }
 
 func (msg Message) decode() (Message, error) {
+	var err error
+
 	codec := msg.message().Attributes & compressionCodecMask
 	switch CompressionCodec(codec) {
 	case CompressionNone:
@@ -104,6 +111,9 @@ func (msg Message) decode() (Message, error) {
 			return msg, err
 		}
 		msg.Value, err = ioutil.ReadAll(reader)
+		return msg, err
+	case CompressionSnappy:
+		msg.Value, err = snappy.Decode(msg.Value)
 		return msg, err
 	default:
 		return msg, fmt.Errorf("compression codec not supported.")
