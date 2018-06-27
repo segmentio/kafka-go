@@ -2,10 +2,15 @@ package kafka
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"io/ioutil"
 	"time"
 )
 
 const compressionCodecMask int8 = 0x03
+const defaultCompressionLevel int = -1
 
 // CompressionCodec represents the compression codec available in Kafka
 // See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
@@ -33,8 +38,8 @@ type Message struct {
 	// writing the message.
 	Time time.Time
 
-	// Compression codec used by the message. Default to none.
 	CompressionCodec int8
+	CompressionLevel int
 }
 
 func (msg Message) item() messageSetItem {
@@ -56,6 +61,53 @@ func (msg Message) message() message {
 	}
 	m.CRC = m.crc32()
 	return m
+}
+
+func (msg Message) encode(codec CompressionCodec, level int) (Message, error) {
+	var err error
+	switch codec {
+	case CompressionNone:
+		return msg, nil
+	case CompressionGZIP:
+		var buf bytes.Buffer
+		var writer *gzip.Writer
+
+		if level != defaultCompressionLevel {
+			writer, err = gzip.NewWriterLevel(&buf, level)
+			if err != nil {
+				return msg, err
+			}
+		} else {
+			writer = gzip.NewWriter(&buf)
+		}
+		if _, err := writer.Write(msg.Value); err != nil {
+			return msg, err
+		}
+		if err := writer.Close(); err != nil {
+			return msg, err
+		}
+		msg.Value = buf.Bytes()
+		return msg, nil
+	default:
+		return msg, fmt.Errorf("compression codec not supported.")
+	}
+}
+
+func (msg Message) decode() (Message, error) {
+	codec := msg.message().Attributes & compressionCodecMask
+	switch CompressionCodec(codec) {
+	case CompressionNone:
+		return msg, nil
+	case CompressionGZIP:
+		reader, err := gzip.NewReader(bytes.NewReader(msg.Value))
+		if err != nil {
+			return msg, err
+		}
+		msg.Value, err = ioutil.ReadAll(reader)
+		return msg, err
+	default:
+		return msg, fmt.Errorf("compression codec not supported.")
+	}
 }
 
 type message struct {
