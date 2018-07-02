@@ -2,42 +2,25 @@ package kafka
 
 import (
 	"bufio"
-	"bytes"
-	"compress/gzip"
 	"fmt"
-	"io/ioutil"
 	"time"
-
-	"github.com/eapache/go-xerial-snappy"
 )
-
-const compressionCodecMask int8 = 0x03
-const defaultCompressionLevel int = -1
 
 // CompressionCodec represents the compression codec available in Kafka
 // See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
-type CompressionCodec int8
+var codecs map[int8]CompressionCodec
 
-const (
-	CompressionNone CompressionCodec = iota
-	CompressionGZIP
-	CompressionSnappy
-	CompressionLZ4
-)
-
-func (c CompressionCodec) String() string {
-	switch c {
-	case CompressionNone:
-		return "none"
-	case CompressionGZIP:
-		return "gzip"
-	case CompressionSnappy:
-		return "snappy"
-	case CompressionLZ4:
-		return "lz4"
-	default:
-		return "unknown"
+func RegisterCompressionCodec(code int8, str func() string, encode, decode func(src []byte) ([]byte, error)) error {
+	if codecs == nil {
+		codecs = make(map[int8]CompressionCodec)
 	}
+
+	codecs[code] = CompressionCodec{
+		str:    str,
+		encode: encode,
+		decode: decode,
+	}
+	return nil
 }
 
 // Message is a data structure representing kafka messages.
@@ -56,7 +39,7 @@ type Message struct {
 	Time time.Time
 
 	// Compression codec used to encode the message value
-	CompressionCodec CompressionCodec
+	CompressionCodec int8
 
 	// Compression level for the codec if supported (only gzip)
 	CompressionLevel int
@@ -83,59 +66,35 @@ func (msg Message) message() message {
 	return m
 }
 
-func (msg Message) encode() (Message, error) {
-	var err error
-	switch msg.CompressionCodec {
-	case CompressionNone:
-		return msg, nil
-	case CompressionGZIP:
-		var buf bytes.Buffer
-		var writer *gzip.Writer
-
-		if msg.CompressionLevel != defaultCompressionLevel {
-			writer, err = gzip.NewWriterLevel(&buf, msg.CompressionLevel)
-			if err != nil {
-				return msg, err
-			}
-		} else {
-			writer = gzip.NewWriter(&buf)
-		}
-		if _, err := writer.Write(msg.Value); err != nil {
-			return msg, err
-		}
-		if err := writer.Close(); err != nil {
-			return msg, err
-		}
-		msg.Value = buf.Bytes()
-		return msg, nil
-	case CompressionSnappy:
-		msg.Value = snappy.Encode(msg.Value)
-		return msg, nil
-	default:
-		return msg, fmt.Errorf("compression codec not supported.")
+func (msg Message) Encode() (Message, error) {
+	codec, ok := codecs[msg.CompressionCodec]
+	if !ok {
+		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
 	}
+
+	encodedValue, err := codec.encode(msg.Value)
+	if err != nil {
+		return msg, err
+	}
+
+	msg.Value = encodedValue
+	return msg, nil
 }
 
-func (msg Message) decode() (Message, error) {
-	var err error
-
-	codec := msg.message().Attributes & compressionCodecMask
-	switch CompressionCodec(codec) {
-	case CompressionNone:
-		return msg, nil
-	case CompressionGZIP:
-		reader, err := gzip.NewReader(bytes.NewReader(msg.Value))
-		if err != nil {
-			return msg, err
-		}
-		msg.Value, err = ioutil.ReadAll(reader)
-		return msg, err
-	case CompressionSnappy:
-		msg.Value, err = snappy.Decode(msg.Value)
-		return msg, err
-	default:
-		return msg, fmt.Errorf("compression codec not supported.")
+func (msg Message) Decode() (Message, error) {
+	c := msg.message().Attributes & compressionCodecMask
+	codec, ok := codecs[c]
+	if !ok {
+		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
 	}
+
+	decodedValue, err := codec.decode(msg.Value)
+	if err != nil {
+		return msg, err
+	}
+
+	msg.Value = decodedValue
+	return msg, nil
 }
 
 type message struct {

@@ -801,7 +801,7 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 		}
 
 		var err error
-		msg, err = msg.encode()
+		msg, err = msg.Encode()
 		if err != nil {
 			return 0, err
 		}
