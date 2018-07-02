@@ -1,25 +1,24 @@
-package gzip
+package lz4
 
 import (
 	"bytes"
-	"compress/gzip"
 	"io/ioutil"
 
+	"github.com/pierrec/lz4"
 	kafka "github.com/segmentio/kafka-go"
 )
 
 func init() {
-	kafka.RegisterCompressionCodec(1, String, Encode, Decode)
+	kafka.RegisterCompressionCodec(3, String, Encode, Decode)
 }
 
 func String() string {
-	return "gzip"
+	return "lz4"
 }
 
-//TODO: compression level
 func Encode(src []byte) ([]byte, error) {
 	var buf bytes.Buffer
-	writer := gzip.NewWriter(&buf)
+	writer := lz4.NewWriter(&buf)
 	_, err := writer.Write(src)
 	if err != nil {
 		return nil, err
@@ -28,13 +27,11 @@ func Encode(src []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return buf.Bytes(), nil
 }
 
 func Decode(src []byte) ([]byte, error) {
-	reader, err := gzip.NewReader(bytes.NewReader(src))
-	if err != nil {
-		return nil, err
-	}
+	reader := lz4.NewReader(bytes.NewReader(src))
 	return ioutil.ReadAll(reader)
 }

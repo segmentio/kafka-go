@@ -5,6 +5,8 @@ import (
 
 	kafka "github.com/segmentio/kafka-go"
 	_ "github.com/segmentio/kafka-go/gzip"
+	_ "github.com/segmentio/kafka-go/lz4"
+	_ "github.com/segmentio/kafka-go/snappy"
 )
 
 func TestCompression(t *testing.T) {
@@ -14,6 +16,8 @@ func TestCompression(t *testing.T) {
 
 	testEncodeDecode(t, msg, kafka.CompressionNone)
 	testEncodeDecode(t, msg, kafka.CompressionGZIP)
+	testEncodeDecode(t, msg, kafka.CompressionSnappy)
+	testEncodeDecode(t, msg, kafka.CompressionLZ4)
 }
 
 func testEncodeDecode(t *testing.T, m kafka.Message, codec int8) {
