@@ -1,11 +1,11 @@
-package gzip
+package lz4
 
 import (
 	"bytes"
 	"testing"
 )
 
-func TestGzip(t *testing.T) {
+func TestLZ4(t *testing.T) {
 	var r1, r2 []byte
 	var err error
 	payload := []byte("message")

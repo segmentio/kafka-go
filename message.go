@@ -10,6 +10,7 @@ import (
 // See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
 var codecs map[int8]CompressionCodec
 
+// RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
 func RegisterCompressionCodec(code int8, str func() string, encode func(src []byte, level int) ([]byte, error), decode func(src []byte) ([]byte, error)) error {
 	if codecs == nil {
 		codecs = make(map[int8]CompressionCodec)
@@ -66,6 +67,7 @@ func (msg Message) message() message {
 	return m
 }
 
+// Encode encodes the Message using the CompressionCodec and CompressionLevel.
 func (msg Message) Encode() (Message, error) {
 	codec, ok := codecs[msg.CompressionCodec]
 	if !ok {
@@ -81,6 +83,7 @@ func (msg Message) Encode() (Message, error) {
 	return msg, nil
 }
 
+// Decode decodes the Message using the CompressionCodec.
 func (msg Message) Decode() (Message, error) {
 	c := msg.message().Attributes & compressionCodecMask
 	codec, ok := codecs[c]

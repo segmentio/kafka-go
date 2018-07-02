@@ -7,6 +7,8 @@ const (
 	CompressionLZ4
 )
 
+// CompressionCodec represents a compression codec to encode and decode
+// the messages.
 type CompressionCodec struct {
 	str    func() string
 	encode func(src []byte, level int) ([]byte, error)

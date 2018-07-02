@@ -1,11 +1,11 @@
-package gzip
+package snappy
 
 import (
 	"bytes"
 	"testing"
 )
 
-func TestGzip(t *testing.T) {
+func TestSnappy(t *testing.T) {
 	var r1, r2 []byte
 	var err error
 	payload := []byte("message")
