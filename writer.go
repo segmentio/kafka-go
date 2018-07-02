@@ -215,6 +215,10 @@ func NewWriter(config WriterConfig) *Writer {
 		config.RebalanceInterval = 15 * time.Second
 	}
 
+	if config.CompressionLevel == 0 {
+		config.CompressionLevel = defaultCompressionLevel
+	}
+
 	w := &Writer{
 		config: config,
 		msgs:   make(chan writerMessage, config.QueueCapacity),
@@ -266,7 +270,6 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		for _, msg := range msgs {
-			//TODO: is it the right place for the compression configuration ?
 			msg.CompressionCodec = w.config.CompressionCodec
 			msg.CompressionLevel = w.config.CompressionLevel
 

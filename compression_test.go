@@ -18,6 +18,7 @@ func TestCompression(t *testing.T) {
 	testEncodeDecode(t, msg, kafka.CompressionGZIP)
 	testEncodeDecode(t, msg, kafka.CompressionSnappy)
 	testEncodeDecode(t, msg, kafka.CompressionLZ4)
+	testUnknownCodec(t, msg, 42)
 }
 
 func testEncodeDecode(t *testing.T, m kafka.Message, codec int8) {
@@ -41,6 +42,19 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec int8) {
 			t.Error("bad message")
 			t.Log("got: ", string(m.Value))
 			t.Log("expected: message")
+		}
+	})
+}
+
+func testUnknownCodec(t *testing.T, m kafka.Message, codec int8) {
+	t.Run("unknown codec", func(t *testing.T) {
+		expectedErr := "codec unknown not imported."
+		m.CompressionCodec = codec
+		_, err := m.Encode()
+		if err.Error() != expectedErr {
+			t.Error("wrong error")
+			t.Log("got: ", err)
+			t.Error("expected: ", expectedErr)
 		}
 	})
 }

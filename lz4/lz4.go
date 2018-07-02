@@ -16,7 +16,7 @@ func String() string {
 	return "lz4"
 }
 
-func Encode(src []byte) ([]byte, error) {
+func Encode(src []byte, level int) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := lz4.NewWriter(&buf)
 	_, err := writer.Write(src)

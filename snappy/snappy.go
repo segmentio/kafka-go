@@ -13,7 +13,7 @@ func String() string {
 	return "snappy"
 }
 
-func Encode(src []byte) ([]byte, error) {
+func Encode(src []byte, level int) ([]byte, error) {
 	return snappy.Encode(src), nil
 }
 

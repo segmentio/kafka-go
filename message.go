@@ -10,7 +10,7 @@ import (
 // See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
 var codecs map[int8]CompressionCodec
 
-func RegisterCompressionCodec(code int8, str func() string, encode, decode func(src []byte) ([]byte, error)) error {
+func RegisterCompressionCodec(code int8, str func() string, encode func(src []byte, level int) ([]byte, error), decode func(src []byte) ([]byte, error)) error {
 	if codecs == nil {
 		codecs = make(map[int8]CompressionCodec)
 	}
@@ -72,7 +72,7 @@ func (msg Message) Encode() (Message, error) {
 		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
 	}
 
-	encodedValue, err := codec.encode(msg.Value)
+	encodedValue, err := codec.encode(msg.Value, msg.CompressionLevel)
 	if err != nil {
 		return msg, err
 	}

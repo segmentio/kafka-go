@@ -9,7 +9,7 @@ const (
 
 type CompressionCodec struct {
 	str    func() string
-	encode func(src []byte) ([]byte, error)
+	encode func(src []byte, level int) ([]byte, error)
 	decode func(src []byte) ([]byte, error)
 }
 
@@ -19,7 +19,7 @@ const defaultCompressionLevel int = -1
 func init() {
 	RegisterCompressionCodec(0,
 		func() string { return "none" },
-		func(src []byte) ([]byte, error) { return src, nil },
+		func(src []byte, level int) ([]byte, error) { return src, nil },
 		func(src []byte) ([]byte, error) { return src, nil },
 	)
 }

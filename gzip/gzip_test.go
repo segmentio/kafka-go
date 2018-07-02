@@ -11,7 +11,7 @@ func TestGzip(t *testing.T) {
 	payload := []byte("message")
 
 	t.Run("encode", func(t *testing.T) {
-		r1, err = Encode(payload)
+		r1, err = Encode(payload, 1)
 		if err != nil {
 			t.Error(err)
 		}

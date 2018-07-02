@@ -16,8 +16,7 @@ func String() string {
 	return "gzip"
 }
 
-//TODO: compression level
-func Encode(src []byte) ([]byte, error) {
+func Encode(src []byte, level int) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := gzip.NewWriter(&buf)
 	_, err := writer.Write(src)
