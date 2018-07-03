@@ -12,17 +12,12 @@ import (
 var codecs map[int8]CompressionCodec
 
 // RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
-func RegisterCompressionCodec(code int8, str func() string, encode, decode func(dst, src []byte) (int, error)) error {
+func RegisterCompressionCodec(code int8, codec func() CompressionCodec) {
 	if codecs == nil {
 		codecs = make(map[int8]CompressionCodec)
 	}
 
-	codecs[code] = CompressionCodec{
-		str:    str,
-		encode: encode,
-		decode: decode,
-	}
-	return nil
+	codecs[code] = codec()
 }
 
 // Message is a data structure representing kafka messages.
@@ -75,7 +70,7 @@ func (msg Message) Encode() (Message, error) {
 	if !ok {
 		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
 	}
-	msg.Value, err = transform(msg.Value, codec.encode)
+	msg.Value, err = transform(msg.Value, codec.Encode)
 	return msg, err
 }
 
@@ -87,7 +82,7 @@ func (msg Message) Decode() (Message, error) {
 	if !ok {
 		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
 	}
-	msg.Value, err = transform(msg.Value, codec.decode)
+	msg.Value, err = transform(msg.Value, codec.Decode)
 	return msg, err
 }
 

@@ -216,7 +216,7 @@ func NewWriter(config WriterConfig) *Writer {
 	}
 
 	if config.CompressionLevel == 0 {
-		config.CompressionLevel = defaultCompressionLevel
+		config.CompressionLevel = DefaultCompressionLevel
 	}
 
 	w := &Writer{

@@ -8,11 +8,32 @@ import (
 )
 
 func init() {
-	kafka.RegisterCompressionCodec(2, String, Encode, Decode)
+	kafka.RegisterCompressionCodec(2, func() kafka.CompressionCodec {
+		return CompressionCodec{}
+	})
 }
 
-func String() string {
+type CompressionCodec struct{}
+
+// String implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) String() string {
 	return "snappy"
+}
+
+// Encode implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
+	buf := buffer{data: dst}
+	return buf.Write(snappy.Encode(src))
+}
+
+// Decode implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) Decode(dst, src []byte) (int, error) {
+	buf := buffer{data: dst}
+	data, err := snappy.Decode(src)
+	if err != nil {
+		return 0, err
+	}
+	return buf.Write(data)
 }
 
 type buffer struct {
@@ -27,18 +48,4 @@ func (buf *buffer) Write(b []byte) (int, error) {
 		return n, bytes.ErrTooLarge
 	}
 	return n, nil
-}
-
-func Encode(dst, src []byte) (int, error) {
-	buf := buffer{data: dst}
-	return buf.Write(snappy.Encode(src))
-}
-
-func Decode(dst, src []byte) (int, error) {
-	buf := buffer{data: dst}
-	data, err := snappy.Decode(src)
-	if err != nil {
-		return 0, err
-	}
-	return buf.Write(data)
 }

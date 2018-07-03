@@ -9,28 +9,30 @@ import (
 )
 
 func init() {
-	kafka.RegisterCompressionCodec(1, String, Encode, Decode)
+	kafka.RegisterCompressionCodec(1, func() kafka.CompressionCodec {
+		return CompressionCodec{
+			CompressionLevel: kafka.DefaultCompressionLevel,
+		}
+	})
 }
 
-func String() string {
+type CompressionCodec struct {
+	CompressionLevel int
+}
+
+func NewCompressionCodec(level int) CompressionCodec {
+	return CompressionCodec{
+		CompressionLevel: level,
+	}
+}
+
+// String implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) String() string {
 	return "gzip"
 }
 
-type buffer struct {
-	data []byte
-	size int
-}
-
-func (buf *buffer) Write(b []byte) (int, error) {
-	n := copy(buf.data[buf.size:], b)
-	buf.size += n
-	if n != len(b) {
-		return n, bytes.ErrTooLarge
-	}
-	return n, nil
-}
-
-func Encode(dst, src []byte) (int, error) {
+// Encode implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
 	var buf bytes.Buffer
 	writer := gzip.NewWriter(&buf)
 	_, err := writer.Write(src)
@@ -48,7 +50,8 @@ func Encode(dst, src []byte) (int, error) {
 	return int(n), err
 }
 
-func Decode(dst, src []byte) (int, error) {
+// Decode implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) Decode(dst, src []byte) (int, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(src))
 	if err != nil {
 		return 0, err
@@ -61,4 +64,18 @@ func Decode(dst, src []byte) (int, error) {
 		data: dst,
 	}
 	return buf.Write(data)
+}
+
+type buffer struct {
+	data []byte
+	size int
+}
+
+func (buf *buffer) Write(b []byte) (int, error) {
+	n := copy(buf.data[buf.size:], b)
+	buf.size += n
+	if n != len(b) {
+		return n, bytes.ErrTooLarge
+	}
+	return n, nil
 }

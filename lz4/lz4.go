@@ -9,28 +9,20 @@ import (
 )
 
 func init() {
-	kafka.RegisterCompressionCodec(3, String, Encode, Decode)
+	kafka.RegisterCompressionCodec(3, func() kafka.CompressionCodec {
+		return CompressionCodec{}
+	})
 }
 
-func String() string {
+type CompressionCodec struct{}
+
+// String implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) String() string {
 	return "lz4"
 }
 
-type buffer struct {
-	data []byte
-	size int
-}
-
-func (buf *buffer) Write(b []byte) (int, error) {
-	n := copy(buf.data[buf.size:], b)
-	buf.size += n
-	if n != len(b) {
-		return n, bytes.ErrTooLarge
-	}
-	return n, nil
-}
-
-func Encode(dst, src []byte) (int, error) {
+// Encode implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
 	var buf bytes.Buffer
 	writer := lz4.NewWriter(&buf)
 	_, err := writer.Write(src)
@@ -49,7 +41,8 @@ func Encode(dst, src []byte) (int, error) {
 	return int(n), err
 }
 
-func Decode(dst, src []byte) (int, error) {
+// Decode implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) Decode(dst, src []byte) (int, error) {
 	reader := lz4.NewReader(bytes.NewReader(src))
 	data, err := ioutil.ReadAll(reader)
 	if err != nil {
@@ -59,4 +52,18 @@ func Decode(dst, src []byte) (int, error) {
 		data: dst,
 	}
 	return buf.Write(data)
+}
+
+type buffer struct {
+	data []byte
+	size int
+}
+
+func (buf *buffer) Write(b []byte) (int, error) {
+	n := copy(buf.data[buf.size:], b)
+	buf.size += n
+	if n != len(b) {
+		return n, bytes.ErrTooLarge
+	}
+	return n, nil
 }
