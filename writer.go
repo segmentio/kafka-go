@@ -108,6 +108,8 @@ type WriterConfig struct {
 
 	// CompressionCodec set the codec to be used to compress Kafka messages.
 	CompressionCodec int8
+
+	// CompressionLevel set the compression level if the codec supports it.
 	CompressionLevel int
 
 	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
