@@ -6,15 +6,16 @@ import (
 )
 
 func TestSnappy(t *testing.T) {
-	var r1, r2 []byte
-	var err error
 	payload := []byte("message")
+	r1 := make([]byte, 6*len(payload))
+	r2 := make([]byte, len(payload))
 
 	t.Run("encode", func(t *testing.T) {
-		r1, err = Encode(payload, 1)
+		n, err := Encode(r1, payload)
 		if err != nil {
 			t.Error(err)
 		}
+		r1 = r1[:n]
 		if bytes.Equal(payload, r1) {
 			t.Error("failed to encode payload")
 			t.Log("got: ", r1)
@@ -22,10 +23,11 @@ func TestSnappy(t *testing.T) {
 	})
 
 	t.Run("decode", func(t *testing.T) {
-		r2, err = Decode(r1)
+		n, err := Decode(r2, r1)
 		if err != nil {
 			t.Error(err)
 		}
+		r2 = r2[:n]
 		if !bytes.Equal(payload, r2) {
 			t.Error("failed to decode payload")
 			t.Log("expected: ", payload)

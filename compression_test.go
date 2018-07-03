@@ -32,7 +32,6 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec int8) {
 			t.Error(err)
 		}
 	})
-
 	t.Run("encode with "+codecToStr(codec), func(t *testing.T) {
 		r2, err = r1.Decode()
 		if err != nil {
@@ -40,8 +39,8 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec int8) {
 		}
 		if string(r2.Value) != "message" {
 			t.Error("bad message")
-			t.Log("got: ", string(m.Value))
-			t.Log("expected: message")
+			t.Log("got: ", r2.Value)
+			t.Log("expected: ", []byte("message"))
 		}
 	})
 }

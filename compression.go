@@ -11,8 +11,8 @@ const (
 // the messages.
 type CompressionCodec struct {
 	str    func() string
-	encode func(src []byte, level int) ([]byte, error)
-	decode func(src []byte) ([]byte, error)
+	encode func(dst, src []byte) (int, error)
+	decode func(dst, src []byte) (int, error)
 }
 
 const compressionCodecMask int8 = 0x03
@@ -21,8 +21,12 @@ const defaultCompressionLevel int = -1
 func init() {
 	RegisterCompressionCodec(0,
 		func() string { return "none" },
-		func(src []byte, level int) ([]byte, error) { return src, nil },
-		func(src []byte) ([]byte, error) { return src, nil },
+		func(dst, src []byte) (int, error) {
+			return copy(dst, src), nil
+		},
+		func(dst, src []byte) (int, error) {
+			return copy(dst, src), nil
+		},
 	)
 }
 

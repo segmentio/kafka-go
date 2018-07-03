@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"time"
 )
@@ -11,7 +12,7 @@ import (
 var codecs map[int8]CompressionCodec
 
 // RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
-func RegisterCompressionCodec(code int8, str func() string, encode func(src []byte, level int) ([]byte, error), decode func(src []byte) ([]byte, error)) error {
+func RegisterCompressionCodec(code int8, str func() string, encode, decode func(dst, src []byte) (int, error)) error {
 	if codecs == nil {
 		codecs = make(map[int8]CompressionCodec)
 	}
@@ -69,35 +70,39 @@ func (msg Message) message() message {
 
 // Encode encodes the Message using the CompressionCodec and CompressionLevel.
 func (msg Message) Encode() (Message, error) {
+	var err error
 	codec, ok := codecs[msg.CompressionCodec]
 	if !ok {
 		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
 	}
-
-	encodedValue, err := codec.encode(msg.Value, msg.CompressionLevel)
-	if err != nil {
-		return msg, err
-	}
-
-	msg.Value = encodedValue
-	return msg, nil
+	msg.Value, err = transform(msg.Value, codec.encode)
+	return msg, err
 }
 
 // Decode decodes the Message using the CompressionCodec.
 func (msg Message) Decode() (Message, error) {
+	var err error
 	c := msg.message().Attributes & compressionCodecMask
 	codec, ok := codecs[c]
 	if !ok {
 		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
 	}
+	msg.Value, err = transform(msg.Value, codec.decode)
+	return msg, err
+}
 
-	decodedValue, err := codec.decode(msg.Value)
-	if err != nil {
-		return msg, err
+func transform(value []byte, fn func(dst, src []byte) (int, error)) ([]byte, error) {
+	res := make([]byte, len(value))
+	n, err := fn(res, value)
+	for ; err != nil; n, err = fn(res, value) {
+		switch err {
+		case bytes.ErrTooLarge:
+			res = make([]byte, 2*len(res))
+		default:
+			return value, err
+		}
 	}
-
-	msg.Value = decodedValue
-	return msg, nil
+	return res[:n], nil
 }
 
 type message struct {
