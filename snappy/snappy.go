@@ -8,9 +8,8 @@ import (
 )
 
 func init() {
-	codec := NewCompressionCodec()
-	kafka.RegisterCompressionCodec(codec.Code(), func() kafka.CompressionCodec {
-		return codec
+	kafka.RegisterCompressionCodec(func() kafka.CompressionCodec {
+		return NewCompressionCodec()
 	})
 }
 
