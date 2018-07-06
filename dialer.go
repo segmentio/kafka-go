@@ -159,9 +159,9 @@ func (d *Dialer) LookupLeader(ctx context.Context, network string, address strin
 					return
 				}
 			}
+			errch <- UnknownTopicOrPartition
+			return
 		}
-
-		errch <- UnknownTopicOrPartition
 	}()
 
 	var brk Broker
