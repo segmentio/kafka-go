@@ -9,10 +9,9 @@ import (
 )
 
 func init() {
-	kafka.RegisterCompressionCodec(1, func() kafka.CompressionCodec {
-		return CompressionCodec{
-			CompressionLevel: kafka.DefaultCompressionLevel,
-		}
+	codec := NewCompressionCodec()
+	kafka.RegisterCompressionCodec(codec.Code(), func() kafka.CompressionCodec {
+		return codec
 	})
 }
 
@@ -20,15 +19,19 @@ type CompressionCodec struct {
 	CompressionLevel int
 }
 
-func NewCompressionCodec(level int) CompressionCodec {
+func NewCompressionCodec() CompressionCodec {
+	return NewCompressionCodecWith(kafka.DefaultCompressionLevel)
+}
+
+func NewCompressionCodecWith(level int) CompressionCodec {
 	return CompressionCodec{
 		CompressionLevel: level,
 	}
 }
 
-// String implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) String() string {
-	return "gzip"
+// Code implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) Code() int8 {
+	return 1
 }
 
 // Encode implements the kafka.CompressionCodec interface.

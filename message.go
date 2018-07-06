@@ -7,19 +7,6 @@ import (
 	"time"
 )
 
-// CompressionCodec represents the compression codec available in Kafka
-// See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
-var codecs map[int8]CompressionCodec
-
-// RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
-func RegisterCompressionCodec(code int8, codec func() CompressionCodec) {
-	if codecs == nil {
-		codecs = make(map[int8]CompressionCodec)
-	}
-
-	codecs[code] = codec()
-}
-
 // Message is a data structure representing kafka messages.
 type Message struct {
 	// Topic is reads only and MUST NOT be set when writing messages
@@ -68,7 +55,7 @@ func (msg Message) Encode() (Message, error) {
 	var err error
 	codec, ok := codecs[msg.CompressionCodec]
 	if !ok {
-		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
+		return msg, fmt.Errorf("codec %s not imported.", Codec(msg.CompressionCodec))
 	}
 	msg.Value, err = transform(msg.Value, codec.Encode)
 	return msg, err
@@ -80,7 +67,7 @@ func (msg Message) Decode() (Message, error) {
 	c := msg.message().Attributes & compressionCodecMask
 	codec, ok := codecs[c]
 	if !ok {
-		return msg, fmt.Errorf("codec %s not imported.", codecToStr(msg.CompressionCodec))
+		return msg, fmt.Errorf("codec %s not imported.", Codec(msg.CompressionCodec))
 	}
 	msg.Value, err = transform(msg.Value, codec.Decode)
 	return msg, err

@@ -244,7 +244,7 @@ Compression can be enable on the writer :
 w := kafka.NewWriter(kafka.WriterConfig{
 	Brokers: []string{"localhost:9092"},
 	Topic:   "topic-A",
-	CompressionCodecopic: kafka.CompressionSnappy,
+	CompressionCodec: kafka.CompressionSnappy,
 })
 ```
 

@@ -25,14 +25,14 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec int8) {
 	var r1, r2 kafka.Message
 	var err error
 
-	t.Run("encode with "+codecToStr(codec), func(t *testing.T) {
+	t.Run("encode with "+kafka.Codec(codec), func(t *testing.T) {
 		m.CompressionCodec = codec
 		r1, err = m.Encode()
 		if err != nil {
 			t.Error(err)
 		}
 	})
-	t.Run("encode with "+codecToStr(codec), func(t *testing.T) {
+	t.Run("encode with "+kafka.Codec(codec), func(t *testing.T) {
 		r2, err = r1.Decode()
 		if err != nil {
 			t.Error(err)
@@ -56,19 +56,4 @@ func testUnknownCodec(t *testing.T, m kafka.Message, codec int8) {
 			t.Error("expected: ", expectedErr)
 		}
 	})
-}
-
-func codecToStr(codec int8) string {
-	switch codec {
-	case kafka.CompressionNone:
-		return "none"
-	case kafka.CompressionGZIP:
-		return "gzip"
-	case kafka.CompressionSnappy:
-		return "snappy"
-	case kafka.CompressionLZ4:
-		return "lz4"
-	default:
-		return "unknown"
-	}
 }
