@@ -16,6 +16,7 @@ func init() {
 
 type CompressionCodec struct {
 	CompressionLevel int
+	writer           *gzip.Writer
 }
 
 func NewCompressionCodec() CompressionCodec {
@@ -25,6 +26,7 @@ func NewCompressionCodec() CompressionCodec {
 func NewCompressionCodecWith(level int) CompressionCodec {
 	return CompressionCodec{
 		CompressionLevel: level,
+		writer:           gzip.NewWriter(nil),
 	}
 }
 
@@ -35,21 +37,22 @@ func (c CompressionCodec) Code() int8 {
 
 // Encode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
-	var buf bytes.Buffer
-	writer := gzip.NewWriter(&buf)
-	_, err := writer.Write(src)
-	if err != nil {
-		return 0, err
+	buf := buffer{
+		data: dst,
 	}
-	err = writer.Close()
+	c.writer.Reset(&buf)
+
+	_, err := c.writer.Write(src)
 	if err != nil {
 		return 0, err
 	}
 
-	n, err := buf.WriteTo(&buffer{
-		data: dst,
-	})
-	return int(n), err
+	err = c.writer.Close()
+	if err != nil {
+		return 0, err
+	}
+
+	return buf.size, err
 }
 
 // Decode implements the kafka.CompressionCodec interface.

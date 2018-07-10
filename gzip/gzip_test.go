@@ -10,7 +10,7 @@ func TestGzip(t *testing.T) {
 	r1 := make([]byte, 6*len(payload))
 	r2 := make([]byte, len(payload))
 
-	c := CompressionCodec{}
+	c := NewCompressionCodec()
 
 	t.Run("encode", func(t *testing.T) {
 		n, err := c.Encode(r1, payload)
