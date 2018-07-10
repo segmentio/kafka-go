@@ -7,14 +7,10 @@ const (
 	CompressionLZ4
 )
 
-var codecs map[int8]CompressionCodec
+var codecs = make(map[int8]CompressionCodec)
 
 // RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
 func RegisterCompressionCodec(codec func() CompressionCodec) {
-	if codecs == nil {
-		codecs = make(map[int8]CompressionCodec)
-	}
-
 	c := codec()
 	codecs[c.Code()] = c
 }
@@ -30,29 +26,6 @@ type CompressionCodec interface {
 
 const compressionCodecMask int8 = 0x03
 const DefaultCompressionLevel int = -1
-
-func init() {
-	RegisterCompressionCodec(func() CompressionCodec {
-		return CompressionCodecNone{}
-	})
-}
-
-type CompressionCodecNone struct{}
-
-// Code implements the kafka.CompressionCodec interface.
-func (c CompressionCodecNone) Code() int8 {
-	return 0
-}
-
-// Encode implements the kafka.CompressionCodec interface.
-func (c CompressionCodecNone) Encode(dst, src []byte) (int, error) {
-	return copy(dst, src), nil
-}
-
-// Decode implements the kafka.CompressionCodec interface.
-func (c CompressionCodecNone) Decode(dst, src []byte) (int, error) {
-	return copy(dst, src), nil
-}
 
 // Codec transtales a codec code into the name of the codec.
 func Codec(codec int8) string {

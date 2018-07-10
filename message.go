@@ -52,23 +52,33 @@ func (msg Message) message() message {
 
 // Encode encodes the Message using the CompressionCodec and CompressionLevel.
 func (msg Message) Encode() (Message, error) {
-	var err error
+	if msg.CompressionCodec == CompressionNone {
+		return msg, nil
+	}
+
 	codec, ok := codecs[msg.CompressionCodec]
 	if !ok {
 		return msg, fmt.Errorf("codec %s not imported.", Codec(msg.CompressionCodec))
 	}
+
+	var err error
 	msg.Value, err = transform(msg.Value, codec.Encode)
 	return msg, err
 }
 
 // Decode decodes the Message using the CompressionCodec.
 func (msg Message) Decode() (Message, error) {
-	var err error
 	c := msg.message().Attributes & compressionCodecMask
+	if c == CompressionNone {
+		return msg, nil
+	}
+
 	codec, ok := codecs[c]
 	if !ok {
 		return msg, fmt.Errorf("codec %s not imported.", Codec(msg.CompressionCodec))
 	}
+
+	var err error
 	msg.Value, err = transform(msg.Value, codec.Decode)
 	return msg, err
 }
