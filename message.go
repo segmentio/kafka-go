@@ -24,9 +24,6 @@ type Message struct {
 
 	// Compression codec used to encode the message value
 	CompressionCodec int8
-
-	// Compression level for the codec if supported (only gzip)
-	CompressionLevel int
 }
 
 func (msg Message) item() messageSetItem {
@@ -50,15 +47,15 @@ func (msg Message) message() message {
 	return m
 }
 
-// Encode encodes the Message using the CompressionCodec and CompressionLevel.
+// Encode encodes the Message using the CompressionCodec.
 func (msg Message) Encode() (Message, error) {
-	if msg.CompressionCodec == CompressionNone {
+	if msg.CompressionCodec == CompressionNoneCode {
 		return msg, nil
 	}
 
 	codec, ok := codecs[msg.CompressionCodec]
 	if !ok {
-		return msg, fmt.Errorf("codec %s not imported.", Codec(msg.CompressionCodec))
+		return msg, fmt.Errorf("codec %d not imported.", msg.CompressionCodec)
 	}
 
 	var err error
@@ -69,13 +66,13 @@ func (msg Message) Encode() (Message, error) {
 // Decode decodes the Message using the CompressionCodec.
 func (msg Message) Decode() (Message, error) {
 	c := msg.message().Attributes & compressionCodecMask
-	if c == CompressionNone {
+	if c == CompressionNoneCode {
 		return msg, nil
 	}
 
 	codec, ok := codecs[c]
 	if !ok {
-		return msg, fmt.Errorf("codec %s not imported.", Codec(msg.CompressionCodec))
+		return msg, fmt.Errorf("codec %d not imported.", msg.CompressionCodec)
 	}
 
 	var err error

@@ -1,12 +1,5 @@
 package kafka
 
-const (
-	CompressionNone int8 = iota
-	CompressionGZIP
-	CompressionSnappy
-	CompressionLZ4
-)
-
 var codecs = make(map[int8]CompressionCodec)
 
 // RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
@@ -19,26 +12,20 @@ func RegisterCompressionCodec(codec func() CompressionCodec) {
 // the messages.
 // See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
 type CompressionCodec interface {
+	// Code returns the compression codec code
 	Code() int8
+
+	// Encode encodes the src data and writes the result to dst.
+	// If ths destination buffer is too small, the function should
+	// return the bytes.ErrToolarge error.
 	Encode(dst, src []byte) (int, error)
+
+	// Decode decodes the src data and writes the result to dst.
+	// If ths destination buffer is too small, the function should
+	// return the bytes.ErrToolarge error.
 	Decode(dst, src []byte) (int, error)
 }
 
 const compressionCodecMask int8 = 0x03
 const DefaultCompressionLevel int = -1
-
-// Codec transtales a codec code into the name of the codec.
-func Codec(codec int8) string {
-	switch codec {
-	case CompressionNone:
-		return "none"
-	case CompressionGZIP:
-		return "gzip"
-	case CompressionSnappy:
-		return "snappy"
-	case CompressionLZ4:
-		return "lz4"
-	default:
-		return "unknown"
-	}
-}
+const CompressionNoneCode = 0

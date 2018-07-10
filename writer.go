@@ -109,9 +109,6 @@ type WriterConfig struct {
 	// CompressionCodec set the codec to be used to compress Kafka messages.
 	CompressionCodec int8
 
-	// CompressionLevel set the compression level if the codec supports it.
-	CompressionLevel int
-
 	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
 }
 
@@ -217,10 +214,6 @@ func NewWriter(config WriterConfig) *Writer {
 		config.RebalanceInterval = 15 * time.Second
 	}
 
-	if config.CompressionLevel == 0 {
-		config.CompressionLevel = DefaultCompressionLevel
-	}
-
 	w := &Writer{
 		config: config,
 		msgs:   make(chan writerMessage, config.QueueCapacity),
@@ -273,7 +266,6 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 		for _, msg := range msgs {
 			msg.CompressionCodec = w.config.CompressionCodec
-			msg.CompressionLevel = w.config.CompressionLevel
 
 			select {
 			case w.msgs <- writerMessage{

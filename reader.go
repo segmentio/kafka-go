@@ -1203,11 +1203,10 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 					m.error = io.ErrUnexpectedEOF
 				}
 
-				msg, err := m.message.Decode()
-				if err != nil {
-					return m.message, err
+				if m.error != nil {
+					return m.message, m.error
 				}
-				return msg, m.error
+				return m.message.Decode()
 			}
 		}
 	}

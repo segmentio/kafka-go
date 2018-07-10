@@ -2,7 +2,6 @@ package lz4
 
 import (
 	"bytes"
-	"io/ioutil"
 
 	"github.com/pierrec/lz4"
 	kafka "github.com/segmentio/kafka-go"
@@ -14,7 +13,12 @@ func init() {
 	})
 }
 
-type CompressionCodec struct{}
+type CompressionCodec struct {
+	writer *lz4.Writer
+	reader *lz4.Reader
+}
+
+const Code = 3
 
 func NewCompressionCodec() CompressionCodec {
 	return CompressionCodec{}
@@ -22,40 +26,39 @@ func NewCompressionCodec() CompressionCodec {
 
 // Code implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Code() int8 {
-	return 3
+	return Code
 }
 
 // Encode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
-	var buf bytes.Buffer
-	writer := lz4.NewWriter(&buf)
-	_, err := writer.Write(src)
-	if err != nil {
-		return 0, err
+	buf := buffer{data: dst}
+	if c.writer == nil {
+		c.writer = lz4.NewWriter(&buf)
+	} else {
+		c.writer.Reset(&buf)
 	}
-	err = writer.Close()
+
+	_, err := c.writer.Write(src)
 	if err != nil {
 		return 0, err
 	}
 
-	n, err := buf.WriteTo(&buffer{
-		data: dst,
-	})
+	err = c.writer.Close()
+	if err != nil {
+		return 0, err
+	}
 
-	return int(n), err
+	return buf.size, err
 }
 
 // Decode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Decode(dst, src []byte) (int, error) {
-	reader := lz4.NewReader(bytes.NewReader(src))
-	data, err := ioutil.ReadAll(reader)
-	if err != nil {
-		return 0, err
+	if c.reader == nil {
+		c.reader = lz4.NewReader(bytes.NewReader(src))
+	} else {
+		c.reader.Reset(bytes.NewReader(src))
 	}
-	buf := buffer{
-		data: dst,
-	}
-	return buf.Write(data)
+	return c.reader.Read(dst)
 }
 
 type buffer struct {
