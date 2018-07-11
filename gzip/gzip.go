@@ -15,6 +15,7 @@ func init() {
 }
 
 type CompressionCodec struct {
+	// CompressionLeven is the level of compression to use on messages.
 	CompressionLevel int
 	writer           *gzip.Writer
 	reader           *gzip.Reader
