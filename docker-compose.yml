@@ -1,5 +1,5 @@
 kafka:
-  image: wurstmeister/kafka:1.1.0
+  image: wurstmeister/kafka:0.10.2.1
   links:
     - zookeeper
   ports:
