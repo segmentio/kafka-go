@@ -72,3 +72,61 @@ func codecToStr(codec int8) string {
 		return "unknown"
 	}
 }
+
+func BenchmarkCompression(b *testing.B) {
+	benchmarks := []struct {
+		scenario string
+		codec    int8
+		function func(*testing.B, int8, []byte)
+	}{
+		{
+			scenario: "None",
+			codec:    kafka.CompressionNoneCode,
+			function: benchmarkCompression,
+		},
+		{
+			scenario: "GZIP",
+			codec:    gzip.Code,
+			function: benchmarkCompression,
+		},
+		{
+			scenario: "Snappy",
+			codec:    snappy.Code,
+			function: benchmarkCompression,
+		},
+		{
+			scenario: "LZ4",
+			codec:    lz4.Code,
+			function: benchmarkCompression,
+		},
+	}
+
+	payload := []byte("message")
+
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.scenario, func(b *testing.B) {
+			benchmark.function(b, benchmark.codec, payload)
+		})
+	}
+
+}
+
+func benchmarkCompression(b *testing.B, codec int8, payload []byte) {
+	msg := kafka.Message{
+		Value:            payload,
+		CompressionCodec: codec,
+	}
+
+	for i := 0; i < b.N; i++ {
+		m1, err := msg.Encode()
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		_, err = m1.Decode()
+		if err != nil {
+			b.Fatal(err)
+		}
+
+	}
+}
