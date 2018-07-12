@@ -138,6 +138,8 @@ func benchmarkCompression(b *testing.B, codec int8, payloadSize int, payload map
 			b.Fatal(err)
 		}
 
+		b.SetBytes(int64(len(m1.Value)))
+
 		_, err = m1.Decode()
 		if err != nil {
 			b.Fatal(err)
