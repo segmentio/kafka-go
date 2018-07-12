@@ -1,6 +1,7 @@
 package kafka_test
 
 import (
+	"math/rand"
 	"testing"
 
 	kafka "github.com/segmentio/kafka-go"
@@ -77,7 +78,7 @@ func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
 		scenario string
 		codec    int8
-		function func(*testing.B, int8, []byte)
+		function func(*testing.B, int8, int, map[int][]byte)
 	}{
 		{
 			scenario: "None",
@@ -101,19 +102,33 @@ func BenchmarkCompression(b *testing.B) {
 		},
 	}
 
-	payload := []byte("message")
+	payload := map[int][]byte{
+		1024:  randomPayload(1024),
+		4096:  randomPayload(4096),
+		8192:  randomPayload(8192),
+		16384: randomPayload(16384),
+	}
 
 	for _, benchmark := range benchmarks {
-		b.Run(benchmark.scenario, func(b *testing.B) {
-			benchmark.function(b, benchmark.codec, payload)
+		b.Run(benchmark.scenario+"1024", func(b *testing.B) {
+			benchmark.function(b, benchmark.codec, 1024, payload)
+		})
+		b.Run(benchmark.scenario+"4096", func(b *testing.B) {
+			benchmark.function(b, benchmark.codec, 4096, payload)
+		})
+		b.Run(benchmark.scenario+"8192", func(b *testing.B) {
+			benchmark.function(b, benchmark.codec, 8192, payload)
+		})
+		b.Run(benchmark.scenario+"16384", func(b *testing.B) {
+			benchmark.function(b, benchmark.codec, 16384, payload)
 		})
 	}
 
 }
 
-func benchmarkCompression(b *testing.B, codec int8, payload []byte) {
+func benchmarkCompression(b *testing.B, codec int8, payloadSize int, payload map[int][]byte) {
 	msg := kafka.Message{
-		Value:            payload,
+		Value:            payload[payloadSize],
 		CompressionCodec: codec,
 	}
 
@@ -129,4 +144,14 @@ func benchmarkCompression(b *testing.B, codec int8, payload []byte) {
 		}
 
 	}
+}
+
+const dataset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+
+func randomPayload(n int) []byte {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = dataset[rand.Intn(len(dataset))]
+	}
+	return b
 }
