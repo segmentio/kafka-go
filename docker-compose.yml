@@ -10,6 +10,7 @@ kafka:
     KAFKA_ADVERTISED_PORT: "9092"
     KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
     KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    KAFKA_DELETE_TOPIC_ENABLE: "true"
 
 zookeeper:
   image: wurstmeister/zookeeper
