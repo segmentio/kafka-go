@@ -224,15 +224,15 @@ func TestConn(t *testing.T) {
 			function: testConnFetchAndCommitOffsets,
 		},
 
-		//{
-		//	scenario: "test delete topics",
-		//	function: testDeleteTopics,
-		//},
+		{
+			scenario: "test delete topics",
+			function: testDeleteTopics,
+		},
 
-		//{
-		//	scenario: "test delete topics with an invalid topic",
-		//	function: testDeleteTopicsInvalidTopic,
-		//},
+		{
+			scenario: "test delete topics with an invalid topic",
+			function: testDeleteTopicsInvalidTopic,
+		},
 
 		{
 			scenario: "test api version",

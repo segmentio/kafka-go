@@ -732,7 +732,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 		{
 			scenario:       "verify offset committed when using interval committer",
 			partitions:     1,
-			commitInterval: 1 * time.Second,
+			commitInterval: 400 * time.Millisecond,
 			function:       testReaderConsumerGroupVerifyPeriodicOffsetCommitter,
 		},
 
