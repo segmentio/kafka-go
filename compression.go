@@ -1,11 +1,16 @@
 package kafka
 
+import "sync"
+
 var codecs = make(map[int8]CompressionCodec)
+var codecsMutex sync.RWMutex
 
 // RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
 func RegisterCompressionCodec(codec func() CompressionCodec) {
 	c := codec()
+	codecsMutex.Lock()
 	codecs[c.Code()] = c
+	codecsMutex.Unlock()
 }
 
 // CompressionCodec represents a compression codec to encode and decode
