@@ -385,7 +385,7 @@ func prepareReader(t *testing.T, ctx context.Context, r *Reader, msgs ...Message
 var (
 	benchmarkReaderOnce    sync.Once
 	benchmarkReaderTopic   = makeTopic()
-	benchmarkReaderPayload = make([]byte, 16*1024)
+	benchmarkReaderPayload = make([]byte, 2*1024)
 )
 
 func BenchmarkReader(b *testing.B) {
@@ -422,11 +422,14 @@ func BenchmarkReader(b *testing.B) {
 		MaxWait:   100 * time.Millisecond,
 	})
 
-	for i := 0; i != b.N; i++ {
+	for i := 0; i < b.N; i++ {
 		if (i % 10000) == 0 {
-			r.SetOffset(0)
+			r.SetOffset(-1)
 		}
-		r.ReadMessage(ctx)
+		_, err := r.ReadMessage(ctx)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 
 	r.Close()
