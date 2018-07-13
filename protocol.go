@@ -9,22 +9,61 @@ import (
 type apiKey int16
 
 const (
-	produceRequest          apiKey = 0
-	fetchRequest            apiKey = 1
-	listOffsetRequest       apiKey = 2
-	metadataRequest         apiKey = 3
-	offsetCommitRequest     apiKey = 8
-	offsetFetchRequest      apiKey = 9
-	groupCoordinatorRequest apiKey = 10
-	joinGroupRequest        apiKey = 11
-	heartbeatRequest        apiKey = 12
-	leaveGroupRequest       apiKey = 13
-	syncGroupRequest        apiKey = 14
-	describeGroupsRequest   apiKey = 15
-	listGroupsRequest       apiKey = 16
-	createTopicsRequest     apiKey = 19
-	deleteTopicsRequest     apiKey = 20
+	produceRequest         apiKey = 0
+	fetchRequest           apiKey = 1
+	listOffsetRequest      apiKey = 2
+	metadataRequest        apiKey = 3
+	offsetCommitRequest    apiKey = 8
+	offsetFetchRequest     apiKey = 9
+	findCoordinatorRequest apiKey = 10
+	joinGroupRequest       apiKey = 11
+	heartbeatRequest       apiKey = 12
+	leaveGroupRequest      apiKey = 13
+	syncGroupRequest       apiKey = 14
+	describeGroupsRequest  apiKey = 15
+	listGroupsRequest      apiKey = 16
+	apiVersionsRequest     apiKey = 18
+	createTopicsRequest    apiKey = 19
+	deleteTopicsRequest    apiKey = 20
 )
+
+func (a apiKey) String() string {
+	switch a {
+	case produceRequest:
+		return "produceRequest"
+	case fetchRequest:
+		return "fetchRequest"
+	case listOffsetRequest:
+		return "listOffsetRequest"
+	case metadataRequest:
+		return "metadataRequest"
+	case offsetCommitRequest:
+		return "offsetCommitRequest"
+	case offsetFetchRequest:
+		return "offsetFetchRequest"
+	case findCoordinatorRequest:
+		return "findCoordinatorRequest"
+	case joinGroupRequest:
+		return "joinGroupRequest"
+	case heartbeatRequest:
+		return "heartbeatRequest"
+	case leaveGroupRequest:
+		return "leaveGroupRequest"
+	case syncGroupRequest:
+		return "syncGroupRequest"
+	case describeGroupsRequest:
+		return "describeGroupsRequest"
+	case listGroupsRequest:
+		return "listGroupsRequest"
+	case apiVersionsRequest:
+		return "apiVersionsRequest"
+	case createTopicsRequest:
+		return "createTopicsRequest"
+	case deleteTopicsRequest:
+		return "deleteTopicsRequest"
+	}
+	return "unknown"
+}
 
 type apiVersion int16
 

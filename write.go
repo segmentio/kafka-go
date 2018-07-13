@@ -148,6 +148,15 @@ func writeFetchRequestV1(w *bufio.Writer, correlationID int32, clientID string, 
 	return w.Flush()
 }
 
+func writeListOffsetRequest(w *bufio.Writer, version apiVersion, correlationID int32, clientID string, topic string, partition int32, time int64) error {
+	switch {
+	case version >= v1:
+		return writeListOffsetRequestV1(w, correlationID, clientID, topic, partition, time)
+	default:
+		return fmt.Errorf("unsupported api version %d for ListOffset", version)
+	}
+}
+
 func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID string, topic string, partition int32, time int64) error {
 	h := requestHeader{
 		ApiKey:        int16(listOffsetRequest),

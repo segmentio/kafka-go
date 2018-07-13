@@ -256,33 +256,32 @@ func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Read
 	}
 }
 
-func createTopic(t *testing.T, topic string, partitions int) {
+func createTopic(t *testing.T, topic string, partitions int) error {
 	conn, err := Dial("tcp", "localhost:9092")
 	if err != nil {
 		t.Error("bad conn")
-		return
+		return err
 	}
 	defer conn.Close()
 
-	_, err = conn.createTopics(createTopicsRequestV2{
-		Topics: []createTopicsRequestV2Topic{
-			{
-				Topic:             topic,
-				NumPartitions:     int32(partitions),
-				ReplicationFactor: 1,
-			},
-		},
-		Timeout: int32(30 * time.Second / time.Millisecond),
+	err = conn.CreateTopics(TopicConfig{
+		Topic:             topic,
+		NumPartitions:     partitions,
+		ReplicationFactor: 1,
 	})
 	switch err {
 	case nil:
 		// ok
 	case TopicAlreadyExists:
 		// ok
+	case UnsupportedVersion:
+		// ok
 	default:
 		t.Error("bad createTopics", err)
 		t.FailNow()
 	}
+
+	return err
 }
 
 func TestReaderOnNonZeroPartition(t *testing.T) {
@@ -619,13 +618,13 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 		},
 	}
 
-	newJoinGroupResponseV2 := func(topicsByMemberID map[string][]string) joinGroupResponseV2 {
-		resp := joinGroupResponseV2{
+	newConsumerGroup := func(topicsByMemberID map[string][]string) consumerGroup {
+		resp := consumerGroup{
 			GroupProtocol: roundrobinStrategy{}.ProtocolName(),
 		}
 
 		for memberID, topics := range topicsByMemberID {
-			resp.Members = append(resp.Members, joinGroupResponseMemberV2{
+			resp.Members = append(resp.Members, consumerGroupMember{
 				MemberID: memberID,
 				MemberMetadata: groupMetadata{
 					Topics: topics,
@@ -637,15 +636,15 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		Members     joinGroupResponseV2
+		Members     consumerGroup
 		Assignments memberGroupAssignments
 	}{
 		"nil": {
-			Members:     newJoinGroupResponseV2(nil),
+			Members:     newConsumerGroup(nil),
 			Assignments: memberGroupAssignments{},
 		},
 		"one member, one topic": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newConsumerGroup(map[string][]string{
 				"member-1": {"topic-1"},
 			}),
 			Assignments: memberGroupAssignments{
@@ -655,7 +654,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"one member, two topics": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newConsumerGroup(map[string][]string{
 				"member-1": {"topic-1", "topic-2"},
 			}),
 			Assignments: memberGroupAssignments{
@@ -666,7 +665,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"two members, one topic": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newConsumerGroup(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-1"},
 			}),
@@ -680,7 +679,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"two members, two unshared topics": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newConsumerGroup(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-2"},
 			}),
@@ -789,7 +788,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 			})
 			defer r.Close()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
 			test.function(t, ctx, r)

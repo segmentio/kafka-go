@@ -238,6 +238,11 @@ func TestConn(t *testing.T) {
 			scenario: "test delete topics with an invalid topic",
 			function: testDeleteTopicsInvalidTopic,
 		},
+
+		{
+			scenario: "test api version",
+			function: testApiVersion,
+		},
 	}
 
 	const (
@@ -498,9 +503,7 @@ func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
 	// appear to happen if the kafka been running for a while.
 	const maxAttempts = 20
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		_, err := conn.findCoordinator(findCoordinatorRequestV1{
-			CoordinatorKey: groupID,
-		})
+		_, err := conn.findCoordinator(groupID)
 		switch err {
 		case nil:
 			return
@@ -517,15 +520,14 @@ func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
 func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, memberID string, stop func()) {
 	waitForCoordinator(t, conn, groupID)
 
-	join := func() (joinGroup joinGroupResponseV2) {
-		var err error
+	join := func() consumerGroup {
 		for attempt := 0; attempt < 10; attempt++ {
-			joinGroup, err = conn.joinGroup(joinGroupRequestV2{
+			group, err := conn.joinGroup(joinGroupConfig{
 				GroupID:          groupID,
 				SessionTimeout:   int32(time.Minute / time.Millisecond),
 				RebalanceTimeout: int32(time.Second / time.Millisecond),
 				ProtocolType:     "roundrobin",
-				GroupProtocols: []joinGroupRequestGroupProtocolV2{
+				GroupProtocols: []joinGroupConfigGroupProtocol{
 					{
 						ProtocolName:     "roundrobin",
 						ProtocolMetadata: []byte("blah"),
@@ -534,27 +536,28 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 			})
 			switch err {
 			case nil:
-				return
+				return group
 			case NotCoordinatorForGroup:
 				time.Sleep(250 * time.Millisecond)
+				return group
 			default:
 				t.Fatalf("bad joinGroup: %s", err)
 			}
 		}
-		return
+		return consumerGroup{}
 	}
 
 	// join the group
-	joinGroup := join()
+	group := join()
 
 	// sync the group
 	_, err := conn.syncGroups(syncGroupRequestV1{
 		GroupID:      groupID,
-		GenerationID: joinGroup.GenerationID,
-		MemberID:     joinGroup.MemberID,
+		GenerationID: group.GenerationID,
+		MemberID:     group.MemberID,
 		GroupAssignments: []syncGroupRequestGroupAssignmentV1{
 			{
-				MemberID:          joinGroup.MemberID,
+				MemberID:          group.MemberID,
 				MemberAssignments: []byte("blah"),
 			},
 		},
@@ -563,13 +566,10 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 		t.Fatalf("bad syncGroups: %s", err)
 	}
 
-	generationID = joinGroup.GenerationID
-	memberID = joinGroup.MemberID
+	generationID = group.GenerationID
+	memberID = group.MemberID
 	stop = func() {
-		conn.leaveGroup(leaveGroupRequestV1{
-			GroupID:  groupID,
-			MemberID: joinGroup.MemberID,
-		})
+		conn.leaveGroup(memberID, groupID)
 	}
 
 	return
@@ -602,7 +602,7 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 		if attempt != 0 {
 			time.Sleep(time.Millisecond * 50)
 		}
-		response, err := conn.findCoordinator(findCoordinatorRequestV1{CoordinatorKey: groupID})
+		coordinator, err := conn.findCoordinator(groupID)
 		if err != nil {
 			switch err {
 			case GroupCoordinatorNotAvailable:
@@ -612,13 +612,13 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 			}
 		}
 
-		if response.Coordinator.NodeID == 0 {
+		if coordinator.NodeID == 0 {
 			t.Errorf("bad NodeID")
 		}
-		if response.Coordinator.Host == "" {
+		if coordinator.Host == "" {
 			t.Errorf("bad Host")
 		}
-		if response.Coordinator.Port == 0 {
+		if coordinator.Port == 0 {
 			t.Errorf("bad Port")
 		}
 		return
@@ -626,7 +626,7 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 }
 
 func testConnJoinGroupInvalidGroupID(t *testing.T, conn *Conn) {
-	_, err := conn.joinGroup(joinGroupRequestV2{})
+	_, err := conn.joinGroup(joinGroupConfig{})
 	if err != InvalidGroupId && err != NotCoordinatorForGroup {
 		t.Fatalf("expected %v or %v; got %v", InvalidGroupId, NotCoordinatorForGroup, err)
 	}
@@ -636,7 +636,7 @@ func testConnJoinGroupInvalidSessionTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV2{
+	_, err := conn.joinGroup(joinGroupConfig{
 		GroupID: groupID,
 	})
 	if err != InvalidSessionTimeout && err != NotCoordinatorForGroup {
@@ -648,7 +648,7 @@ func testConnJoinGroupInvalidRefreshTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV2{
+	_, err := conn.joinGroup(joinGroupConfig{
 		GroupID:        groupID,
 		SessionTimeout: int32(3 * time.Second / time.Millisecond),
 	})
@@ -673,9 +673,7 @@ func testConnLeaveGroupErr(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.leaveGroup(leaveGroupRequestV1{
-		GroupID: groupID,
-	})
+	err := conn.leaveGroup(groupID, "")
 	if err != UnknownMemberId && err != NotCoordinatorForGroup {
 		t.Fatalf("expected %v or %v; got %v", UnknownMemberId, NotCoordinatorForGroup, err)
 	}
@@ -923,7 +921,20 @@ func testDeleteTopicsInvalidTopic(t *testing.T, conn *Conn) {
 		t.Fatalf("bad ReadPartitions: %v", err)
 	}
 	if len(partitions) != 0 {
-		t.Fatal("exepected partitions to be empty")
+		t.Fatal("expected partitions to be empty")
+	}
+}
+
+func testApiVersion(t *testing.T, conn *Conn) {
+	_, err := conn.apiVersion(listOffsetRequest)
+	if err != nil {
+		t.Fatalf("bad apiVersion: %v", err)
+	}
+	for api, ver := range conn.apiVersions {
+		t.Logf("key:%s, version:%d", api, ver)
+	}
+	if len(conn.apiVersions) == 0 {
+		t.Fatal("expected at least 1 API key")
 	}
 }
 

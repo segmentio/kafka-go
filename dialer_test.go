@@ -174,7 +174,10 @@ func TestDialerTLS(t *testing.T) {
 
 	const topic = "test-dialer-LookupPartitions"
 
-	createTopic(t, topic, 1)
+	err := createTopic(t, topic, 1)
+	if err != nil {
+		t.Error(err)
+	}
 
 	// Write a message to ensure the partition gets created.
 	w := NewWriter(WriterConfig{

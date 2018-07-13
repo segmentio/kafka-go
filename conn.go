@@ -70,6 +70,9 @@ type Conn struct {
 
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
+
+	// map of version per API Key
+	apiVersions map[apiKey]apiVersion
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -138,10 +141,11 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 
 // DeleteTopics deletes the specified topics.
 func (c *Conn) DeleteTopics(topics ...string) error {
-	_, err := c.deleteTopics(deleteTopicsRequestV1{
-		Topics: topics,
-	})
-	return err
+	deleteTopicApiVersion, err := c.apiVersion(deleteTopicsRequest)
+	if err != nil {
+		return err
+	}
+	return c.deleteTopics(deleteTopicApiVersion, topics...)
 }
 
 // describeGroups retrieves the specified groups
@@ -175,12 +179,40 @@ func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsRe
 // findCoordinator finds the coordinator for the specified group or transaction
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
-func (c *Conn) findCoordinator(request findCoordinatorRequestV1) (findCoordinatorResponseV1, error) {
+func (c *Conn) findCoordinator(groupID string) (Coordinator, error) {
+	findCoordinatorApiVersion, err := c.apiVersion(findCoordinatorRequest)
+	if err != nil {
+		return Coordinator{}, err
+	}
+
+	switch {
+	case findCoordinatorApiVersion >= v1:
+		resp, err := c.findCoordinatorV1(findCoordinatorRequestV1{
+			CoordinatorKey: groupID,
+		})
+		return Coordinator{
+			NodeID: resp.Coordinator.NodeID,
+			Host:   resp.Coordinator.Host,
+			Port:   resp.Coordinator.Port,
+		}, err
+	default:
+		resp, err := c.findCoordinatorV0(findCoordinatorRequestV0{
+			CoordinatorKey: groupID,
+		})
+		return Coordinator{
+			NodeID: resp.Coordinator.NodeID,
+			Host:   resp.Coordinator.Host,
+			Port:   resp.Coordinator.Port,
+		}, err
+	}
+}
+
+func (c *Conn) findCoordinatorV1(request findCoordinatorRequestV1) (findCoordinatorResponseV1, error) {
 	var response findCoordinatorResponseV1
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(groupCoordinatorRequest, v1, id, request)
+			return c.writeRequest(findCoordinatorRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -193,6 +225,32 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV1) (findCoordinato
 	}
 	if response.ErrorCode != 0 {
 		return findCoordinatorResponseV1{}, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
+// findCoordinatorV0 finds the coordinator for the specified group or transaction
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
+func (c *Conn) findCoordinatorV0(request findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
+	var response findCoordinatorResponseV0
+
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(findCoordinatorRequest, v0, id, request)
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return findCoordinatorResponseV0{}, err
+	}
+	if response.ErrorCode != 0 {
+		return findCoordinatorResponseV0{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -227,7 +285,88 @@ func (c *Conn) heartbeat(request heartbeatRequestV1) (heartbeatResponseV1, error
 // joinGroup attempts to join a consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_JoinGroup
-func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV2, error) {
+//TODO: how to pass other requests parameters ? specific struct ?
+func (c *Conn) joinGroup(config joinGroupConfig) (consumerGroup, error) {
+	joinGroupApiVersion, err := c.apiVersion(joinGroupRequest)
+	if err != nil {
+		return consumerGroup{}, err
+	}
+
+	switch {
+	case joinGroupApiVersion >= v2:
+		var groupProtocols []joinGroupRequestGroupProtocolV2
+		for _, gp := range config.GroupProtocols {
+			groupProtocols = append(groupProtocols, joinGroupRequestGroupProtocolV2{
+				ProtocolName:     gp.ProtocolName,
+				ProtocolMetadata: gp.ProtocolMetadata,
+			})
+		}
+
+		jg, err := c.joinGroupV2(joinGroupRequestV2{
+			GroupID:          config.GroupID,
+			SessionTimeout:   config.SessionTimeout,
+			RebalanceTimeout: config.RebalanceTimeout,
+			ProtocolType:     config.ProtocolType,
+			GroupProtocols:   groupProtocols,
+		})
+		if err != nil {
+			return consumerGroup{}, err
+		}
+
+		var members []consumerGroupMember
+		for _, m := range jg.Members {
+			members = append(members, consumerGroupMember{
+				MemberID:       m.MemberID,
+				MemberMetadata: m.MemberMetadata,
+			})
+		}
+
+		return consumerGroup{
+			MemberID:      jg.MemberID,
+			GenerationID:  jg.GenerationID,
+			LeaderID:      jg.LeaderID,
+			GroupProtocol: jg.GroupProtocol,
+			Members:       members,
+		}, nil
+	default:
+		var groupProtocols []joinGroupRequestGroupProtocolV1
+		for _, gp := range config.GroupProtocols {
+			groupProtocols = append(groupProtocols, joinGroupRequestGroupProtocolV1{
+				ProtocolName:     gp.ProtocolName,
+				ProtocolMetadata: gp.ProtocolMetadata,
+			})
+		}
+
+		jg, err := c.joinGroupV1(joinGroupRequestV1{
+			GroupID:          config.GroupID,
+			SessionTimeout:   config.SessionTimeout,
+			RebalanceTimeout: config.RebalanceTimeout,
+			ProtocolType:     config.ProtocolType,
+			GroupProtocols:   groupProtocols,
+		})
+		if err != nil {
+			return consumerGroup{}, err
+		}
+
+		var members []consumerGroupMember
+		for _, m := range jg.Members {
+			members = append(members, consumerGroupMember{
+				MemberID:       m.MemberID,
+				MemberMetadata: m.MemberMetadata,
+			})
+		}
+
+		return consumerGroup{
+			MemberID:      jg.MemberID,
+			GenerationID:  jg.GenerationID,
+			LeaderID:      jg.LeaderID,
+			GroupProtocol: jg.GroupProtocol,
+			Members:       members,
+		}, nil
+	}
+}
+
+func (c *Conn) joinGroupV2(request joinGroupRequestV2) (joinGroupResponseV2, error) {
 	var response joinGroupResponseV2
 
 	err := c.writeOperation(
@@ -250,10 +389,55 @@ func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV2, error
 	return response, nil
 }
 
+func (c *Conn) joinGroupV1(request joinGroupRequestV1) (joinGroupResponseV1, error) {
+	var response joinGroupResponseV1
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(joinGroupRequest, v1, id, request)
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return joinGroupResponseV1{}, err
+	}
+	if response.ErrorCode != 0 {
+		return joinGroupResponseV1{}, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
 // leaveGroup leaves the consumer from the consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_LeaveGroup
-func (c *Conn) leaveGroup(request leaveGroupRequestV1) (leaveGroupResponseV1, error) {
+func (c *Conn) leaveGroup(memberID, groupID string) error {
+	leaveGroupApiVersion, err := c.apiVersion(leaveGroupRequest)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case leaveGroupApiVersion >= v1:
+		_, err := c.leaveGroupV1(leaveGroupRequestV1{
+			MemberID: memberID,
+			GroupID:  groupID,
+		})
+		return err
+	default:
+		_, err := c.leaveGroupV0(leaveGroupRequestV0{
+			MemberID: memberID,
+			GroupID:  groupID,
+		})
+		return err
+	}
+}
+
+func (c *Conn) leaveGroupV1(request leaveGroupRequestV1) (leaveGroupResponseV1, error) {
 	var response leaveGroupResponseV1
 
 	err := c.writeOperation(
@@ -271,6 +455,29 @@ func (c *Conn) leaveGroup(request leaveGroupRequestV1) (leaveGroupResponseV1, er
 	}
 	if response.ErrorCode != 0 {
 		return leaveGroupResponseV1{}, Error(response.ErrorCode)
+	}
+
+	return response, nil
+}
+
+func (c *Conn) leaveGroupV0(request leaveGroupRequestV0) (leaveGroupResponseV0, error) {
+	var response leaveGroupResponseV0
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(leaveGroupRequest, v0, id, request)
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return leaveGroupResponseV0{}, err
+	}
+	if response.ErrorCode != 0 {
+		return leaveGroupResponseV0{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -667,9 +874,14 @@ func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
 }
 
 func (c *Conn) readOffset(t int64) (offset int64, err error) {
+	var offsetApiVersion apiVersion
+	if offsetApiVersion, err = c.apiVersion(listOffsetRequest); err != nil {
+		return
+	}
+
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return writeListOffsetRequestV1(&c.wbuf, id, c.clientID, c.topic, c.partition, t)
+			return writeListOffsetRequest(&c.wbuf, offsetApiVersion, id, c.clientID, c.topic, c.partition, t)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
@@ -683,16 +895,9 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 				// Reading the array of partitions, there will be only one
 				// partition which gives the offset we're looking for.
 				return readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
-					var p partitionOffsetV1
-					size, err := p.readFrom(r, size)
-					if err != nil {
-						return size, err
-					}
-					if p.ErrorCode != 0 {
-						return size, Error(p.ErrorCode)
-					}
-					offset = p.Offset
-					return size, nil
+					var err error
+					offset, size, err = readPartitionOffset(r, offsetApiVersion, size)
+					return size, err
 				})
 			}))
 		},
@@ -999,6 +1204,54 @@ func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID
 		CorrelationID: correlationID,
 		ClientID:      c.clientID,
 	}
+}
+
+func (c *Conn) apiVersion(key apiKey) (apiVersion, error) {
+	if len(c.apiVersions) == 0 {
+		if err := c.loadApiVersions(); err != nil {
+			return 0, err
+		}
+	}
+
+	if version, ok := c.apiVersions[key]; ok {
+		return version, nil
+	}
+	return 0, UnsupportedVersion
+}
+
+func (c *Conn) loadApiVersions() error {
+	versions, err := c.fetchApiVersions()
+	if err != nil {
+		return err
+	}
+
+	if c.apiVersions == nil {
+		c.apiVersions = make(map[apiKey]apiVersion)
+	}
+
+	for _, version := range versions {
+		c.apiVersions[apiKey(version.ApiKey)] = apiVersion(version.MaxVersion)
+	}
+	return nil
+}
+
+func (c *Conn) fetchApiVersions() (versions []apiVersionsV0, err error) {
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(apiVersionsRequest, v0, id, apiVersionsRequestV0{})
+		},
+		func(deadline time.Time, size int) error {
+			var response apiVersionsResponseV0
+
+			if err := c.readResponse(size, &response); err != nil {
+				return err
+			}
+			versions = response.ApiVersions
+
+			return nil
+		},
+	)
+	return
 }
 
 // connDeadline is a helper type to implement read/write deadline management on
