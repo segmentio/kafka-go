@@ -169,7 +169,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	if err != nil {
 		return msg, err
 	}
-	return msg.Decode()
+	return msg.decode()
 }
 
 func (batch *Batch) readMessage(

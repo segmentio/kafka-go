@@ -107,7 +107,7 @@ type WriterConfig struct {
 	Async bool
 
 	// CompressionCodec set the codec to be used to compress Kafka messages.
-	CompressionCodec int8
+	CompressionCodec
 
 	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
 }

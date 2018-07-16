@@ -15,25 +15,29 @@ func TestCompression(t *testing.T) {
 		Value: []byte("message"),
 	}
 
-	testEncodeDecode(t, msg, kafka.CompressionNoneCode)
-	testEncodeDecode(t, msg, gzip.Code)
-	testEncodeDecode(t, msg, snappy.Code)
-	testEncodeDecode(t, msg, lz4.Code)
-	testUnknownCodec(t, msg, 42)
+	testEncodeDecode(t, msg, nil)
+	testEncodeDecode(t, msg, gzip.NewCompressionCodec())
+	testEncodeDecode(t, msg, snappy.NewCompressionCodec())
+	testEncodeDecode(t, msg, lz4.NewCompressionCodec())
 }
 
-func testEncodeDecode(t *testing.T, m kafka.Message, codec int8) {
+func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCodec) {
 	var r1, r2 kafka.Message
 	var err error
+	var code int8
 
-	t.Run("encode with "+codecToStr(codec), func(t *testing.T) {
+	if codec != nil {
+		code = codec.Code()
+	}
+
+	t.Run("encode with "+codecToStr(code), func(t *testing.T) {
 		m.CompressionCodec = codec
 		r1, err = m.Encode()
 		if err != nil {
 			t.Error(err)
 		}
 	})
-	t.Run("encode with "+codecToStr(codec), func(t *testing.T) {
+	t.Run("encode with "+codecToStr(code), func(t *testing.T) {
 		r2, err = r1.Decode()
 		if err != nil {
 			t.Error(err)
@@ -42,19 +46,6 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec int8) {
 			t.Error("bad message")
 			t.Log("got: ", r2.Value)
 			t.Log("expected: ", []byte("message"))
-		}
-	})
-}
-
-func testUnknownCodec(t *testing.T, m kafka.Message, codec int8) {
-	t.Run("unknown codec", func(t *testing.T) {
-		expectedErr := "codec 42 not imported."
-		m.CompressionCodec = codec
-		_, err := m.Encode()
-		if err.Error() != expectedErr {
-			t.Error("wrong error")
-			t.Log("got: ", err)
-			t.Error("expected: ", expectedErr)
 		}
 	})
 }
@@ -77,27 +68,27 @@ func codecToStr(codec int8) string {
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
 		scenario string
-		codec    int8
-		function func(*testing.B, int8, int, map[int][]byte)
+		codec    kafka.CompressionCodec
+		function func(*testing.B, kafka.CompressionCodec, int, map[int][]byte)
 	}{
 		{
 			scenario: "None",
-			codec:    kafka.CompressionNoneCode,
+			codec:    nil,
 			function: benchmarkCompression,
 		},
 		{
 			scenario: "GZIP",
-			codec:    gzip.Code,
+			codec:    gzip.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 		{
 			scenario: "Snappy",
-			codec:    snappy.Code,
+			codec:    snappy.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 		{
 			scenario: "LZ4",
-			codec:    lz4.Code,
+			codec:    lz4.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 	}
@@ -126,7 +117,7 @@ func BenchmarkCompression(b *testing.B) {
 
 }
 
-func benchmarkCompression(b *testing.B, codec int8, payloadSize int, payload map[int][]byte) {
+func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, payloadSize int, payload map[int][]byte) {
 	msg := kafka.Message{
 		Value:            payload[payloadSize],
 		CompressionCodec: codec,

@@ -23,7 +23,7 @@ type Message struct {
 	Time time.Time
 
 	// Compression codec used to encode the message value
-	CompressionCodec int8
+	CompressionCodec
 }
 
 func (msg Message) item() messageSetItem {
@@ -36,26 +36,31 @@ func (msg Message) item() messageSetItem {
 }
 
 func (msg Message) message() message {
+	var attrs int8
+	if msg.CompressionCodec != nil {
+		attrs = int8(msg.CompressionCodec.Code()) & compressionCodecMask
+	}
+
 	m := message{
 		MagicByte:  1,
 		Key:        msg.Key,
 		Value:      msg.Value,
 		Timestamp:  timestamp(msg.Time),
-		Attributes: int8(msg.CompressionCodec) & compressionCodecMask,
+		Attributes: attrs,
 	}
 	m.CRC = m.crc32()
 	return m
 }
 
-// Encode encodes the Message using the CompressionCodec.
-func (msg Message) Encode() (Message, error) {
-	if msg.CompressionCodec == CompressionNoneCode {
+func (msg Message) encode() (Message, error) {
+	//if msg.CompressionCodec.Code() == CompressionNoneCode {
+	if msg.CompressionCodec == nil {
 		return msg, nil
 	}
 
-	codec, ok := codecs[msg.CompressionCodec]
+	codec, ok := codecs[msg.CompressionCodec.Code()]
 	if !ok {
-		return msg, fmt.Errorf("codec %d not imported.", msg.CompressionCodec)
+		return msg, fmt.Errorf("codec %d not imported.", msg.CompressionCodec.Code())
 	}
 
 	var err error
@@ -63,8 +68,7 @@ func (msg Message) Encode() (Message, error) {
 	return msg, err
 }
 
-// Decode decodes the Message using the CompressionCodec.
-func (msg Message) Decode() (Message, error) {
+func (msg Message) decode() (Message, error) {
 	c := msg.message().Attributes & compressionCodecMask
 	if c == CompressionNoneCode {
 		return msg, nil
