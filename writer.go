@@ -107,6 +107,7 @@ type WriterConfig struct {
 	Async bool
 
 	// CompressionCodec set the codec to be used to compress Kafka messages.
+	// Note that messages are allowed to overwrite the compression codec individualy.
 	CompressionCodec
 
 	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
@@ -265,7 +266,9 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		for _, msg := range msgs {
-			msg.CompressionCodec = w.config.CompressionCodec
+			if msg.CompressionCodec == nil {
+				msg.CompressionCodec = w.config.CompressionCodec
+			}
 
 			select {
 			case w.msgs <- writerMessage{

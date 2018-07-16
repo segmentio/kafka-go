@@ -29,9 +29,13 @@ func (c CompressionCodec) Code() int8 {
 	return Code
 }
 
+// Encode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
-	buf := buffer{data: dst}
-	return buf.Write(snappy.Encode(nil, src))
+	if n := snappy.MaxEncodedLen(len(src)); n > len(dst) {
+		buf := buffer{data: dst}
+		return buf.Write(snappy.Encode(nil, src))
+	}
+	return len(snappy.Encode(dst, src)), nil
 }
 
 // Decode implements the kafka.CompressionCodec interface.

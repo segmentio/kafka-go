@@ -53,18 +53,12 @@ func (msg Message) message() message {
 }
 
 func (msg Message) encode() (Message, error) {
-	//if msg.CompressionCodec.Code() == CompressionNoneCode {
 	if msg.CompressionCodec == nil {
 		return msg, nil
 	}
 
-	codec, ok := codecs[msg.CompressionCodec.Code()]
-	if !ok {
-		return msg, fmt.Errorf("codec %d not imported.", msg.CompressionCodec.Code())
-	}
-
 	var err error
-	msg.Value, err = transform(msg.Value, codec.Encode)
+	msg.Value, err = transform(msg.Value, msg.CompressionCodec.Encode)
 	return msg, err
 }
 
