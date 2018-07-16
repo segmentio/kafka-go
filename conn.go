@@ -800,6 +800,12 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 			msgs[i].Time = writeTime
 		}
 
+		var err error
+		msg, err = msg.encode()
+		if err != nil {
+			return 0, err
+		}
+
 		n += len(msg.Key) + len(msg.Value)
 	}
 

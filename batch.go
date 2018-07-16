@@ -165,7 +165,11 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	msg.Partition = batch.partition
 	msg.Offset = offset
 	msg.Time = timestampToTime(timestamp)
-	return msg, err
+
+	if err != nil {
+		return msg, err
+	}
+	return msg.decode()
 }
 
 func (batch *Batch) readMessage(
