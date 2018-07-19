@@ -22,6 +22,9 @@ type Message struct {
 	// writing the message.
 	Time time.Time
 
+	// Message attributes.
+	Attributes int8
+
 	// Compression codec used to encode the message value
 	CompressionCodec
 }
@@ -36,17 +39,12 @@ func (msg Message) item() messageSetItem {
 }
 
 func (msg Message) message() message {
-	var attrs int8
-	if msg.CompressionCodec != nil {
-		attrs = int8(msg.CompressionCodec.Code()) & compressionCodecMask
-	}
-
 	m := message{
 		MagicByte:  1,
 		Key:        msg.Key,
 		Value:      msg.Value,
 		Timestamp:  timestamp(msg.Time),
-		Attributes: attrs,
+		Attributes: msg.Attributes,
 	}
 	m.CRC = m.crc32()
 	return m

@@ -372,10 +372,9 @@ func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, 
 func readMessage(r *bufio.Reader, sz int, min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, remain int, err error) {
+) (offset int64, attributes int8, timestamp int64, remain int, err error) {
 	for {
-		// TODO: read attributes and decompress the message
-		if offset, _, timestamp, remain, err = readMessageHeader(r, sz); err != nil {
+		if offset, attributes, timestamp, remain, err = readMessageHeader(r, sz); err != nil {
 			return
 		}
 

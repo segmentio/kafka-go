@@ -107,7 +107,7 @@ func (batch *Batch) Read(b []byte) (int, error) {
 	batch.mutex.Lock()
 	offset := batch.offset
 
-	_, _, err := batch.readMessage(
+	_, _, _, err := batch.readMessage(
 		func(r *bufio.Reader, size int, nbytes int) (int, error) {
 			if nbytes < 0 {
 				return size, nil
@@ -149,7 +149,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	msg := Message{}
 	batch.mutex.Lock()
 
-	offset, timestamp, err := batch.readMessage(
+	offset, attributes, timestamp, err := batch.readMessage(
 		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
 			msg.Key, remain, err = readNewBytes(r, size, nbytes)
 			return
@@ -165,6 +165,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	msg.Partition = batch.partition
 	msg.Offset = offset
 	msg.Time = timestampToTime(timestamp)
+	msg.Attributes = attributes
 
 	if err != nil {
 		return msg, err
@@ -175,12 +176,12 @@ func (batch *Batch) ReadMessage() (Message, error) {
 func (batch *Batch) readMessage(
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, err error) {
+) (offset int64, attributes int8, timestamp int64, err error) {
 	if err = batch.err; err != nil {
 		return
 	}
 
-	offset, timestamp, batch.remain, err = readMessage(
+	offset, attributes, timestamp, batch.remain, err = readMessage(
 		batch.reader,
 		batch.remain,
 		batch.offset,
