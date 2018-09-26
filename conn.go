@@ -100,6 +100,7 @@ func NewConn(conn net.Conn, topic string, partition int) *Conn {
 }
 
 // NewConnWith returns a new kafka connection configured with config.
+// The offset is initialized to FirstOffset.
 func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	if len(config.ClientID) == 0 {
 		config.ClientID = DefaultClientID
@@ -116,7 +117,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		clientID:     config.ClientID,
 		topic:        config.Topic,
 		partition:    int32(config.Partition),
-		offset:       -2,
+		offset:       FirstOffset,
 		requiredAcks: -1,
 	}
 
@@ -446,18 +447,16 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 //
 // See Seek for more details about the offset and whence values.
 func (c *Conn) Offset() (offset int64, whence int) {
-	c.mutex.Lock()
-	offset = c.offset
-	c.mutex.Unlock()
 	switch offset {
-	case -1:
-		offset = 0
-		whence = 2
-	case -2:
-		offset = 0
-		whence = 0
+	case FirstOffset:
+		whence = SeekStart
+	case LastOffset:
+		whence = SeekEnd
 	default:
-		whence = 1
+		c.mutex.Lock()
+		offset = c.offset
+		c.mutex.Unlock()
+		whence = SeekAbsolute
 	}
 	return
 }
@@ -479,7 +478,7 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case SeekStart, SeekAbsolute, SeekEnd, SeekCurrent:
 	default:
-		return 0, fmt.Errorf("whence must be one of 0, 1, 2, 3, or 4. (whence = %d)", whence)
+		return 0, fmt.Errorf("whence must be one of 0, 1, 2, 3. (whence = %d)", whence)
 	}
 
 	if whence == SeekAbsolute {
@@ -642,12 +641,12 @@ func (c *Conn) ReadOffset(t time.Time) (int64, error) {
 
 // ReadFirstOffset returns the first offset available on the connection.
 func (c *Conn) ReadFirstOffset() (int64, error) {
-	return c.readOffset(-2)
+	return c.readOffset(FirstOffset)
 }
 
 // ReadLastOffset returns the last offset available on the connection.
 func (c *Conn) ReadLastOffset() (int64, error) {
-	return c.readOffset(-1)
+	return c.readOffset(LastOffset)
 }
 
 // ReadOffsets returns the absolute first and last offsets of the topic used by

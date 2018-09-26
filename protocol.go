@@ -10,20 +10,20 @@ type apiKey int16
 
 const (
 	produceRequest          apiKey = 0
-	fetchRequest            apiKey = 1
-	listOffsetRequest       apiKey = 2
-	metadataRequest         apiKey = 3
-	offsetCommitRequest     apiKey = 8
-	offsetFetchRequest      apiKey = 9
-	groupCoordinatorRequest apiKey = 10
-	joinGroupRequest        apiKey = 11
-	heartbeatRequest        apiKey = 12
-	leaveGroupRequest       apiKey = 13
-	syncGroupRequest        apiKey = 14
-	describeGroupsRequest   apiKey = 15
-	listGroupsRequest       apiKey = 16
-	createTopicsRequest     apiKey = 19
-	deleteTopicsRequest     apiKey = 20
+	fetchRequest                   = 1
+	listOffsetRequest              = 2
+	metadataRequest                = 3
+	offsetCommitRequest            = 8
+	offsetFetchRequest             = 9
+	groupCoordinatorRequest        = 10
+	joinGroupRequest               = 11
+	heartbeatRequest               = 12
+	leaveGroupRequest              = 13
+	syncGroupRequest               = 14
+	describeGroupsRequest          = 15
+	listGroupsRequest              = 16
+	createTopicsRequest            = 19
+	deleteTopicsRequest            = 20
 )
 
 type apiVersion int16

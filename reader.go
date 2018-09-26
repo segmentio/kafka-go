@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	firstOffset = -1
-	lastOffset  = -2
+	LastOffset  int64 = -1 // The most recent offset available for a partition.
+	FirstOffset       = -2 // The least recent offset available for a partition.
 )
 
 const (
@@ -958,6 +958,7 @@ type readerStats struct {
 }
 
 // NewReader creates and returns a new Reader configured with config.
+// The offset is initialized to FirstOffset.
 func NewReader(config ReaderConfig) *Reader {
 	if len(config.Brokers) == 0 {
 		panic("cannot create a new kafka reader with an empty list of broker addresses")
@@ -1070,7 +1071,7 @@ func NewReader(config ReaderConfig) *Reader {
 		done:    make(chan struct{}),
 		commits: make(chan commitRequest),
 		stop:    stop,
-		offset:  firstOffset,
+		offset:  FirstOffset,
 		stctx:   stctx,
 		stats: &readerStats{
 			dialTime:   makeSummary(),
@@ -1309,10 +1310,10 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	select {
 	case off := <-offch:
 		switch cur := r.Offset(); {
-		case cur == firstOffset:
+		case cur == FirstOffset:
 			lag = off.last - off.first
 
-		case cur == lastOffset:
+		case cur == LastOffset:
 			lag = 0
 
 		default:
@@ -1354,12 +1355,7 @@ func (r *Reader) Lag() int64 {
 }
 
 // SetOffset changes the offset from which the next batch of messages will be
-// read.
-//
-// Setting the offset ot -1 means to seek to the first offset.
-// Setting the offset to -2 means to seek to the last offset.
-//
-// The method fails with io.ErrClosedPipe if the reader has already been closed.
+// read. The method fails with io.ErrClosedPipe if the reader has already been closed.
 func (r *Reader) SetOffset(offset int64) error {
 	if r.useConsumerGroup() {
 		return errNotAvailableWithGroup
@@ -1700,10 +1696,10 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 		}
 
 		switch {
-		case offset == firstOffset:
+		case offset == FirstOffset:
 			offset = first
 
-		case offset == lastOffset:
+		case offset == LastOffset:
 			offset = last
 
 		case offset < first:
