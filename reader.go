@@ -1330,6 +1330,7 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 // Offset returns the current offset of the reader.
 func (r *Reader) Offset() int64 {
 	if r.useConsumerGroup() {
+		// TODO: Is this an error value? Or LastOffset?
 		return -1
 	}
 
@@ -1345,6 +1346,7 @@ func (r *Reader) Offset() int64 {
 // Lag returns the lag of the last message returned by ReadMessage.
 func (r *Reader) Lag() int64 {
 	if r.useConsumerGroup() {
+		// TODO: Is this an error value? Or LastOffset?
 		return -1
 	}
 
