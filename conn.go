@@ -478,7 +478,7 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case SeekStart, SeekAbsolute, SeekEnd, SeekCurrent:
 	default:
-		return 0, fmt.Errorf("whence must be one of 0, 1, 2, 3. (whence = %d)", whence)
+		return 0, fmt.Errorf("whence must be one of 0, 1, 2, or 3. (whence = %d)", whence)
 	}
 
 	if whence == SeekAbsolute {
