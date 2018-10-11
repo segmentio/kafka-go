@@ -1077,7 +1077,7 @@ func NewReader(config ReaderConfig) *Reader {
 		done:    make(chan struct{}),
 		commits: make(chan commitRequest, config.QueueCapacity),
 		stop:    stop,
-		offset:  firstOffset,
+		offset:  lastOffset, //TODO: make this configurable
 		stctx:   stctx,
 		stats: readerStats{
 			dialTime:   makeSummary(),
