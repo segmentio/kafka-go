@@ -320,7 +320,7 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 
 	for label, test := range tests {
 		t.Run(label, func(t *testing.T) {
-			assignments := roundrobinGroupBalancer{}.AssignGroups(test.Members, test.Partitions)
+			assignments := RoundRobinGroupBalancer{}.AssignGroups(test.Members, test.Partitions)
 			if !reflect.DeepEqual(test.Expected, assignments) {
 				buf := bytes.NewBuffer(nil)
 				encoder := json.NewEncoder(buf)

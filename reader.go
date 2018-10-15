@@ -1042,7 +1042,7 @@ func NewReader(config ReaderConfig) *Reader {
 	if config.GroupID != "" && len(config.GroupBalancers) == 0 {
 		config.GroupBalancers = []GroupBalancer{
 			RangeGroupBalancer{},
-			roundrobinGroupBalancer{},
+			RoundRobinGroupBalancer{},
 		}
 	}
 

@@ -624,7 +624,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 
 	newJoinGroupResponseV2 := func(topicsByMemberID map[string][]string) joinGroupResponseV2 {
 		resp := joinGroupResponseV2{
-			GroupProtocol: roundrobinGroupBalancer{}.ProtocolName(),
+			GroupProtocol: RoundRobinGroupBalancer{}.ProtocolName(),
 		}
 
 		for memberID, topics := range topicsByMemberID {
