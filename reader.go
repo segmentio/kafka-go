@@ -72,20 +72,20 @@ type Reader struct {
 	msgs chan readerMessage
 
 	// mutable fields of the reader (synchronized on the mutex)
-	mutex        sync.Mutex
-	join         sync.WaitGroup
-	cancel       context.CancelFunc
-	stop         context.CancelFunc
-	done         chan struct{}
-	commits      chan commitRequest
-	version      int64 // version holds the generation of the spawned readers
-	offset       int64
-	lag          int64
-	closed       bool
-	address      string // address of group coordinator
-	generationID int32  // generationID of group
-	memberID     string // memberID of group
-	strategies   []Strategy // prioritized CG balancing strategies
+	mutex          sync.Mutex
+	join           sync.WaitGroup
+	cancel         context.CancelFunc
+	stop           context.CancelFunc
+	done           chan struct{}
+	commits        chan commitRequest
+	version        int64 // version holds the generation of the spawned readers
+	offset         int64
+	lag            int64
+	closed         bool
+	address        string          // address of group coordinator
+	generationID   int32           // generationID of group
+	memberID       string          // memberID of group
+	groupBalancers []GroupBalancer // prioritized CG balancing groupBalancers
 
 	// offsetStash should only be managed by the commitLoopInterval.  We store
 	// it here so that it survives rebalances
@@ -188,14 +188,14 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 		ProtocolType:     defaultProtocolType,
 	}
 
-	for _, strategy := range r.strategies {
-		meta, err := strategy.GroupMetadata([]string{r.config.Topic})
+	for _, balancer := range r.groupBalancers {
+		meta, err := balancer.GroupMetadata([]string{r.config.Topic})
 		if err != nil {
-			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
+			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", balancer.ProtocolName(), err)
 		}
 
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV2{
-			ProtocolName:     strategy.ProtocolName(),
+			ProtocolName:     balancer.ProtocolName(),
 			ProtocolMetadata: meta.bytes(),
 		})
 	}
@@ -228,16 +228,16 @@ type partitionReader interface {
 	ReadPartitions(topics ...string) (partitions []Partition, err error)
 }
 
-// assignTopicPartitions uses the selected strategy to assign members to their
-// various partitions
+// assignTopicPartitions uses the selected GroupBalancer to assign members to
+// their various partitions
 func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (memberGroupAssignments, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
 
-	strategy, ok := findStrategy(group.GroupProtocol, r.strategies)
+	balancer, ok := findGroupBalancer(group.GroupProtocol, r.groupBalancers)
 	if !ok {
-		return nil, fmt.Errorf("unable to find selected strategy, %v, for group, %v", group.GroupProtocol, r.config.GroupID)
+		return nil, fmt.Errorf("unable to find selected balancer, %v, for group, %v", group.GroupProtocol, r.config.GroupID)
 	}
 
 	members, err := r.makeMemberProtocolMetadata(group.Members)
@@ -252,13 +252,13 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 	}
 
 	r.withLogger(func(l *log.Logger) {
-		l.Printf("using '%v' strategy to assign group, %v\n", group.GroupProtocol, r.config.GroupID)
+		l.Printf("using '%v' balancer to assign group, %v\n", group.GroupProtocol, r.config.GroupID)
 		for _, partition := range partitions {
 			l.Printf("found topic/partition: %v/%v", partition.Topic, partition.ID)
 		}
 	})
 
-	return strategy.AssignGroups(members, partitions), nil
+	return balancer.AssignGroups(members, partitions), nil
 }
 
 func (r *Reader) leaveGroup(conn *Conn) error {
@@ -859,14 +859,14 @@ type ReaderConfig struct {
 	// Setting this field to a negative value disables lag reporting.
 	ReadLagInterval time.Duration
 
-	// Strategies is the priority-ordered list of client-side consumer group
+	// GroupBalancers is the priority-ordered list of client-side consumer group
 	// balancing strategies that will be offered to the coordinator.  The first
 	// strategy that all group members support will be chosen by the leader.
 	//
 	// Default: [Range, RoundRobin]
 	//
 	// Only used when GroupID is set
-	Strategies []Strategy
+	GroupBalancers []GroupBalancer
 
 	// HeartbeatInterval sets the optional frequency at which the reader sends the consumer
 	// group heartbeat update.
@@ -1039,10 +1039,10 @@ func NewReader(config ReaderConfig) *Reader {
 		config.ReadLagInterval = 1 * time.Minute
 	}
 
-	if config.GroupID != "" && len(config.Strategies) == 0 {
-		config.Strategies = []Strategy{
-			rangeStrategy{},
-			roundrobinStrategy{},
+	if config.GroupID != "" && len(config.GroupBalancers) == 0 {
+		config.GroupBalancers = []GroupBalancer{
+			RangeGroupBalancer{},
+			roundrobinGroupBalancer{},
 		}
 	}
 

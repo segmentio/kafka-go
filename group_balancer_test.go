@@ -183,7 +183,7 @@ func TestRangeAssignGroups(t *testing.T) {
 
 	for label, test := range tests {
 		t.Run(label, func(t *testing.T) {
-			assignments := rangeStrategy{}.AssignGroups(test.Members, test.Partitions)
+			assignments := RangeGroupBalancer{}.AssignGroups(test.Members, test.Partitions)
 			if !reflect.DeepEqual(test.Expected, assignments) {
 				buf := bytes.NewBuffer(nil)
 				encoder := json.NewEncoder(buf)
@@ -221,7 +221,7 @@ func TestRangeAssignGroupsUnbalanced(t *testing.T) {
 		})
 	}
 
-	assignments := rangeStrategy{}.AssignGroups(members, partitions)
+	assignments := RangeGroupBalancer{}.AssignGroups(members, partitions)
 	if len(assignments) != len(members) {
 		t.Fatalf("Assignment count mismatch: %d != %d", len(assignments), len(members))
 	}
@@ -320,7 +320,7 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 
 	for label, test := range tests {
 		t.Run(label, func(t *testing.T) {
-			assignments := roundrobinStrategy{}.AssignGroups(test.Members, test.Partitions)
+			assignments := roundrobinGroupBalancer{}.AssignGroups(test.Members, test.Partitions)
 			if !reflect.DeepEqual(test.Expected, assignments) {
 				buf := bytes.NewBuffer(nil)
 				encoder := json.NewEncoder(buf)
