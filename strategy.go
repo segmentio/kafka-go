@@ -2,8 +2,8 @@ package kafka
 
 import "sort"
 
-// strategy encapsulates the client side rebalancing logic
-type strategy interface {
+// Strategy encapsulates the client side rebalancing logic
+type Strategy interface {
 	// ProtocolName of strategy
 	ProtocolName() string
 
@@ -19,14 +19,6 @@ type strategy interface {
 	// which topic partitions
 	AssignGroups(members []memberGroupMetadata, partitions []Partition) memberGroupAssignments
 }
-
-var (
-	// allStrategies the kafka-go Reader supports
-	allStrategies = []strategy{
-		rangeStrategy{},
-		roundrobinStrategy{},
-	}
-)
 
 // rangeStrategy groups consumers by partition
 //
@@ -175,7 +167,7 @@ func findMembersByTopic(members []memberGroupMetadata) map[string][]memberGroupM
 
 // findStrategy returns the strategy with the specified protocolName from the
 // slice provided
-func findStrategy(protocolName string, strategies []strategy) (strategy, bool) {
+func findStrategy(protocolName string, strategies []Strategy) (Strategy, bool) {
 	for _, strategy := range strategies {
 		if strategy.ProtocolName() == protocolName {
 			return strategy, true

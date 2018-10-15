@@ -85,6 +85,7 @@ type Reader struct {
 	address      string // address of group coordinator
 	generationID int32  // generationID of group
 	memberID     string // memberID of group
+	strategies   []Strategy // prioritized CG balancing strategies
 
 	// offsetStash should only be managed by the commitLoopInterval.  We store
 	// it here so that it survives rebalances
@@ -187,7 +188,7 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 		ProtocolType:     defaultProtocolType,
 	}
 
-	for _, strategy := range allStrategies {
+	for _, strategy := range r.strategies {
 		meta, err := strategy.GroupMetadata([]string{r.config.Topic})
 		if err != nil {
 			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
@@ -234,7 +235,7 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
 
-	strategy, ok := findStrategy(group.GroupProtocol, allStrategies)
+	strategy, ok := findStrategy(group.GroupProtocol, r.strategies)
 	if !ok {
 		return nil, fmt.Errorf("unable to find selected strategy, %v, for group, %v", group.GroupProtocol, r.config.GroupID)
 	}
@@ -858,6 +859,15 @@ type ReaderConfig struct {
 	// Setting this field to a negative value disables lag reporting.
 	ReadLagInterval time.Duration
 
+	// Strategies is the priority-ordered list of client-side consumer group
+	// balancing strategies that will be offered to the coordinator.  The first
+	// strategy that all group members support will be chosen by the leader.
+	//
+	// Default: [Range, RoundRobin]
+	//
+	// Only used when GroupID is set
+	Strategies []Strategy
+
 	// HeartbeatInterval sets the optional frequency at which the reader sends the consumer
 	// group heartbeat update.
 	//
@@ -1027,6 +1037,13 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.ReadLagInterval == 0 {
 		config.ReadLagInterval = 1 * time.Minute
+	}
+
+	if config.GroupID != "" && len(config.Strategies) == 0 {
+		config.Strategies = []Strategy{
+			rangeStrategy{},
+			roundrobinStrategy{},
+		}
 	}
 
 	if config.HeartbeatInterval == 0 {
