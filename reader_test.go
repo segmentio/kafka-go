@@ -715,11 +715,10 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 
 	for label, tc := range testCases {
 		t.Run(label, func(t *testing.T) {
-			r := &Reader{
-				groupBalancers: []GroupBalancer{
-					RangeGroupBalancer{},
-					RoundRobinGroupBalancer{},
-				},
+			r := &Reader{}
+			r.config.GroupBalancers = []GroupBalancer{
+				RangeGroupBalancer{},
+				RoundRobinGroupBalancer{},
 			}
 			assignments, err := r.assignTopicPartitions(conn, tc.Members)
 			if err != nil {
@@ -746,7 +745,6 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 1,
 			function:   testReaderConsumerGroupHandshake,
 		},
-
 		{
 			scenario:   "verify offset committed",
 			partitions: 1,

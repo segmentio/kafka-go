@@ -85,7 +85,6 @@ type Reader struct {
 	address        string          // address of group coordinator
 	generationID   int32           // generationID of group
 	memberID       string          // memberID of group
-	groupBalancers []GroupBalancer // prioritized CG balancing groupBalancers
 
 	// offsetStash should only be managed by the commitLoopInterval.  We store
 	// it here so that it survives rebalances
@@ -188,7 +187,7 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 		ProtocolType:     defaultProtocolType,
 	}
 
-	for _, balancer := range r.groupBalancers {
+	for _, balancer := range r.config.GroupBalancers {
 		userData, err := balancer.UserData()
 		if err != nil {
 			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", balancer.ProtocolName(), err)
@@ -238,7 +237,7 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
 
-	balancer, ok := findGroupBalancer(group.GroupProtocol, r.groupBalancers)
+	balancer, ok := findGroupBalancer(group.GroupProtocol, r.config.GroupBalancers)
 	if !ok {
 		return nil, fmt.Errorf("unable to find selected balancer, %v, for group, %v", group.GroupProtocol, r.config.GroupID)
 	}
@@ -1009,6 +1008,13 @@ func NewReader(config ReaderConfig) *Reader {
 	}
 
 	if config.GroupID != "" {
+		if len(config.GroupBalancers) == 0 {
+			config.GroupBalancers = []GroupBalancer{
+				RangeGroupBalancer{},
+				RoundRobinGroupBalancer{},
+			}
+		}
+
 		if config.HeartbeatInterval < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
 			panic(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
 		}
@@ -1048,13 +1054,6 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.ReadLagInterval == 0 {
 		config.ReadLagInterval = 1 * time.Minute
-	}
-
-	if config.GroupID != "" && len(config.GroupBalancers) == 0 {
-		config.GroupBalancers = []GroupBalancer{
-			RangeGroupBalancer{},
-			RoundRobinGroupBalancer{},
-		}
 	}
 
 	if config.HeartbeatInterval == 0 {
