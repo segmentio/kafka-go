@@ -172,7 +172,7 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 	defer conn.Close()
 
 	conn.Seek(offset, SeekAbsolute)
-	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	batch := conn.ReadBatch(0, 1000000000)
 	defer batch.Close()
 
