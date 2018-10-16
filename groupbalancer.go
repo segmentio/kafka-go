@@ -5,18 +5,18 @@ import "sort"
 // GroupMember describes a single participant in a consumer group.
 type GroupMember struct {
 	// ID is the unique ID for this member as taken from the JoinGroup response.
-	ID       string
+	ID string
 
 	// Topics is a list of topics that this member is consuming.
-	Topics   []string
+	Topics []string
 
 	// UserData contains any information that the GroupBalancer sent to the
 	// consumer group coordinator.
 	UserData []byte
 }
 
-// MemberGroupAssignments holds MemberID => topic => partitions
-type MemberGroupAssignments map[string]map[string][]int
+// GroupMemberAssignments holds MemberID => topic => partitions
+type GroupMemberAssignments map[string]map[string][]int
 
 // GroupBalancer encapsulates the client side rebalancing logic
 type GroupBalancer interface {
@@ -33,7 +33,7 @@ type GroupBalancer interface {
 
 	// DefineMemberships returns which members will be consuming
 	// which topic partitions
-	AssignGroups(members []GroupMember, partitions []Partition) MemberGroupAssignments
+	AssignGroups(members []GroupMember, partitions []Partition) GroupMemberAssignments
 }
 
 // RangeGroupBalancer groups consumers by partition
@@ -57,8 +57,8 @@ func (r RangeGroupBalancer) UserData() ([]byte, error) {
 	return nil, nil
 }
 
-func (r RangeGroupBalancer) AssignGroups(members []GroupMember, topicPartitions []Partition) MemberGroupAssignments {
-	groupAssignments := MemberGroupAssignments{}
+func (r RangeGroupBalancer) AssignGroups(members []GroupMember, topicPartitions []Partition) GroupMemberAssignments {
+	groupAssignments := GroupMemberAssignments{}
 	membersByTopic := findMembersByTopic(members)
 
 	for topic, members := range membersByTopic {
@@ -108,8 +108,8 @@ func (r RoundRobinGroupBalancer) UserData() ([]byte, error) {
 	return nil, nil
 }
 
-func (r RoundRobinGroupBalancer) AssignGroups(members []GroupMember, topicPartitions []Partition) MemberGroupAssignments {
-	groupAssignments := MemberGroupAssignments{}
+func (r RoundRobinGroupBalancer) AssignGroups(members []GroupMember, topicPartitions []Partition) GroupMemberAssignments {
+	groupAssignments := GroupMemberAssignments{}
 	membersByTopic := findMembersByTopic(members)
 	for topic, members := range membersByTopic {
 		partitionIDs := findPartitions(topic, topicPartitions)

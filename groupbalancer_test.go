@@ -99,17 +99,17 @@ func TestRangeAssignGroups(t *testing.T) {
 	tests := map[string]struct {
 		Members    []GroupMember
 		Partitions []Partition
-		Expected   MemberGroupAssignments
+		Expected   GroupMemberAssignments
 	}{
 		"empty": {
-			Expected: MemberGroupAssignments{},
+			Expected: GroupMemberAssignments{},
 		},
 		"one member, one topic, one partition": {
 			Members: []GroupMember{
 				newMeta("a", "topic-1"),
 			},
 			Partitions: newPartitions(1, "topic-1"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{
 					"topic-1": {0},
 				},
@@ -120,7 +120,7 @@ func TestRangeAssignGroups(t *testing.T) {
 				newMeta("a", "topic-1"),
 			},
 			Partitions: newPartitions(3, "topic-1"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
@@ -132,7 +132,7 @@ func TestRangeAssignGroups(t *testing.T) {
 				newMeta("b", "topic-1"),
 			},
 			Partitions: newPartitions(1, "topic-1"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{},
 				"b": map[string][]int{
 					"topic-1": {0},
@@ -145,7 +145,7 @@ func TestRangeAssignGroups(t *testing.T) {
 				newMeta("b", "topic-1"),
 			},
 			Partitions: newPartitions(3, "topic-1"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{
 					"topic-1": {0},
 				},
@@ -160,7 +160,7 @@ func TestRangeAssignGroups(t *testing.T) {
 				newMeta("b", "topic-2", "topic-3"),
 			},
 			Partitions: newPartitions(3, "topic-1", "topic-2", "topic-3"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{
 					"topic-1": {0, 1, 2},
 					"topic-2": {0},
@@ -240,10 +240,10 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 	tests := map[string]struct {
 		Members    []GroupMember
 		Partitions []Partition
-		Expected   MemberGroupAssignments
+		Expected   GroupMemberAssignments
 	}{
 		"empty": {
-			Expected: MemberGroupAssignments{},
+			Expected: GroupMemberAssignments{},
 		},
 		"one member, one topic, one partition": {
 			Members: []GroupMember{
@@ -253,7 +253,7 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 				},
 			},
 			Partitions: newPartitions(1, "topic-1"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{
 					"topic-1": {0},
 				},
@@ -267,7 +267,7 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 				},
 			},
 			Partitions: newPartitions(3, "topic-1"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
@@ -285,7 +285,7 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 				},
 			},
 			Partitions: newPartitions(1, "topic-1"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{
 					"topic-1": {0},
 				},
@@ -304,7 +304,7 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 				},
 			},
 			Partitions: newPartitions(3, "topic-1", "topic-2", "topic-3"),
-			Expected: MemberGroupAssignments{
+			Expected: GroupMemberAssignments{
 				"a": map[string][]int{
 					"topic-1": {0, 1, 2},
 					"topic-2": {0, 2},

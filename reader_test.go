@@ -656,17 +656,17 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 
 	testCases := map[string]struct {
 		Members     joinGroupResponseV2
-		Assignments MemberGroupAssignments
+		Assignments GroupMemberAssignments
 	}{
 		"nil": {
 			Members:     newJoinGroupResponseV2(nil),
-			Assignments: MemberGroupAssignments{},
+			Assignments: GroupMemberAssignments{},
 		},
 		"one member, one topic": {
 			Members: newJoinGroupResponseV2(map[string][]string{
 				"member-1": {"topic-1"},
 			}),
-			Assignments: MemberGroupAssignments{
+			Assignments: GroupMemberAssignments{
 				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
@@ -676,7 +676,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			Members: newJoinGroupResponseV2(map[string][]string{
 				"member-1": {"topic-1", "topic-2"},
 			}),
-			Assignments: MemberGroupAssignments{
+			Assignments: GroupMemberAssignments{
 				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 					"topic-2": {0},
@@ -688,7 +688,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 				"member-1": {"topic-1"},
 				"member-2": {"topic-1"},
 			}),
-			Assignments: MemberGroupAssignments{
+			Assignments: GroupMemberAssignments{
 				"member-1": map[string][]int{
 					"topic-1": {0, 2},
 				},
@@ -702,7 +702,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 				"member-1": {"topic-1"},
 				"member-2": {"topic-2"},
 			}),
-			Assignments: MemberGroupAssignments{
+			Assignments: GroupMemberAssignments{
 				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},

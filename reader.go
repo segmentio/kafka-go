@@ -72,19 +72,19 @@ type Reader struct {
 	msgs chan readerMessage
 
 	// mutable fields of the reader (synchronized on the mutex)
-	mutex          sync.Mutex
-	join           sync.WaitGroup
-	cancel         context.CancelFunc
-	stop           context.CancelFunc
-	done           chan struct{}
-	commits        chan commitRequest
-	version        int64 // version holds the generation of the spawned readers
-	offset         int64
-	lag            int64
-	closed         bool
-	address        string          // address of group coordinator
-	generationID   int32           // generationID of group
-	memberID       string          // memberID of group
+	mutex        sync.Mutex
+	join         sync.WaitGroup
+	cancel       context.CancelFunc
+	stop         context.CancelFunc
+	done         chan struct{}
+	commits      chan commitRequest
+	version      int64 // version holds the generation of the spawned readers
+	offset       int64
+	lag          int64
+	closed       bool
+	address      string // address of group coordinator
+	generationID int32  // generationID of group
+	memberID     string // memberID of group
 
 	// offsetStash should only be managed by the commitLoopInterval.  We store
 	// it here so that it survives rebalances
@@ -232,7 +232,7 @@ type partitionReader interface {
 
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
 // their various partitions
-func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (MemberGroupAssignments, error) {
+func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (GroupMemberAssignments, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
@@ -277,8 +277,8 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 }
 
 // joinGroup attempts to join the reader to the consumer group.
-// Returns MemberGroupAssignments is this Reader was selected as
-// the leader.  Otherwise, MemberGroupAssignments will be nil.
+// Returns GroupMemberAssignments is this Reader was selected as
+// the leader.  Otherwise, GroupMemberAssignments will be nil.
 //
 // Possible kafka error codes returned:
 //  * GroupLoadInProgress:
@@ -287,7 +287,7 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 //  * InconsistentGroupProtocol:
 //  * InvalidSessionTimeout:
 //  * GroupAuthorizationFailed:
-func (r *Reader) joinGroup() (MemberGroupAssignments, error) {
+func (r *Reader) joinGroup() (GroupMemberAssignments, error) {
 	conn, err := r.coordinator()
 	if err != nil {
 		return nil, err
@@ -332,7 +332,7 @@ func (r *Reader) joinGroup() (MemberGroupAssignments, error) {
 		})
 	}
 
-	var assignments MemberGroupAssignments
+	var assignments GroupMemberAssignments
 	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
 		v, err := r.assignTopicPartitions(conn, response)
 		if err != nil {
@@ -357,7 +357,7 @@ func (r *Reader) joinGroup() (MemberGroupAssignments, error) {
 	return assignments, nil
 }
 
-func (r *Reader) makeSyncGroupRequestV1(memberAssignments MemberGroupAssignments) syncGroupRequestV1 {
+func (r *Reader) makeSyncGroupRequestV1(memberAssignments GroupMemberAssignments) syncGroupRequestV1 {
 	generationID, memberID := r.membership()
 	request := syncGroupRequestV1{
 		GroupID:      r.config.GroupID,
@@ -400,7 +400,7 @@ func (r *Reader) makeSyncGroupRequestV1(memberAssignments MemberGroupAssignments
 //  * IllegalGeneration:
 //  * RebalanceInProgress:
 //  * GroupAuthorizationFailed:
-func (r *Reader) syncGroup(memberAssignments MemberGroupAssignments) (map[string][]int32, error) {
+func (r *Reader) syncGroup(memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
 	conn, err := r.coordinator()
 	if err != nil {
 		return nil, err
