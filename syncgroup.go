@@ -5,9 +5,6 @@ import (
 	"bytes"
 )
 
-// memberGroupAssignments holds MemberID => topic => partitions
-type memberGroupAssignments map[string]map[string][]int32
-
 type groupAssignment struct {
 	Version  int16
 	Topics   map[string][]int32

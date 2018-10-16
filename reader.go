@@ -189,23 +189,26 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 	}
 
 	for _, balancer := range r.groupBalancers {
-		meta, err := balancer.GroupMetadata([]string{r.config.Topic})
+		userData, err := balancer.UserData()
 		if err != nil {
 			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", balancer.ProtocolName(), err)
 		}
-
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV2{
-			ProtocolName:     balancer.ProtocolName(),
-			ProtocolMetadata: meta.bytes(),
+			ProtocolName: balancer.ProtocolName(),
+			ProtocolMetadata: groupMetadata{
+				Version:  1,
+				Topics:   []string{r.config.Topic},
+				UserData: userData,
+			}.bytes(),
 		})
 	}
 
 	return request, nil
 }
 
-// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into memberGroupMetadata
-func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]memberGroupMetadata, error) {
-	members := make([]memberGroupMetadata, 0, len(in))
+// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember
+func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]GroupMember, error) {
+	members := make([]GroupMember, 0, len(in))
 	for _, item := range in {
 		metadata := groupMetadata{}
 		reader := bufio.NewReader(bytes.NewReader(item.MemberMetadata))
@@ -213,11 +216,11 @@ func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]m
 			return nil, fmt.Errorf("unable to read metadata for member, %v: %v\n", item.MemberID, err)
 		}
 
-		member := memberGroupMetadata{
-			MemberID: item.MemberID,
-			Metadata: metadata,
-		}
-		members = append(members, member)
+		members = append(members, GroupMember{
+			ID:       item.MemberID,
+			Topics:   metadata.Topics,
+			UserData: metadata.UserData,
+		})
 	}
 	return members, nil
 }
@@ -230,7 +233,7 @@ type partitionReader interface {
 
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
 // their various partitions
-func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (memberGroupAssignments, error) {
+func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (MemberGroupAssignments, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
@@ -275,8 +278,8 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 }
 
 // joinGroup attempts to join the reader to the consumer group.
-// Returns memberGroupAssignments is this Reader was selected as
-// the leader.  Otherwise, memberGroupAssignments will be nil.
+// Returns MemberGroupAssignments is this Reader was selected as
+// the leader.  Otherwise, MemberGroupAssignments will be nil.
 //
 // Possible kafka error codes returned:
 //  * GroupLoadInProgress:
@@ -285,7 +288,7 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 //  * InconsistentGroupProtocol:
 //  * InvalidSessionTimeout:
 //  * GroupAuthorizationFailed:
-func (r *Reader) joinGroup() (memberGroupAssignments, error) {
+func (r *Reader) joinGroup() (MemberGroupAssignments, error) {
 	conn, err := r.coordinator()
 	if err != nil {
 		return nil, err
@@ -330,7 +333,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 		})
 	}
 
-	var assignments memberGroupAssignments
+	var assignments MemberGroupAssignments
 	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
 		v, err := r.assignTopicPartitions(conn, response)
 		if err != nil {
@@ -355,7 +358,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	return assignments, nil
 }
 
-func (r *Reader) makeSyncGroupRequestV1(memberAssignments memberGroupAssignments) syncGroupRequestV1 {
+func (r *Reader) makeSyncGroupRequestV1(memberAssignments MemberGroupAssignments) syncGroupRequestV1 {
 	generationID, memberID := r.membership()
 	request := syncGroupRequestV1{
 		GroupID:      r.config.GroupID,
@@ -367,11 +370,19 @@ func (r *Reader) makeSyncGroupRequestV1(memberAssignments memberGroupAssignments
 		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV1, 0, 1)
 
 		for memberID, topics := range memberAssignments {
+			topics32 := make(map[string][]int32)
+			for topic, partitions := range topics {
+				partitions32 := make([]int32, len(partitions))
+				for i := range partitions {
+					partitions32[i] = int32(partitions[i])
+				}
+				topics32[topic] = partitions32
+			}
 			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV1{
 				MemberID: memberID,
 				MemberAssignments: groupAssignment{
 					Version: 1,
-					Topics:  topics,
+					Topics:  topics32,
 				}.bytes(),
 			})
 		}
@@ -390,7 +401,7 @@ func (r *Reader) makeSyncGroupRequestV1(memberAssignments memberGroupAssignments
 //  * IllegalGeneration:
 //  * RebalanceInProgress:
 //  * GroupAuthorizationFailed:
-func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string][]int32, error) {
+func (r *Reader) syncGroup(memberAssignments MemberGroupAssignments) (map[string][]int32, error) {
 	conn, err := r.coordinator()
 	if err != nil {
 		return nil, err
@@ -1841,12 +1852,12 @@ func (r *reader) withErrorLogger(do func(*log.Logger)) {
 
 // extractTopics returns the unique list of topics represented by the set of
 // provided members
-func extractTopics(members []memberGroupMetadata) []string {
+func extractTopics(members []GroupMember) []string {
 	var visited = map[string]struct{}{}
 	var topics []string
 
 	for _, member := range members {
-		for _, topic := range member.Metadata.Topics {
+		for _, topic := range member.Topics {
 			if _, seen := visited[topic]; seen {
 				continue
 			}

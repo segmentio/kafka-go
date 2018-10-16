@@ -546,45 +546,60 @@ func TestReaderPartitionWhenConsumerGroupsEnabled(t *testing.T) {
 }
 
 func TestExtractTopics(t *testing.T) {
-	newMeta := func(memberID string, topics ...string) memberGroupMetadata {
-		return memberGroupMetadata{
-			MemberID: memberID,
-			Metadata: groupMetadata{
-				Topics: topics,
-			},
-		}
-	}
-
 	testCases := map[string]struct {
-		Members []memberGroupMetadata
+		Members []GroupMember
 		Topics  []string
 	}{
 		"nil": {},
 		"single member, single topic": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic"},
+				},
 			},
 			Topics: []string{"topic"},
 		},
 		"two members, single topic": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic"),
-				newMeta("b", "topic"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic"},
+				},
 			},
 			Topics: []string{"topic"},
 		},
 		"two members, two topics": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1"),
-				newMeta("b", "topic-2"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic-2"},
+				},
 			},
 			Topics: []string{"topic-1", "topic-2"},
 		},
 		"three members, three shared topics": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1", "topic-2"),
-				newMeta("b", "topic-2", "topic-3"),
-				newMeta("c", "topic-3", "topic-1"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1", "topic-2"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic-2", "topic-3"},
+				},
+				{
+					ID:     "c",
+					Topics: []string{"topic-3", "topic-1"},
+				},
 			},
 			Topics: []string{"topic-1", "topic-2", "topic-3"},
 		},
@@ -641,18 +656,18 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 
 	testCases := map[string]struct {
 		Members     joinGroupResponseV2
-		Assignments memberGroupAssignments
+		Assignments MemberGroupAssignments
 	}{
 		"nil": {
 			Members:     newJoinGroupResponseV2(nil),
-			Assignments: memberGroupAssignments{},
+			Assignments: MemberGroupAssignments{},
 		},
 		"one member, one topic": {
 			Members: newJoinGroupResponseV2(map[string][]string{
 				"member-1": {"topic-1"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: MemberGroupAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
 			},
@@ -661,8 +676,8 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			Members: newJoinGroupResponseV2(map[string][]string{
 				"member-1": {"topic-1", "topic-2"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: MemberGroupAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 					"topic-2": {0},
 				},
@@ -673,11 +688,11 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 				"member-1": {"topic-1"},
 				"member-2": {"topic-1"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: MemberGroupAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 2},
 				},
-				"member-2": map[string][]int32{
+				"member-2": map[string][]int{
 					"topic-1": {1},
 				},
 			},
@@ -687,11 +702,11 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 				"member-1": {"topic-1"},
 				"member-2": {"topic-2"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: MemberGroupAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
-				"member-2": map[string][]int32{
+				"member-2": map[string][]int{
 					"topic-2": {0},
 				},
 			},
@@ -700,7 +715,12 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 
 	for label, tc := range testCases {
 		t.Run(label, func(t *testing.T) {
-			r := &Reader{}
+			r := &Reader{
+				groupBalancers: []GroupBalancer{
+					RangeGroupBalancer{},
+					RoundRobinGroupBalancer{},
+				},
+			}
 			assignments, err := r.assignTopicPartitions(conn, tc.Members)
 			if err != nil {
 				t.Fatalf("bad err: %v", err)

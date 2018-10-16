@@ -9,43 +9,37 @@ import (
 )
 
 func TestFindMembersByTopic(t *testing.T) {
-	a1 := memberGroupMetadata{
-		MemberID: "a",
-		Metadata: groupMetadata{
-			Topics: []string{"topic-1"},
-		},
+	a1 := GroupMember{
+		ID:     "a",
+		Topics: []string{"topic-1"},
 	}
-	a12 := memberGroupMetadata{
-		MemberID: "a",
-		Metadata: groupMetadata{
-			Topics: []string{"topic-1", "topic-2"},
-		},
+	a12 := GroupMember{
+		ID:     "a",
+		Topics: []string{"topic-1", "topic-2"},
 	}
-	b23 := memberGroupMetadata{
-		MemberID: "b",
-		Metadata: groupMetadata{
-			Topics: []string{"topic-2", "topic-3"},
-		},
+	b23 := GroupMember{
+		ID:     "b",
+		Topics: []string{"topic-2", "topic-3"},
 	}
 
 	tests := map[string]struct {
-		Members  []memberGroupMetadata
-		Expected map[string][]memberGroupMetadata
+		Members  []GroupMember
+		Expected map[string][]GroupMember
 	}{
 		"empty": {
-			Expected: map[string][]memberGroupMetadata{},
+			Expected: map[string][]GroupMember{},
 		},
 		"one member, one topic": {
-			Members: []memberGroupMetadata{a1},
-			Expected: map[string][]memberGroupMetadata{
+			Members: []GroupMember{a1},
+			Expected: map[string][]GroupMember{
 				"topic-1": {
 					a1,
 				},
 			},
 		},
 		"one member, multiple topics": {
-			Members: []memberGroupMetadata{a12},
-			Expected: map[string][]memberGroupMetadata{
+			Members: []GroupMember{a12},
+			Expected: map[string][]GroupMember{
 				"topic-1": {
 					a12,
 				},
@@ -55,8 +49,8 @@ func TestFindMembersByTopic(t *testing.T) {
 			},
 		},
 		"multiple members, multiple topics": {
-			Members: []memberGroupMetadata{a12, b23},
-			Expected: map[string][]memberGroupMetadata{
+			Members: []GroupMember{a12, b23},
+			Expected: map[string][]GroupMember{
 				"topic-1": {
 					a12,
 				},
@@ -82,12 +76,10 @@ func TestFindMembersByTopic(t *testing.T) {
 }
 
 func TestRangeAssignGroups(t *testing.T) {
-	newMeta := func(memberID string, topics ...string) memberGroupMetadata {
-		return memberGroupMetadata{
-			MemberID: memberID,
-			Metadata: groupMetadata{
-				Topics: topics,
-			},
+	newMeta := func(memberID string, topics ...string) GroupMember {
+		return GroupMember{
+			ID:     memberID,
+			Topics: topics,
 		}
 	}
 
@@ -105,75 +97,75 @@ func TestRangeAssignGroups(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		Members    []memberGroupMetadata
+		Members    []GroupMember
 		Partitions []Partition
-		Expected   memberGroupAssignments
+		Expected   MemberGroupAssignments
 	}{
 		"empty": {
-			Expected: memberGroupAssignments{},
+			Expected: MemberGroupAssignments{},
 		},
 		"one member, one topic, one partition": {
-			Members: []memberGroupMetadata{
+			Members: []GroupMember{
 				newMeta("a", "topic-1"),
 			},
 			Partitions: newPartitions(1, "topic-1"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{
 					"topic-1": {0},
 				},
 			},
 		},
 		"one member, one topic, multiple partitions": {
-			Members: []memberGroupMetadata{
+			Members: []GroupMember{
 				newMeta("a", "topic-1"),
 			},
 			Partitions: newPartitions(3, "topic-1"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
 			},
 		},
 		"multiple members, one topic, one partition": {
-			Members: []memberGroupMetadata{
+			Members: []GroupMember{
 				newMeta("a", "topic-1"),
 				newMeta("b", "topic-1"),
 			},
 			Partitions: newPartitions(1, "topic-1"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{},
-				"b": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{},
+				"b": map[string][]int{
 					"topic-1": {0},
 				},
 			},
 		},
 		"multiple members, one topic, multiple partitions": {
-			Members: []memberGroupMetadata{
+			Members: []GroupMember{
 				newMeta("a", "topic-1"),
 				newMeta("b", "topic-1"),
 			},
 			Partitions: newPartitions(3, "topic-1"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{
 					"topic-1": {0},
 				},
-				"b": map[string][]int32{
+				"b": map[string][]int{
 					"topic-1": {1, 2},
 				},
 			},
 		},
 		"multiple members, multiple topics, multiple partitions": {
-			Members: []memberGroupMetadata{
+			Members: []GroupMember{
 				newMeta("a", "topic-1", "topic-2"),
 				newMeta("b", "topic-2", "topic-3"),
 			},
 			Partitions: newPartitions(3, "topic-1", "topic-2", "topic-3"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{
 					"topic-1": {0, 1, 2},
 					"topic-2": {0},
 				},
-				"b": map[string][]int32{
+				"b": map[string][]int{
 					"topic-2": {1, 2},
 					"topic-3": {0, 1, 2},
 				},
@@ -204,13 +196,11 @@ func TestRangeAssignGroups(t *testing.T) {
 // This means that in practice, each member should get either 3 or 4 partitions
 // assigned to it. Any other number is a failure.
 func TestRangeAssignGroupsUnbalanced(t *testing.T) {
-	members := []memberGroupMetadata{}
+	members := []GroupMember{}
 	for i := 0; i < 66; i++ {
-		members = append(members, memberGroupMetadata{
-			MemberID: strconv.Itoa(i),
-			Metadata: groupMetadata{
-				Topics: []string{"topic-1"},
-			},
+		members = append(members, GroupMember{
+			ID:     strconv.Itoa(i),
+			Topics: []string{"topic-1"},
 		})
 	}
 	partitions := []Partition{}
@@ -234,15 +224,6 @@ func TestRangeAssignGroupsUnbalanced(t *testing.T) {
 }
 
 func TestRoundRobinAssignGroups(t *testing.T) {
-	newMeta := func(memberID string, topics ...string) memberGroupMetadata {
-		return memberGroupMetadata{
-			MemberID: memberID,
-			Metadata: groupMetadata{
-				Topics: topics,
-			},
-		}
-	}
-
 	newPartitions := func(partitionCount int, topics ...string) []Partition {
 		partitions := make([]Partition, 0, len(topics)*partitionCount)
 		for _, topic := range topics {
@@ -257,60 +238,78 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		Members    []memberGroupMetadata
+		Members    []GroupMember
 		Partitions []Partition
-		Expected   memberGroupAssignments
+		Expected   MemberGroupAssignments
 	}{
 		"empty": {
-			Expected: memberGroupAssignments{},
+			Expected: MemberGroupAssignments{},
 		},
 		"one member, one topic, one partition": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1"},
+				},
 			},
 			Partitions: newPartitions(1, "topic-1"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{
 					"topic-1": {0},
 				},
 			},
 		},
 		"one member, one topic, multiple partitions": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1"},
+				},
 			},
 			Partitions: newPartitions(3, "topic-1"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
 			},
 		},
 		"multiple members, one topic, one partition": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1"),
-				newMeta("b", "topic-1"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic-1"},
+				},
 			},
 			Partitions: newPartitions(1, "topic-1"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{
 					"topic-1": {0},
 				},
-				"b": map[string][]int32{},
+				"b": map[string][]int{},
 			},
 		},
 		"multiple members, multiple topics, multiple partitions": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1", "topic-2"),
-				newMeta("b", "topic-2", "topic-3"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1", "topic-2"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic-2", "topic-3"},
+				},
 			},
 			Partitions: newPartitions(3, "topic-1", "topic-2", "topic-3"),
-			Expected: memberGroupAssignments{
-				"a": map[string][]int32{
+			Expected: MemberGroupAssignments{
+				"a": map[string][]int{
 					"topic-1": {0, 1, 2},
 					"topic-2": {0, 2},
 				},
-				"b": map[string][]int32{
+				"b": map[string][]int{
 					"topic-2": {1},
 					"topic-3": {0, 1, 2},
 				},
@@ -339,36 +338,30 @@ func TestRoundRobinAssignGroups(t *testing.T) {
 
 func TestFindMembersByTopicSortsByMemberID(t *testing.T) {
 	topic := "topic-1"
-	a := memberGroupMetadata{
-		MemberID: "a",
-		Metadata: groupMetadata{
-			Topics: []string{topic},
-		},
+	a := GroupMember{
+		ID:     "a",
+		Topics: []string{topic},
 	}
-	b := memberGroupMetadata{
-		MemberID: "b",
-		Metadata: groupMetadata{
-			Topics: []string{topic},
-		},
+	b := GroupMember{
+		ID:     "b",
+		Topics: []string{topic},
 	}
-	c := memberGroupMetadata{
-		MemberID: "c",
-		Metadata: groupMetadata{
-			Topics: []string{topic},
-		},
+	c := GroupMember{
+		ID:     "c",
+		Topics: []string{topic},
 	}
 
 	testCases := map[string]struct {
-		Data     []memberGroupMetadata
-		Expected []memberGroupMetadata
+		Data     []GroupMember
+		Expected []GroupMember
 	}{
 		"in order": {
-			Data:     []memberGroupMetadata{a, b},
-			Expected: []memberGroupMetadata{a, b},
+			Data:     []GroupMember{a, b},
+			Expected: []GroupMember{a, b},
 		},
 		"out of order": {
-			Data:     []memberGroupMetadata{a, c, b},
-			Expected: []memberGroupMetadata{a, b, c},
+			Data:     []GroupMember{a, c, b},
+			Expected: []GroupMember{a, b, c},
 		},
 	}
 
