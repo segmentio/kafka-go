@@ -38,7 +38,7 @@ func (c *connPipe) Close() error {
 func (c *connPipe) Read(b []byte) (int, error) {
 	// See comments in Write.
 	time.Sleep(time.Millisecond)
-	if t := c.rconn.readDeadline(); !t.IsZero() && t.Sub(time.Now()) <= (10*time.Millisecond) {
+	if t := c.rconn.readDeadline(); !t.IsZero() && t.Sub(time.Now()) <= (9*time.Millisecond) {
 		return 0, &timeout{}
 	}
 	n, err := c.rconn.Read(b)
