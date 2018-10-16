@@ -24,6 +24,7 @@ type Broker struct {
 	Host string
 	Port int
 	ID   int
+	Rack string
 }
 
 // Partition carries the metadata associated with a kafka partition.
@@ -715,10 +716,10 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequestV0(topics))
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1(topics))
 		},
 		func(deadline time.Time, size int) error {
-			var res metadataResponseV0
+			var res metadataResponseV1
 
 			if err := c.readResponse(size, &res); err != nil {
 				return err
@@ -730,6 +731,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 					Host: b.Host,
 					Port: int(b.Port),
 					ID:   int(b.NodeID),
+					Rack: b.Rack,
 				}
 			}
 
