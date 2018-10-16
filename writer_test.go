@@ -16,20 +16,20 @@ func TestWriter(t *testing.T) {
 		scenario string
 		function func(*testing.T)
 	}{
-		/*{
+		{
 			scenario: "closing a writer right after creating it returns promptly with no error",
 			function: testWriterClose,
-		},*/
+		},
 
 		{
 			scenario: "writing 1 message through a writer using round-robin balancing produces 1 message to the first partition",
 			function: testWriterRoundRobin1,
 		},
 
-		/*{
+		{
 			scenario: "running out of max attempts should return an error",
 			function: testWriterMaxAttemptsErr,
-		},*/
+		},
 	}
 
 	for _, test := range tests {
