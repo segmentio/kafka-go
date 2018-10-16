@@ -889,6 +889,7 @@ func testDeleteTopics(t *testing.T, conn *Conn) {
 	if err != nil {
 		t.Fatalf("bad CreateTopics: %v", err)
 	}
+	conn.SetDeadline(time.Now().Add(time.Second))
 	err = conn.DeleteTopics(topic1, topic2)
 	if err != nil {
 		t.Fatalf("bad DeleteTopics: %v", err)
@@ -914,6 +915,7 @@ func testDeleteTopicsInvalidTopic(t *testing.T, conn *Conn) {
 	if err != nil {
 		t.Fatalf("bad CreateTopics: %v", err)
 	}
+	conn.SetDeadline(time.Now().Add(time.Second))
 	err = conn.DeleteTopics("invalid-topic", topic)
 	if err != UnknownTopicOrPartition {
 		t.Fatalf("expected UnknownTopicOrPartition error, but got %v", err)
