@@ -125,7 +125,7 @@ func (f *fakeWriter) close() {
 }
 
 func testWriterMaxAttemptsErr(t *testing.T) {
-	const topic = "test-writer-1"
+	const topic = "test-writer-2"
 
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
@@ -172,7 +172,7 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 	defer conn.Close()
 
 	conn.Seek(offset, SeekAbsolute)
-	conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	batch := conn.ReadBatch(0, 1000000000)
 	defer batch.Close()
 
