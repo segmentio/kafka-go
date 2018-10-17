@@ -37,7 +37,7 @@ func (c *connPipe) Close() error {
 
 func (c *connPipe) Read(b []byte) (int, error) {
 	// See comments in Write.
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 	if t := c.rconn.readDeadline(); !t.IsZero() && t.Sub(time.Now()) <= (10*time.Millisecond) {
 		return 0, &timeout{}
 	}
@@ -56,12 +56,12 @@ func (c *connPipe) Write(b []byte) (int, error) {
 	// resulting in the connection being closed.
 	// To prevent this from happening we wait a little while to give the other
 	// goroutines a chance to start and set the deadline.
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 
 	// Some tests set very short deadlines which end up aborting requests and
 	// closing the connection. To prevent this from happening we check how far
 	// the deadline is and if it's too close we timeout.
-	if t := c.wconn.writeDeadline(); !t.IsZero() && t.Sub(time.Now()) <= (10*time.Millisecond) {
+	if t := c.wconn.writeDeadline(); !t.IsZero() && t.Sub(time.Now()) <= (100*time.Millisecond) {
 		return 0, &timeout{}
 	}
 
