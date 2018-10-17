@@ -60,7 +60,9 @@ func (c *connPipe) Write(b []byte) (int, error) {
 
 	// Some tests set very short deadlines which end up aborting requests and
 	// closing the connection. To prevent this from happening we check how far
-	// the deadline is and if it's too close we timeout.
+	// the deadline is and if it's too close we timeout.  The 100 ms value
+	// is chosen to coincide with the timeout set in nettest/TestFutureTimeout.
+	// That value is subject to change in the future.
 	if t := c.wconn.writeDeadline(); !t.IsZero() && t.Sub(time.Now()) <= (100*time.Millisecond) {
 		return 0, &timeout{}
 	}
