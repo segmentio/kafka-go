@@ -68,11 +68,11 @@ func (r rangeStrategy) AssignGroups(members []memberGroupMetadata, topicPartitio
 				groupAssignments[member.MemberID] = assignmentsByTopic
 			}
 
-			min := memberIndex * partitionCount / memberCount
-			max := (memberIndex + 1) * partitionCount / memberCount
+			minIndex := memberIndex * partitionCount / memberCount
+			maxIndex := (memberIndex + 1) * partitionCount / memberCount
 
 			for partitionIndex, partition := range partitions {
-				if partitionIndex >= min && partitionIndex < max {
+				if partitionIndex >= minIndex && partitionIndex < maxIndex {
 					assignmentsByTopic[topic] = append(assignmentsByTopic[topic], partition)
 				}
 			}

@@ -26,7 +26,8 @@ type Writer struct {
 	done chan struct{}
 
 	// writer stats are all made of atomic values, no need for synchronization.
-	stats writerStats
+	// Use a pointer to ensure 64-bit alignment of the values.
+	stats *writerStats
 }
 
 // WriterConfig is a configuration type used to create new instances of Writer.
@@ -105,6 +106,10 @@ type WriterConfig struct {
 	// whether the messages were written to kafka.
 	Async bool
 
+	// CompressionCodec set the codec to be used to compress Kafka messages.
+	// Note that messages are allowed to overwrite the compression codec individualy.
+	CompressionCodec
+
 	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
 }
 
@@ -139,6 +144,11 @@ type WriterStats struct {
 	Topic    string `tag:"topic"`
 }
 
+// writerStats is a struct that contains statistics on a writer.
+//
+// Since atomic is used to mutate the statistics the values must be 64-bit aligned.
+// This is easily accomplished by always allocating this struct directly, (i.e. using a pointer to the struct).
+// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 type writerStats struct {
 	dials      counter
 	writes     counter
@@ -209,7 +219,7 @@ func NewWriter(config WriterConfig) *Writer {
 		config: config,
 		msgs:   make(chan writerMessage, config.QueueCapacity),
 		done:   make(chan struct{}),
-		stats: writerStats{
+		stats: &writerStats{
 			dialTime:  makeSummary(),
 			writeTime: makeSummary(),
 			waitTime:  makeSummary(),
@@ -256,6 +266,10 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		for _, msg := range msgs {
+			if msg.CompressionCodec == nil {
+				msg.CompressionCodec = w.config.CompressionCodec
+			}
+
 			select {
 			case w.msgs <- writerMessage{
 				msg: msg,
@@ -424,7 +438,7 @@ func (w *Writer) run() {
 					err = fmt.Errorf("failed to find any partitions for topic %s", w.config.Topic)
 				}
 
-				wm.res <- err
+				wm.res <- &writerError{msg: wm.msg, err: err}
 			}
 
 		case <-ticker.C:
@@ -460,7 +474,7 @@ func (w *Writer) partitions() (partitions []int, err error) {
 }
 
 func (w *Writer) open(partition int) partitionWriter {
-	return w.config.newPartitionWriter(partition, w.config, &w.stats)
+	return w.config.newPartitionWriter(partition, w.config, w.stats)
 }
 
 func (w *Writer) close(writer partitionWriter) {

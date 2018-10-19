@@ -36,15 +36,16 @@ func TestProtocol(t *testing.T) {
 			Value:     []byte("Hello World!"),
 		},
 
-		topicMetadataRequestV0{"A", "B", "C"},
+		topicMetadataRequestV1{"A", "B", "C"},
 
-		metadataResponseV0{
-			Brokers: []brokerMetadataV0{
+		metadataResponseV1{
+			Brokers: []brokerMetadataV1{
 				{NodeID: 1, Host: "localhost", Port: 9001},
-				{NodeID: 2, Host: "localhost", Port: 9002},
+				{NodeID: 2, Host: "localhost", Port: 9002, Rack:"rack2"},
 			},
-			Topics: []topicMetadataV0{
-				{TopicErrorCode: 0, Partitions: []partitionMetadataV0{{
+			ControllerID: 2,
+			Topics: []topicMetadataV1{
+				{TopicErrorCode: 0, Internal: true, Partitions: []partitionMetadataV1{{
 					PartitionErrorCode: 0,
 					PartitionID:        1,
 					Leader:             2,

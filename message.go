@@ -2,6 +2,8 @@ package kafka
 
 import (
 	"bufio"
+	"bytes"
+	"fmt"
 	"time"
 )
 
@@ -19,6 +21,9 @@ type Message struct {
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
 	Time time.Time
+
+	// Compression codec used to encode the message value
+	CompressionCodec
 }
 
 func (msg Message) item() messageSetItem {
@@ -31,14 +36,60 @@ func (msg Message) item() messageSetItem {
 }
 
 func (msg Message) message() message {
+	var attrs int8
+	if msg.CompressionCodec != nil {
+		attrs = int8(msg.CompressionCodec.Code()) & compressionCodecMask
+	}
+
 	m := message{
-		MagicByte: 1,
-		Key:       msg.Key,
-		Value:     msg.Value,
-		Timestamp: timestamp(msg.Time),
+		MagicByte:  1,
+		Key:        msg.Key,
+		Value:      msg.Value,
+		Timestamp:  timestamp(msg.Time),
+		Attributes: attrs,
 	}
 	m.CRC = m.crc32()
 	return m
+}
+
+func (msg Message) encode() (Message, error) {
+	if msg.CompressionCodec == nil {
+		return msg, nil
+	}
+
+	var err error
+	msg.Value, err = transform(msg.Value, msg.CompressionCodec.Encode)
+	return msg, err
+}
+
+func (msg Message) decode() (Message, error) {
+	c := msg.message().Attributes & compressionCodecMask
+	if c == CompressionNoneCode {
+		return msg, nil
+	}
+
+	codec, ok := codecs[c]
+	if !ok {
+		return msg, fmt.Errorf("codec %d not imported.", msg.CompressionCodec)
+	}
+
+	var err error
+	msg.Value, err = transform(msg.Value, codec.Decode)
+	return msg, err
+}
+
+func transform(value []byte, fn func(dst, src []byte) (int, error)) ([]byte, error) {
+	res := make([]byte, len(value))
+	n, err := fn(res, value)
+	for ; err != nil; n, err = fn(res, value) {
+		switch err {
+		case bytes.ErrTooLarge:
+			res = make([]byte, 2*len(res))
+		default:
+			return value, err
+		}
+	}
+	return res[:n], nil
 }
 
 type message struct {
