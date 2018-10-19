@@ -87,7 +87,7 @@ func (r RangeGroupBalancer) AssignGroups(members []GroupMember, topicPartitions 
 	return groupAssignments
 }
 
-// roundrobinGroupBalancer divides partitions evenly among consumers
+// RoundrobinGroupBalancer divides partitions evenly among consumers
 //
 // Example: 5 partitions, 2 consumers
 // 		C0: [0, 2, 4]

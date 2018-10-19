@@ -127,7 +127,7 @@ func (r *Reader) lookupCoordinator() (string, error) {
 	}
 	defer conn.Close()
 
-	out, err := conn.findCoordinator(findCoordinatorRequestV1{
+	out, err := conn.findCoordinator(findCoordinatorRequestV0{
 		CoordinatorKey: r.config.GroupID,
 	})
 	if err != nil {
@@ -174,12 +174,12 @@ func (r *Reader) refreshCoordinator() (err error) {
 	return nil
 }
 
-// makeJoinGroupRequestV2 handles the logic of constructing a joinGroup
+// makejoinGroupRequestV1 handles the logic of constructing a joinGroup
 // request
-func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
+func (r *Reader) makejoinGroupRequestV1() (joinGroupRequestV1, error) {
 	_, memberID := r.membership()
 
-	request := joinGroupRequestV2{
+	request := joinGroupRequestV1{
 		GroupID:          r.config.GroupID,
 		MemberID:         memberID,
 		SessionTimeout:   int32(r.config.SessionTimeout / time.Millisecond),
@@ -190,9 +190,9 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 	for _, balancer := range r.config.GroupBalancers {
 		userData, err := balancer.UserData()
 		if err != nil {
-			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", balancer.ProtocolName(), err)
+			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", balancer.ProtocolName(), err)
 		}
-		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV2{
+		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName: balancer.ProtocolName(),
 			ProtocolMetadata: groupMetadata{
 				Version:  1,
@@ -206,7 +206,7 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 }
 
 // makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember
-func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]GroupMember, error) {
+func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]GroupMember, error) {
 	members := make([]GroupMember, 0, len(in))
 	for _, item := range in {
 		metadata := groupMetadata{}
@@ -232,7 +232,7 @@ type partitionReader interface {
 
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
 // their various partitions
-func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (GroupMemberAssignments, error) {
+func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV1) (GroupMemberAssignments, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
@@ -255,6 +255,9 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("using '%v' balancer to assign group, %v\n", group.GroupProtocol, r.config.GroupID)
+		for _, member := range members {
+			l.Printf("found member: %v/%#v", member.ID, member.UserData)
+		}
 		for _, partition := range partitions {
 			l.Printf("found topic/partition: %v/%v", partition.Topic, partition.ID)
 		}
@@ -265,7 +268,7 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 
 func (r *Reader) leaveGroup(conn *Conn) error {
 	_, memberID := r.membership()
-	_, err := conn.leaveGroup(leaveGroupRequestV1{
+	_, err := conn.leaveGroup(leaveGroupRequestV0{
 		GroupID:  r.config.GroupID,
 		MemberID: memberID,
 	})
@@ -294,7 +297,7 @@ func (r *Reader) joinGroup() (GroupMemberAssignments, error) {
 	}
 	defer conn.Close()
 
-	request, err := r.makeJoinGroupRequestV2()
+	request, err := r.makejoinGroupRequestV1()
 	if err != nil {
 		return nil, err
 	}
@@ -357,16 +360,16 @@ func (r *Reader) joinGroup() (GroupMemberAssignments, error) {
 	return assignments, nil
 }
 
-func (r *Reader) makeSyncGroupRequestV1(memberAssignments GroupMemberAssignments) syncGroupRequestV1 {
+func (r *Reader) makeSyncGroupRequestV0(memberAssignments GroupMemberAssignments) syncGroupRequestV0 {
 	generationID, memberID := r.membership()
-	request := syncGroupRequestV1{
+	request := syncGroupRequestV0{
 		GroupID:      r.config.GroupID,
 		GenerationID: generationID,
 		MemberID:     memberID,
 	}
 
 	if memberAssignments != nil {
-		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV1, 0, 1)
+		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV0, 0, 1)
 
 		for memberID, topics := range memberAssignments {
 			topics32 := make(map[string][]int32)
@@ -377,7 +380,7 @@ func (r *Reader) makeSyncGroupRequestV1(memberAssignments GroupMemberAssignments
 				}
 				topics32[topic] = partitions32
 			}
-			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV1{
+			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
 				MemberID: memberID,
 				MemberAssignments: groupAssignment{
 					Version: 1,
@@ -385,6 +388,10 @@ func (r *Reader) makeSyncGroupRequestV1(memberAssignments GroupMemberAssignments
 				}.bytes(),
 			})
 		}
+
+		r.withErrorLogger(func(logger *log.Logger) {
+			logger.Printf("Syncing %d assignments for generation %d as member %s", len(request.GroupAssignments), generationID, memberID)
+		})
 	}
 
 	return request
@@ -407,7 +414,7 @@ func (r *Reader) syncGroup(memberAssignments GroupMemberAssignments) (map[string
 	}
 	defer conn.Close()
 
-	request := r.makeSyncGroupRequestV1(memberAssignments)
+	request := r.makeSyncGroupRequestV0(memberAssignments)
 	response, err := conn.syncGroups(request)
 	if err != nil {
 		switch err {
@@ -433,6 +440,11 @@ func (r *Reader) syncGroup(memberAssignments GroupMemberAssignments) (map[string
 	if _, err := (&assignments).readFrom(reader, len(response.MemberAssignments)); err != nil {
 		_ = r.leaveGroup(conn)
 		return nil, fmt.Errorf("unable to read SyncGroup response for group, %v: %v\n", r.config.GroupID, err)
+	}
+
+	if len(assignments.Topics) == 0 {
+		generation, memberID := r.membership()
+		return nil, fmt.Errorf("received empty assignments for group, %v as member %s for generation %d", r.config.GroupID, memberID, generation)
 	}
 
 	r.withLogger(func(l *log.Logger) {
@@ -478,9 +490,9 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 	defer conn.Close()
 
 	partitions := subs[r.config.Topic]
-	offsets, err := conn.offsetFetch(offsetFetchRequestV3{
+	offsets, err := conn.offsetFetch(offsetFetchRequestV1{
 		GroupID: r.config.GroupID,
-		Topics: []offsetFetchRequestV3Topic{
+		Topics: []offsetFetchRequestV1Topic{
 			{
 				Topic:      r.config.Topic,
 				Partitions: partitions,
@@ -578,7 +590,7 @@ func (r *Reader) heartbeat(conn *Conn) error {
 		return nil
 	}
 
-	resp, err := conn.heartbeat(heartbeatRequestV1{
+	_, err := conn.heartbeat(heartbeatRequestV0{
 		GroupID:      r.config.GroupID,
 		GenerationID: generationID,
 		MemberID:     memberID,
@@ -586,8 +598,6 @@ func (r *Reader) heartbeat(conn *Conn) error {
 	if err != nil {
 		return fmt.Errorf("heartbeat failed: %v", err)
 	}
-
-	r.waitThrottleTime(resp.ThrottleTimeMS)
 
 	return nil
 }
@@ -619,7 +629,7 @@ func (r *Reader) heartbeatLoop(conn *Conn) func(stop <-chan struct{}) {
 }
 
 type offsetCommitter interface {
-	offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error)
+	offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error)
 }
 
 func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) error {
@@ -628,7 +638,7 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) er
 	}
 
 	generationID, memberID := r.membership()
-	request := offsetCommitRequestV3{
+	request := offsetCommitRequestV2{
 		GroupID:       r.config.GroupID,
 		GenerationID:  generationID,
 		MemberID:      memberID,
@@ -636,9 +646,9 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) er
 	}
 
 	for topic, partitions := range offsetStash {
-		t := offsetCommitRequestV3Topic{Topic: topic}
+		t := offsetCommitRequestV2Topic{Topic: topic}
 		for partition, offset := range partitions {
-			t.Partitions = append(t.Partitions, offsetCommitRequestV3Partition{
+			t.Partitions = append(t.Partitions, offsetCommitRequestV2Partition{
 				Partition: int32(partition),
 				Offset:    offset,
 			})
@@ -1095,7 +1105,7 @@ func NewReader(config ReaderConfig) *Reader {
 		msgs:    make(chan readerMessage, config.QueueCapacity),
 		cancel:  func() {},
 		done:    make(chan struct{}),
-		commits: make(chan commitRequest),
+		commits: make(chan commitRequest, config.QueueCapacity),
 		stop:    stop,
 		offset:  firstOffset,
 		stctx:   stctx,

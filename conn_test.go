@@ -498,7 +498,7 @@ func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
 	// appear to happen if the kafka been running for a while.
 	const maxAttempts = 20
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		_, err := conn.findCoordinator(findCoordinatorRequestV1{
+		_, err := conn.findCoordinator(findCoordinatorRequestV0{
 			CoordinatorKey: groupID,
 		})
 		switch err {
@@ -517,15 +517,15 @@ func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
 func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, memberID string, stop func()) {
 	waitForCoordinator(t, conn, groupID)
 
-	join := func() (joinGroup joinGroupResponseV2) {
+	join := func() (joinGroup joinGroupResponseV1) {
 		var err error
 		for attempt := 0; attempt < 10; attempt++ {
-			joinGroup, err = conn.joinGroup(joinGroupRequestV2{
+			joinGroup, err = conn.joinGroup(joinGroupRequestV1{
 				GroupID:          groupID,
 				SessionTimeout:   int32(time.Minute / time.Millisecond),
 				RebalanceTimeout: int32(time.Second / time.Millisecond),
 				ProtocolType:     "roundrobin",
-				GroupProtocols: []joinGroupRequestGroupProtocolV2{
+				GroupProtocols: []joinGroupRequestGroupProtocolV1{
 					{
 						ProtocolName:     "roundrobin",
 						ProtocolMetadata: []byte("blah"),
@@ -548,11 +548,11 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 	joinGroup := join()
 
 	// sync the group
-	_, err := conn.syncGroups(syncGroupRequestV1{
+	_, err := conn.syncGroups(syncGroupRequestV0{
 		GroupID:      groupID,
 		GenerationID: joinGroup.GenerationID,
 		MemberID:     joinGroup.MemberID,
-		GroupAssignments: []syncGroupRequestGroupAssignmentV1{
+		GroupAssignments: []syncGroupRequestGroupAssignmentV0{
 			{
 				MemberID:          joinGroup.MemberID,
 				MemberAssignments: []byte("blah"),
@@ -566,7 +566,7 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 	generationID = joinGroup.GenerationID
 	memberID = joinGroup.MemberID
 	stop = func() {
-		conn.leaveGroup(leaveGroupRequestV1{
+		conn.leaveGroup(leaveGroupRequestV0{
 			GroupID:  groupID,
 			MemberID: joinGroup.MemberID,
 		})
@@ -602,7 +602,7 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 		if attempt != 0 {
 			time.Sleep(time.Millisecond * 50)
 		}
-		response, err := conn.findCoordinator(findCoordinatorRequestV1{CoordinatorKey: groupID})
+		response, err := conn.findCoordinator(findCoordinatorRequestV0{CoordinatorKey: groupID})
 		if err != nil {
 			switch err {
 			case GroupCoordinatorNotAvailable:
@@ -626,7 +626,7 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 }
 
 func testConnJoinGroupInvalidGroupID(t *testing.T, conn *Conn) {
-	_, err := conn.joinGroup(joinGroupRequestV2{})
+	_, err := conn.joinGroup(joinGroupRequestV1{})
 	if err != InvalidGroupId && err != NotCoordinatorForGroup {
 		t.Fatalf("expected %v or %v; got %v", InvalidGroupId, NotCoordinatorForGroup, err)
 	}
@@ -636,7 +636,7 @@ func testConnJoinGroupInvalidSessionTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV2{
+	_, err := conn.joinGroup(joinGroupRequestV1{
 		GroupID: groupID,
 	})
 	if err != InvalidSessionTimeout && err != NotCoordinatorForGroup {
@@ -648,7 +648,7 @@ func testConnJoinGroupInvalidRefreshTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV2{
+	_, err := conn.joinGroup(joinGroupRequestV1{
 		GroupID:        groupID,
 		SessionTimeout: int32(3 * time.Second / time.Millisecond),
 	})
@@ -661,7 +661,7 @@ func testConnHeartbeatErr(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	createGroup(t, conn, groupID)
 
-	_, err := conn.syncGroups(syncGroupRequestV1{
+	_, err := conn.syncGroups(syncGroupRequestV0{
 		GroupID: groupID,
 	})
 	if err != UnknownMemberId && err != NotCoordinatorForGroup {
@@ -673,7 +673,7 @@ func testConnLeaveGroupErr(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.leaveGroup(leaveGroupRequestV1{
+	_, err := conn.leaveGroup(leaveGroupRequestV0{
 		GroupID: groupID,
 	})
 	if err != UnknownMemberId && err != NotCoordinatorForGroup {
@@ -685,7 +685,7 @@ func testConnSyncGroupErr(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.syncGroups(syncGroupRequestV1{
+	_, err := conn.syncGroups(syncGroupRequestV0{
 		GroupID: groupID,
 	})
 	if err != UnknownMemberId && err != NotCoordinatorForGroup {
@@ -735,9 +735,9 @@ func testConnFetchAndCommitOffsets(t *testing.T, conn *Conn) {
 	generationID, memberID, stop := createGroup(t, conn, groupID)
 	defer stop()
 
-	request := offsetFetchRequestV3{
+	request := offsetFetchRequestV1{
 		GroupID: groupID,
-		Topics: []offsetFetchRequestV3Topic{
+		Topics: []offsetFetchRequestV1Topic{
 			{
 				Topic:      conn.topic,
 				Partitions: []int32{0},
@@ -762,15 +762,15 @@ func testConnFetchAndCommitOffsets(t *testing.T, conn *Conn) {
 	}
 
 	committedOffset := int64(N - 1)
-	_, err = conn.offsetCommit(offsetCommitRequestV3{
+	_, err = conn.offsetCommit(offsetCommitRequestV2{
 		GroupID:       groupID,
 		GenerationID:  generationID,
 		MemberID:      memberID,
 		RetentionTime: int64(time.Hour / time.Millisecond),
-		Topics: []offsetCommitRequestV3Topic{
+		Topics: []offsetCommitRequestV2Topic{
 			{
 				Topic: conn.topic,
-				Partitions: []offsetCommitRequestV3Partition{
+				Partitions: []offsetCommitRequestV2Partition{
 					{
 						Partition: 0,
 						Offset:    committedOffset,
