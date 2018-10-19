@@ -64,8 +64,6 @@ func (c *connPipe) Write(b []byte) (int, error) {
 	if t := c.wconn.writeDeadline(); !t.IsZero() {
 		return 0, &timeout{}
 	}
-		return 0, &timeout{}
-	}
 
 	return c.wconn.Write(b)
 }
