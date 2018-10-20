@@ -125,7 +125,7 @@ func (f *fakeWriter) close() {
 }
 
 func testWriterMaxAttemptsErr(t *testing.T) {
-	const topic = "test-writer-1"
+	const topic = "test-writer-2"
 
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{

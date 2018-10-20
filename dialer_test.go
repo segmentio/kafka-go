@@ -63,9 +63,9 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 	if !reflect.DeepEqual(partitions, []Partition{
 		{
 			Topic:    "test-dialer-LookupPartitions",
-			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1001},
-			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1001}},
-			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1001}},
+			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
+			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
 			ID:       0,
 		},
 	}) {
@@ -233,9 +233,9 @@ func TestDialerTLS(t *testing.T) {
 	if !reflect.DeepEqual(partitions, []Partition{
 		{
 			Topic:    topic,
-			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1001},
-			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1001}},
-			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1001}},
+			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
+			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
 			ID:       0,
 		},
 	}) {
