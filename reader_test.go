@@ -302,8 +302,8 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	}
 	defer conn.Close()
 
-	_, err = conn.createTopics(createTopicsRequestV2{
-		Topics: []createTopicsRequestV2Topic{
+	_, err = conn.createTopics(createTopicsRequestV0{
+		Topics: []createTopicsRequestV0Topic{
 			{
 				Topic:             topic,
 				NumPartitions:     int32(partitions),
@@ -584,45 +584,60 @@ func TestReaderPartitionWhenConsumerGroupsEnabled(t *testing.T) {
 }
 
 func TestExtractTopics(t *testing.T) {
-	newMeta := func(memberID string, topics ...string) memberGroupMetadata {
-		return memberGroupMetadata{
-			MemberID: memberID,
-			Metadata: groupMetadata{
-				Topics: topics,
-			},
-		}
-	}
-
 	testCases := map[string]struct {
-		Members []memberGroupMetadata
+		Members []GroupMember
 		Topics  []string
 	}{
 		"nil": {},
 		"single member, single topic": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic"},
+				},
 			},
 			Topics: []string{"topic"},
 		},
 		"two members, single topic": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic"),
-				newMeta("b", "topic"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic"},
+				},
 			},
 			Topics: []string{"topic"},
 		},
 		"two members, two topics": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1"),
-				newMeta("b", "topic-2"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic-2"},
+				},
 			},
 			Topics: []string{"topic-1", "topic-2"},
 		},
 		"three members, three shared topics": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1", "topic-2"),
-				newMeta("b", "topic-2", "topic-3"),
-				newMeta("c", "topic-3", "topic-1"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1", "topic-2"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic-2", "topic-3"},
+				},
+				{
+					ID:     "c",
+					Topics: []string{"topic-3", "topic-1"},
+				},
 			},
 			Topics: []string{"topic-1", "topic-2", "topic-3"},
 		},
@@ -660,13 +675,13 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 		},
 	}
 
-	newJoinGroupResponseV2 := func(topicsByMemberID map[string][]string) joinGroupResponseV2 {
-		resp := joinGroupResponseV2{
-			GroupProtocol: roundrobinStrategy{}.ProtocolName(),
+	newJoinGroupResponseV1 := func(topicsByMemberID map[string][]string) joinGroupResponseV1 {
+		resp := joinGroupResponseV1{
+			GroupProtocol: RoundRobinGroupBalancer{}.ProtocolName(),
 		}
 
 		for memberID, topics := range topicsByMemberID {
-			resp.Members = append(resp.Members, joinGroupResponseMemberV2{
+			resp.Members = append(resp.Members, joinGroupResponseMemberV1{
 				MemberID: memberID,
 				MemberMetadata: groupMetadata{
 					Topics: topics,
@@ -678,58 +693,58 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		Members     joinGroupResponseV2
-		Assignments memberGroupAssignments
+		Members     joinGroupResponseV1
+		Assignments GroupMemberAssignments
 	}{
 		"nil": {
-			Members:     newJoinGroupResponseV2(nil),
-			Assignments: memberGroupAssignments{},
+			Members:     newJoinGroupResponseV1(nil),
+			Assignments: GroupMemberAssignments{},
 		},
 		"one member, one topic": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: GroupMemberAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
 			},
 		},
 		"one member, two topics": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1", "topic-2"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: GroupMemberAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 					"topic-2": {0},
 				},
 			},
 		},
 		"two members, one topic": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-1"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: GroupMemberAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 2},
 				},
-				"member-2": map[string][]int32{
+				"member-2": map[string][]int{
 					"topic-1": {1},
 				},
 			},
 		},
 		"two members, two unshared topics": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-2"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: GroupMemberAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
-				"member-2": map[string][]int32{
+				"member-2": map[string][]int{
 					"topic-2": {0},
 				},
 			},
@@ -739,6 +754,10 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 	for label, tc := range testCases {
 		t.Run(label, func(t *testing.T) {
 			r := &Reader{}
+			r.config.GroupBalancers = []GroupBalancer{
+				RangeGroupBalancer{},
+				RoundRobinGroupBalancer{},
+			}
 			assignments, err := r.assignTopicPartitions(conn, tc.Members)
 			if err != nil {
 				t.Fatalf("bad err: %v", err)
@@ -1201,15 +1220,15 @@ type mockOffsetCommitter struct {
 	err         error
 }
 
-func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error) {
+func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
 	m.invocations++
 
 	if m.failCount > 0 {
 		m.failCount--
-		return offsetCommitResponseV3{}, io.EOF
+		return offsetCommitResponseV2{}, io.EOF
 	}
 
-	return offsetCommitResponseV3{}, nil
+	return offsetCommitResponseV2{}, nil
 }
 
 func TestCommitOffsetsWithRetry(t *testing.T) {

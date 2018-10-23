@@ -7,10 +7,9 @@ import (
 	"testing"
 )
 
-func TestHeartbeatRequestV1(t *testing.T) {
-	item := heartbeatResponseV1{
-		ThrottleTimeMS: 1,
-		ErrorCode:      2,
+func TestHeartbeatRequestV0(t *testing.T) {
+	item := heartbeatResponseV0{
+		ErrorCode: 2,
 	}
 
 	buf := bytes.NewBuffer(nil)
@@ -18,7 +17,7 @@ func TestHeartbeatRequestV1(t *testing.T) {
 	item.writeTo(w)
 	w.Flush()
 
-	var found heartbeatResponseV1
+	var found heartbeatResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
 	if err != nil {
 		t.Error(err)

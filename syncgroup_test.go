@@ -55,9 +55,8 @@ func TestGroupAssignmentReadsFromZeroSize(t *testing.T) {
 	}
 }
 
-func TestSyncGroupResponseV1(t *testing.T) {
-	item := syncGroupResponseV1{
-		ThrottleTimeMS:    1,
+func TestSyncGroupResponseV0(t *testing.T) {
+	item := syncGroupResponseV0{
 		ErrorCode:         2,
 		MemberAssignments: []byte(`blah`),
 	}
@@ -67,7 +66,7 @@ func TestSyncGroupResponseV1(t *testing.T) {
 	item.writeTo(w)
 	w.Flush()
 
-	var found syncGroupResponseV1
+	var found syncGroupResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
 	if err != nil {
 		t.Error(err)
@@ -83,9 +82,8 @@ func TestSyncGroupResponseV1(t *testing.T) {
 	}
 }
 
-func BenchmarkSyncGroupResponseV1(t *testing.B) {
-	item := syncGroupResponseV1{
-		ThrottleTimeMS:    1,
+func BenchmarkSyncGroupResponseV0(t *testing.B) {
+	item := syncGroupResponseV0{
 		ErrorCode:         2,
 		MemberAssignments: []byte(`blah`),
 	}
@@ -101,7 +99,7 @@ func BenchmarkSyncGroupResponseV1(t *testing.B) {
 
 	for i := 0; i < t.N; i++ {
 		r.Seek(0, io.SeekStart)
-		var found syncGroupResponseV1
+		var found syncGroupResponseV0
 		remain, err := (&found).readFrom(reader, size)
 		if err != nil {
 			t.Error(err)

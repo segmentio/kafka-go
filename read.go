@@ -42,6 +42,10 @@ func readInt64(r *bufio.Reader, sz int, v *int64) (int, error) {
 	return peekRead(r, sz, 8, func(b []byte) { *v = makeInt64(b) })
 }
 
+func readBool(r *bufio.Reader, sz int, v *bool) (int, error) {
+	return peekRead(r, sz, 1, func(b []byte) { *v = b[0] != 0 })
+}
+
 func readString(r *bufio.Reader, sz int, v *string) (int, error) {
 	return readStringWith(r, sz, func(r *bufio.Reader, sz int, n int) (remain int, err error) {
 		*v, remain, err = readNewString(r, sz, n)
@@ -186,6 +190,8 @@ func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
 		return readInt32(r, sz, v)
 	case *int64:
 		return readInt64(r, sz, v)
+	case *bool:
+		return readBool(r, sz, v)
 	case *string:
 		return readString(r, sz, v)
 	case *[]byte:
