@@ -29,6 +29,11 @@ func TestReader(t *testing.T) {
 		},
 
 		{
+			scenario: "test special offsets -1 and -2",
+			function: testReaderSetSpecialOffsets,
+		},
+
+		{
 			scenario: "setting the offset to random values returns the expected messages when Read is called",
 			function: testReaderSetRandomOffset,
 		},
@@ -101,6 +106,39 @@ func testReaderReadMessages(t *testing.T, ctx context.Context, r *Reader) {
 		if v != i {
 			t.Error("message at index", i, "has wrong value:", v)
 			return
+		}
+	}
+}
+
+func testReaderSetSpecialOffsets(t *testing.T, ctx context.Context, r *Reader) {
+	prepareReader(t, ctx, r, Message{Value: []byte("first")})
+	prepareReader(t, ctx, r, makeTestSequence(3)...)
+
+	go func() {
+		time.Sleep(1 * time.Second)
+		prepareReader(t, ctx, r, Message{Value: []byte("last")})
+	}()
+
+	for _, test := range []struct {
+		off, final int64
+		want       string
+	}{
+		{FirstOffset, 1, "first"},
+		{LastOffset, 5, "last"},
+	} {
+		offset := test.off
+		if err := r.SetOffset(offset); err != nil {
+			t.Error("setting offset", offset, "failed:", err)
+		}
+		m, err := r.ReadMessage(ctx)
+		if err != nil {
+			t.Error("reading at offset", offset, "failed:", err)
+		}
+		if string(m.Value) != test.want {
+			t.Error("message at offset", offset, "has wrong value:", string(m.Value))
+		}
+		if off := r.Offset(); off != test.final {
+			t.Errorf("bad final offset: got %d, want %d", off, test.final)
 		}
 	}
 }
@@ -505,22 +543,22 @@ func testConsumerGroupSimple(t *testing.T, ctx context.Context, r *Reader) {
 
 func TestReaderSetOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if err := r.SetOffset(-1); err != errNotAvailableWithGroup {
+	if err := r.SetOffset(LastOffset); err != errNotAvailableWithGroup {
 		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
 	}
 }
 
 func TestReaderOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if offset := r.Offset(); offset != -1 {
-		t.Fatalf("expected -1; got %v", offset)
+	if offset := r.Offset(); offset != 0 {
+		t.Fatalf("expected 0; got %v", offset)
 	}
 }
 
 func TestReaderLagWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if offset := r.Lag(); offset != -1 {
-		t.Fatalf("expected -1; got %v", offset)
+	if offset := r.Lag(); offset != 0 {
+		t.Fatalf("expected 0; got %v", offset)
 	}
 }
 
@@ -713,8 +751,6 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 }
 
 func TestReaderConsumerGroup(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario       string
 		partitions     int

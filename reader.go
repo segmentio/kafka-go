@@ -485,6 +485,11 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 		for _, partition := range partitions {
 			if partition == pr.Partition {
 				offset := pr.Offset
+				// If there is no offset stored, the offset field is set to -1.
+				// https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-OffsetFetchResponse
+				if offset < 0 {
+					offset = FirstOffset
+				}
 				offsetsByPartition[int(partition)] = offset
 			}
 		}
@@ -1330,8 +1335,7 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 // Offset returns the current offset of the reader.
 func (r *Reader) Offset() int64 {
 	if r.useConsumerGroup() {
-		// TODO: Is this an error value? Or LastOffset?
-		return -1
+		return 0
 	}
 
 	r.mutex.Lock()
@@ -1346,8 +1350,7 @@ func (r *Reader) Offset() int64 {
 // Lag returns the lag of the last message returned by ReadMessage.
 func (r *Reader) Lag() int64 {
 	if r.useConsumerGroup() {
-		// TODO: Is this an error value? Or LastOffset?
-		return -1
+		return 0
 	}
 
 	r.mutex.Lock()
@@ -1678,8 +1681,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, start int64, err error) {
 	for i := 0; i != len(r.brokers) && conn == nil; i++ {
 		var broker = r.brokers[i]
-		var first int64
-		var last int64
+		var first, last int64
 
 		t0 := time.Now()
 		conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition)
@@ -1783,7 +1785,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	return offset, err
 }
 
-func (r *reader) readOffsets(conn *Conn) (first int64, last int64, err error) {
+func (r *reader) readOffsets(conn *Conn) (first, last int64, err error) {
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 	return conn.ReadOffsets()
 }

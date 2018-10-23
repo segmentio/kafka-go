@@ -757,8 +757,8 @@ func testConnFetchAndCommitOffsets(t *testing.T, conn *Conn) {
 		t.Fatalf("expected 1 PartitionResponses; got %v", v)
 	}
 
-	if offset := fetch.Responses[0].PartitionResponses[0].Offset; offset != -1 {
-		t.Fatalf("expected initial offset of -1; got %v", offset)
+	if offset := fetch.Responses[0].PartitionResponses[0].Offset; offset != FirstOffset {
+		t.Fatalf("expected initial offset of %d; got %v", FirstOffset, offset)
 	}
 
 	committedOffset := int64(N - 1)

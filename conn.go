@@ -573,7 +573,7 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // A program doesn't specify the number of messages in wants from a batch, but
 // gives the minimum and maximum number of bytes that it wants to receive from
 // the kafka server.
-func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
+func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
 
@@ -651,7 +651,7 @@ func (c *Conn) ReadLastOffset() (int64, error) {
 
 // ReadOffsets returns the absolute first and last offsets of the topic used by
 // the connection.
-func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
+func (c *Conn) ReadOffsets() (first, last int64, err error) {
 	// We have to submit two different requests to fetch the first and last
 	// offsets because kafka refuses requests that ask for multiple offsets
 	// on the same topic and partition.
