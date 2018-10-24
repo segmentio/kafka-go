@@ -334,7 +334,8 @@ func (c *Conn) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponse
 	return response, nil
 }
 
-// offsetFetch fetches the offsets for the specified topic partitions
+// offsetFetch fetches the offsets for the specified topic partitions.
+// -1 indicates that there is no offset saved for the partition.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_OffsetFetch
 func (c *Conn) offsetFetch(request offsetFetchRequestV1) (offsetFetchResponseV1, error) {
@@ -445,15 +446,18 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 //
 // See Seek for more details about the offset and whence values.
 func (c *Conn) Offset() (offset int64, whence int) {
+	c.mutex.Lock()
+	offset = c.offset
+	c.mutex.Unlock()
+
 	switch offset {
 	case FirstOffset:
+		offset = 0
 		whence = SeekStart
 	case LastOffset:
+		offset = 0
 		whence = SeekEnd
 	default:
-		c.mutex.Lock()
-		offset = c.offset
-		c.mutex.Unlock()
 		whence = SeekAbsolute
 	}
 	return

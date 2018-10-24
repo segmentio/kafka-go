@@ -508,9 +508,8 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 		for _, partition := range partitions {
 			if partition == pr.Partition {
 				offset := pr.Offset
-				// If there is no offset stored, the offset field is set to -1.
-				// https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-OffsetFetchResponse
 				if offset < 0 {
+					// No offset stored
 					offset = FirstOffset
 				}
 				offsetsByPartition[int(partition)] = offset
