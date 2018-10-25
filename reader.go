@@ -1368,10 +1368,11 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	return
 }
 
-// Offset returns the current offset of the reader.
+// Offset returns the current absolute offset of the reader, or -1
+// if r is backed by a consumer group
 func (r *Reader) Offset() int64 {
 	if r.useConsumerGroup() {
-		return 0
+		return -1
 	}
 
 	r.mutex.Lock()
@@ -1386,7 +1387,7 @@ func (r *Reader) Offset() int64 {
 // Lag returns the lag of the last message returned by ReadMessage.
 func (r *Reader) Lag() int64 {
 	if r.useConsumerGroup() {
-		return 0
+		return -1
 	}
 
 	r.mutex.Lock()

@@ -550,15 +550,15 @@ func TestReaderSetOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 
 func TestReaderOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if offset := r.Offset(); offset != 0 {
-		t.Fatalf("expected 0; got %v", offset)
+	if offset := r.Offset(); offset != -1 {
+		t.Fatalf("expected -1; got %v", offset)
 	}
 }
 
 func TestReaderLagWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if offset := r.Lag(); offset != 0 {
-		t.Fatalf("expected 0; got %v", offset)
+	if offset := r.Lag(); offset != -1 {
+		t.Fatalf("expected -1; got %v", offset)
 	}
 }
 
