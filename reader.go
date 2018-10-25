@@ -1369,7 +1369,7 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 }
 
 // Offset returns the current absolute offset of the reader, or -1
-// if r is backed by a consumer group
+// if r is backed by a consumer group.
 func (r *Reader) Offset() int64 {
 	if r.useConsumerGroup() {
 		return -1
@@ -1384,7 +1384,8 @@ func (r *Reader) Offset() int64 {
 	return offset
 }
 
-// Lag returns the lag of the last message returned by ReadMessage.
+// Lag returns the lag of the last message returned by ReadMessage, or -1
+// if r is backed by a consumer group.
 func (r *Reader) Lag() int64 {
 	if r.useConsumerGroup() {
 		return -1
@@ -1398,6 +1399,8 @@ func (r *Reader) Lag() int64 {
 
 // SetOffset changes the offset from which the next batch of messages will be
 // read. The method fails with io.ErrClosedPipe if the reader has already been closed.
+// The special offsets FirstOffset and LastOffset can be used to indicate the first
+// or last available offset in the partition.
 func (r *Reader) SetOffset(offset int64) error {
 	if r.useConsumerGroup() {
 		return errNotAvailableWithGroup
