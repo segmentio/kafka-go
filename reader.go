@@ -1399,8 +1399,12 @@ func (r *Reader) Lag() int64 {
 
 // SetOffset changes the offset from which the next batch of messages will be
 // read. The method fails with io.ErrClosedPipe if the reader has already been closed.
-// The special offsets FirstOffset and LastOffset can be used to indicate the first
-// or last available offset in the partition.
+//
+// From version 0.2.0, FirstOffset and LastOffset can be used to indicate the first
+// or last available offset in the partition. Please note while -1 and -2 were accepted
+// to indicate the first or last offset in previous versions, the meanings of the numbers
+// were swapped in 0.2.0 to match the meanings in other libraries and the Kafka protocol
+// specification.
 func (r *Reader) SetOffset(offset int64) error {
 	if r.useConsumerGroup() {
 		return errNotAvailableWithGroup

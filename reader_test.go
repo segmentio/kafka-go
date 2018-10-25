@@ -770,6 +770,8 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 }
 
 func TestReaderConsumerGroup(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		scenario       string
 		partitions     int
