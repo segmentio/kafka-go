@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	firstOffset = -1
-	lastOffset  = -2
+	LastOffset  int64 = -1 // The most recent offset available for a partition.
+	FirstOffset       = -2 // The least recent offset available for a partition.
 )
 
 const (
@@ -508,6 +508,10 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 		for _, partition := range partitions {
 			if partition == pr.Partition {
 				offset := pr.Offset
+				if offset < 0 {
+					// No offset stored
+					offset = FirstOffset
+				}
 				offsetsByPartition[int(partition)] = offset
 			}
 		}
@@ -988,6 +992,7 @@ type readerStats struct {
 }
 
 // NewReader creates and returns a new Reader configured with config.
+// The offset is initialized to FirstOffset.
 func NewReader(config ReaderConfig) *Reader {
 	if len(config.Brokers) == 0 {
 		panic("cannot create a new kafka reader with an empty list of broker addresses")
@@ -1107,7 +1112,7 @@ func NewReader(config ReaderConfig) *Reader {
 		done:    make(chan struct{}),
 		commits: make(chan commitRequest, config.QueueCapacity),
 		stop:    stop,
-		offset:  firstOffset,
+		offset:  FirstOffset,
 		stctx:   stctx,
 		stats: &readerStats{
 			dialTime:   makeSummary(),
@@ -1346,10 +1351,10 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	select {
 	case off := <-offch:
 		switch cur := r.Offset(); {
-		case cur == firstOffset:
+		case cur == FirstOffset:
 			lag = off.last - off.first
 
-		case cur == lastOffset:
+		case cur == LastOffset:
 			lag = 0
 
 		default:
@@ -1363,7 +1368,8 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	return
 }
 
-// Offset returns the current offset of the reader.
+// Offset returns the current absolute offset of the reader, or -1
+// if r is backed by a consumer group.
 func (r *Reader) Offset() int64 {
 	if r.useConsumerGroup() {
 		return -1
@@ -1378,7 +1384,8 @@ func (r *Reader) Offset() int64 {
 	return offset
 }
 
-// Lag returns the lag of the last message returned by ReadMessage.
+// Lag returns the lag of the last message returned by ReadMessage, or -1
+// if r is backed by a consumer group.
 func (r *Reader) Lag() int64 {
 	if r.useConsumerGroup() {
 		return -1
@@ -1391,12 +1398,13 @@ func (r *Reader) Lag() int64 {
 }
 
 // SetOffset changes the offset from which the next batch of messages will be
-// read.
+// read. The method fails with io.ErrClosedPipe if the reader has already been closed.
 //
-// Setting the offset ot -1 means to seek to the first offset.
-// Setting the offset to -2 means to seek to the last offset.
-//
-// The method fails with io.ErrClosedPipe if the reader has already been closed.
+// From version 0.2.0, FirstOffset and LastOffset can be used to indicate the first
+// or last available offset in the partition. Please note while -1 and -2 were accepted
+// to indicate the first or last offset in previous versions, the meanings of the numbers
+// were swapped in 0.2.0 to match the meanings in other libraries and the Kafka protocol
+// specification.
 func (r *Reader) SetOffset(offset int64) error {
 	if r.useConsumerGroup() {
 		return errNotAvailableWithGroup
@@ -1717,8 +1725,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, start int64, err error) {
 	for i := 0; i != len(r.brokers) && conn == nil; i++ {
 		var broker = r.brokers[i]
-		var first int64
-		var last int64
+		var first, last int64
 
 		t0 := time.Now()
 		conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition)
@@ -1737,10 +1744,10 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 		}
 
 		switch {
-		case offset == firstOffset:
+		case offset == FirstOffset:
 			offset = first
 
-		case offset == lastOffset:
+		case offset == LastOffset:
 			offset = last
 
 		case offset < first:
@@ -1822,7 +1829,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	return offset, err
 }
 
-func (r *reader) readOffsets(conn *Conn) (first int64, last int64, err error) {
+func (r *reader) readOffsets(conn *Conn) (first, last int64, err error) {
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 	return conn.ReadOffsets()
 }

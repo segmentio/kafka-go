@@ -60,7 +60,7 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 		return partitions[i].ID < partitions[j].ID
 	})
 
-	if !reflect.DeepEqual(partitions, []Partition{
+	want := []Partition{
 		{
 			Topic:    "test-dialer-LookupPartitions",
 			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
@@ -68,8 +68,9 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
 			ID:       0,
 		},
-	}) {
-		t.Error("bad partitions:", partitions)
+	}
+	if !reflect.DeepEqual(partitions, want) {
+		t.Errorf("bad partitions:\ngot:  %+v\nwant: %+v", partitions, want)
 	}
 }
 
@@ -230,7 +231,7 @@ func TestDialerTLS(t *testing.T) {
 		return partitions[i].ID < partitions[j].ID
 	})
 
-	if !reflect.DeepEqual(partitions, []Partition{
+	want := []Partition{
 		{
 			Topic:    topic,
 			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
@@ -238,8 +239,9 @@ func TestDialerTLS(t *testing.T) {
 			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
 			ID:       0,
 		},
-	}) {
-		t.Error("bad partitions:", partitions)
+	}
+	if !reflect.DeepEqual(partitions, want) {
+		t.Errorf("bad partitions:\ngot:  %+v\nwant: %+v", partitions, want)
 	}
 }
 
