@@ -129,13 +129,19 @@ func (d *Dialer) DialLeader(ctx context.Context, network string, address string,
 // LookupLeader searches for the kafka broker that is the leader of the
 // partition for a given topic, returning a Broker value representing it.
 func (d *Dialer) LookupLeader(ctx context.Context, network string, address string, topic string, partition int) (Broker, error) {
+	p, err := d.LookupPartition(ctx, network, address, topic, partition)
+	return p.Leader, err
+}
+
+// LookupPartition searches for the description of specified partition id.
+func (d *Dialer) LookupPartition(ctx context.Context, network string, address string, topic string, partition int) (Partition, error) {
 	c, err := d.DialContext(ctx, network, address)
 	if err != nil {
-		return Broker{}, err
+		return Partition{}, err
 	}
 	defer c.Close()
 
-	brkch := make(chan Broker, 1)
+	brkch := make(chan Partition, 1)
 	errch := make(chan error, 1)
 
 	go func() {
@@ -155,7 +161,7 @@ func (d *Dialer) LookupLeader(ctx context.Context, network string, address strin
 
 			for _, p := range partitions {
 				if p.ID == partition {
-					brkch <- p.Leader
+					brkch <- p
 					return
 				}
 			}
@@ -164,14 +170,14 @@ func (d *Dialer) LookupLeader(ctx context.Context, network string, address strin
 		errch <- UnknownTopicOrPartition
 	}()
 
-	var brk Broker
+	var prt Partition
 	select {
-	case brk = <-brkch:
+	case prt = <-brkch:
 	case err = <-errch:
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
-	return brk, err
+	return prt, err
 }
 
 // LookupPartitions returns the list of partitions that exist for the given topic.
