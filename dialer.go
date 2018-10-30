@@ -109,20 +109,26 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 // The original address is only used as a mechanism to discover the
 // configuration of the kafka cluster that we're connecting to.
 func (d *Dialer) DialLeader(ctx context.Context, network string, address string, topic string, partition int) (*Conn, error) {
-	b, err := d.LookupLeader(ctx, network, address, topic, partition)
+	p, err := d.LookupPartition(ctx, network, address, topic, partition)
 	if err != nil {
 		return nil, err
 	}
+	return d.DialPartition(ctx, network, address, p)
+}
 
-	c, err := d.dialContext(ctx, network, net.JoinHostPort(b.Host, strconv.Itoa(b.Port)))
+// DialPartition opens a connection to the leader of the partition specified by partition
+// descriptor. It's strongly advised to use descriptor of the partition that comes out of
+// functions LookupPartition or LookupPartitions.
+func (d *Dialer) DialPartition(ctx context.Context, network string, address string, partition Partition) (*Conn, error) {
+	c, err := d.dialContext(ctx, network, net.JoinHostPort(partition.Leader.Host, strconv.Itoa(partition.Leader.Port)))
 	if err != nil {
 		return nil, err
 	}
 
 	return NewConnWith(c, ConnConfig{
 		ClientID:  d.ClientID,
-		Topic:     topic,
-		Partition: partition,
+		Topic:     partition.Topic,
+		Partition: partition.ID,
 	}), nil
 }
 
@@ -284,6 +290,21 @@ func DialContext(ctx context.Context, network string, address string) (*Conn, er
 // DialLeader is a convenience wrapper for DefaultDialer.DialLeader.
 func DialLeader(ctx context.Context, network string, address string, topic string, partition int) (*Conn, error) {
 	return DefaultDialer.DialLeader(ctx, network, address, topic, partition)
+}
+
+// DialPartition is a convenience wrapper for DefaultDialer.DialPartition.
+func DialPartition(ctx context.Context, network string, address string, partition Partition) (*Conn, error) {
+	return DefaultDialer.DialPartition(ctx, network, address, partition)
+}
+
+// LookupPartition is a convenience wrapper for DefaultDialer.LookupPartition.
+func LookupPartition(ctx context.Context, network string, address string, topic string, partition int) (Partition, error) {
+	return DefaultDialer.LookupPartition(ctx, network, address, topic, partition)
+}
+
+// LookupPartitions is a convenience wrapper for DefaultDialer.LookupPartitions.
+func LookupPartitions(ctx context.Context, network string, address string, topic string) ([]Partition, error) {
+	return DefaultDialer.LookupPartitions(ctx, network, address, topic)
 }
 
 // The Resolver interface is used as an abstraction to provide service discovery
