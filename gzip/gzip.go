@@ -15,10 +15,8 @@ func init() {
 }
 
 type CompressionCodec struct {
-	// CompressionLeven is the level of compression to use on messages.
+	// CompressionLevel is the level of compression to use on messages.
 	CompressionLevel int
-	writer           *gzip.Writer
-	reader           *gzip.Reader
 }
 
 const Code = 1
@@ -42,19 +40,14 @@ func (c CompressionCodec) Code() int8 {
 func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 	buf := bytes.Buffer{}
 	buf.Grow(len(src)) // guess a size to avoid repeat allocations.
+	writer := gzip.NewWriter(&buf)
 
-	if c.writer == nil {
-		c.writer = gzip.NewWriter(&buf)
-	} else {
-		c.writer.Reset(&buf)
-	}
-
-	_, err := c.writer.Write(src)
+	_, err := writer.Write(src)
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.writer.Close()
+	err = writer.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -63,17 +56,9 @@ func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 
 // Decode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
-	if c.reader == nil {
-		var err error
-		c.reader, err = gzip.NewReader(bytes.NewReader(src))
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		if err := c.reader.Reset(bytes.NewReader(src)); err != nil {
-			return nil, err
-		}
+	reader, err := gzip.NewReader(bytes.NewReader(src))
+	if err != nil {
+		return nil, err
 	}
-
-	return ioutil.ReadAll(c.reader)
+	return ioutil.ReadAll(reader)
 }

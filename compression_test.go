@@ -213,6 +213,20 @@ func TestMixedCompressedMessages(t *testing.T) {
 	}
 }
 
+type noopCodec struct{}
+
+func (noopCodec) Code() int8 {
+	return 0
+}
+
+func (noopCodec) Encode(src []byte) ([]byte, error) {
+	return src, nil
+}
+
+func (noopCodec) Decode(src []byte) ([]byte, error) {
+	return src, nil
+}
+
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
 		scenario string
@@ -221,7 +235,7 @@ func BenchmarkCompression(b *testing.B) {
 	}{
 		{
 			scenario: "None",
-			codec:    nil,
+			codec:    &noopCodec{},
 			function: benchmarkCompression,
 		},
 		{

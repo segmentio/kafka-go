@@ -14,10 +14,7 @@ func init() {
 	})
 }
 
-type CompressionCodec struct {
-	writer *lz4.Writer
-	reader *lz4.Reader
-}
+type CompressionCodec struct{}
 
 const Code = 3
 
@@ -34,19 +31,14 @@ func (c CompressionCodec) Code() int8 {
 func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 	buf := bytes.Buffer{}
 	buf.Grow(len(src)) // guess a size to avoid repeat allocations.
+	writer := lz4.NewWriter(&buf)
 
-	if c.writer == nil {
-		c.writer = lz4.NewWriter(&buf)
-	} else {
-		c.writer.Reset(&buf)
-	}
-
-	_, err := c.writer.Write(src)
+	_, err := writer.Write(src)
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.writer.Close()
+	err = writer.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -56,10 +48,6 @@ func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 
 // Decode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
-	if c.reader == nil {
-		c.reader = lz4.NewReader(bytes.NewReader(src))
-	} else {
-		c.reader.Reset(bytes.NewReader(src))
-	}
-	return ioutil.ReadAll(c.reader)
+	reader := lz4.NewReader(bytes.NewReader(src))
+	return ioutil.ReadAll(reader)
 }

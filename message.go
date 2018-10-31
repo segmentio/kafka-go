@@ -131,7 +131,8 @@ func newMessageSetReader(reader *bufio.Reader, remain int) *messageSetReader {
 
 func (r *messageSetReader) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
-	val func(*bufio.Reader, int, int) (int, error)) (offset int64, timestamp int64, err error) {
+	val func(*bufio.Reader, int, int) (int, error),
+) (offset int64, timestamp int64, err error) {
 	for r.readerStack != nil {
 		if r.remain == 0 {
 			r.readerStack = r.parent

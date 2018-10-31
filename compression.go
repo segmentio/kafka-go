@@ -44,6 +44,9 @@ func resolveCodec(code int8) (codec CompressionCodec, err error) {
 // CompressionCodec represents a compression codec to encode and decode
 // the messages.
 // See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
+//
+// A CompressionCodec must be safe for concurrent access by multiple go
+// routines.
 type CompressionCodec interface {
 	// Code returns the compression codec code
 	Code() int8
