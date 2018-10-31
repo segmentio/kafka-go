@@ -29,7 +29,7 @@ func testWriteFetchRequestV2(t *testing.T) {
 	testWriteOptimization(t,
 		requestHeader{
 			ApiKey:        int16(fetchRequest),
-			ApiVersion:    int16(v1),
+			ApiVersion:    int16(v2),
 			CorrelationID: testCorrelationID,
 			ClientID:      testClientID,
 		},
