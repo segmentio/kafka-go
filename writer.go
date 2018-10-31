@@ -266,10 +266,6 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		for _, msg := range msgs {
-			if msg.CompressionCodec == nil {
-				msg.CompressionCodec = w.config.CompressionCodec
-			}
-
 			select {
 			case w.msgs <- writerMessage{
 				msg: msg,
@@ -511,6 +507,7 @@ type writer struct {
 	msgs         chan writerMessage
 	join         sync.WaitGroup
 	stats        *writerStats
+	codec        CompressionCodec
 }
 
 func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
@@ -525,6 +522,7 @@ func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
 		dialer:       config.Dialer,
 		msgs:         make(chan writerMessage, config.QueueCapacity),
 		stats:        stats,
+		codec:        config.CompressionCodec,
 	}
 	w.join.Add(1)
 	go w.run()
@@ -633,7 +631,7 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 	t0 := time.Now()
 	conn.SetWriteDeadline(time.Now().Add(w.writeTimeout))
 
-	if _, err = conn.WriteMessages(batch...); err != nil {
+	if _, err = conn.WriteMessagesCompressed(w.codec, batch...); err != nil {
 		w.stats.errors.observe(1)
 		for i, res := range resch {
 			res <- &writerError{msg: batch[i], err: err}

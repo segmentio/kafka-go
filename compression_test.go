@@ -1,10 +1,14 @@
 package kafka_test
 
 import (
+	"context"
+	"fmt"
 	"math/rand"
+	"strconv"
 	"testing"
+	"time"
 
-	kafka "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/gzip"
 	"github.com/segmentio/kafka-go/lz4"
 	"github.com/segmentio/kafka-go/snappy"
@@ -15,14 +19,13 @@ func TestCompression(t *testing.T) {
 		Value: []byte("message"),
 	}
 
-	testEncodeDecode(t, msg, nil)
 	testEncodeDecode(t, msg, gzip.NewCompressionCodec())
 	testEncodeDecode(t, msg, snappy.NewCompressionCodec())
 	testEncodeDecode(t, msg, lz4.NewCompressionCodec())
 }
 
 func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCodec) {
-	var r1, r2 kafka.Message
+	var r1, r2 []byte
 	var err error
 	var code int8
 
@@ -31,21 +34,20 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCode
 	}
 
 	t.Run("encode with "+codecToStr(code), func(t *testing.T) {
-		m.CompressionCodec = codec
-		r1, err = m.Encode()
+		r1, err = codec.Encode(m.Value)
 		if err != nil {
 			t.Error(err)
 		}
 	})
 	t.Run("encode with "+codecToStr(code), func(t *testing.T) {
-		r2, err = r1.Decode()
+		r2, err = codec.Decode(r1)
 		if err != nil {
 			t.Error(err)
 		}
-		if string(r2.Value) != "message" {
+		if string(r2) != "message" {
 			t.Error("bad message")
-			t.Log("got: ", r2.Value)
-			t.Log("expected: ", []byte("message"))
+			t.Log("got: ", string(r2))
+			t.Log("expected: ", string(m.Value))
 		}
 	})
 }
@@ -64,6 +66,82 @@ func codecToStr(codec int8) string {
 		return "unknown"
 	}
 }
+
+func TestCompressedMessages(t *testing.T) {
+	testCompressedMessages(t, gzip.NewCompressionCodec())
+	testCompressedMessages(t, snappy.NewCompressionCodec())
+	testCompressedMessages(t, lz4.NewCompressionCodec())
+}
+
+func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
+	t.Run("produce/consume with"+codecToStr(codec.Code()), func(t *testing.T) {
+		t.Parallel()
+
+		topic := kafka.CreateTopic(t, 1)
+		w := kafka.NewWriter(kafka.WriterConfig{
+			Brokers:          []string{"localhost:9092"},
+			Topic:            topic,
+			Balancer:         &kafka.RoundRobin{},
+			CompressionCodec: codec,
+		})
+		defer w.Close()
+
+		offset := 0
+		var values []string
+		for i := 0; i < 10; i++ {
+			batch := make([]kafka.Message, i+1)
+			for j := range batch {
+				value := fmt.Sprintf("Hello World %d!", offset)
+				values = append(values, value)
+				batch[j] = kafka.Message{
+					Key:   []byte(strconv.Itoa(offset)),
+					Value: []byte(value),
+				}
+				offset++
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := w.WriteMessages(ctx, batch...); err != nil {
+				t.Errorf("error sending batch %d, reason: %+v", i+1, err)
+			}
+			cancel()
+		}
+
+		r := kafka.NewReader(kafka.ReaderConfig{
+			Brokers:   []string{"127.0.0.1:9092"},
+			Topic:     topic,
+			Partition: 0,
+			MaxWait:   100 * time.Millisecond,
+			MaxBytes:  1024,
+		})
+		defer r.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// in order to ensure proper handling of decompressing message, read at
+		// offsets that we know to be in the middle of compressed message sets.
+		for base := range values {
+			r.SetOffset(int64(base))
+			for i := base; i < len(values); i++ {
+				msg, err := r.ReadMessage(ctx)
+				if err != nil {
+					t.Errorf("error receiving message at loop %d, offset %d, reason: %+v", base, i, err)
+				}
+				if msg.Offset != int64(i) {
+					t.Errorf("wrong offset at loop %d...expected %d but got %d", base, i, msg.Offset)
+				}
+				if strconv.Itoa(i) != string(msg.Key) {
+					t.Errorf("wrong message key at loop %d...expected %d but got %s", base, i, string(msg.Key))
+				}
+				if values[i] != string(msg.Value) {
+					t.Errorf("wrong message value at loop %d...expected %s but got %s", base, values[i], string(msg.Value))
+				}
+			}
+		}
+	})
+}
+
+// todo : test case for mixed comnpressed and not compressed.
 
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
@@ -119,19 +197,18 @@ func BenchmarkCompression(b *testing.B) {
 
 func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, payloadSize int, payload map[int][]byte) {
 	msg := kafka.Message{
-		Value:            payload[payloadSize],
-		CompressionCodec: codec,
+		Value: payload[payloadSize],
 	}
 
 	for i := 0; i < b.N; i++ {
-		m1, err := msg.Encode()
+		m1, err := codec.Encode(msg.Value)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		b.SetBytes(int64(len(m1.Value)))
+		b.SetBytes(int64(len(m1)))
 
-		_, err = m1.Decode()
+		_, err = codec.Decode(m1)
 		if err != nil {
 			b.Fatal(err)
 		}

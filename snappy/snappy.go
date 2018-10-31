@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 
 	"github.com/golang/snappy"
-	kafka "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go"
 )
 
 func init() {
@@ -14,9 +14,7 @@ func init() {
 	})
 }
 
-type CompressionCodec struct {
-	writer *snappy.Writer
-}
+type CompressionCodec struct{}
 
 const Code = 2
 
@@ -30,22 +28,14 @@ func (c CompressionCodec) Code() int8 {
 }
 
 // Encode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
-	if n := snappy.MaxEncodedLen(len(src)); n > len(dst) {
-		buf := buffer{data: dst}
-		return buf.Write(snappy.Encode(nil, src))
-	}
-	return len(snappy.Encode(dst, src)), nil
+func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
+	// NOTE : passing a nil dst means snappy will allocate it.
+	return snappy.Encode(nil, src), nil
 }
 
 // Decode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Decode(dst, src []byte) (int, error) {
-	buf := buffer{data: dst}
-	data, err := decode(src)
-	if err != nil {
-		return 0, err
-	}
-	return buf.Write(data)
+func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
+	return decode(src)
 }
 
 var xerialHeader = []byte{130, 83, 78, 65, 80, 80, 89, 0}
@@ -75,18 +65,4 @@ func decode(src []byte) ([]byte, error) {
 		dst = append(dst, chunk...)
 	}
 	return dst, nil
-}
-
-type buffer struct {
-	data []byte
-	size int
-}
-
-func (buf *buffer) Write(b []byte) (int, error) {
-	n := copy(buf.data[buf.size:], b)
-	buf.size += n
-	if n != len(b) {
-		return n, bytes.ErrTooLarge
-	}
-	return n, nil
 }

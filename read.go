@@ -374,33 +374,3 @@ func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, 
 
 	return
 }
-
-func readMessage(r *bufio.Reader, sz int, min int64,
-	key func(*bufio.Reader, int, int) (int, error),
-	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, remain int, err error) {
-	for {
-		// TODO: read attributes and decompress the message
-		if offset, _, timestamp, remain, err = readMessageHeader(r, sz); err != nil {
-			return
-		}
-
-		// When the messages are compressed kafka may return messages at an
-		// earlier offset than the one that was requested, apparently it's the
-		// client's responsibility to ignore those.
-		if offset >= min {
-			if remain, err = readBytesWith(r, remain, key); err != nil {
-				return
-			}
-			remain, err = readBytesWith(r, remain, val)
-			return
-		}
-
-		if remain, err = discardBytes(r, remain); err != nil {
-			return
-		}
-		if remain, err = discardBytes(r, remain); err != nil {
-			return
-		}
-	}
-}
