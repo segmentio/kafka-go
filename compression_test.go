@@ -75,13 +75,10 @@ func TestCompressedMessages(t *testing.T) {
 
 func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 	t.Run("produce/consume with"+codecToStr(codec.Code()), func(t *testing.T) {
-		t.Parallel()
-
 		topic := kafka.CreateTopic(t, 1)
 		w := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:          []string{"localhost:9092"},
+			Brokers:          []string{"127.0.0.1:9092"},
 			Topic:            topic,
-			Balancer:         &kafka.RoundRobin{},
 			CompressionCodec: codec,
 		})
 		defer w.Close()
@@ -141,7 +138,75 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 	})
 }
 
-// todo : test case for mixed comnpressed and not compressed.
+func TestMixedCompressedMessages(t *testing.T) {
+
+	topic := kafka.CreateTopic(t, 1)
+
+	offset := 0
+	var values []string
+	produce := func(n int, codec kafka.CompressionCodec) {
+		w := kafka.NewWriter(kafka.WriterConfig{
+			Brokers:          []string{"127.0.0.1:9092"},
+			Topic:            topic,
+			CompressionCodec: codec,
+		})
+		defer w.Close()
+
+		msgs := make([]kafka.Message, n)
+		for i := range msgs {
+			value := fmt.Sprintf("Hello World %d!", offset)
+			values = append(values, value)
+			offset++
+			msgs[i] = kafka.Message{Value: []byte(value)}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := w.WriteMessages(ctx, msgs...); err != nil {
+			t.Errorf("failed to produce messages: %+v", err)
+		}
+	}
+
+	// produce messages that interleave uncompressed messages and messages with
+	// different compression codecs.  reader should be able to properly handle
+	// all of them.
+	produce(10, nil)
+	produce(20, gzip.NewCompressionCodec())
+	produce(5, nil)
+	produce(10, snappy.NewCompressionCodec())
+	produce(10, lz4.NewCompressionCodec())
+	produce(5, nil)
+
+	r := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   []string{"127.0.0.1:9092"},
+		Topic:     topic,
+		Partition: 0,
+		MaxWait:   100 * time.Millisecond,
+		MaxBytes:  1024,
+	})
+	defer r.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// in order to ensure proper handling of decompressing message, read at
+	// offsets that we know to be in the middle of compressed message sets.
+	for base := range values {
+		r.SetOffset(int64(base))
+		for i := base; i < len(values); i++ {
+			msg, err := r.ReadMessage(ctx)
+			if err != nil {
+				t.Errorf("error receiving message at loop %d, offset %d, reason: %+v", base, i, err)
+			}
+			if msg.Offset != int64(i) {
+				t.Errorf("wrong offset at loop %d...expected %d but got %d", base, i, msg.Offset)
+			}
+			if values[i] != string(msg.Value) {
+				t.Errorf("wrong message value at loop %d...expected %s but got %s", base, values[i], string(msg.Value))
+			}
+		}
+	}
+}
 
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
