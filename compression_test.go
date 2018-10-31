@@ -75,6 +75,8 @@ func TestCompressedMessages(t *testing.T) {
 
 func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 	t.Run("produce/consume with"+codecToStr(codec.Code()), func(t *testing.T) {
+		t.Parallel()
+
 		topic := kafka.CreateTopic(t, 1)
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
@@ -107,7 +109,8 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 			Brokers:   []string{"127.0.0.1:9092"},
 			Topic:     topic,
 			Partition: 0,
-			MaxWait:   100 * time.Millisecond,
+			MaxWait:   10 * time.Millisecond,
+			MinBytes:  1,
 			MaxBytes:  1024,
 		})
 		defer r.Close()
@@ -139,6 +142,7 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 }
 
 func TestMixedCompressedMessages(t *testing.T) {
+	t.Parallel()
 
 	topic := kafka.CreateTopic(t, 1)
 
@@ -181,7 +185,8 @@ func TestMixedCompressedMessages(t *testing.T) {
 		Brokers:   []string{"127.0.0.1:9092"},
 		Topic:     topic,
 		Partition: 0,
-		MaxWait:   100 * time.Millisecond,
+		MaxWait:   10 * time.Millisecond,
+		MinBytes:  1,
 		MaxBytes:  1024,
 	})
 	defer r.Close()
