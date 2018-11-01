@@ -1,20 +1,9 @@
 package kafka
 
 import (
-	"io"
+	"errors"
 	"sync"
-
-	"github.com/pkg/errors"
 )
-
-type Compressor interface {
-	io.Writer
-	io.Closer
-}
-
-type Decompressor interface {
-	io.Reader
-}
 
 var errUnknownCodec = errors.New("invalid codec")
 

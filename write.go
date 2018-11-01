@@ -241,7 +241,12 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 }
 
 func compress(codec CompressionCodec, msgs ...Message) ([]Message, error) {
+	estimatedLen := 0
+	for _, msg := range msgs {
+		estimatedLen += int(msgSize(msg.Key, msg.Value))
+	}
 	buf := &bytes.Buffer{}
+	buf.Grow(estimatedLen)
 	bufWriter := bufio.NewWriter(buf)
 	for offset, msg := range msgs {
 		writeMessage(bufWriter, int64(offset), CompressionNoneCode, msg.Time, msg.Key, msg.Value)
@@ -261,19 +266,23 @@ const magicByte = 1 // compatible with kafka 0.10.0.0+
 func writeMessage(w *bufio.Writer, offset int64, attributes int8, time time.Time, key, value []byte) {
 	timestamp := timestamp(time)
 	crc32 := crc32OfMessage(magicByte, attributes, timestamp, key, value)
-	size := 4 + // crc
-		1 + // magic byte
-		1 + // attributes
-		8 + // timestamp
-		sizeofBytes(key) +
-		sizeofBytes(value)
+	size := msgSize(key, value)
 
 	writeInt64(w, offset)
-	writeInt32(w, int32(size))
+	writeInt32(w, size)
 	writeInt32(w, int32(crc32))
 	writeInt8(w, magicByte)
 	writeInt8(w, attributes)
 	writeInt64(w, timestamp)
 	writeBytes(w, key)
 	writeBytes(w, value)
+}
+
+func msgSize(key, value []byte) int32 {
+	return 4 + // crc
+		1 + // magic byte
+		1 + // attributes
+		8 + // timestamp
+		sizeofBytes(key) +
+		sizeofBytes(value)
 }

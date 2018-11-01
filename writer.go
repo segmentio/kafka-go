@@ -631,7 +631,7 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 	t0 := time.Now()
 	conn.SetWriteDeadline(time.Now().Add(w.writeTimeout))
 
-	if _, err = conn.WriteMessagesCompressed(w.codec, batch...); err != nil {
+	if _, err = conn.WriteCompressedMessages(w.codec, batch...); err != nil {
 		w.stats.errors.observe(1)
 		for i, res := range resch {
 			res <- &writerError{msg: batch[i], err: err}

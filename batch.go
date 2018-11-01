@@ -195,7 +195,7 @@ func (batch *Batch) readMessage(
 			// before the actual deadline occurred. This is necessary otherwise
 			// timing out the connection for real could end up leaving it in an
 			// unpredictable state, which would require closing it.
-			// This design decision was main to maximize the changes of keeping
+			// This design decision was made to maximize the chances of keeping
 			// the connection open, the trade off being to lose precision on the
 			// read deadline management.
 			if !batch.deadline.IsZero() && time.Now().After(batch.deadline) {

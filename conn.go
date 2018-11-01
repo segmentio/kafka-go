@@ -774,22 +774,22 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 // This method is exposed to satisfy the net.Conn interface but is less efficient
 // than the more general purpose WriteMessages method.
 func (c *Conn) Write(b []byte) (int, error) {
-	return c.WriteMessagesCompressed(nil, Message{Value: b})
+	return c.WriteCompressedMessages(nil, Message{Value: b})
 }
 
 // WriteMessages writes a batch of messages to the connection's topic and
 // partition, returning the number of bytes written. The write is an atomic
 // operation, it either fully succeeds or fails.
 func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
-	return c.WriteMessagesCompressed(nil, msgs...)
+	return c.WriteCompressedMessages(nil, msgs...)
 }
 
-// WriteMessages writes a batch of messages to the connection's topic and
-// partition, returning the number of bytes written. The write is an atomic
+// WriteCompressedMessages writes a batch of messages to the connection's topic
+// and partition, returning the number of bytes written. The write is an atomic
 // operation, it either fully succeeds or fails.
 //
 // If the compression codec is not nil, the messages will be compressed.
-func (c *Conn) WriteMessagesCompressed(codec CompressionCodec, msgs ...Message) (int, error) {
+func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) (int, error) {
 	if len(msgs) == 0 {
 		return 0, nil
 	}
