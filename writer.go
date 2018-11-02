@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"sort"
 	"sync"
@@ -109,6 +110,14 @@ type WriterConfig struct {
 	// CompressionCodec set the codec to be used to compress Kafka messages.
 	// Note that messages are allowed to overwrite the compression codec individually.
 	CompressionCodec
+
+	// If not nil, specifies a logger used to report internal changes within the
+	// writer.
+	Logger *log.Logger
+
+	// ErrorLogger is the logger used to report errors. If nil, the writer falls
+	// back to using Logger instead.
+	ErrorLogger *log.Logger
 
 	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
 }
@@ -511,6 +520,8 @@ type writer struct {
 	msgs         chan writerMessage
 	join         sync.WaitGroup
 	stats        *writerStats
+	logger       *log.Logger
+	errorLogger  *log.Logger
 }
 
 func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
@@ -525,6 +536,8 @@ func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
 		dialer:       config.Dialer,
 		msgs:         make(chan writerMessage, config.QueueCapacity),
 		stats:        stats,
+		logger:       config.Logger,
+		errorLogger:  config.ErrorLogger,
 	}
 	w.join.Add(1)
 	go w.run()
@@ -538,6 +551,20 @@ func (w *writer) close() {
 
 func (w *writer) messages() chan<- writerMessage {
 	return w.msgs
+}
+
+func (w *writer) withLogger(do func(*log.Logger)) {
+	if w.logger != nil {
+		do(w.logger)
+	}
+}
+
+func (w *writer) withErrorLogger(do func(*log.Logger)) {
+	if w.errorLogger != nil {
+		do(w.errorLogger)
+	} else {
+		w.withLogger(do)
+	}
 }
 
 func (w *writer) run() {
@@ -623,6 +650,9 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 	if conn == nil {
 		if conn, err = w.dial(); err != nil {
 			w.stats.errors.observe(1)
+			w.withErrorLogger(func(logger *log.Logger) {
+				logger.Printf("error dialing kafka brokers for topic %s (partition %d): %s", w.topic, w.partition, err)
+			})
 			for i, res := range resch {
 				res <- &writerError{msg: batch[i], err: err}
 			}
@@ -635,6 +665,9 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 
 	if _, err = conn.WriteMessages(batch...); err != nil {
 		w.stats.errors.observe(1)
+		w.withErrorLogger(func(logger *log.Logger) {
+			logger.Printf("error writing messages to %s (partition %d): %s", w.topic, w.partition, err)
+		})
 		for i, res := range resch {
 			res <- &writerError{msg: batch[i], err: err}
 		}
