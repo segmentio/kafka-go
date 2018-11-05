@@ -16,12 +16,12 @@ const (
 
 func TestWriteOptimizations(t *testing.T) {
 	t.Parallel()
-	t.Run("writeFetchRequestV1", testWriteFetchRequestV1)
+	t.Run("writeFetchRequestV2", testWriteFetchRequestV2)
 	t.Run("writeListOffsetRequestV1", testWriteListOffsetRequestV1)
 	t.Run("writeProduceRequestV2", testWriteProduceRequestV2)
 }
 
-func testWriteFetchRequestV1(t *testing.T) {
+func testWriteFetchRequestV2(t *testing.T) {
 	const offset = 42
 	const minBytes = 10
 	const maxBytes = 1000
@@ -29,17 +29,17 @@ func testWriteFetchRequestV1(t *testing.T) {
 	testWriteOptimization(t,
 		requestHeader{
 			ApiKey:        int16(fetchRequest),
-			ApiVersion:    int16(v1),
+			ApiVersion:    int16(v2),
 			CorrelationID: testCorrelationID,
 			ClientID:      testClientID,
 		},
-		fetchRequestV1{
+		fetchRequestV2{
 			ReplicaID:   -1,
 			MaxWaitTime: milliseconds(maxWait),
 			MinBytes:    minBytes,
-			Topics: []fetchRequestTopicV1{{
+			Topics: []fetchRequestTopicV2{{
 				TopicName: testTopic,
-				Partitions: []fetchRequestPartitionV1{{
+				Partitions: []fetchRequestPartitionV2{{
 					Partition:   testPartition,
 					FetchOffset: offset,
 					MaxBytes:    maxBytes,
@@ -47,7 +47,7 @@ func testWriteFetchRequestV1(t *testing.T) {
 			}},
 		},
 		func(w *bufio.Writer) {
-			writeFetchRequestV1(w, testCorrelationID, testClientID, testTopic, testPartition, offset, minBytes, maxBytes, maxWait)
+			writeFetchRequestV2(w, testCorrelationID, testClientID, testTopic, testPartition, offset, minBytes, maxBytes, maxWait)
 		},
 	)
 }
@@ -114,7 +114,7 @@ func testWriteProduceRequestV2(t *testing.T) {
 			}},
 		},
 		func(w *bufio.Writer) {
-			writeProduceRequestV2(w, testCorrelationID, testClientID, testTopic, testPartition, timeout*time.Millisecond, -1, Message{
+			writeProduceRequestV2(w, nil, testCorrelationID, testClientID, testTopic, testPartition, timeout*time.Millisecond, -1, Message{
 				Offset: 10,
 				Key:    key,
 				Value:  val,

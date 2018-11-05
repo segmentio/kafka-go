@@ -1,9 +1,9 @@
 package kafka
 
-func (msg Message) Encode() (Message, error) {
-	return msg.encode()
-}
+import "testing"
 
-func (msg Message) Decode() (Message, error) {
-	return msg.decode()
+func CreateTopic(t *testing.T, partitions int) string {
+	topic := makeTopic()
+	createTopic(t, topic, partitions)
+	return topic
 }

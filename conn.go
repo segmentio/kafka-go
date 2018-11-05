@@ -125,10 +125,10 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	// The fetch request needs to ask for a MaxBytes value that is at least
 	// enough to load the control data of the response. To avoid having to
 	// recompute it on every read, it is cached here in the Conn value.
-	c.fetchMinSize = (fetchResponseV1{
-		Topics: []fetchResponseTopicV1{{
+	c.fetchMinSize = (fetchResponseV2{
+		Topics: []fetchResponseTopicV2{{
 			TopicName: config.Topic,
-			Partitions: []fetchResponsePartitionV1{{
+			Partitions: []fetchResponsePartitionV2{{
 				Partition:  int32(config.Partition),
 				MessageSet: messageSet{{}},
 			}},
@@ -598,7 +598,7 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 		adjustedDeadline = deadline
-		return writeFetchRequestV1(
+		return writeFetchRequestV2(
 			&c.wbuf,
 			id,
 			c.clientID,
@@ -622,11 +622,10 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
 	return &Batch{
 		conn:          c,
-		reader:        &c.rbuf,
+		msgs:          newMessageSetReader(&c.rbuf, remain),
 		deadline:      adjustedDeadline,
 		throttle:      duration(throttle),
 		lock:          lock,
-		remain:        remain,
 		topic:         c.topic,          // topic is copied to Batch to prevent race with Batch.close
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
@@ -775,13 +774,22 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 // This method is exposed to satisfy the net.Conn interface but is less efficient
 // than the more general purpose WriteMessages method.
 func (c *Conn) Write(b []byte) (int, error) {
-	return c.WriteMessages(Message{Value: b})
+	return c.WriteCompressedMessages(nil, Message{Value: b})
 }
 
 // WriteMessages writes a batch of messages to the connection's topic and
 // partition, returning the number of bytes written. The write is an atomic
 // operation, it either fully succeeds or fails.
 func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
+	return c.WriteCompressedMessages(nil, msgs...)
+}
+
+// WriteCompressedMessages writes a batch of messages to the connection's topic
+// and partition, returning the number of bytes written. The write is an atomic
+// operation, it either fully succeeds or fails.
+//
+// If the compression codec is not nil, the messages will be compressed.
+func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) (int, error) {
 	if len(msgs) == 0 {
 		return 0, nil
 	}
@@ -802,12 +810,6 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 			msgs[i].Time = writeTime
 		}
 
-		var err error
-		msg, err = msg.encode()
-		if err != nil {
-			return 0, err
-		}
-
 		n += len(msg.Key) + len(msg.Value)
 	}
 
@@ -817,6 +819,7 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 			return writeProduceRequestV2(
 				&c.wbuf,
+				codec,
 				id,
 				c.clientID,
 				c.topic,

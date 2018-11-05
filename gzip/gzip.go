@@ -5,7 +5,7 @@ import (
 	"compress/gzip"
 	"io/ioutil"
 
-	kafka "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go"
 )
 
 func init() {
@@ -15,10 +15,8 @@ func init() {
 }
 
 type CompressionCodec struct {
-	// CompressionLeven is the level of compression to use on messages.
+	// CompressionLevel is the level of compression to use on messages.
 	CompressionLevel int
-	writer           *gzip.Writer
-	reader           *gzip.Reader
 }
 
 const Code = 1
@@ -39,59 +37,28 @@ func (c CompressionCodec) Code() int8 {
 }
 
 // Encode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
-	buf := buffer{data: dst}
+func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
+	buf := bytes.Buffer{}
+	buf.Grow(len(src)) // guess a size to avoid repeat allocations.
+	writer := gzip.NewWriter(&buf)
 
-	if c.writer == nil {
-		c.writer = gzip.NewWriter(&buf)
-	} else {
-		c.writer.Reset(&buf)
-	}
-
-	_, err := c.writer.Write(src)
+	_, err := writer.Write(src)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	err = c.writer.Close()
+	err = writer.Close()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return buf.size, err
+	return buf.Bytes(), err
 }
 
 // Decode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Decode(dst, src []byte) (int, error) {
-	if c.reader == nil {
-		var err error
-		c.reader, err = gzip.NewReader(bytes.NewReader(src))
-		if err != nil {
-			return 0, err
-		}
-	} else {
-		if err := c.reader.Reset(bytes.NewReader(src)); err != nil {
-			return 0, err
-		}
-	}
-
-	data, err := ioutil.ReadAll(c.reader)
+func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(src))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	buf := buffer{data: dst}
-	return buf.Write(data)
-}
-
-type buffer struct {
-	data []byte
-	size int
-}
-
-func (buf *buffer) Write(b []byte) (int, error) {
-	n := copy(buf.data[buf.size:], b)
-	buf.size += n
-	if n != len(b) {
-		return n, bytes.ErrTooLarge
-	}
-	return n, nil
+	return ioutil.ReadAll(reader)
 }
