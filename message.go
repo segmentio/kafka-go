@@ -20,12 +20,6 @@ type Message struct {
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
 	Time time.Time
-
-	// Compression codec used to encode the message value
-	//
-	// Deprecated: this field is ignored.  If compression is desired, then
-	// configure it on the Writer.
-	CompressionCodec
 }
 
 func (msg Message) item() messageSetItem {
