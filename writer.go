@@ -643,45 +643,71 @@ func (w *writer) dial() (conn *Conn, err error) {
 	return
 }
 
+const writeMaxAttempts = 5
+const writeRetryDelay = 50 * time.Millisecond
+
 func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
-	w.stats.writes.observe(1)
-	if conn == nil {
-		if conn, err = w.dial(); err != nil {
+	var attempts int
+
+	for {
+		attempts++
+
+		w.stats.writes.observe(1)
+		if conn == nil {
+			if conn, err = w.dial(); err != nil {
+				w.stats.errors.observe(1)
+				w.withErrorLogger(func(logger *log.Logger) {
+					logger.Printf("error dialing kafka brokers for topic %s (partition %d): %s", w.topic, w.partition, err)
+				})
+				for i, res := range resch {
+					res <- &writerError{msg: batch[i], err: err}
+				}
+				return
+			}
+		}
+
+		t0 := time.Now()
+		conn.SetWriteDeadline(time.Now().Add(w.writeTimeout))
+
+		if _, err = conn.WriteCompressedMessages(w.codec, batch...); err != nil {
+			// when an EOF is detected here, it's likely that the server closed
+			// this connection and we need to establish a new one. We'll retry
+			// here after some back-off.
+			if err == io.EOF && attempts < writeMaxAttempts {
+				w.withLogger(func(logger *log.Logger) {
+					logger.Printf("temporary error encountered attempting to write messages to %s (partition %d), retrying after %s", w.topic, w.partition, writeRetryDelay.String())
+				})
+				time.Sleep(writeRetryDelay)
+				conn.Close()
+				conn = nil
+				continue
+			}
+
 			w.stats.errors.observe(1)
 			w.withErrorLogger(func(logger *log.Logger) {
-				logger.Printf("error dialing kafka brokers for topic %s (partition %d): %s", w.topic, w.partition, err)
+				logger.Printf("error writing messages to %s (partition %d): %s", w.topic, w.partition, err)
 			})
 			for i, res := range resch {
 				res <- &writerError{msg: batch[i], err: err}
 			}
-			return
+		} else {
+			for _, m := range batch {
+				w.stats.messages.observe(1)
+				w.stats.bytes.observe(int64(len(m.Key) + len(m.Value)))
+			}
+			for _, res := range resch {
+				res <- nil
+			}
 		}
+
+		t1 := time.Now()
+		w.stats.waitTime.observeDuration(t1.Sub(t0))
+		w.stats.batchSize.observe(int64(len(batch)))
+
+		// unless we explicitly "continue" in this loop for known failure cases,
+		// we should break it here rather than continuing
+		break
 	}
-
-	t0 := time.Now()
-	conn.SetWriteDeadline(time.Now().Add(w.writeTimeout))
-
-	if _, err = conn.WriteCompressedMessages(w.codec, batch...); err != nil {
-		w.stats.errors.observe(1)
-		w.withErrorLogger(func(logger *log.Logger) {
-			logger.Printf("error writing messages to %s (partition %d): %s", w.topic, w.partition, err)
-		})
-		for i, res := range resch {
-			res <- &writerError{msg: batch[i], err: err}
-		}
-	} else {
-		for _, m := range batch {
-			w.stats.messages.observe(1)
-			w.stats.bytes.observe(int64(len(m.Key) + len(m.Value)))
-		}
-		for _, res := range resch {
-			res <- nil
-		}
-	}
-
-	t1 := time.Now()
-	w.stats.waitTime.observeDuration(t1.Sub(t0))
-	w.stats.batchSize.observe(int64(len(batch)))
 
 	ret = conn
 	return
