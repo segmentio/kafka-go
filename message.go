@@ -106,7 +106,7 @@ func (s messageSet) writeTo(w *bufio.Writer) {
 	}
 }
 
-type messageSetReader struct {
+type messageSetReaderV1 struct {
 	*readerStack
 }
 
@@ -117,14 +117,14 @@ type readerStack struct {
 	parent *readerStack
 }
 
-func newMessageSetReader(reader *bufio.Reader, remain int) *messageSetReader {
-	return &messageSetReader{&readerStack{
+func newMessageSetReader(reader *bufio.Reader, remain int) *messageSetReaderV1 {
+	return &messageSetReaderV1{&readerStack{
 		reader: reader,
 		remain: remain,
 	}}
 }
 
-func (r *messageSetReader) readMessage(min int64,
+func (r *messageSetReaderV1) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
 ) (offset int64, timestamp int64, err error) {
@@ -214,14 +214,14 @@ func (r *messageSetReader) readMessage(min int64,
 	return
 }
 
-func (r *messageSetReader) remaining() (remain int) {
+func (r *messageSetReaderV1) remaining() (remain int) {
 	for s := r.readerStack; s != nil; s = s.parent {
 		remain += s.remain
 	}
 	return
 }
 
-func (r *messageSetReader) discard() (err error) {
+func (r *messageSetReaderV1) discard() (err error) {
 	if r.readerStack == nil {
 		return
 	}
