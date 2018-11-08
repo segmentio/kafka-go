@@ -20,7 +20,7 @@ type Batch struct {
 	mutex         sync.Mutex
 	conn          *Conn
 	lock          *sync.Mutex
-	msgs          *messageSetReaderV1
+	msgs          messageSetReader
 	deadline      time.Time
 	throttle      time.Duration
 	topic         string

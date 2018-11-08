@@ -106,6 +106,15 @@ func (s messageSet) writeTo(w *bufio.Writer) {
 	}
 }
 
+type messageSetReader interface {
+	readMessage(min int64,
+		key func(*bufio.Reader, int, int) (int, error),
+		val func(*bufio.Reader, int, int) (int, error),
+	) (offset int64, timestamp int64, err error)
+	remaining() (remain int)
+	discard() (err error)
+}
+
 type messageSetReaderV1 struct {
 	*readerStack
 }
