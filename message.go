@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"log"
 	"time"
 )
 
@@ -127,6 +128,21 @@ type readerStack struct {
 }
 
 func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReaderV1, error) {
+	headerLength := 8 + 4 + 4 + 1 // offset + messageSize + crc + magicByte
+
+	if headerLength > remain {
+		return nil, errShortRead
+	}
+
+	b, err := reader.Peek(headerLength)
+	if err != nil {
+		log.Printf("Failed to peek headerLength")
+		return nil, err
+	}
+	var version int8 = int8(b[headerLength-1])
+
+	log.Printf("Received version is: %v", version)
+
 	return &messageSetReaderV1{&readerStack{
 		reader: reader,
 		remain: remain,
