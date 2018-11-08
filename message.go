@@ -126,11 +126,11 @@ type readerStack struct {
 	parent *readerStack
 }
 
-func newMessageSetReader(reader *bufio.Reader, remain int) *messageSetReaderV1 {
+func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReaderV1, error) {
 	return &messageSetReaderV1{&readerStack{
 		reader: reader,
 		remain: remain,
-	}}
+	}}, nil
 }
 
 func (r *messageSetReaderV1) readMessage(min int64,
