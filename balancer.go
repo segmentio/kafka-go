@@ -2,7 +2,9 @@ package kafka
 
 import (
 	"hash"
+	"hash/crc32"
 	"hash/fnv"
+	"math/rand"
 	"sort"
 	"sync"
 )
@@ -157,4 +159,99 @@ func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
 	}
 
 	return
+}
+
+type randomBalancer struct {
+	mock int // mocked return value, used for testing
+}
+
+func (b randomBalancer) Balance(msg Message, partitions ...int) (partition int) {
+	if b.mock != 0 {
+		return b.mock
+	}
+	return partitions[rand.Int()%len(partitions)]
+}
+
+// CRC32Balancer is a Balancer that uses the CRC32 hash function to determine which
+// partition to route messages to.  This ensures that messages with the same key
+// are routed to the same partition.  A random partition will be selected if either
+// the key is nil, or an the empty byte slice.
+//
+// This balancer strategy is the default partitioner used by the librdkafka library
+// and the language bindings that are built on top of it, including the
+// github.com/confluentinc/confluent-kafka-go Go package.
+type CRC32Balancer struct {
+	rb randomBalancer
+}
+
+func (b CRC32Balancer) Balance(msg Message, partitions ...int) (partition int) {
+	if len(msg.Key) == 0 {
+		return b.rb.Balance(msg, partitions...)
+	}
+
+	idx := crc32.ChecksumIEEE(msg.Key) % uint32(len(partitions))
+	return partitions[idx]
+}
+
+// Murmur2Balancer is a Balancer that uses the Murmur2 hash function to determine
+// which partition to route messages to.  This ensures that messages with the same
+// key are routed to the same partition.  A round robin strategy will be used if
+// the key is nil.
+//
+// This balancer strategy is the default partitioner used by the Java library.
+type Murmur2Balancer struct {
+	rr RoundRobin
+}
+
+func (b Murmur2Balancer) Balance(msg Message, partitions ...int) (partition int) {
+	if msg.Key == nil {
+		return b.rr.Balance(msg, partitions...)
+	}
+
+	idx := (murmur2(msg.Key) & 0x7fffffff) % uint32(len(partitions))
+	return partitions[idx]
+}
+
+// Go port of the Java library's murmur2 function.
+// https://github.com/apache/kafka/blob/1.0/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L353
+func murmur2(data []byte) uint32 {
+	length := len(data)
+	var seed uint32 = 0x9747b28c
+	// 'm' and 'r' are mixing constants generated offline.
+	// They're not really 'magic', they just happen to work well.
+	var m uint32 = 0x5bd1e995
+	var r uint32 = 24
+
+	// Initialize the hash to a random value
+	h := seed ^ uint32(length)
+	length4 := length / 4
+
+	for i := 0; i < length4; i++ {
+		i4 := i * 4
+		k := (uint32(data[i4+0]) & 0xff) + ((uint32(data[i4+1]) & 0xff) << 8) + ((uint32(data[i4+2]) & 0xff) << 16) + ((uint32(data[i4+3]) & 0xff) << 24)
+		k *= m
+		k ^= k >> r
+		k *= m
+		h *= m
+		h ^= k
+	}
+
+	// Handle the last few bytes of the input array
+	extra := length % 4
+	if extra >= 3 {
+		h ^= (uint32(data[(length & ^3)+2]) & 0xff) << 16
+	}
+	if extra >= 2 {
+		h ^= (uint32(data[(length & ^3)+1]) & 0xff) << 8
+	}
+	if extra >= 1 {
+		h ^= uint32(data[length & ^3]) & 0xff
+		h *= m
+	}
+
+	h ^= h >> 13
+	h *= m
+	h ^= h >> 15
+
+	return h
 }

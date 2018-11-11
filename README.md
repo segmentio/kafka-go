@@ -231,17 +231,46 @@ w.Close()
 **Note:** Even though kafka.Message contain ```Topic``` and ```Partition``` fields, they **MUST NOT** be
 set when writing messages.  They are intended for read use only.
 
-### Compatibility with Sarama
+### Compatibility with other clients
+
+#### Sarama
 
 If you're switching from Sarama and need/want to use the same algorithm for message
 partitioning, you can use the ```kafka.Hash``` balancer.  ```kafka.Hash``` routes
-messages to the same partitions that sarama's default partitioner would route to.
+messages to the same partitions that Sarama's default partitioner would route to.
 
 ```go
 w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9092"},
-	Topic:   "topic-A",
+	Brokers:  []string{"localhost:9092"},
+	Topic:    "topic-A",
 	Balancer: &kafka.Hash{},
+})
+```
+
+#### librdkafka and confluent-kafka-go
+
+Use the ```kafka.CRC32Balancer``` balancer to get the same behaviour as librdkafka's
+default ```consistent_random``` partition strategy.
+
+```go
+w := kafka.NewWriter(kafka.WriterConfig{
+	Brokers:  []string{"localhost:9092"},
+	Topic:    "topic-A",
+	Balancer: &kafka.CRC32Balancer{},
+})
+```
+
+#### Java
+
+Use the ```kafka.Murmur2Balancer``` balancer to get the same behaviour as the canonical
+Java client's default partitioner.  Note: the Java class allows you to directly specify
+the partition which is not permitted.
+
+```go
+w := kafka.NewWriter(kafka.WriterConfig{
+	Brokers:  []string{"localhost:9092"},
+	Topic:    "topic-A",
+	Balancer: &kafka.Murmur2Balancer{},
 })
 ```
 
