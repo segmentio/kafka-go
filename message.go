@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"log"
 	"time"
 )
@@ -127,10 +128,11 @@ type readerStack struct {
 	parent *readerStack
 }
 
-func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReaderV1, error) {
+func newMessageSetReader(reader *bufio.Reader, remain int) (messageSetReader, error) {
 	headerLength := 8 + 4 + 4 + 1 // offset + messageSize + crc + magicByte
 
 	if headerLength > remain {
+		log.Printf("Not enough bytes to read the header: %v", remain)
 		return nil, errShortRead
 	}
 
@@ -143,10 +145,22 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReaderV1,
 
 	log.Printf("Received version is: %v", version)
 
-	return &messageSetReaderV1{&readerStack{
-		reader: reader,
-		remain: remain,
-	}}, nil
+	switch version {
+	case 0:
+		fallthrough
+	case 1:
+		return &messageSetReaderV1{&readerStack{
+			reader: reader,
+			remain: remain,
+		}}, nil
+	case 2:
+		return &messageSetReaderV2{
+			reader: reader,
+			remain: remain,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported message version %d found in fetch response", version)
+	}
 }
 
 func (r *messageSetReaderV1) readMessage(min int64,
@@ -281,4 +295,24 @@ func extractOffset(base int64, msgSet []byte) (offset int64, err error) {
 type Header struct {
 	Key   string
 	Value []byte
+}
+type messageSetReaderV2 struct {
+	reader *bufio.Reader
+	remain int
+}
+
+func (r *messageSetReaderV2) readMessage(min int64,
+	key func(*bufio.Reader, int, int) (int, error),
+	val func(*bufio.Reader, int, int) (int, error),
+) (offset int64, timestamp int64, err error) {
+	return 0, 0, nil
+}
+
+func (r *messageSetReaderV2) remaining() (remain int) {
+	return r.remain
+}
+
+func (r *messageSetReaderV2) discard() (err error) {
+	r.remain, err = discardN(r.reader, r.remain, r.remain)
+	return
 }
