@@ -222,48 +222,6 @@ func (e Error) Title() string {
 		return "Security Disabled"
 	case BrokerAuthorizationFailed:
 		return "Broker Authorization Failed"
-	case KafkaStorageError:
-		return "Kafka Storage Error"
-	case LogDirNotFound:
-		return "Log Dir Not Found"
-	case SASLAuthenticationFailed:
-		return "SASL Authentication Failed"
-	case UnknownProducerId:
-		return "Unknown Producer ID"
-	case ReassignmentInProgress:
-		return "Reassignment In Progress"
-	case DelegationTokenAuthDisabled:
-		return "Delegation Token Auth Disabled"
-	case DelegationTokenNotFound:
-		return "Delegation Token Not Found"
-	case DelegationTokenOwnerMismatch:
-		return "Delegation Token Owner Mismatch"
-	case DelegationTokenRequestNotAllowed:
-		return "Delegation Token Request Not Allowed"
-	case DelegationTokenAuthorizationFailed:
-		return "Delegation Token Authorization Failed"
-	case DelegationTokenExpired:
-		return "Delegation Token Expired"
-	case InvalidPrincipalType:
-		return "Invalid Principal Type"
-	case NonEmptyGroup:
-		return "Non Empty Group"
-	case GroupIdNotFound:
-		return "Group ID Not Found"
-	case FetchSessionIDNotFound:
-		return "Fetch Session ID Not Found"
-	case InvalidFetchSessionEpoch:
-		return "Invalid Fetch Session Epoch"
-	case ListenerNotFound:
-		return "Listener Not Found"
-	case TopicDeletionDisabled:
-		return "Topic Deletion Disabled"
-	case FencedLeaderEpoch:
-		return "Fenced Leader Epoch"
-	case UnknownLeaderEpoch:
-		return "Unknown Leader Epoch"
-	case UnsupportedCompressionType:
-		return "Unsupported Compression Type"
 	}
 	return ""
 }
@@ -381,48 +339,6 @@ func (e Error) Description() string {
 		return "the security features are disabled"
 	case BrokerAuthorizationFailed:
 		return "the broker authorization failed"
-	case KafkaStorageError:
-		return "disk error when trying to access log file on the disk"
-	case LogDirNotFound:
-		return "the user-specified log directory is not found in the broker config"
-	case SASLAuthenticationFailed:
-		return "SASL Authentication failed"
-	case UnknownProducerId:
-		return "the broker could not locate the producer metadata associated with the producer ID"
-	case ReassignmentInProgress:
-		return "a partition reassignment is in progress"
-	case DelegationTokenAuthDisabled:
-		return "delegation token feature is not enabled"
-	case DelegationTokenNotFound:
-		return "delegation token is not found on server"
-	case DelegationTokenOwnerMismatch:
-		return "specified principal is not valid owner/renewer"
-	case DelegationTokenRequestNotAllowed:
-		return "delegation token requests are not allowed on plaintext/1-way ssl channels and on delegation token authenticated channels"
-	case DelegationTokenAuthorizationFailed:
-		return "delegation token authorization failed"
-	case DelegationTokenExpired:
-		return "delegation token is expired"
-	case InvalidPrincipalType:
-		return "supplied principaltype is not supported"
-	case NonEmptyGroup:
-		return "the group is not empty"
-	case GroupIdNotFound:
-		return "the group ID does not exist"
-	case FetchSessionIDNotFound:
-		return "the fetch session ID was not found"
-	case InvalidFetchSessionEpoch:
-		return "the fetch session epoch is invalid"
-	case ListenerNotFound:
-		return "there is no listener on the leader broker that matches the listener on which metadata request was processed"
-	case TopicDeletionDisabled:
-		return "topic deletion is disabled"
-	case FencedLeaderEpoch:
-		return "the leader epoch in the request is older than the epoch on the broker"
-	case UnknownLeaderEpoch:
-		return "the leader epoch in the request is newer than the epoch on the broker"
-	case UnsupportedCompressionType:
-		return "the requesting client does not support the compression type of given partition"
 	}
 	return ""
 }

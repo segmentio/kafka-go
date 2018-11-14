@@ -61,6 +61,9 @@ type Dialer struct {
 	// TLS enables Dialer to open secure connections.  If nil, standard net.Conn
 	// will be used.
 	TLS *tls.Config
+
+	// SASLClient enables SASL authentication
+	SASLClient func() SASLClient
 }
 
 // Dial connects to the address on the named network.
@@ -98,7 +101,16 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 	if err != nil {
 		return nil, err
 	}
-	return NewConnWith(c, ConnConfig{ClientID: d.ClientID}), nil
+
+	conn := NewConnWith(c, ConnConfig{ClientID: d.ClientID})
+
+	if d.SASLClient != nil {
+		if err := d.authenticateSASL(ctx, conn); err != nil {
+			return nil, err
+		}
+	}
+
+	return conn, nil
 }
 
 // DialLeader opens a connection to the leader of the partition for a given
@@ -126,11 +138,19 @@ func (d *Dialer) DialPartition(ctx context.Context, network string, address stri
 		return nil, err
 	}
 
-	return NewConnWith(c, ConnConfig{
+	conn := NewConnWith(c, ConnConfig{
 		ClientID:  d.ClientID,
 		Topic:     partition.Topic,
 		Partition: partition.ID,
-	}), nil
+	})
+
+	if d.SASLClient != nil {
+		if err := d.authenticateSASL(ctx, conn); err != nil {
+			return nil, err
+		}
+	}
+
+	return conn, nil
 }
 
 // LookupLeader searches for the kafka broker that is the leader of the
@@ -242,6 +262,47 @@ func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn, config *tls.Conf
 	return
 }
 
+func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
+	versions, err := conn.apiVersions()
+	if err != nil {
+		return err
+	}
+
+	saslVersion := versions[saslHandshakeRequest]
+	var handshakeVersion = v0
+	var opaque = true
+	if saslVersion.maxVersion >= v1 {
+		opaque = false
+		handshakeVersion = v1
+	}
+
+	client := d.SASLClient()
+	_, err = conn.saslHandshake(handshakeVersion, client.Mechanism())
+	if err != nil {
+		return err // TODO: allow mechanism negotiation by returning the list of supported mechanisms
+	}
+
+	bytes, err := client.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	var completed bool
+	for !completed {
+		challenge, err := conn.saslAuthenticate(opaque, bytes)
+		if err != nil {
+			return err
+		}
+
+		completed, bytes, err = client.Next(ctx, challenge)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {
 	if r := d.Resolver; r != nil {
 		host, port := splitHostPort(address)
@@ -330,6 +391,22 @@ type Resolver interface {
 	// LookupHost looks up the given host using the local resolver.
 	// It returns a slice of that host's addresses.
 	LookupHost(ctx context.Context, host string) (addrs []string, err error)
+}
+
+// The SASLClient interface is used to enable plugging in different
+// SASL implementations at compile time.
+type SASLClient interface {
+	// Mechanism returns the name of the mechanism (eg. SCRAM-SHA-256)
+	Mechanism() string
+
+	// Start returns the initial client response to send to the server
+	Start(ctx context.Context) (response []byte, err error)
+
+	// Next computes the response to the server challenge and may be
+	// called multiple times until completed is set.  Completed may be
+	// set either because the authentication exchange has failed or
+	// succeeded.  If the authentication failed, err must be non-nil.
+	Next(ctx context.Context, challenge []byte) (completed bool, response []byte, err error)
 }
 
 func sleep(ctx context.Context, duration time.Duration) bool {

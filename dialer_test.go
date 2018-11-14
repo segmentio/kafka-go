@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"net"
 	"reflect"
@@ -20,6 +21,10 @@ func TestDialer(t *testing.T) {
 		{
 			scenario: "looking up partitions returns the list of available partitions for a topic",
 			function: testDialerLookupPartitions,
+		},
+		{
+			scenario: "log in using SASL PLAIN authentication",
+			function: testDialerSASLPlainAuthentication,
 		},
 	}
 
@@ -71,6 +76,36 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 	}
 	if !reflect.DeepEqual(partitions, want) {
 		t.Errorf("bad partitions:\ngot:  %+v\nwant: %+v", partitions, want)
+	}
+}
+
+// PLAINSASLClient is a an SASL PLAIN implementation for testing purposes
+// It does not support saslprep
+type PLAINSASLClient struct {
+	Username string
+	Password string
+}
+
+func (s *PLAINSASLClient) Mechanism() string { return "PLAIN" }
+
+func (s *PLAINSASLClient) Start(ctx context.Context) ([]byte, error) {
+	return []byte(fmt.Sprintf("\x00%s\x00%s", s.Username, s.Password)), nil
+}
+
+func (s *PLAINSASLClient) Next(ctx context.Context, challenge []byte) (bool, []byte, error) {
+	return true, nil, nil
+}
+
+func testDialerSASLPlainAuthentication(t *testing.T, ctx context.Context, d *Dialer) {
+	var saslDialer = *d
+	saslDialer.SASLClient = func() SASLClient {
+		return &PLAINSASLClient{Username: "adminplain", Password: "admin-secret"}
+	}
+
+	_, err := saslDialer.LookupPartitions(context.Background(), "tcp", "localhost:9094", "non-existing-topic")
+	if err != nil {
+		t.Error(err)
+		return
 	}
 }
 
