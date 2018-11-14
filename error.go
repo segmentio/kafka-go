@@ -64,6 +64,7 @@ const (
 	TransactionalIDAuthorizationFailed Error = 53
 	SecurityDisabled                   Error = 54
 	BrokerAuthorizationFailed          Error = 55
+	SASLAuthenticationFailed           Error = 58
 )
 
 // Error satisfies the error interface.
@@ -201,6 +202,8 @@ func (e Error) Title() string {
 		return "Security Disabled"
 	case BrokerAuthorizationFailed:
 		return "Broker Authorization Failed"
+	case SASLAuthenticationFailed:
+		return "SASL Authentication Failed"
 	}
 	return ""
 }

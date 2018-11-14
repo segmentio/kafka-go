@@ -892,6 +892,12 @@ func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID 
 	return c.wbuf.Flush()
 }
 
+func (c *Conn) writeRaw(data []byte) error {
+	writeInt32(&c.wbuf, int32(len(data)))
+	c.wbuf.Write(data)
+	return c.wbuf.Flush()
+}
+
 func (c *Conn) readResponse(size int, res interface{}) error {
 	size, err := read(&c.rbuf, size, res)
 	switch err.(type) {
@@ -1071,4 +1077,119 @@ func (d *connDeadline) unsetConnWriteDeadline() {
 	d.mutex.Lock()
 	d.wconn = nil
 	d.mutex.Unlock()
+}
+
+// saslHandshake sends the SASL handshake message
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_SaslHandshake
+func (c *Conn) saslHandshake(version apiVersion, mechanism string) ([]string, error) {
+	// The wire format for V0 and V1 is identical, but the version
+	// number will affect how the SASL authentication
+	// challenge/reponses are sent
+	var resp saslHandshakeResponseV0
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(saslHandshakeRequest, version, id, &saslHandshakeRequestV0{Mechanism: mechanism})
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&resp).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ErrorCode != 0 {
+		return resp.EnabledMechanisms, Error(resp.ErrorCode)
+	}
+
+	return resp.EnabledMechanisms, nil
+}
+
+// saslAuthenticate sends the SASL authenticate message
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
+func (c *Conn) saslAuthenticate(opaque bool, data []byte) ([]byte, error) {
+	if opaque {
+		c.writeRaw(data)
+		var respLen int32
+		_, err := readInt32(&c.rbuf, 4, &respLen)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, _, err := readNewBytes(&c.rbuf, int(respLen), int(respLen))
+		if err != nil {
+			return nil, err
+		}
+
+		return resp, nil
+	} else {
+		var request = saslAuthenticateRequestV0{Data: data}
+		var response saslAuthenticateResponseV0
+
+		err := c.writeOperation(
+			func(deadline time.Time, id int32) error {
+				return c.writeRequest(saslAuthenticateRequest, v0, id, request)
+			},
+			func(deadline time.Time, size int) error {
+				return expectZeroSize(func() (remain int, err error) {
+					return (&response).readFrom(&c.rbuf, size)
+				}())
+			},
+		)
+
+		if err != nil {
+			return nil, err
+		}
+		if response.ErrorMessage != "" {
+			return nil, fmt.Errorf("SASL error message: %v", response.ErrorMessage)
+		}
+		if response.ErrorCode != 0 {
+			return nil, Error(response.ErrorCode)
+		}
+
+		return response.Data, nil
+	}
+}
+
+type versionRange struct {
+	minVersion apiVersion
+	maxVersion apiVersion
+}
+
+// apiVersions gets the supported version ranges from the broker
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_ApiVersions
+func (c *Conn) apiVersions() (map[apiKey]versionRange, error) {
+	var request apiVersionsRequestV1
+	var response apiVersionsResponseV1
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(apiVersionsRequest, v1, id, request)
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if response.ErrorCode != 0 {
+		return nil, Error(response.ErrorCode)
+	}
+
+	ranges := make(map[apiKey]versionRange)
+	for _, r := range response.APIVersions {
+		ranges[apiKey(r.APIKey)] = versionRange{minVersion: apiVersion(r.MinVersion), maxVersion: apiVersion(r.MaxVersion)}
+	}
+
+	return ranges, nil
 }
