@@ -154,10 +154,12 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (messageSetReader, er
 			remain: remain,
 		}}, nil
 	case 2:
-		return &messageSetReaderV2{
+		mr := &messageSetReaderV2{
 			reader: reader,
 			remain: remain,
-		}, nil
+		}
+		err := mr.readHeader()
+		return mr, err
 	default:
 		return nil, fmt.Errorf("unsupported message version %d found in fetch response", version)
 	}
@@ -299,6 +301,62 @@ type Header struct {
 type messageSetReaderV2 struct {
 	reader *bufio.Reader
 	remain int
+
+	firstOffset          int64
+	length               int32
+	partitionLeaderEpoch int32
+	magic                int8
+	crc                  int32
+	attributes           int16
+	lastOffsetDelta      int32
+	firstTimestamp       int64
+	maxTimestamp         int64
+	producerId           int64
+	producerEpoch        int16
+	firstSequence        int32
+}
+
+func (h *messageSetReaderV2) readHeader() (err error) {
+	if h.remain, err = readInt64(h.reader, h.remain, &h.firstOffset); err != nil {
+		return
+	}
+	if h.remain, err = readInt32(h.reader, h.remain, &h.length); err != nil {
+		return
+	}
+	if h.remain, err = readInt32(h.reader, h.remain, &h.partitionLeaderEpoch); err != nil {
+		return
+	}
+	if h.remain, err = readInt8(h.reader, h.remain, &h.magic); err != nil {
+		return
+	}
+	if h.remain, err = readInt32(h.reader, h.remain, &h.crc); err != nil {
+		return
+	}
+	if h.remain, err = readInt16(h.reader, h.remain, &h.attributes); err != nil {
+		return
+	}
+	if h.remain, err = readInt32(h.reader, h.remain, &h.lastOffsetDelta); err != nil {
+		return
+	}
+	if h.remain, err = readInt32(h.reader, h.remain, &h.lastOffsetDelta); err != nil {
+		return
+	}
+	if h.remain, err = readInt64(h.reader, h.remain, &h.firstTimestamp); err != nil {
+		return
+	}
+	if h.remain, err = readInt64(h.reader, h.remain, &h.maxTimestamp); err != nil {
+		return
+	}
+	if h.remain, err = readInt64(h.reader, h.remain, &h.producerId); err != nil {
+		return
+	}
+	if h.remain, err = readInt16(h.reader, h.remain, &h.producerEpoch); err != nil {
+		return
+	}
+	if h.remain, err = readInt32(h.reader, h.remain, &h.firstSequence); err != nil {
+		return
+	}
+	return nil
 }
 
 func (r *messageSetReaderV2) readMessage(min int64,
