@@ -3,6 +3,9 @@ package kafka
 import "bufio"
 
 func discardN(r *bufio.Reader, sz int, n int) (int, error) {
+	if n > sz {
+		return sz, errShortRead
+	}
 	n, err := r.Discard(n)
 	return sz - n, err
 }
