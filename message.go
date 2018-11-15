@@ -305,13 +305,36 @@ type messageSetHeaderV2 struct {
 	partitionLeaderEpoch int32
 	magic                int8
 	crc                  int32
-	attributes           int16
+	batchAttributes      int8
+	recordAttributes     int8
 	lastOffsetDelta      int32
 	firstTimestamp       int64
 	maxTimestamp         int64
 	producerId           int64
 	producerEpoch        int16
 	firstSequence        int32
+}
+
+type compression int
+
+const (
+	plain  compression = 0
+	gzip   compression = 1
+	snappy compression = 2
+)
+
+type timestampType int
+
+const (
+	createTime    timestampType = 0
+	logAppendTime timestampType = 1
+)
+
+func (h *messageSetHeaderV2) compression() compression {
+	return h.batchAttributes & 7
+}
+
+func (h *messageSetHeaderV2) timestampType() timestampType {
 }
 
 type messageSetReaderV2 struct {
@@ -338,7 +361,10 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt32(r.reader, r.remain, &h.crc); err != nil {
 		return
 	}
-	if r.remain, err = readInt16(r.reader, r.remain, &h.attributes); err != nil {
+	if r.remain, err = readInt8(r.reader, r.remain, &h.batchAttributes); err != nil {
+		return
+	}
+	if r.remain, err = readInt8(r.reader, r.remain, &h.recordAttributes); err != nil {
 		return
 	}
 	if r.remain, err = readInt32(r.reader, r.remain, &h.lastOffsetDelta); err != nil {
