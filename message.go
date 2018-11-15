@@ -298,10 +298,8 @@ type Header struct {
 	Key   string
 	Value []byte
 }
-type messageSetReaderV2 struct {
-	reader *bufio.Reader
-	remain int
 
+type messageSetHeaderV2 struct {
 	firstOffset          int64
 	length               int32
 	partitionLeaderEpoch int32
@@ -316,41 +314,49 @@ type messageSetReaderV2 struct {
 	firstSequence        int32
 }
 
-func (h *messageSetReaderV2) readHeader() (err error) {
-	if h.remain, err = readInt64(h.reader, h.remain, &h.firstOffset); err != nil {
+type messageSetReaderV2 struct {
+	reader *bufio.Reader
+	remain int
+
+	header messageSetHeaderV2
+}
+
+func (r *messageSetReaderV2) readHeader() (err error) {
+	h := &r.header
+	if r.remain, err = readInt64(r.reader, r.remain, &h.firstOffset); err != nil {
 		return
 	}
-	if h.remain, err = readInt32(h.reader, h.remain, &h.length); err != nil {
+	if r.remain, err = readInt32(r.reader, r.remain, &h.length); err != nil {
 		return
 	}
-	if h.remain, err = readInt32(h.reader, h.remain, &h.partitionLeaderEpoch); err != nil {
+	if r.remain, err = readInt32(r.reader, r.remain, &h.partitionLeaderEpoch); err != nil {
 		return
 	}
-	if h.remain, err = readInt8(h.reader, h.remain, &h.magic); err != nil {
+	if r.remain, err = readInt8(r.reader, r.remain, &h.magic); err != nil {
 		return
 	}
-	if h.remain, err = readInt32(h.reader, h.remain, &h.crc); err != nil {
+	if r.remain, err = readInt32(r.reader, r.remain, &h.crc); err != nil {
 		return
 	}
-	if h.remain, err = readInt16(h.reader, h.remain, &h.attributes); err != nil {
+	if r.remain, err = readInt16(r.reader, r.remain, &h.attributes); err != nil {
 		return
 	}
-	if h.remain, err = readInt32(h.reader, h.remain, &h.lastOffsetDelta); err != nil {
+	if r.remain, err = readInt32(r.reader, r.remain, &h.lastOffsetDelta); err != nil {
 		return
 	}
-	if h.remain, err = readInt64(h.reader, h.remain, &h.firstTimestamp); err != nil {
+	if r.remain, err = readInt64(r.reader, r.remain, &h.firstTimestamp); err != nil {
 		return
 	}
-	if h.remain, err = readInt64(h.reader, h.remain, &h.maxTimestamp); err != nil {
+	if r.remain, err = readInt64(r.reader, r.remain, &h.maxTimestamp); err != nil {
 		return
 	}
-	if h.remain, err = readInt64(h.reader, h.remain, &h.producerId); err != nil {
+	if r.remain, err = readInt64(r.reader, r.remain, &h.producerId); err != nil {
 		return
 	}
-	if h.remain, err = readInt16(h.reader, h.remain, &h.producerEpoch); err != nil {
+	if r.remain, err = readInt16(r.reader, r.remain, &h.producerEpoch); err != nil {
 		return
 	}
-	if h.remain, err = readInt32(h.reader, h.remain, &h.firstSequence); err != nil {
+	if r.remain, err = readInt32(r.reader, r.remain, &h.firstSequence); err != nil {
 		return
 	}
 	return nil
