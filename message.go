@@ -338,9 +338,6 @@ func (h *messageSetReaderV2) readHeader() (err error) {
 	if h.remain, err = readInt32(h.reader, h.remain, &h.lastOffsetDelta); err != nil {
 		return
 	}
-	if h.remain, err = readInt32(h.reader, h.remain, &h.lastOffsetDelta); err != nil {
-		return
-	}
 	if h.remain, err = readInt64(h.reader, h.remain, &h.firstTimestamp); err != nil {
 		return
 	}
