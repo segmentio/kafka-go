@@ -387,6 +387,38 @@ func testReaderSetsTopicAndPartition(t *testing.T, ctx context.Context, r *Reade
 	}
 }
 
+// TestReadTruncatedMessages uses a configuration designed to get the Broker to
+// return truncated messages.  It exercises the case where an earlier bug caused
+// reading to time out by attempting to read beyond the current response.  This
+// test is not perfect, but it is pretty reliable about reproducing the issue.
+//
+// NOTE : it currently only succeeds against kafka 0.10.1.0, so it will be
+// skipped.  It's here so that it can be manually run.
+func TestReadTruncatedMessages(t *testing.T) {
+	// todo : it would be great to get it to work against 0.11.0.0 so we could
+	//        include it in CI unit tests.
+	t.Skip()
+
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r := NewReader(ReaderConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    makeTopic(),
+		MinBytes: 1,
+		MaxBytes: 100,
+		MaxWait:  100 * time.Millisecond,
+	})
+	defer r.Close()
+	n := 500
+	prepareReader(t, ctx, r, makeTestSequence(n)...)
+	for i := 0; i < n; i++ {
+		if _, err := r.ReadMessage(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func makeTestSequence(n int) []Message {
 	msgs := make([]Message, n)
 	for i := 0; i != n; i++ {
