@@ -393,7 +393,7 @@ func testReaderSetsTopicAndPartition(t *testing.T, ctx context.Context, r *Reade
 // test is not perfect, but it is pretty reliable about reproducing the issue.
 func TestReadTruncatedMessages(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	r := NewReader(ReaderConfig{
 		Brokers:  []string{"localhost:9092"},
