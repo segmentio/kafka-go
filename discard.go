@@ -4,7 +4,11 @@ import "bufio"
 
 func discardN(r *bufio.Reader, sz int, n int) (int, error) {
 	if n > sz {
-		return sz, errShortRead
+		n, err := r.Discard(sz)
+		if err != nil {
+			err = errShortRead
+		}
+		return n, err
 	}
 	n, err := r.Discard(n)
 	return sz - n, err
