@@ -315,7 +315,7 @@ type messageSetHeaderV2 struct {
 	firstSequence        int32
 }
 
-type compression int
+type compression int8
 
 const (
 	plain  compression = 0
@@ -323,18 +323,41 @@ const (
 	snappy compression = 2
 )
 
-type timestampType int
+type timestampType int8
 
 const (
 	createTime    timestampType = 0
 	logAppendTime timestampType = 1
 )
 
+type transactionType int8
+
+const (
+	nonTransactional transactionType = 0
+	transactional    transactionType = 1
+)
+
+type controlType int8
+
+const (
+	nonControlMessage controlType = 0
+	controlMessage    controlType = 1
+)
+
 func (h *messageSetHeaderV2) compression() compression {
-	return h.batchAttributes & 7
+	return compression(h.batchAttributes & 7)
 }
 
 func (h *messageSetHeaderV2) timestampType() timestampType {
+	return timestampType(h.batchAttributes & 8)
+}
+
+func (h *messageSetHeaderV2) transactionType() transactionType {
+	return transactionType(h.batchAttributes & 16)
+}
+
+func (h *messageSetHeaderV2) controlType() controlType {
+	return controlType(h.batchAttributes & 32)
 }
 
 type messageSetReaderV2 struct {
@@ -392,7 +415,31 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
 ) (offset int64, timestamp int64, err error) {
-	return 0, 0, nil
+	var length int64
+	initialRemain := r.remain
+	r.remain, err = readVarInt(r.reader, r.remain, &length)
+	var attrs int8
+	r.remain, err = readInt8(r.reader, r.remain, &attrs)
+	var timestampDelta int64
+	r.remain, err = readVarInt(r.reader, r.remain, &timestampDelta)
+	var offsetDelta int64
+	r.remain, err = readVarInt(r.reader, r.remain, &offsetDelta)
+	var keyLen int64
+	r.remain, err = readVarInt(r.reader, r.remain, &keyLen)
+
+	r.remain, err = key(r.reader, r.remain, int(keyLen))
+	var valueLen int64
+	r.remain, err = readVarInt(r.reader, r.remain, &valueLen)
+
+	r.remain, err = val(r.reader, r.remain, int(valueLen))
+
+	finalRemain := r.remain
+
+	delta := finalRemain - initialRemain
+
+	// TODO parse headers. So far we just discard them.
+	r.remain, err = discardN(r.reader, r.remain, int(length)-delta)
+	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, nil
 }
 
 func (r *messageSetReaderV2) remaining() (remain int) {
