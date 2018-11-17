@@ -7,6 +7,28 @@ import (
 	"testing"
 )
 
+func TestReadVarInt(t *testing.T) {
+	//buf := []byte{127, 10, 10, 0}
+	testCases := map[int64][]byte{
+		128:   []byte{128, 1, 10, 0},
+		127:   []byte{127, 1, 10, 0},
+		391:   []byte{135, 3, 10, 0},
+		49543: []byte{135, 131, 3, 0},
+	}
+
+	for expectedValue, testCase := range testCases {
+		var v int64
+		rd := bufio.NewReader(bytes.NewReader(testCase))
+		_, err := readVarInt(rd, len(testCase), &v)
+		if err != nil {
+			t.Errorf("Failure during reading: %v", err)
+		}
+		if v != expectedValue {
+			t.Errorf("Expected %v; got %v", expectedValue, v)
+		}
+	}
+}
+
 func TestReadStringArray(t *testing.T) {
 	testCases := map[string]struct {
 		Value []string

@@ -42,6 +42,22 @@ func readInt64(r *bufio.Reader, sz int, v *int64) (int, error) {
 	return peekRead(r, sz, 8, func(b []byte) { *v = makeInt64(b) })
 }
 
+func readVarInt(r *bufio.Reader, sz int, v *int64) (int, error) {
+	l := 1
+	b, err := r.Peek(l)
+	for err == nil && b[l-1]&0x80 > 0 {
+		l++
+		b, err = r.Peek(l)
+	}
+	*v = 0
+	for i := 0; i < l; i++ {
+		value := uint64(b[i] & 0x7f)
+		shifted := value << uint64(i*7)
+		*v += int64(shifted)
+	}
+	return discardN(r, sz, l)
+}
+
 func readBool(r *bufio.Reader, sz int, v *bool) (int, error) {
 	return peekRead(r, sz, 1, func(b []byte) { *v = b[0] != 0 })
 }
