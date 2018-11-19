@@ -29,6 +29,16 @@ func TestReadVarInt(t *testing.T) {
 	}
 }
 
+func TestReadVarIntFailing(t *testing.T) {
+	var v int64
+	testCase := []byte{135, 135}
+	rd := bufio.NewReader(bytes.NewReader(testCase))
+	_, err := readVarInt(rd, len(testCase), &v)
+	if err != errShortRead {
+		t.Errorf("Expected error while parsing var int: %v", err)
+	}
+}
+
 func TestReadStringArray(t *testing.T) {
 	testCases := map[string]struct {
 		Value []string

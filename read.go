@@ -45,9 +45,15 @@ func readInt64(r *bufio.Reader, sz int, v *int64) (int, error) {
 func readVarInt(r *bufio.Reader, sz int, v *int64) (int, error) {
 	l := 1
 	b, err := r.Peek(l)
-	for err == nil && b[l-1]&0x80 > 0 {
+	for err == nil && b[l-1]&0x80 > 0 && l < sz {
 		l++
 		b, err = r.Peek(l)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if b[l-1]&0x80 > 0 && l == sz {
+		return 0, errShortRead
 	}
 	*v = 0
 	for i := 0; i < l; i++ {
