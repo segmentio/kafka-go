@@ -7,3 +7,7 @@ func CreateTopic(t *testing.T, partitions int) string {
 	createTopic(t, topic, partitions)
 	return topic
 }
+
+func SetMaxMessageBytes(conn *Conn, maxMsgBytes int32) {
+	conn.maxMsgBytes = maxMsgBytes
+}

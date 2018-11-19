@@ -179,7 +179,7 @@ func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID, to
 	return w.Flush()
 }
 
-func writeProduceRequestV2(w *bufio.Writer, maxMsgBytes int, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
+func writeProduceRequestV2(w *bufio.Writer, maxMsgBytes int32, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
 	var size int32
 	attributes := int8(CompressionNoneCode)
 
@@ -240,7 +240,7 @@ func writeProduceRequestV2(w *bufio.Writer, maxMsgBytes int, codec CompressionCo
 	return w.Flush()
 }
 
-func compress(codec CompressionCodec, maxBytes int, msgs ...Message) ([]Message, error) {
+func compress(codec CompressionCodec, maxBytes int32, msgs ...Message) ([]Message, error) {
 
 	i := 0
 	var compressed []Message
@@ -249,14 +249,15 @@ func compress(codec CompressionCodec, maxBytes int, msgs ...Message) ([]Message,
 		// the broker's max message bytes is not exceeded.  we're using an
 		// approximation of the raw size as a conservative means to ensure that
 		// we always stay well under the broker's limit.
-		estimatedLen := 0
+		estimatedLen := int32(0)
+		start := i
 		for ; i < len(msgs) && estimatedLen <= maxBytes; i++ {
-			estimatedLen += int(msgSize(msgs[i].Key, msgs[i].Value))
+			estimatedLen += msgSize(msgs[i].Key, msgs[i].Value)
 		}
 		buf := &bytes.Buffer{}
-		buf.Grow(estimatedLen)
+		buf.Grow(int(estimatedLen))
 		bufWriter := bufio.NewWriter(buf)
-		for offset, msg := range msgs {
+		for offset, msg := range msgs[start:i] {
 			writeMessage(bufWriter, int64(offset), CompressionNoneCode, msg.Time, msg.Key, msg.Value)
 		}
 		bufWriter.Flush()

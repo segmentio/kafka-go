@@ -20,7 +20,7 @@ var (
 )
 
 const (
-	defaultMaxMessageBytes = 1000000
+	defaultMaxMessageBytes int32 = 1000000
 )
 
 // Broker carries the metadata associated with a kafka broker.
@@ -69,6 +69,7 @@ type Conn struct {
 	partition     int32
 	fetchMaxBytes int32
 	fetchMinSize  int32
+	maxMsgBytes   int32
 
 	// correlation ID generator (synchronized on wlock)
 	correlationID int32
@@ -122,6 +123,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		clientID:     config.ClientID,
 		topic:        config.Topic,
 		partition:    int32(config.Partition),
+		maxMsgBytes:  defaultMaxMessageBytes,
 		offset:       FirstOffset,
 		requiredAcks: -1,
 	}
@@ -823,7 +825,7 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 			return writeProduceRequestV2(
 				&c.wbuf,
-				defaultMaxMessageBytes,
+				c.maxMsgBytes,
 				codec,
 				id,
 				c.clientID,

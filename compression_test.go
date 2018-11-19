@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -209,6 +210,48 @@ func TestMixedCompressedMessages(t *testing.T) {
 			if values[i] != string(msg.Value) {
 				t.Errorf("wrong message value at loop %d...expected %s but got %s", base, values[i], string(msg.Value))
 			}
+		}
+	}
+}
+
+func TestSplitCompressedMessageSet(t *testing.T) {
+	t.Parallel()
+
+	topic := kafka.CreateTopic(t, 1)
+	conn, err := kafka.DialLeader(context.Background(), "tcp", "127.0.0.1:9092", topic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	kafka.SetMaxMessageBytes(conn, 123)
+
+	msgs := make([]kafka.Message, 100)
+	for i := 0; i < 100; i++ {
+		msgs[i] = kafka.Message{Value: []byte(fmt.Sprintf("message-%d", i))}
+	}
+
+	_, err = conn.WriteCompressedMessages(snappy.NewCompressionCodec(), msgs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   []string{"127.0.0.1:9092"},
+		Topic:     topic,
+		Partition: 0,
+		MaxWait:   10 * time.Millisecond,
+	})
+	defer r.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for _, expected := range msgs {
+		msg, err := r.ReadMessage(ctx)
+		if err != nil {
+			t.Fatalf("error retrieving %s: %v", string(expected.Value), err)
+		}
+		if !reflect.DeepEqual(expected.Value, msg.Value) {
+			t.Fatalf("unexpected message value...expected %s but got %s", string(expected.Value), string(msg.Value))
 		}
 	}
 }
