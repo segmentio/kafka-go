@@ -114,7 +114,7 @@ func testWriteProduceRequestV2(t *testing.T) {
 			}},
 		},
 		func(w *bufio.Writer) {
-			writeProduceRequestV2(w, nil, testCorrelationID, testClientID, testTopic, testPartition, timeout*time.Millisecond, -1, Message{
+			writeProduceRequestV2(w, defaultMaxMessageBytes, nil, testCorrelationID, testClientID, testTopic, testPartition, timeout*time.Millisecond, -1, Message{
 				Offset: 10,
 				Key:    key,
 				Value:  val,

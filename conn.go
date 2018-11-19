@@ -19,6 +19,10 @@ var (
 	errInvalidWritePartition = errors.New("writes must NOT set Partition on kafka.Message")
 )
 
+const (
+	defaultMaxMessageBytes = 1000000
+)
+
 // Broker carries the metadata associated with a kafka broker.
 type Broker struct {
 	Host string
@@ -819,6 +823,7 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 			return writeProduceRequestV2(
 				&c.wbuf,
+				defaultMaxMessageBytes,
 				codec,
 				id,
 				c.clientID,
