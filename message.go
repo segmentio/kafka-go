@@ -381,6 +381,7 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt8(r.reader, r.remain, &h.magic); err != nil {
 		return
 	}
+	log.Printf("Magic: %v", h.magic)
 	if r.remain, err = readInt32(r.reader, r.remain, &h.crc); err != nil {
 		return
 	}
@@ -408,6 +409,12 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt32(r.reader, r.remain, &h.firstSequence); err != nil {
 		return
 	}
+	var messageCount int32
+	if r.remain, err = readInt32(r.reader, r.remain, &messageCount); err != nil {
+		return
+	}
+	log.Printf("Compression: %v", h.compression())
+	log.Printf("Message count: %v", messageCount)
 	return nil
 }
 
@@ -417,28 +424,53 @@ func (r *messageSetReaderV2) readMessage(min int64,
 ) (offset int64, timestamp int64, err error) {
 	var length int64
 	initialRemain := r.remain
-	r.remain, err = readVarInt(r.reader, r.remain, &length)
+	if r.remain, err = readVarInt(r.reader, r.remain, &length); err != nil {
+		return
+	}
+	log.Printf("Message length: %v; remain: %v", length, r.remain)
+
 	var attrs int8
-	r.remain, err = readInt8(r.reader, r.remain, &attrs)
+	if r.remain, err = readInt8(r.reader, r.remain, &attrs); err != nil {
+		return
+	}
 	var timestampDelta int64
-	r.remain, err = readVarInt(r.reader, r.remain, &timestampDelta)
+	if r.remain, err = readVarInt(r.reader, r.remain, &timestampDelta); err != nil {
+		return
+	}
 	var offsetDelta int64
-	r.remain, err = readVarInt(r.reader, r.remain, &offsetDelta)
+	if r.remain, err = readVarInt(r.reader, r.remain, &offsetDelta); err != nil {
+		return
+	}
 	var keyLen int64
-	r.remain, err = readVarInt(r.reader, r.remain, &keyLen)
+	if r.remain, err = readVarInt(r.reader, r.remain, &keyLen); err != nil {
+		return
+	}
 
-	r.remain, err = key(r.reader, r.remain, int(keyLen))
+	if r.remain, err = key(r.reader, r.remain, int(keyLen)); err != nil {
+		return
+	}
 	var valueLen int64
-	r.remain, err = readVarInt(r.reader, r.remain, &valueLen)
+	if r.remain, err = readVarInt(r.reader, r.remain, &valueLen); err != nil {
+		return
+	}
 
-	r.remain, err = val(r.reader, r.remain, int(valueLen))
+	if r.remain, err = val(r.reader, r.remain, int(valueLen)); err != nil {
+		return
+	}
 
+	var headerCount int32
+	if r.remain, err = readInt32(r.reader, r.remain, &headerCount); err != nil {
+		return
+	}
+	log.Printf("Header count: %v", headerCount)
 	finalRemain := r.remain
 
 	delta := finalRemain - initialRemain
 
 	// TODO parse headers. So far we just discard them.
-	r.remain, err = discardN(r.reader, r.remain, int(length)-delta)
+	if r.remain, err = discardN(r.reader, r.remain, int(length)-delta); err != nil {
+		return
+	}
 	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, nil
 }
 
