@@ -305,8 +305,7 @@ type messageSetHeaderV2 struct {
 	partitionLeaderEpoch int32
 	magic                int8
 	crc                  int32
-	batchAttributes      int8
-	recordAttributes     int8
+	batchAttributes      int16
 	lastOffsetDelta      int32
 	firstTimestamp       int64
 	maxTimestamp         int64
@@ -385,10 +384,7 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt32(r.reader, r.remain, &h.crc); err != nil {
 		return
 	}
-	if r.remain, err = readInt8(r.reader, r.remain, &h.batchAttributes); err != nil {
-		return
-	}
-	if r.remain, err = readInt8(r.reader, r.remain, &h.recordAttributes); err != nil {
+	if r.remain, err = readInt16(r.reader, r.remain, &h.batchAttributes); err != nil {
 		return
 	}
 	if r.remain, err = readInt32(r.reader, r.remain, &h.lastOffsetDelta); err != nil {
