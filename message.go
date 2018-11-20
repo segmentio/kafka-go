@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -132,18 +131,14 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (messageSetReader, er
 	headerLength := 8 + 4 + 4 + 1 // offset + messageSize + crc + magicByte
 
 	if headerLength > remain {
-		log.Printf("Not enough bytes to read the header: %v", remain)
 		return nil, errShortRead
 	}
 
 	b, err := reader.Peek(headerLength)
 	if err != nil {
-		log.Printf("Failed to peek headerLength")
 		return nil, err
 	}
 	var version int8 = int8(b[headerLength-1])
-
-	log.Printf("Received version is: %v", version)
 
 	switch version {
 	case 0:
@@ -343,6 +338,11 @@ const (
 	controlMessage    controlType = 1
 )
 
+type messageHeaderV2 struct {
+	key   string
+	value []byte
+}
+
 func (h *messageSetHeaderV2) compression() compression {
 	return compression(h.batchAttributes & 7)
 }
@@ -380,7 +380,6 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt8(r.reader, r.remain, &h.magic); err != nil {
 		return
 	}
-	log.Printf("Magic: %v", h.magic)
 	if r.remain, err = readInt32(r.reader, r.remain, &h.crc); err != nil {
 		return
 	}
@@ -409,8 +408,6 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt32(r.reader, r.remain, &messageCount); err != nil {
 		return
 	}
-	log.Printf("Compression: %v", h.compression())
-	log.Printf("Message count: %v", messageCount)
 	return nil
 }
 
@@ -419,11 +416,9 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	val func(*bufio.Reader, int, int) (int, error),
 ) (offset int64, timestamp int64, err error) {
 	var length int64
-	initialRemain := r.remain
 	if r.remain, err = readVarInt(r.reader, r.remain, &length); err != nil {
 		return
 	}
-	log.Printf("Message length: %v; remain: %v", length, r.remain)
 
 	var attrs int8
 	if r.remain, err = readInt8(r.reader, r.remain, &attrs); err != nil {
@@ -458,16 +453,33 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	if r.remain, err = readInt32(r.reader, r.remain, &headerCount); err != nil {
 		return
 	}
-	log.Printf("Header count: %v", headerCount)
-	finalRemain := r.remain
 
-	delta := finalRemain - initialRemain
+	var messageHeaders []messageHeaderV2 = make([]messageHeaderV2, headerCount)
 
-	// TODO parse headers. So far we just discard them.
-	if r.remain, err = discardN(r.reader, r.remain, int(length)-delta); err != nil {
-		return
+	for i := 0; int32(i) < headerCount; i++ {
+		if err = r.readMessageHeader(&messageHeaders[i]); err != nil {
+			return
+		}
 	}
 	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, nil
+}
+
+func (r *messageSetReaderV2) readMessageHeader(header *messageHeaderV2) (err error) {
+	var keyLen int64
+	if r.remain, err = readVarInt(r.reader, r.remain, &keyLen); err != nil {
+		return
+	}
+	if r.remain, err = readString(r.reader, r.remain, &header.key); err != nil {
+		return
+	}
+	var valLen int64
+	if r.remain, err = readVarInt(r.reader, r.remain, &valLen); err != nil {
+		return
+	}
+	if r.remain, err = readBytes(r.reader, r.remain, &header.value); err != nil {
+		return
+	}
+	return nil
 }
 
 func (r *messageSetReaderV2) remaining() (remain int) {

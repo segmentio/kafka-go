@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"reflect"
 )
 
@@ -314,7 +313,6 @@ func readFetchResponseHeader(r *bufio.Reader, size int) (throttle int32, waterma
 		HighwaterMarkOffset int64
 		MessageSetSize      int32
 	}
-	log.Printf("Reading fetch response header")
 
 	if remain, err = readInt32(r, size, &throttle); err != nil {
 		return
