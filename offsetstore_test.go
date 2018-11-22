@@ -12,35 +12,6 @@ func TestOffsetStore(t *testing.T) {
 	})
 }
 
-func TestOffsetLog(t *testing.T) {
-	testOffsetStore(t, func() (OffsetStore, func()) {
-		c, err := Dial("tcp", "localhost:9092")
-		if err != nil {
-			panic(err)
-		}
-
-		topic := makeTopic()
-
-		if err := c.CreateTopics(TopicConfig{
-			Topic:             topic,
-			NumPartitions:     1,
-			ReplicationFactor: 1,
-		}); err != nil {
-			panic(err)
-		}
-
-		time.Sleep(100 * time.Millisecond)
-
-		log := &OffsetLog{
-			Brokers:   []string{"localhost:9092"},
-			Topic:     topic,
-			Partition: 0,
-		}
-
-		return log, func() { c.DeleteTopics(topic) }
-	})
-}
-
 func testOffsetStore(t *testing.T, newOffsetStore func() (store OffsetStore, close func())) {
 	tests := []struct {
 		scenario string
@@ -270,7 +241,7 @@ func assertOffsetStoreContains(t *testing.T, store OffsetStore, offsets ...Offse
 
 	for i, off := range found {
 		if i < len(offsets) {
-			if off.Value != offsets[i].Value || !off.Time.Equal(offsets[i].Time) {
+			if !off.Equal(offsets[i]) {
 				t.Errorf("offset at index %d mismatch: expected %v but found %v", i, offsets[i], off)
 			}
 		} else {
