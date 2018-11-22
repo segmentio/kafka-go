@@ -112,13 +112,11 @@ func (st *offsetStore) DeleteOffsets(offsets ...Offset) error {
 // iterate over the results with a for loop, for example:
 //
 //	it := store.ReadOffsets()
-//
 //	for it.Next() {
-//		x := i.Offset()
+//		x := it.Offset()
 //		...
 //	}
-//
-//	if err := i.Err(); err != nil {
+//	if err := it.Err(); err != nil {
 //		...
 //	}
 //
