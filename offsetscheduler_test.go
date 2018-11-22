@@ -108,6 +108,10 @@ func testOffsetSchedulerSpeadOffsetSchedules(t *testing.T) {
 		Offset{Value: 3, Time: now.Add(3 * time.Microsecond)},
 	)
 
+	if n := sched.Len(); n != 3 {
+		t.Error("wrong number of offsets managed by the scheduler: expected 3 but found", n)
+	}
+
 	expectedOffset := Offset{
 		Value: 1,
 		Time:  now,

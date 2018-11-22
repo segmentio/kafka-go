@@ -55,14 +55,15 @@ func NewOffsetScheduler(period time.Duration, store OffsetStore) *OffsetSchedule
 	return sched
 }
 
+// Len returns the number of offsets managed by the scheduler.
+func (sched *OffsetScheduler) Len() int { return sched.timeline.Len() }
+
 // Stop must be called when the scheduler is not needed anymore to release its
 // internal resources.
 //
 // Calling Stop will unblock all goroutines currently waiting in a call to Next
 // or Sync.
-func (sched *OffsetScheduler) Stop() {
-	sched.cancel()
-}
+func (sched *OffsetScheduler) Stop() { sched.cancel() }
 
 // Sync blocks until the scheduler has fully synced with its offset store, or an
 // error occured.
