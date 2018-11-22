@@ -65,6 +65,10 @@ func testOffsetSchedulerScheduleOffsetsInStore(t *testing.T) {
 	sched := NewOffsetScheduler(time.Millisecond, store)
 	defer sched.Stop()
 
+	if err := sched.Sync(); err != nil {
+		t.Error("error syncing scheduler:", err)
+	}
+
 	expectedOffset := Offset{
 		Value: 1,
 		Time:  now.Add(time.Millisecond),

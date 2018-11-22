@@ -16,6 +16,7 @@ import (
 type OffsetScheduler struct {
 	offch    <-chan Offset
 	errch    <-chan error
+	synch    <-chan struct{}
 	cancel   context.CancelFunc
 	period   time.Duration
 	store    OffsetStore
@@ -33,6 +34,7 @@ type OffsetScheduler struct {
 func NewOffsetScheduler(period time.Duration, store OffsetStore) *OffsetScheduler {
 	offch := make(chan Offset)
 	errch := make(chan error)
+	synch := make(chan struct{})
 
 	if period <= 0 {
 		period = 100 * time.Millisecond
@@ -43,21 +45,37 @@ func NewOffsetScheduler(period time.Duration, store OffsetStore) *OffsetSchedule
 	sched := &OffsetScheduler{
 		offch:  offch,
 		errch:  errch,
+		synch:  synch,
 		cancel: cancel,
 		period: period,
 		store:  store,
 	}
 
-	go sched.run(ctx, offch, errch)
+	go sched.run(ctx, offch, errch, synch)
 	return sched
 }
 
 // Stop must be called when the scheduler is not needed anymore to release its
 // internal resources.
 //
-// Calling Stop will unblock all goroutines currently waiting in a call to Next.
+// Calling Stop will unblock all goroutines currently waiting in a call to Next
+// or Sync.
 func (sched *OffsetScheduler) Stop() {
 	sched.cancel()
+}
+
+// Sync blocks until the scheduler has fully synced with its offset store, or an
+// error occured.
+//
+// Calling this method is optional, the program can call Next only which will
+// already wait for the sync to complete before returning offsets.
+func (sched *OffsetScheduler) Sync() error {
+	select {
+	case <-sched.synch:
+		return nil
+	case err := <-sched.errch:
+		return err
+	}
 }
 
 // Next returns the next offset that the scheduler picked.
@@ -95,7 +113,7 @@ func (sched *OffsetScheduler) Schedule(offsets ...Offset) error {
 	return nil
 }
 
-func (sched *OffsetScheduler) run(ctx context.Context, offch chan<- Offset, errch chan<- error) {
+func (sched *OffsetScheduler) run(ctx context.Context, offch chan<- Offset, errch chan<- error, synch chan<- struct{}) {
 	defer close(errch)
 	defer close(offch)
 
@@ -111,6 +129,10 @@ func (sched *OffsetScheduler) run(ctx context.Context, offch chan<- Offset, errc
 
 		if !sync {
 			sync, err = sched.sync()
+
+			if sync {
+				close(synch)
+			}
 		}
 
 		if err != nil {
