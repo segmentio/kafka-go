@@ -10,6 +10,9 @@ import (
 // time. It is intended to act as a priority queue to schedule times at which
 // offsets are expected to be retried.
 //
+// No deduplication of values is done by this data structure, it only ensures
+// the ordering of the elements that are inserted.
+//
 // OffsetTimeline values are safe to use concurrently from multiple goroutines.
 //
 // Note: Technically we don't need this type to be part of the exported API of
@@ -96,5 +99,17 @@ func (q *offsetTimelineQueue) Pop() interface{} {
 	i := len(q.offsets) - 1
 	x := &q.offsets[i]
 	q.offsets = q.offsets[:i]
+
+	// If too much of the capacity isn't be used, reallocate the slice in a
+	// smaller memory buffer.
+	//
+	// The 1024 limit here is kind of arbitrary, it means that we don't bother
+	// resizing slices that are less than 16 KB (each element tis 16 bytes).
+	if len(q.offsets) > 1024 && len(q.offsets) < (cap(q.offsets)/4) {
+		offsets := q.offsets
+		q.offsets = make([]offset, len(q.offsets), cap(q.offsets)/4)
+		copy(q.offsets, offsets)
+	}
+
 	return x
 }
