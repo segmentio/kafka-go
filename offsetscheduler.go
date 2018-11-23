@@ -64,18 +64,13 @@ func (sched *offsetScheduler) run(ctx context.Context) {
 	ticker := time.NewTicker(sched.period)
 	defer ticker.Stop()
 
+	now := time.Now()
 	done := ctx.Done()
 
-	for {
-		var now time.Time
-
+	for sched.schedule(now, done) {
 		select {
 		case now = <-ticker.C:
 		case <-done:
-			return
-		}
-
-		if !sched.schedule(now, done) {
 			return
 		}
 	}
@@ -88,27 +83,11 @@ func (sched *offsetScheduler) schedule(now time.Time, done <-chan struct{}) bool
 		return true
 	}
 
-	var throttlePeriod = sched.period / time.Duration(len(offsets))
-	var throttleTicker *time.Ticker
-
-	if throttlePeriod > time.Microsecond {
-		throttleTicker = time.NewTicker(throttlePeriod)
-		defer throttleTicker.Stop()
-	}
-
 	for _, offset := range offsets {
 		select {
 		case sched.offch <- offset:
 		case <-done:
 			return false
-		}
-
-		if throttleTicker != nil {
-			select {
-			case <-throttleTicker.C:
-			case <-done:
-				return false
-			}
 		}
 	}
 

@@ -20,7 +20,7 @@ func (off Offset) Equal(other Offset) bool {
 
 // String satisfies the fmt.Stringer interface.
 func (off Offset) String() string {
-	return fmt.Sprintf("{ offset:%d, time:%s }", off.Value, off.Time.Format(time.RFC3339))
+	return fmt.Sprintf("{ offset:%d, time:%s }", off.Value, off.Time.Format(time.RFC3339Nano))
 }
 
 // OffsetStore is an interface implemented by types that support storing and

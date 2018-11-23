@@ -49,13 +49,13 @@ func testOffsetSchedulerStopUnblocksNext(t *testing.T) {
 func testOffsetSchedulerSpeadOffsetSchedules(t *testing.T) {
 	now := time.Now()
 
-	sched := newOffsetScheduler(time.Millisecond)
+	sched := newOffsetScheduler(10 * time.Millisecond)
 	defer sched.Stop()
 
 	sched.Schedule(
-		Offset{Value: 1, Time: now.Add(1 * time.Microsecond)},
-		Offset{Value: 2, Time: now.Add(2 * time.Microsecond)},
-		Offset{Value: 3, Time: now.Add(3 * time.Microsecond)},
+		Offset{Value: 1, Time: now.Add(1 * time.Millisecond)},
+		Offset{Value: 2, Time: now.Add(2 * time.Millisecond)},
+		Offset{Value: 3, Time: now.Add(3 * time.Millisecond)},
 	)
 
 	if n := sched.Len(); n != 3 {
@@ -68,6 +68,8 @@ func testOffsetSchedulerSpeadOffsetSchedules(t *testing.T) {
 	}
 
 	for off := range sched.Offsets() {
+		t.Log(time.Now(), off)
+
 		if off.Value != expectedOffset.Value {
 			t.Errorf("scheduled offset mismatch: expected %v but found %v", expectedOffset.Value, off.Value)
 		}
@@ -84,5 +86,9 @@ func testOffsetSchedulerSpeadOffsetSchedules(t *testing.T) {
 		if expectedOffset.Value > 3 {
 			sched.Stop()
 		}
+	}
+
+	if expectedOffset.Value != 4 {
+		t.Error("wrong number of offsets scheduled: expected 3 but found", expectedOffset.Value-1)
 	}
 }
