@@ -39,7 +39,7 @@ func TestOffsetTimeline(t *testing.T) {
 func testOffsetTimelineEmpty(t *testing.T) {
 	timeline := offsetTimeline{}
 
-	if n := timeline.Len(); n != 0 {
+	if n := timeline.len(); n != 0 {
 		t.Error("empty offset timeline has a non-zero length:", n)
 	}
 }
@@ -48,13 +48,13 @@ func testOffsetTimelineLengthAfterPush(t *testing.T) {
 	now := time.Now()
 
 	timeline := offsetTimeline{}
-	timeline.Push(
-		Offset{Value: 1, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Time: now.Add(3 * time.Second)},
+	timeline.push(
+		offset{value: 1, time: utime(now, 1*time.Second)},
+		offset{value: 2, time: utime(now, 2*time.Second)},
+		offset{value: 3, time: utime(now, 3*time.Second)},
 	)
 
-	if n := timeline.Len(); n != 3 {
+	if n := timeline.len(); n != 3 {
 		t.Error("offset timeline length mismatch: expected 3 but found", n)
 	}
 }
@@ -63,15 +63,15 @@ func testOffsetTimelineLengthAfterPop(t *testing.T) {
 	now := time.Now()
 
 	timeline := offsetTimeline{}
-	timeline.Push(
-		Offset{Value: 1, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Time: now.Add(3 * time.Second)},
+	timeline.push(
+		offset{value: 1, time: utime(now, 1*time.Second)},
+		offset{value: 2, time: utime(now, 2*time.Second)},
+		offset{value: 3, time: utime(now, 3*time.Second)},
 	)
 
-	timeline.Pop(now.Add(2 * time.Second))
+	timeline.pop(now.Add(2 * time.Second))
 
-	if n := timeline.Len(); n != 1 {
+	if n := timeline.len(); n != 1 {
 		t.Error("offset timeline length mismatch: expected 1 but found", n)
 	}
 }
@@ -79,23 +79,27 @@ func testOffsetTimelineLengthAfterPop(t *testing.T) {
 func testOffsetTimelinePushAndPop(t *testing.T) {
 	now := time.Now()
 
-	offset1 := Offset{Value: 1, Time: now.Add(1 * time.Second)}
-	offset2 := Offset{Value: 2, Time: now.Add(2 * time.Second)}
-	offset3 := Offset{Value: 3, Time: now.Add(3 * time.Second)}
+	offset1 := offset{value: 1, time: utime(now, 1*time.Second)}
+	offset2 := offset{value: 2, time: utime(now, 2*time.Second)}
+	offset3 := offset{value: 3, time: utime(now, 3*time.Second)}
 
 	timeline := offsetTimeline{}
-	timeline.Push(offset3, offset2, offset1)
+	timeline.push(offset3, offset2, offset1)
 
-	offsets := timeline.Pop(now.Add(2 * time.Second))
+	offsets := timeline.pop(now.Add(2 * time.Second))
 
 	switch {
 	case len(offsets) != 2:
 		t.Error("offset timeline popped the wrong number of offsets: expected 2 but found", len(offsets))
 
-	case !offsets[0].Equal(offset1):
+	case offsets[0] != offset1:
 		t.Errorf("offset at index 0 mismatch: expected %v but found %v", offset1, offsets[0])
 
-	case !offsets[1].Equal(offset2):
+	case offsets[1] != offset2:
 		t.Errorf("offset at index 1 mismatch: expected %v but found %v", offset2, offsets[1])
 	}
+}
+
+func utime(t time.Time, d time.Duration) int64 {
+	return t.Add(d).UnixNano()
 }

@@ -21,33 +21,33 @@ type offsetTimeline struct {
 }
 
 // Len returns the number of offsets stored in the timeline.
-func (t *offsetTimeline) Len() int {
+func (t *offsetTimeline) len() int {
 	t.mutex.Lock()
 	n := t.queue.Len()
 	t.mutex.Unlock()
 	return n
 }
 
-// Push adds one or more offsets to the timeline.
-func (t *offsetTimeline) Push(offsets ...Offset) {
+// push adds one or more offsets to the timeline.
+func (t *offsetTimeline) push(offsets ...offset) {
 	t.mutex.Lock()
 
 	for _, off := range offsets {
 		// Use a temporary variable allocated in the offsetTimeline struct to
 		// avoid the dynamic memory allocation that would occur otherwise to
 		// convert the offset to an empty interface.
-		t.offset = makeOffset(off)
+		t.offset = off
 		heap.Push(&t.queue, &t.offset)
 	}
 
 	t.mutex.Unlock()
 }
 
-// Pop removes all offsets with a time less or equal to `now` from the timeline.
+// pop removes all offsets with a time less or equal to `now` from the timeline.
 //
 // The removed offsets are returned in a slice sorted by order of priority.
-func (t *offsetTimeline) Pop(now time.Time) []Offset {
-	var offsets []Offset
+func (t *offsetTimeline) pop(now time.Time) []offset {
+	var offsets []offset
 	var unixNow = now.UnixNano()
 	t.mutex.Lock()
 
@@ -56,12 +56,12 @@ func (t *offsetTimeline) Pop(now time.Time) []Offset {
 		// of the queue to avoid the dynamoc memory allocation that would occur
 		// during the conversion to an empty interface if the offset was passed
 		// by value.
-		off := heap.Pop(&t.queue).(*offset)
+		off := *(heap.Pop(&t.queue).(*offset))
 
 		if off.time <= unixNow {
-			offsets = append(offsets, off.toOffset())
+			offsets = append(offsets, off)
 		} else {
-			t.offset = *off
+			t.offset = off
 			heap.Push(&t.queue, &t.offset)
 			break
 		}

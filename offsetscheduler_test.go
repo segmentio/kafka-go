@@ -30,15 +30,15 @@ func testOffsetSchedulerStopUnblocksNext(t *testing.T) {
 	sched := newOffsetScheduler(time.Millisecond)
 
 	time.AfterFunc(10*time.Millisecond, func() {
-		sched.Stop()
+		sched.stop()
 	})
 
 	before := time.Now()
-	_, ok := <-sched.Offsets()
+	offsets, ok := <-sched.offsets()
 	after := time.Now()
 
 	if ok {
-		t.Error("unexpected offset returned by a call to Next")
+		t.Error("unexpected offset returned by a call to offsets:", offsets)
 	}
 
 	if d := after.Sub(before); d < (10 * time.Millisecond) {
@@ -50,45 +50,43 @@ func testOffsetSchedulerSpeadOffsetSchedules(t *testing.T) {
 	now := time.Now()
 
 	sched := newOffsetScheduler(10 * time.Millisecond)
-	defer sched.Stop()
+	defer sched.stop()
 
-	sched.Schedule(
-		Offset{Value: 1, Time: now.Add(1 * time.Millisecond)},
-		Offset{Value: 2, Time: now.Add(2 * time.Millisecond)},
-		Offset{Value: 3, Time: now.Add(3 * time.Millisecond)},
+	sched.schedule(
+		offset{value: 1, time: utime(now, 1*time.Millisecond)},
+		offset{value: 2, time: utime(now, 2*time.Millisecond)},
+		offset{value: 3, time: utime(now, 3*time.Millisecond)},
 	)
 
-	if n := sched.Len(); n != 3 {
+	if n := sched.len(); n != 3 {
 		t.Error("wrong number of offsets managed by the scheduler: expected 3 but found", n)
 	}
 
-	expectedOffset := Offset{
-		Value: 1,
-		Time:  now,
+	expectedOffset := offset{
+		value: 1,
+		time:  now.UnixNano(),
 	}
 
-	for off := range sched.Offsets() {
+	foundOffsets := <-sched.offsets()
+
+	for _, off := range foundOffsets {
 		t.Log(time.Now(), off)
 
-		if off.Value != expectedOffset.Value {
-			t.Errorf("scheduled offset mismatch: expected %v but found %v", expectedOffset.Value, off.Value)
+		if off.value != expectedOffset.value {
+			t.Errorf("scheduled offset mismatch: expected %v but found %v", expectedOffset.value, off.value)
 		}
 
-		if scheduledAt := time.Now(); scheduledAt.Before(expectedOffset.Time) {
-			t.Errorf("offset %v has been scheduled too early: %s < %s", off, scheduledAt, expectedOffset.Time)
+		if scheduledAt, expectedScheduledAt := time.Now(), time.Unix(0, expectedOffset.time); scheduledAt.Before(expectedScheduledAt) {
+			t.Errorf("offset %v has been scheduled too early: %s < %s", off, scheduledAt, expectedScheduledAt)
 		}
 
-		expectedOffset = Offset{
-			Value: expectedOffset.Value + 1,
-			Time:  expectedOffset.Time.Add(time.Millisecond / 3),
-		}
-
-		if expectedOffset.Value > 3 {
-			sched.Stop()
+		expectedOffset = offset{
+			value: expectedOffset.value + 1,
+			time:  expectedOffset.time + int64(time.Millisecond/3),
 		}
 	}
 
-	if expectedOffset.Value != 4 {
-		t.Error("wrong number of offsets scheduled: expected 3 but found", expectedOffset.Value-1)
+	if len(foundOffsets) != 3 {
+		t.Error("wrong number of offsets scheduled: expected 3 but found", len(foundOffsets))
 	}
 }
