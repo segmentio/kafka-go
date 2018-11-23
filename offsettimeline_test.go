@@ -37,7 +37,7 @@ func TestOffsetTimeline(t *testing.T) {
 }
 
 func testOffsetTimelineEmpty(t *testing.T) {
-	timeline := OffsetTimeline{}
+	timeline := offsetTimeline{}
 
 	if n := timeline.Len(); n != 0 {
 		t.Error("empty offset timeline has a non-zero length:", n)
@@ -47,7 +47,7 @@ func testOffsetTimelineEmpty(t *testing.T) {
 func testOffsetTimelineLengthAfterPush(t *testing.T) {
 	now := time.Now()
 
-	timeline := OffsetTimeline{}
+	timeline := offsetTimeline{}
 	timeline.Push(
 		Offset{Value: 1, Time: now.Add(1 * time.Second)},
 		Offset{Value: 2, Time: now.Add(2 * time.Second)},
@@ -62,7 +62,7 @@ func testOffsetTimelineLengthAfterPush(t *testing.T) {
 func testOffsetTimelineLengthAfterPop(t *testing.T) {
 	now := time.Now()
 
-	timeline := OffsetTimeline{}
+	timeline := offsetTimeline{}
 	timeline.Push(
 		Offset{Value: 1, Time: now.Add(1 * time.Second)},
 		Offset{Value: 2, Time: now.Add(2 * time.Second)},
@@ -83,7 +83,7 @@ func testOffsetTimelinePushAndPop(t *testing.T) {
 	offset2 := Offset{Value: 2, Time: now.Add(2 * time.Second)}
 	offset3 := Offset{Value: 3, Time: now.Add(3 * time.Second)}
 
-	timeline := OffsetTimeline{}
+	timeline := offsetTimeline{}
 	timeline.Push(offset3, offset2, offset1)
 
 	offsets := timeline.Pop(now.Add(2 * time.Second))

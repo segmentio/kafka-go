@@ -27,7 +27,7 @@ func TestOffsetScheduler(t *testing.T) {
 }
 
 func testOffsetSchedulerStopUnblocksNext(t *testing.T) {
-	sched := NewOffsetScheduler(time.Millisecond)
+	sched := newOffsetScheduler(time.Millisecond)
 
 	time.AfterFunc(10*time.Millisecond, func() {
 		sched.Stop()
@@ -49,7 +49,7 @@ func testOffsetSchedulerStopUnblocksNext(t *testing.T) {
 func testOffsetSchedulerSpeadOffsetSchedules(t *testing.T) {
 	now := time.Now()
 
-	sched := NewOffsetScheduler(time.Millisecond)
+	sched := newOffsetScheduler(time.Millisecond)
 	defer sched.Stop()
 
 	sched.Schedule(
