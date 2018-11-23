@@ -22,13 +22,12 @@ type OffsetScheduler struct {
 // NewOffsetScheduler constructs an offset scheduler which schedules offsets
 // on the given period.
 //
-// The period may be zero or a negative value to indicate that the scheduler
-// will use a default scheduling period.
+// The period must be greater than zero or the function will panic.
 func NewOffsetScheduler(period time.Duration) *OffsetScheduler {
 	offch := make(chan Offset)
 
 	if period <= 0 {
-		period = 100 * time.Millisecond
+		panic("invalid offset scheduler period")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
