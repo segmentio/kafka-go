@@ -831,6 +831,8 @@ func (r *Reader) run() {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
+	done := r.stctx.Done()
+
 	for {
 		if err := r.handshake(); err != nil {
 			r.withErrorLogger(func(l *log.Logger) {
@@ -839,7 +841,7 @@ func (r *Reader) run() {
 		}
 
 		select {
-		case <-r.stctx.Done():
+		case <-done:
 			return
 		default:
 		}
@@ -1523,6 +1525,8 @@ func (r *Reader) readLag(ctx context.Context) {
 	}
 }
 
+// start modifies the internal state of the reader, therefore the calls must be
+// synchronized by locking the reader's mutex.
 func (r *Reader) start(offsetsByPartition map[int]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed

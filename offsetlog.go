@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"math/rand"
 	"time"
@@ -67,7 +66,7 @@ func (log *OffsetLog) ReadOffsets() OffsetIter {
 	}
 
 	maxBytes := log.maxBytes()
-	offsets := make(map[int64]int64)
+	offsets := make(map[offsetKey]offsetValue)
 
 	for cursor < last {
 		c.SetReadDeadline(time.Now().Add(readTimeout))
@@ -80,17 +79,18 @@ func (log *OffsetLog) ReadOffsets() OffsetIter {
 			}
 
 			if cursor = m.Offset; cursor < last {
-				var off offset
+				var key offsetKey
+				var value offsetValue
 
 				if len(m.Key) != 0 {
-					off.value = int64(binary.BigEndian.Uint64(m.Key))
+					key.readFrom(m.Key)
 				}
 
 				if len(m.Value) != 0 {
-					off.time = int64(binary.BigEndian.Uint64(m.Value))
-					offsets[off.value] = off.time
+					value.readFrom(m.Value)
+					offsets[key] = value
 				} else {
-					delete(offsets, off.value)
+					delete(offsets, key)
 				}
 			}
 		}
@@ -106,11 +106,8 @@ func (log *OffsetLog) ReadOffsets() OffsetIter {
 		offsets: make([]offset, 0, len(offsets)),
 	}
 
-	for value, time := range offsets {
-		it.offsets = append(it.offsets, offset{
-			value: value,
-			time:  time,
-		})
+	for key, value := range offsets {
+		it.offsets = append(it.offsets, makeOffsetFromKeyAndValue(key, value))
 	}
 
 	return it
@@ -177,14 +174,21 @@ func (log *OffsetLog) writeTimeout() time.Duration {
 
 func makeOffsetWriteMessages(offsets []Offset) []Message {
 	msgs := make([]Message, len(offsets))
-	data := make([]byte, 16*len(offsets))
+	data := make([]byte, sizeOfOffset*len(offsets))
+	pos := 0
 
 	for i := range offsets {
-		off := makeOffset(offsets[i])
-		key := data[(i+i+0)*8 : (i+i+1)*8]
-		val := data[(i+i+1)*8 : (i+i+2)*8]
-		binary.BigEndian.PutUint64(key, uint64(off.value))
-		binary.BigEndian.PutUint64(val, uint64(off.time))
+		k, v := makeOffset(offsets[i]).toKeyAndValue()
+
+		key := data[pos : pos+sizeOfOffsetKey]
+		pos += sizeOfOffsetKey
+
+		val := data[pos : pos+sizeOfOffsetValue]
+		pos += sizeOfOffsetValue
+
+		k.writeTo(key)
+		v.writeTo(val)
+
 		msgs[i].Key, msgs[i].Value = key, val
 	}
 
@@ -193,11 +197,17 @@ func makeOffsetWriteMessages(offsets []Offset) []Message {
 
 func makeOffsetDeleteMessages(offsets []Offset) []Message {
 	msgs := make([]Message, len(offsets))
-	data := make([]byte, 8*len(offsets))
+	data := make([]byte, sizeOfOffsetKey*len(offsets))
+	pos := 0
 
-	for i, off := range offsets {
-		key := data[(i+0)*8 : (i+1)*8]
-		binary.BigEndian.PutUint64(key, uint64(off.Value))
+	for i := range offsets {
+		k := makeOffset(offsets[i]).toKey()
+
+		key := data[pos : pos+sizeOfOffsetKey]
+		pos += sizeOfOffsetKey
+
+		k.writeTo(key)
+
 		msgs[i].Key = key
 	}
 
