@@ -43,6 +43,14 @@ func deadlineToTimeout(deadline time.Time, now time.Time) time.Duration {
 	return deadline.Sub(now)
 }
 
+type kafkaTimeoutOption func(time.Time, time.Time, time.Duration) time.Duration
+
+func SpecificKafkaTimeout(timeout time.Duration) kafkaTimeoutOption {
+	return func(deadline time.Time, now time.Time, rtt time.Duration) time.Duration {
+		return timeout
+	}
+}
+
 func adjustDeadlineForRTT(deadline time.Time, now time.Time, rtt time.Duration) time.Duration {
 	if !deadline.IsZero() {
 		timeout := deadline.Sub(now)

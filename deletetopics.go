@@ -101,7 +101,7 @@ func (c *Conn) deleteTopics(request deleteTopicsRequestV1) (deleteTopicsResponse
 		func(deadline time.Time, id int32) error {
 			if request.Timeout == 0 {
 				now := time.Now()
-				timeout := adjustDeadlineForRTT(deadline, now, defaultRTT)
+				timeout := c.kafkaTimeout(deadline, now, defaultRTT)
 				request.Timeout = milliseconds(timeout)
 			}
 			return c.writeRequest(deleteTopicsRequest, v1, id, request)

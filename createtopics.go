@@ -219,7 +219,7 @@ func (c *Conn) createTopics(request createTopicsRequestV0) (createTopicsResponse
 		func(deadline time.Time, id int32) error {
 			if request.Timeout == 0 {
 				now := time.Now()
-				timeout := adjustDeadlineForRTT(deadline, now, defaultRTT)
+				timeout := c.kafkaTimeout(deadline, now, defaultRTT)
 				request.Timeout = milliseconds(timeout)
 			}
 			return c.writeRequest(createTopicsRequest, v0, id, request)

@@ -71,13 +71,16 @@ type Conn struct {
 
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
+
+	kafkaTimeout kafkaTimeoutOption
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
 type ConnConfig struct {
-	ClientID  string
-	Topic     string
-	Partition int
+	ClientID     string
+	Topic        string
+	Partition    int
+	KafkaTimeout kafkaTimeoutOption
 }
 
 var (
@@ -95,8 +98,9 @@ func init() {
 // NewConn returns a new kafka connection for the given topic and partition.
 func NewConn(conn net.Conn, topic string, partition int) *Conn {
 	return NewConnWith(conn, ConnConfig{
-		Topic:     topic,
-		Partition: partition,
+		Topic:        topic,
+		Partition:    partition,
+		KafkaTimeout: adjustDeadlineForRTT,
 	})
 }
 
@@ -111,6 +115,10 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		panic(fmt.Sprintf("invalid partition number: %d", config.Partition))
 	}
 
+	if config.KafkaTimeout == nil {
+		config.KafkaTimeout = adjustDeadlineForRTT
+	}
+
 	c := &Conn{
 		conn:         conn,
 		rbuf:         *bufio.NewReader(conn),
@@ -120,6 +128,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		partition:    int32(config.Partition),
 		offset:       FirstOffset,
 		requiredAcks: -1,
+		kafkaTimeout: config.KafkaTimeout,
 	}
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
@@ -597,7 +606,7 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
 		now = time.Now()
-		timeout := adjustDeadlineForRTT(deadline, now, defaultRTT)
+		timeout := c.kafkaTimeout(deadline, now, defaultRTT)
 		if deadline.IsZero() {
 			adjustedDeadline = deadline
 		} else {
@@ -821,7 +830,7 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
-			timeout := adjustDeadlineForRTT(deadline, now, defaultRTT)
+			timeout := c.kafkaTimeout(deadline, now, defaultRTT)
 			return writeProduceRequestV2(
 				&c.wbuf,
 				codec,
