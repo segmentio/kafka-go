@@ -43,7 +43,7 @@ func deadlineToTimeout(deadline time.Time, now time.Time) time.Duration {
 	return deadline.Sub(now)
 }
 
-func adjustDeadlineForRTT(deadline time.Time, now time.Time, rtt time.Duration) time.Time {
+func adjustDeadlineForRTT(deadline time.Time, now time.Time, rtt time.Duration) time.Duration {
 	if !deadline.IsZero() {
 		timeout := deadline.Sub(now)
 		if timeout < rtt {
@@ -51,5 +51,5 @@ func adjustDeadlineForRTT(deadline time.Time, now time.Time, rtt time.Duration) 
 		}
 		deadline = deadline.Add(-rtt)
 	}
-	return deadline
+	return deadlineToTimeout(deadline, now)
 }

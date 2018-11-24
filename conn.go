@@ -577,6 +577,7 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // the kafka server.
 func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 	var adjustedDeadline time.Time
+	var now time.Time
 	var maxFetch = int(c.fetchMaxBytes)
 
 	if minBytes < 0 || minBytes > maxFetch {
@@ -595,9 +596,13 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 	}
 
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
-		now := time.Now()
-		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-		adjustedDeadline = deadline
+		now = time.Now()
+		timeout := adjustDeadlineForRTT(deadline, now, defaultRTT)
+		if deadline.IsZero() {
+			adjustedDeadline = deadline
+		} else {
+			adjustedDeadline = now.Add(timeout)
+		}
 		return writeFetchRequestV2(
 			&c.wbuf,
 			id,
@@ -607,7 +612,7 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 			offset,
 			minBytes,
 			maxBytes+int(c.fetchMinSize),
-			deadlineToTimeout(deadline, now),
+			timeout,
 		)
 	})
 	if err != nil {
@@ -816,7 +821,7 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
-			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+			timeout := adjustDeadlineForRTT(deadline, now, defaultRTT)
 			return writeProduceRequestV2(
 				&c.wbuf,
 				codec,
@@ -824,7 +829,7 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 				c.clientID,
 				c.topic,
 				c.partition,
-				deadlineToTimeout(deadline, now),
+				timeout,
 				int16(atomic.LoadInt32(&c.requiredAcks)),
 				msgs...,
 			)
