@@ -7,66 +7,72 @@ import (
 	"time"
 )
 
-// OffsetLog is an implementation of the OffsetStore interface which uses a
+// offsetLog is an implementation of the offsetStore interface which uses a
 // Kafka partition as backing store for the offsets.
 //
 // Ideally the partition belongs to a compacted topic, but this is not required
 // and the log will work just fine with a regular topic (replays may take a bit
 // longer if there are large numbers of offsets recorded in the log).
-type OffsetLog struct {
+type offsetLog struct {
 	// Addresses of the Kafka brokers tha the log uses to lookup the leader of
 	// the topic partition that it uses.
-	Brokers []string
+	brokers []string
 
 	// Name of the Kafka topic that the offset log uses to keep track of the
 	// offsets.
-	Topic string
+	topic string
 
 	// Partition tha the offset log uses in the Kafka topic.
-	Partition int
+	partition int
 
 	// Size limit of the fetch requests to the offset log, default to 8 MB.
-	MaxBytes int
+	maxBytes int
 
 	// Time limit applied to operations of the offset log.
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
+	readTimeout  time.Duration
+	writeTimeout time.Duration
 
 	// Dialer used by the offset log to establish connections to the Kafka
 	// brokers. If nil, DefaultDialer is used.
-	Dialer *Dialer
+	dialer *Dialer
 }
 
 const (
-	defaultReadTimeout  = 3 * time.Second
-	defaultWriteTimeout = 3 * time.Second
-	defaultMaxBytes     = 8 * 1024 * 1024
+	defaultOffsetLogReadTimeout  = 3 * time.Second
+	defaultOffsetLogWriteTimeout = 3 * time.Second
+	defaultOffsetLogMaxBytes     = 8 * 1024 * 1024
 )
 
-// ReadOffsets satisfies the OffsetIter interface, it returns an offset iterator
-// which produces all offsets in the partition read by the log.
-func (log *OffsetLog) ReadOffsets() OffsetIter {
+// readOffsets satisfies the offsetStore interface, it returns a list of offsets
+// in the partition read by the log.
+func (log *offsetLog) readOffsets() ([]offset, error) {
 	c, err := log.dialLeader()
 	if err != nil {
-		return &errorOffsetIter{err}
+		return nil, err
 	}
 	defer c.Close()
 
-	readTimeout := log.readTimeout()
+	readTimeout := log.readTimeout
+	if readTimeout <= 0 {
+		readTimeout = defaultOffsetLogReadTimeout
+	}
 	c.SetReadDeadline(time.Now().Add(readTimeout))
 
 	first, last, err := c.ReadOffsets()
 	if err != nil {
-		return &errorOffsetIter{err}
+		return nil, err
 	}
 
 	cursor, err := c.Seek(first, SeekAbsolute)
 	if err != nil {
-		return &errorOffsetIter{err}
+		return nil, err
 	}
 
-	maxBytes := log.maxBytes()
-	offsets := make(map[offsetKey]offsetValue)
+	maxBytes := log.maxBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultOffsetLogMaxBytes
+	}
+	replay := make(map[offsetKey]offsetValue)
 
 	for cursor < last {
 		c.SetReadDeadline(time.Now().Add(readTimeout))
@@ -88,97 +94,73 @@ func (log *OffsetLog) ReadOffsets() OffsetIter {
 
 				if len(m.Value) != 0 {
 					value.readFrom(m.Value)
-					offsets[key] = value
+					replay[key] = value
 				} else {
-					delete(offsets, key)
+					delete(replay, key)
 				}
 			}
 		}
 
 		if err := b.Close(); err != nil {
-			return &errorOffsetIter{err}
+			return nil, err
 		}
 
 		cursor++
 	}
 
-	it := &offsetIter{
-		offsets: make([]offset, 0, len(offsets)),
+	offsets := make([]offset, 0, len(replay))
+	for key, value := range replay {
+		offsets = append(offsets, makeOffsetFromKeyAndValue(key, value))
 	}
-
-	for key, value := range offsets {
-		it.offsets = append(it.offsets, makeOffsetFromKeyAndValue(key, value))
-	}
-
-	return it
+	return offsets, nil
 }
 
-// WriteOffsets satisfies the OffsetIter interface, it writes a set of offsets
+// writeOffsets satisfies the offsetStore interface, it writes a set of offsets
 // to the Kafka partition managed by the log.
-func (log *OffsetLog) WriteOffsets(offsets ...Offset) error {
+func (log *offsetLog) writeOffsets(offsets ...offset) error {
 	return log.write(makeOffsetWriteMessages(offsets))
 }
 
-// DeleteOffsets satisfies the OffsetIter interface, it deletes the offsets from
+// deleteOffsets satisfies the offsetStore interface, it deletes the offsets from
 // the Kafka partition managed by the log.
-func (log *OffsetLog) DeleteOffsets(offsets ...Offset) error {
+func (log *offsetLog) deleteOffsets(offsets ...offset) error {
 	return log.write(makeOffsetDeleteMessages(offsets))
 }
 
-func (log *OffsetLog) write(msgs []Message) error {
+func (log *offsetLog) write(msgs []Message) error {
 	c, err := log.dialLeader()
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	c.SetWriteDeadline(time.Now().Add(log.writeTimeout()))
+	writeTimeout := log.writeTimeout
+	if writeTimeout <= 0 {
+		writeTimeout = defaultOffsetLogWriteTimeout
+	}
+	c.SetWriteDeadline(time.Now().Add(writeTimeout))
 	_, err = c.WriteMessages(msgs...)
 	return err
 }
 
-func (log *OffsetLog) dialer() *Dialer {
-	if log.Dialer != nil {
-		return log.Dialer
-	}
-	return DefaultDialer
-}
-
-func (log *OffsetLog) dialLeader() (*Conn, error) {
-	if len(log.Brokers) == 0 {
+func (log *offsetLog) dialLeader() (*Conn, error) {
+	if len(log.brokers) == 0 {
 		return nil, errors.New("no brokers configured on the offset log")
 	}
-	broker := log.Brokers[rand.Intn(len(log.Brokers))]
-	return log.dialer().DialLeader(context.Background(), "tcp", broker, log.Topic, log.Partition)
-}
-
-func (log *OffsetLog) maxBytes() int {
-	if log.MaxBytes > 0 {
-		return log.MaxBytes
+	dialer := log.dialer
+	if dialer == nil {
+		dialer = DefaultDialer
 	}
-	return defaultMaxBytes
+	broker := log.brokers[rand.Intn(len(log.brokers))]
+	return dialer.DialLeader(context.Background(), "tcp", broker, log.topic, log.partition)
 }
 
-func (log *OffsetLog) readTimeout() time.Duration {
-	if log.ReadTimeout > 0 {
-		return log.ReadTimeout
-	}
-	return defaultReadTimeout
-}
-
-func (log *OffsetLog) writeTimeout() time.Duration {
-	if log.ReadTimeout > 0 {
-		return log.ReadTimeout
-	}
-	return defaultWriteTimeout
-}
-
-func makeOffsetWriteMessages(offsets []Offset) []Message {
+func makeOffsetWriteMessages(offsets []offset) []Message {
 	msgs := make([]Message, len(offsets))
 	data := make([]byte, sizeOfOffset*len(offsets))
 	pos := 0
 
 	for i := range offsets {
-		k, v := makeOffset(offsets[i]).toKeyAndValue()
+		k, v := offsets[i].toKeyAndValue()
 
 		key := data[pos : pos+sizeOfOffsetKey]
 		pos += sizeOfOffsetKey
@@ -195,13 +177,13 @@ func makeOffsetWriteMessages(offsets []Offset) []Message {
 	return msgs
 }
 
-func makeOffsetDeleteMessages(offsets []Offset) []Message {
+func makeOffsetDeleteMessages(offsets []offset) []Message {
 	msgs := make([]Message, len(offsets))
 	data := make([]byte, sizeOfOffsetKey*len(offsets))
 	pos := 0
 
 	for i := range offsets {
-		k := makeOffset(offsets[i]).toKey()
+		k := offsets[i].toKey()
 
 		key := data[pos : pos+sizeOfOffsetKey]
 		pos += sizeOfOffsetKey

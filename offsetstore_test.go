@@ -7,15 +7,15 @@ import (
 )
 
 func TestOffsetStore(t *testing.T) {
-	testOffsetStore(t, func() (OffsetStore, func()) {
-		return NewOffsetStore(), func() {}
+	testOffsetStore(t, func() (offsetStore, func()) {
+		return newOffsetStore(), func() {}
 	})
 }
 
-func testOffsetStore(t *testing.T, newOffsetStore func() (store OffsetStore, close func())) {
+func testOffsetStore(t *testing.T, newOffsetStore func() (store offsetStore, close func())) {
 	tests := []struct {
 		scenario string
-		function func(*testing.T, OffsetStore, time.Time)
+		function func(*testing.T, offsetStore, time.Time)
 	}{
 		{
 			scenario: "a newly constructed offset store does not contain any offsets",
@@ -71,181 +71,175 @@ func testOffsetStore(t *testing.T, newOffsetStore func() (store OffsetStore, clo
 	}
 }
 
-func testOffsetStoreNewEmpty(t *testing.T, store OffsetStore, now time.Time) {
+func testOffsetStoreNewEmpty(t *testing.T, store offsetStore, now time.Time) {
 	assertOffsetStoreEmpty(t, store)
 }
 
-func testOffsetStoreDeleteEmpty(t *testing.T, store OffsetStore, now time.Time) {
+func testOffsetStoreDeleteEmpty(t *testing.T, store offsetStore, now time.Time) {
 	assertOffsetStoreDelete(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 2, Size: 20, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 2, Size: 30, Time: now.Add(3 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 2, size: 20, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 2, size: 30, time: utime(now, 3*time.Second)},
 	)
 }
 
-func testOffsetStoreWriteEmpty(t *testing.T, store OffsetStore, now time.Time) {
+func testOffsetStoreWriteEmpty(t *testing.T, store offsetStore, now time.Time) {
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 2, Size: 20, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 2, Size: 30, Time: now.Add(3 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 2, size: 20, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 2, size: 30, time: utime(now, 3*time.Second)},
 	)
 }
 
-func testOffsetStoreDeleteIdempotent(t *testing.T, store OffsetStore, now time.Time) {
+func testOffsetStoreDeleteIdempotent(t *testing.T, store offsetStore, now time.Time) {
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 2, Size: 20, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 2, Size: 30, Time: now.Add(3 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 2, size: 20, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 2, size: 30, time: utime(now, 3*time.Second)},
 	)
 
 	assertOffsetStoreDelete(t, store,
-		Offset{Value: 1},
+		offset{value: 1},
 	)
 
 	assertOffsetStoreDelete(t, store,
-		Offset{Value: 1},
+		offset{value: 1},
 	)
 }
 
-func testOffsetStoreWriteIdempotent(t *testing.T, store OffsetStore, now time.Time) {
+func testOffsetStoreWriteIdempotent(t *testing.T, store offsetStore, now time.Time) {
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 2, Size: 20, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 2, Size: 30, Time: now.Add(3 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 2, size: 20, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 2, size: 30, time: utime(now, 3*time.Second)},
 	)
 
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
 	)
 
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 2, Attempt: 2, Size: 20, Time: now.Add(2 * time.Second)},
+		offset{value: 2, attempt: 2, size: 20, time: utime(now, 2*time.Second)},
 	)
 
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 3, Attempt: 2, Size: 30, Time: now.Add(3 * time.Second)},
+		offset{value: 3, attempt: 2, size: 30, time: utime(now, 3*time.Second)},
 	)
 }
 
-func testOffsetStoreDeletedOffsetsAreGone(t *testing.T, store OffsetStore, now time.Time) {
+func testOffsetStoreDeletedOffsetsAreGone(t *testing.T, store offsetStore, now time.Time) {
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 2, Size: 20, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 2, Size: 30, Time: now.Add(3 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 2, size: 20, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 2, size: 30, time: utime(now, 3*time.Second)},
 	)
 
 	assertOffsetStoreDelete(t, store,
-		Offset{Value: 1},
+		offset{value: 1},
 	)
 
 	assertOffsetStoreContains(t, store,
-		Offset{Value: 2, Attempt: 2, Size: 20, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 2, Size: 30, Time: now.Add(3 * time.Second)},
+		offset{value: 2, attempt: 2, size: 20, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 2, size: 30, time: utime(now, 3*time.Second)},
 	)
 
 	assertOffsetStoreDelete(t, store,
-		Offset{Value: 2},
+		offset{value: 2},
 	)
 
 	assertOffsetStoreContains(t, store,
-		Offset{Value: 3, Attempt: 2, Size: 30, Time: now.Add(3 * time.Second)},
+		offset{value: 3, attempt: 2, size: 30, time: utime(now, 3*time.Second)},
 	)
 
 	assertOffsetStoreDelete(t, store,
-		Offset{Value: 3},
+		offset{value: 3},
 	)
 
 	assertOffsetStoreEmpty(t, store)
 }
 
-func testOffsetStoreWrittenOffsetsExist(t *testing.T, store OffsetStore, now time.Time) {
+func testOffsetStoreWrittenOffsetsExist(t *testing.T, store offsetStore, now time.Time) {
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 3, Size: 10, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 3, Size: 10, Time: now.Add(3 * time.Second)},
-		Offset{Value: 4, Attempt: 3, Size: 10, Time: now.Add(4 * time.Second)},
-		Offset{Value: 5, Attempt: 3, Size: 10, Time: now.Add(5 * time.Second)},
-		Offset{Value: 6, Attempt: 3, Size: 10, Time: now.Add(6 * time.Second)},
-		Offset{Value: 7, Attempt: 3, Size: 10, Time: now.Add(7 * time.Second)},
-		Offset{Value: 8, Attempt: 3, Size: 10, Time: now.Add(8 * time.Second)},
-		Offset{Value: 9, Attempt: 3, Size: 10, Time: now.Add(9 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 3, size: 10, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 3, size: 10, time: utime(now, 3*time.Second)},
+		offset{value: 4, attempt: 3, size: 10, time: utime(now, 4*time.Second)},
+		offset{value: 5, attempt: 3, size: 10, time: utime(now, 5*time.Second)},
+		offset{value: 6, attempt: 3, size: 10, time: utime(now, 6*time.Second)},
+		offset{value: 7, attempt: 3, size: 10, time: utime(now, 7*time.Second)},
+		offset{value: 8, attempt: 3, size: 10, time: utime(now, 8*time.Second)},
+		offset{value: 9, attempt: 3, size: 10, time: utime(now, 9*time.Second)},
 	)
 
 	assertOffsetStoreContains(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 3, Size: 10, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 3, Size: 10, Time: now.Add(3 * time.Second)},
-		Offset{Value: 4, Attempt: 3, Size: 10, Time: now.Add(4 * time.Second)},
-		Offset{Value: 5, Attempt: 3, Size: 10, Time: now.Add(5 * time.Second)},
-		Offset{Value: 6, Attempt: 3, Size: 10, Time: now.Add(6 * time.Second)},
-		Offset{Value: 7, Attempt: 3, Size: 10, Time: now.Add(7 * time.Second)},
-		Offset{Value: 8, Attempt: 3, Size: 10, Time: now.Add(8 * time.Second)},
-		Offset{Value: 9, Attempt: 3, Size: 10, Time: now.Add(9 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 3, size: 10, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 3, size: 10, time: utime(now, 3*time.Second)},
+		offset{value: 4, attempt: 3, size: 10, time: utime(now, 4*time.Second)},
+		offset{value: 5, attempt: 3, size: 10, time: utime(now, 5*time.Second)},
+		offset{value: 6, attempt: 3, size: 10, time: utime(now, 6*time.Second)},
+		offset{value: 7, attempt: 3, size: 10, time: utime(now, 7*time.Second)},
+		offset{value: 8, attempt: 3, size: 10, time: utime(now, 8*time.Second)},
+		offset{value: 9, attempt: 3, size: 10, time: utime(now, 9*time.Second)},
 	)
 }
 
-func testOffsetStoreWrittenOffsetsAreUnique(t *testing.T, store OffsetStore, now time.Time) {
+func testOffsetStoreWrittenOffsetsAreUnique(t *testing.T, store offsetStore, now time.Time) {
 	assertOffsetStoreWrite(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 3, Size: 10, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 3, Size: 10, Time: now.Add(3 * time.Second)},
-		Offset{Value: 3, Attempt: 3, Size: 10, Time: now.Add(3 * time.Second)},
-		Offset{Value: 3, Attempt: 3, Size: 10, Time: now.Add(3 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 3, size: 10, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 3, size: 10, time: utime(now, 3*time.Second)},
+		offset{value: 3, attempt: 3, size: 10, time: utime(now, 3*time.Second)},
+		offset{value: 3, attempt: 3, size: 10, time: utime(now, 3*time.Second)},
 	)
 
 	assertOffsetStoreContains(t, store,
-		Offset{Value: 1, Attempt: 3, Size: 10, Time: now.Add(1 * time.Second)},
-		Offset{Value: 2, Attempt: 3, Size: 10, Time: now.Add(2 * time.Second)},
-		Offset{Value: 3, Attempt: 3, Size: 10, Time: now.Add(3 * time.Second)},
+		offset{value: 1, attempt: 3, size: 10, time: utime(now, 1*time.Second)},
+		offset{value: 2, attempt: 3, size: 10, time: utime(now, 2*time.Second)},
+		offset{value: 3, attempt: 3, size: 10, time: utime(now, 3*time.Second)},
 	)
 }
 
-func assertOffsetStoreWrite(t *testing.T, store OffsetStore, offsets ...Offset) {
+func assertOffsetStoreWrite(t *testing.T, store offsetStore, offsets ...offset) {
 	t.Helper()
 
-	if err := store.WriteOffsets(offsets...); err != nil {
+	if err := store.writeOffsets(offsets...); err != nil {
 		t.Error("error writing offsets:", err)
 	}
 }
 
-func assertOffsetStoreDelete(t *testing.T, store OffsetStore, offsets ...Offset) {
+func assertOffsetStoreDelete(t *testing.T, store offsetStore, offsets ...offset) {
 	t.Helper()
 
-	if err := store.DeleteOffsets(offsets...); err != nil {
+	if err := store.deleteOffsets(offsets...); err != nil {
 		t.Error("error deleting offsets:", err)
 	}
 }
 
-func assertOffsetStoreEmpty(t *testing.T, store OffsetStore) {
+func assertOffsetStoreEmpty(t *testing.T, store offsetStore) {
 	t.Helper()
 	assertOffsetStoreContains(t, store /* nothing */)
 }
 
-func assertOffsetStoreContains(t *testing.T, store OffsetStore, offsets ...Offset) {
+func assertOffsetStoreContains(t *testing.T, store offsetStore, offsets ...offset) {
 	t.Helper()
 
-	var it = store.ReadOffsets()
-	var found []Offset
-
-	for it.Next() {
-		found = append(found, it.Offset())
-	}
-
-	if err := it.Err(); err != nil {
+	found, err := store.readOffsets()
+	if err != nil {
 		t.Error("error reading offsets:", err)
 	}
 
 	sort.Slice(found, func(i, j int) bool {
-		return found[i].Value < found[j].Value
+		return found[i].value < found[j].value
 	})
 
 	for i, off := range found {
 		if i < len(offsets) {
-			if !off.Equal(offsets[i]) {
-				t.Errorf("offset at index %d mismatch: expected %v but found %v", i, offsets[i], off)
+			if off != offsets[i] {
+				t.Errorf("offset at index %d mismatch: expected %+v but found %+v", i, offsets[i], off)
 			}
 		} else {
-			t.Errorf("too many offsets were found in the store: %d > %d %s", i+1, len(offsets), off)
+			t.Errorf("too many offsets were found in the store: %d > %d %+v", i+1, len(offsets), off)
 		}
 	}
 

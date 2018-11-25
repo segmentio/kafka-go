@@ -6,7 +6,7 @@ import (
 )
 
 func TestOffsetLog(t *testing.T) {
-	testOffsetStore(t, func() (OffsetStore, func()) {
+	testOffsetStore(t, func() (offsetStore, func()) {
 		c, err := Dial("tcp", "localhost:9092")
 		if err != nil {
 			panic(err)
@@ -24,10 +24,10 @@ func TestOffsetLog(t *testing.T) {
 
 		time.Sleep(100 * time.Millisecond)
 
-		log := &OffsetLog{
-			Brokers:   []string{"localhost:9092"},
-			Topic:     topic,
-			Partition: 0,
+		log := &offsetLog{
+			brokers:   []string{"localhost:9092"},
+			topic:     topic,
+			partition: 0,
 		}
 
 		return log, func() { c.DeleteTopics(topic) }

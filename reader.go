@@ -78,6 +78,7 @@ type Reader struct {
 	stop         context.CancelFunc
 	done         chan struct{}
 	commits      chan commitRequest
+	requeues     chan requeueRequest
 	version      int64 // version holds the generation of the spawned readers
 	offset       int64
 	lag          int64
@@ -107,7 +108,7 @@ func (r *Reader) useSyncCommits() bool { return r.config.CommitInterval == 0 }
 
 // membership returns the group generationID and memberID of the reader.
 //
-// Only used when config.GroupID != ""
+// Only used when config.GroupID is set.
 func (r *Reader) membership() (generationID int32, memberID string) {
 	r.mutex.Lock()
 	generationID = r.generationID
@@ -119,7 +120,7 @@ func (r *Reader) membership() (generationID int32, memberID string) {
 // lookupCoordinator scans the brokers and looks up the address of the
 // coordinator for the group.
 //
-// Only used when config.GroupID != ""
+// Only used when config.GroupID is set.
 func (r *Reader) lookupCoordinator() (string, error) {
 	conn, err := r.connect()
 	if err != nil {
@@ -891,15 +892,15 @@ type ReaderConfig struct {
 	//
 	// Default: [Range, RoundRobin]
 	//
-	// Only used when GroupID is set
+	// Only used when GroupID is set.
 	GroupBalancers []GroupBalancer
 
-	// HeartbeatInterval sets the optional frequency at which the reader sends the consumer
-	// group heartbeat update.
+	// HeartbeatInterval sets the optional frequency at which the reader sends
+	// the consumer group heartbeat update.
 	//
 	// Default: 3s
 	//
-	// Only used when GroupID is set
+	// Only used when GroupID is set.
 	HeartbeatInterval time.Duration
 
 	// CommitInterval indicates the interval at which offsets are committed to
@@ -907,33 +908,42 @@ type ReaderConfig struct {
 	//
 	// Defaults to 1s
 	//
-	// Only used when GroupID is set
+	// Only used when GroupID is set.
 	CommitInterval time.Duration
 
-	// SessionTimeout optionally sets the length of time that may pass without a heartbeat
-	// before the coordinator considers the consumer dead and initiates a rebalance.
+	// SessionTimeout optionally sets the length of time that may pass without
+	// a heartbeat before the coordinator considers the consumer dead and
+	// initiates a rebalance.
 	//
 	// Default: 30s
 	//
-	// Only used when GroupID is set
+	// Only used when GroupID is set.
 	SessionTimeout time.Duration
 
-	// RebalanceTimeout optionally sets the length of time the coordinator will wait
-	// for members to join as part of a rebalance.  For kafka servers under higher
-	// load, it may be useful to set this value higher.
+	// RebalanceTimeout optionally sets the length of time the coordinator will
+	// wait for members to join as part of a rebalance.  For kafka servers under
+	// higher load, it may be useful to set this value higher.
 	//
 	// Default: 30s
 	//
-	// Only used when GroupID is set
+	// Only used when GroupID is set.
 	RebalanceTimeout time.Duration
 
-	// RetentionTime optionally sets the length of time the consumer group will be saved
-	// by the broker
+	// RetentionTime optionally sets the length of time the consumer group will
+	// be saved by the broker
 	//
 	// Default: 24h
 	//
-	// Only used when GroupID is set
+	// Only used when GroupID is set.
 	RetentionTime time.Duration
+
+	// OffsetTopic is the topic used by the reader to track offsets of requeued
+	// messages.
+	//
+	// If this field is not set, support for requeuing messages is disabled.
+	//
+	// Only used when GroupID is set.
+	OffsetTopic string
 
 	// If not nil, specifies a logger used to report internal changes within the
 	// reader.
@@ -1114,14 +1124,15 @@ func NewReader(config ReaderConfig) *Reader {
 
 	stctx, stop := context.WithCancel(context.Background())
 	r := &Reader{
-		config:  config,
-		msgs:    make(chan readerMessage, config.QueueCapacity),
-		cancel:  func() {},
-		done:    make(chan struct{}),
-		commits: make(chan commitRequest, config.QueueCapacity),
-		stop:    stop,
-		offset:  FirstOffset,
-		stctx:   stctx,
+		config:   config,
+		msgs:     make(chan readerMessage, config.QueueCapacity),
+		cancel:   func() {},
+		done:     make(chan struct{}),
+		commits:  make(chan commitRequest, config.QueueCapacity),
+		requeues: make(chan requeueRequest, config.QueueCapacity),
+		stop:     stop,
+		offset:   FirstOffset,
+		stctx:    stctx,
 		stats: &readerStats{
 			dialTime:   makeSummary(),
 			readTime:   makeSummary(),
@@ -1267,6 +1278,10 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 		return errOnlyAvailableWithGroup
 	}
 
+	if r.stctx.Err() != nil {
+		return io.ErrClosedPipe
+	}
+
 	var errch <-chan error
 	var sync = r.useSyncCommits()
 	var creq = commitRequest{
@@ -1282,22 +1297,61 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 	case r.commits <- creq:
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-r.stctx.Done():
-		// This context is used to ensure we don't allow commits after the
-		// reader was closed.
+	}
+
+	var err error
+	if sync {
+		select {
+		case err = <-errch:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+	}
+	return err
+}
+
+// RequeueMessages schedules the given list of messages to be requeued at a
+// later date. Requeuing is only supported if the reader had a NewOffsetStore
+// function configured when it was constructed, and if it is part of a consumer
+// group. Messages requeued are automatically commited. The program may pass a
+// context to asynchronously cancel the requeue operation when it was configured
+// to be blocking.
+func (r *Reader) RequeueMessages(ctx context.Context, at time.Time, msgs ...Message) error {
+	if !r.useConsumerGroup() {
+		return errOnlyAvailableWithGroup
+	}
+
+	if r.stctx.Err() != nil {
 		return io.ErrClosedPipe
 	}
 
-	if !sync {
-		return nil
+	var errch <-chan error
+	var sync = r.useSyncCommits()
+	var rreq = requeueRequest{
+		requeues: makeRequeues(msgs...),
+		time:     at,
+	}
+
+	if sync {
+		ch := make(chan error, 1)
+		errch, rreq.errch = ch, ch
 	}
 
 	select {
+	case r.requeues <- rreq:
 	case <-ctx.Done():
 		return ctx.Err()
-	case err := <-errch:
-		return err
 	}
+
+	var err error
+	if sync {
+		select {
+		case err = <-errch:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+	}
+	return err
 }
 
 // ReadLag returns the current lag of the reader by fetching the last offset of
