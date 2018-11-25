@@ -72,7 +72,7 @@ type Conn struct {
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
 
-	kafkaTimeout kafkaTimeoutOption
+	kafkaTimeout KafkaTimeoutOption
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -80,7 +80,7 @@ type ConnConfig struct {
 	ClientID     string
 	Topic        string
 	Partition    int
-	KafkaTimeout kafkaTimeoutOption
+	KafkaTimeout KafkaTimeoutOption
 }
 
 var (
@@ -436,6 +436,11 @@ func (c *Conn) SetDeadline(t time.Time) error {
 // A zero value for t means Read will not time out.
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	c.rdeadline.setDeadline(t)
+	return nil
+}
+
+func (c *Conn) SetKafkaTimeout(kafkaTimeout KafkaTimeoutOption) error {
+	c.kafkaTimeout = kafkaTimeout
 	return nil
 }
 
