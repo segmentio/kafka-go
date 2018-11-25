@@ -1048,7 +1048,7 @@ func NewReader(config ReaderConfig) *Reader {
 			panic(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
 		}
 
-		if config.RetentionTime < 0 || (config.RetentionTime/time.Millisecond) >= math.MaxInt32 {
+		if config.RetentionTime < 0 {
 			panic(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
 		}
 
