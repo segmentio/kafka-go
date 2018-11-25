@@ -57,11 +57,6 @@ func (sched *offsetScheduler) schedule(offsets ...offset) {
 }
 
 func (sched *offsetScheduler) start() {
-	period := sched.period
-	if period <= 0 {
-		period = time.Second
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sched.offch = make(chan []offset)
@@ -73,7 +68,12 @@ func (sched *offsetScheduler) start() {
 func (sched *offsetScheduler) run(ctx context.Context) {
 	defer close(sched.offch)
 
-	ticker := time.NewTicker(sched.period)
+	period := sched.period
+	if period <= 0 {
+		period = time.Second
+	}
+
+	ticker := time.NewTicker(period)
 	defer ticker.Stop()
 
 	now := time.Now()
