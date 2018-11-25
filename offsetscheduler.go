@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -9,33 +10,15 @@ import (
 //
 // offsetScheduler values are safe to use concurrently from multiple goroutines.
 type offsetScheduler struct {
-	offch    chan []offset
-	cancel   context.CancelFunc
-	period   time.Duration
+	// immutable configuration of the offset scheduler.
+	period time.Duration
+	// mutable statet of the offset scheduler, lazily initialized on first use,
+	// synchronized on the sync.Once value.
+	once   sync.Once
+	offch  chan []offset
+	cancel context.CancelFunc
+	// offsetTimeline is safe to use concurrently from multiple goroutines.
 	timeline offsetTimeline
-}
-
-// newOffsetScheduler constructs an offset scheduler which schedules offsets
-// on the given period.
-//
-// The period must be greater than zero or the function will panic.
-func newOffsetScheduler(period time.Duration) *offsetScheduler {
-	offch := make(chan []offset)
-
-	if period <= 0 {
-		panic("invalid offset scheduler period")
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	sched := &offsetScheduler{
-		offch:  offch,
-		cancel: cancel,
-		period: period,
-	}
-
-	go sched.run(ctx)
-	return sched
 }
 
 // len returns the number of offsets managed by the scheduler.
@@ -46,17 +29,46 @@ func (sched *offsetScheduler) len() int { return sched.timeline.len() }
 //
 // Calling stop will unblock all goroutines currently waiting on offsets to be
 // scheduled.
-func (sched *offsetScheduler) stop() { sched.cancel() }
+func (sched *offsetScheduler) stop() {
+	sched.once.Do(func() {
+		sched.offch = make(chan []offset)
+		close(sched.offch)
+	})
+
+	if sched.cancel != nil {
+		sched.cancel()
+	}
+}
 
 // offsets exposes a read-only channel that the scheduler produces offsets to be
 // scheduled on.
 //
 // The method will block until the next batch of offsets becomes available.
-func (sched *offsetScheduler) offsets() <-chan []offset { return sched.offch }
+func (sched *offsetScheduler) offsets() <-chan []offset {
+	sched.once.Do(sched.start)
+	return sched.offch
+}
 
 // schedule adds the given offsets to the scheduler, they will be later returned
 // by a call to Next when their scheduling time has been reached.
-func (sched *offsetScheduler) schedule(offsets ...offset) { sched.timeline.push(offsets...) }
+func (sched *offsetScheduler) schedule(offsets ...offset) {
+	sched.once.Do(sched.start)
+	sched.timeline.push(offsets...)
+}
+
+func (sched *offsetScheduler) start() {
+	period := sched.period
+	if period <= 0 {
+		period = time.Second
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sched.offch = make(chan []offset)
+	sched.cancel = cancel
+
+	go sched.run(ctx)
+}
 
 func (sched *offsetScheduler) run(ctx context.Context) {
 	defer close(sched.offch)
