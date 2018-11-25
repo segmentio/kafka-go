@@ -946,7 +946,7 @@ type ReaderConfig struct {
 // details about the behavior of the reader.
 type ReaderStats struct {
 	Dials      int64 `metric:"kafka.reader.dial.count"      type:"counter"`
-	Fetches    int64 `metric:"kafak.reader.fetch.count"     type:"counter"` // typo here, but I'm reluctant to fix it
+	Fetches    int64 `metric:"kafka.reader.fetch.count"     type:"counter"`
 	Messages   int64 `metric:"kafka.reader.message.count"   type:"counter"`
 	Bytes      int64 `metric:"kafka.reader.message.bytes"   type:"counter"`
 	Rebalances int64 `metric:"kafka.reader.rebalance.count" type:"counter"`
@@ -970,6 +970,12 @@ type ReaderStats struct {
 	ClientID  string `tag:"client_id"`
 	Topic     string `tag:"topic"`
 	Partition string `tag:"partition"`
+
+	// The original `Fetches` field had a typo where the metric name was called
+	// "kafak..." instead of "kafka...", in order to offer time to fix monitors
+	// that may be relying on this mistake we are temporarily introducing this
+	// field.
+	DeprecatedFetchesWithTypo int64 `metric:"kafak.reader.fetch.count" type:"counter"`
 }
 
 // readerStats is a struct that contains statistics on a reader.
@@ -1438,7 +1444,7 @@ func (r *Reader) SetOffset(offset int64) error {
 // call Stats on a kafka reader and report the metrics to a stats collection
 // system.
 func (r *Reader) Stats() ReaderStats {
-	return ReaderStats{
+	stats := ReaderStats{
 		Dials:         r.stats.dials.snapshot(),
 		Fetches:       r.stats.fetches.snapshot(),
 		Messages:      r.stats.messages.snapshot(),
@@ -1462,6 +1468,9 @@ func (r *Reader) Stats() ReaderStats {
 		Topic:         r.config.Topic,
 		Partition:     r.stats.partition,
 	}
+	// TODO: remove when we get rid of the deprecated field.
+	stats.DeprecatedFetchesWithTypo = stats.Fetches
+	return stats
 }
 
 func (r *Reader) withLogger(do func(*log.Logger)) {
