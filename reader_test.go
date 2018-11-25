@@ -260,6 +260,9 @@ func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
 		ClientID:      "",
 		Topic:         stats.Topic,
 		Partition:     "0",
+
+		// TODO: remove when we get rid of the deprecated field.
+		DeprecatedFetchesWithTypo: 1,
 	}
 
 	if stats != expect {
