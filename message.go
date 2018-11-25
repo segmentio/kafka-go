@@ -17,6 +17,15 @@ type Message struct {
 	Key       []byte
 	Value     []byte
 
+	// The number of times this message has been attempted to be processed.
+	// This is zero for messages that were read for the first time, one after
+	// the first attempt, two after the second, etc...
+	//
+	// This value is intended to be used to compute backoff delays when
+	// requeuing messages read when a reader is using advanced offset management
+	// techniques to support retrying failed messages.
+	Attempt int
+
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
 	Time time.Time
