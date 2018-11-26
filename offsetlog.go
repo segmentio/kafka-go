@@ -118,13 +118,13 @@ func (log *offsetLog) readOffsets() ([]offset, error) {
 // writeOffsets satisfies the offsetStore interface, it writes a set of offsets
 // to the Kafka partition managed by the log.
 func (log *offsetLog) writeOffsets(offsets ...offset) error {
-	return log.write(makeOffsetWriteMessages(offsets))
+	return log.write(makeWriteOffsetsMessages(offsets))
 }
 
 // deleteOffsets satisfies the offsetStore interface, it deletes the offsets from
 // the Kafka partition managed by the log.
 func (log *offsetLog) deleteOffsets(offsets ...offset) error {
-	return log.write(makeOffsetDeleteMessages(offsets))
+	return log.write(makeDeleteOffsetsMessages(offsets))
 }
 
 func (log *offsetLog) write(msgs []Message) error {
@@ -154,7 +154,7 @@ func (log *offsetLog) dialLeader() (*Conn, error) {
 	return dialer.DialLeader(context.Background(), "tcp", broker, log.topic, log.partition)
 }
 
-func makeOffsetWriteMessages(offsets []offset) []Message {
+func makeWriteOffsetsMessages(offsets []offset) []Message {
 	msgs := make([]Message, len(offsets))
 	data := make([]byte, sizeOfOffset*len(offsets))
 	pos := 0
@@ -177,7 +177,7 @@ func makeOffsetWriteMessages(offsets []offset) []Message {
 	return msgs
 }
 
-func makeOffsetDeleteMessages(offsets []offset) []Message {
+func makeDeleteOffsetsMessages(offsets []offset) []Message {
 	msgs := make([]Message, len(offsets))
 	data := make([]byte, sizeOfOffsetKey*len(offsets))
 	pos := 0
