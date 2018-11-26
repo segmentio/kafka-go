@@ -88,9 +88,12 @@ func sortOffsets(offsets []offset) {
 	})
 }
 
-func sortedOffsetsContain(offsets []offset, offset int64) bool {
-	i := searchSortedOffsets(offsets, offset)
-	return i < len(offsets) && offsets[i].value == offset
+func lookupSortedOffsets(offsets []offset, off int64) (offset, bool) {
+	i := searchSortedOffsets(offsets, off)
+	if i < len(offsets) && offsets[i].value == off {
+		return offsets[i], true
+	}
+	return offset{}, false
 }
 
 func sliceSortedOffsets(offsets []offset, min, max int64) []offset {
@@ -99,8 +102,8 @@ func sliceSortedOffsets(offsets []offset, min, max int64) []offset {
 	return offsets[i:j]
 }
 
-func searchSortedOffsets(offsets []offset, offset int64) int {
+func searchSortedOffsets(offsets []offset, off int64) int {
 	return sort.Search(len(offsets), func(i int) bool {
-		return offsets[i].value >= offset
+		return offsets[i].value >= off
 	})
 }

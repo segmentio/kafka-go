@@ -2196,8 +2196,8 @@ func (r *reader) requeue(ctx context.Context, fetch fetchRange, sortedOffsets []
 				break
 			}
 
-			if sortedOffsetsContain(sortedOffsets, m.Offset) {
-
+			if off, ok := lookupSortedOffsets(sortedOffsets, m.Offset); ok {
+				m.Attempt = int(off.attempt)
 				select {
 				case r.msgs <- readerMessage{
 					version:   r.version,
