@@ -5,15 +5,17 @@ package kafka
 type commit struct {
 	topic     string
 	partition int
+	attempt   int
 	offset    int64
 }
 
 // makeCommit builds a commit value from a message, the resulting commit takes
-// its topic, partition, and offset from the message.
+// its topic, partition, attempt, and offset from the message.
 func makeCommit(msg Message) commit {
 	return commit{
 		topic:     msg.Topic,
 		partition: msg.Partition,
+		attempt:   msg.Attempt,
 		offset:    msg.Offset + 1,
 	}
 }
