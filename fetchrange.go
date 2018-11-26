@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"math"
-	"sort"
 )
 
 // fetchRange is a type carrying configurations for a fetch request.
@@ -15,18 +14,12 @@ type fetchRange struct {
 
 // makeFetchRanges generates an optimal set of fetch operations to fetch the
 // list of offsets passed as arguments while maintaining the ratio of unused
-// bytes within the specified value.
-func makeFetchRanges(maxUnusedRatio float64, offsets ...offset) []fetchRange {
-	if len(offsets) == 0 {
+// bytes within the specified value. The function expects the list of offsets
+// to be sorted by value.
+func makeFetchRanges(maxUnusedRatio float64, sortedOffsets []offset) []fetchRange {
+	if len(sortedOffsets) == 0 {
 		return nil
 	}
-
-	sortedOffsets := make([]offset, len(offsets))
-	copy(sortedOffsets, offsets)
-
-	sort.Slice(sortedOffsets, func(i, j int) bool {
-		return sortedOffsets[i].value < sortedOffsets[j].value
-	})
 
 	// Compute the average size of a message based on what we know from the
 	// offsets we were given. This is later used to estimate the number of bytes

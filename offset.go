@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"encoding/binary"
+	"sort"
 )
 
 const (
@@ -79,4 +80,27 @@ func (v offsetValue) writeTo(b []byte) {
 	binary.BigEndian.PutUint64(b[:8], uint64(v.attempt))
 	binary.BigEndian.PutUint64(b[8:16], uint64(v.size))
 	binary.BigEndian.PutUint64(b[16:24], uint64(v.time))
+}
+
+func sortOffsets(offsets []offset) {
+	sort.Slice(offsets, func(i, j int) bool {
+		return offsets[i].value < offsets[j].value
+	})
+}
+
+func sortedOffsetsContain(offsets []offset, offset int64) bool {
+	i := searchSortedOffsets(offsets, offset)
+	return i < len(offsets) && offsets[i].value == offset
+}
+
+func sliceSortedOffsets(offsets []offset, min, max int64) []offset {
+	i := searchSortedOffsets(offsets, min)
+	j := searchSortedOffsets(offsets, max)
+	return offsets[i:j]
+}
+
+func searchSortedOffsets(offsets []offset, offset int64) int {
+	return sort.Search(len(offsets), func(i int) bool {
+		return offsets[i].value >= offset
+	})
 }

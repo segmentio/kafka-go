@@ -39,3 +39,33 @@ type commitRequest struct {
 	commits []commit
 	errch   chan<- error
 }
+
+// makeOffsetsFromCommits constructs a map of partitions to offsets from a list
+// of commits. Only commits with a non-zero attempt number are considered
+// because they represent messages that have already been requeued, and this
+// function is called when we need to generate the list of offsets to remove
+// from the offset store used by the requeuing mechanism of the reader.
+func makeOffsetsFromCommits(commits []commit) map[partition][]offset {
+	var offsets map[partition][]offset
+
+	for _, c := range commits {
+		if c.attempt == 0 {
+			continue
+		}
+
+		pkey := partition{
+			topic:  c.topic,
+			number: c.partition,
+		}
+
+		if offsets == nil {
+			offsets = make(map[partition][]offset)
+		}
+
+		offsets[pkey] = append(offsets[pkey], offset{
+			value: c.offset,
+		})
+	}
+
+	return offsets
+}

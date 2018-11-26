@@ -27,6 +27,11 @@ const (
 	defaultCommitRetries = 3
 )
 
+const (
+	backoffDelayMin = 100 * time.Millisecond
+	backoffDelayMax = 1 * time.Second
+)
+
 var (
 	errOnlyAvailableWithGroup = errors.New("unavailable when GroupID is not set")
 	errNotAvailableWithGroup  = errors.New("unavailable when GroupID is set")
@@ -76,6 +81,7 @@ type Reader struct {
 	join         sync.WaitGroup
 	cancel       context.CancelFunc
 	stop         context.CancelFunc
+	readers      map[partition]*reader
 	done         chan struct{}
 	commits      chan commitRequest
 	requeues     chan requeueRequest
@@ -223,6 +229,11 @@ func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]G
 		})
 	}
 	return members, nil
+}
+
+type partition struct {
+	topic  string
+	number int
 }
 
 // partitionReader is an internal interface used to simplify unit testing
@@ -505,6 +516,7 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 	}
 
 	offsetsByPartition := map[int]int64{}
+
 	for _, pr := range offsets.Responses[0].PartitionResponses {
 		for _, partition := range partitions {
 			if partition == pr.Partition {
@@ -643,22 +655,30 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) er
 	}
 
 	generationID, memberID := r.membership()
+	topics := map[string]offsetCommitRequestV2Topic{}
+
+	for partition, offset := range offsetStash {
+		topic := topics[partition.topic]
+
+		topics[partition.topic] = offsetCommitRequestV2Topic{
+			Topic: partition.topic,
+			Partitions: append(topic.Partitions, offsetCommitRequestV2Partition{
+				Partition: int32(partition.number),
+				Offset:    offset,
+			}),
+		}
+	}
+
 	request := offsetCommitRequestV2{
 		GroupID:       r.config.GroupID,
 		GenerationID:  generationID,
 		MemberID:      memberID,
 		RetentionTime: int64(r.config.RetentionTime / time.Millisecond),
+		Topics:        make([]offsetCommitRequestV2Topic, 0, len(topics)),
 	}
 
-	for topic, partitions := range offsetStash {
-		t := offsetCommitRequestV2Topic{Topic: topic}
-		for partition, offset := range partitions {
-			t.Partitions = append(t.Partitions, offsetCommitRequestV2Partition{
-				Partition: int32(partition),
-				Offset:    offset,
-			})
-		}
-		request.Topics = append(request.Topics, t)
+	for _, topic := range topics {
+		request.Topics = append(request.Topics, topic)
 	}
 
 	if _, err := conn.offsetCommit(request); err != nil {
@@ -695,45 +715,35 @@ func (r *Reader) commitOffsetsWithRetry(conn offsetCommitter, offsetStash offset
 	return // err will not be nil
 }
 
-// offsetStash holds offsets by topic => partition => offset
-type offsetStash map[string]map[int]int64
-
-// merge updates the offsetStash with the offsets from the provided messages
-func (o offsetStash) merge(commits []commit) {
-	for _, c := range commits {
-		offsetsByPartition, ok := o[c.topic]
-		if !ok {
-			offsetsByPartition = map[int]int64{}
-			o[c.topic] = offsetsByPartition
-		}
-
-		if offset, ok := offsetsByPartition[c.partition]; !ok || c.offset > offset {
-			offsetsByPartition[c.partition] = c.offset
-		}
-	}
-}
-
-// reset clears the contents of the offsetStash
-func (o offsetStash) reset() {
-	for key := range o {
-		delete(o, key)
-	}
-}
-
 // commitLoopImmediate handles each commit synchronously
 func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{}) {
-	offsetsByTopicAndPartition := offsetStash{}
+	commits := offsetStash{}
 
 	for {
+		var errch chan<- error
 		select {
 		case <-stop:
 			return
 
 		case req := <-r.commits:
-			offsetsByTopicAndPartition.merge(req.commits)
-			req.errch <- r.commitOffsetsWithRetry(conn, offsetsByTopicAndPartition, defaultCommitRetries)
-			offsetsByTopicAndPartition.reset()
+			if err := r.unqueueOffsets(makeOffsetsFromCommits(req.commits)); err != nil {
+				req.errch <- err
+				continue
+			}
+			commits.mergeCommits(req.commits)
+			errch = req.errch
+
+		case req := <-r.requeues:
+			if err := r.requeueOffsets(req.offsets); err != nil {
+				req.errch <- err
+				continue
+			}
+			commits.mergeOffsets(req.offsets)
+			errch = req.errch
 		}
+
+		errch <- r.commitOffsetsWithRetry(conn, commits, defaultCommitRetries)
+		commits.reset()
 	}
 }
 
@@ -743,12 +753,44 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 	ticker := time.NewTicker(r.config.HeartbeatInterval)
 	defer ticker.Stop()
 
+	commits := offsetStash{}
+	requeue := map[partition][]offset{}
+	unqueue := map[partition][]offset{}
+
 	commit := func() {
-		if err := r.commitOffsetsWithRetry(conn, r.offsetStash, defaultCommitRetries); err != nil {
-			r.withErrorLogger(func(l *log.Logger) { l.Print(err) })
-		} else {
-			r.offsetStash.reset()
+		if err := r.requeueOffsets(requeue); err != nil {
+			r.withErrorLogger(func(log *log.Logger) {
+				log.Printf("the %s kafka reader for the %s topic got an error tryping to requeue offsets: %s",
+					r.config.GroupID, r.config.Topic, err)
+			})
+			return
 		}
+
+		for pkey := range requeue {
+			delete(requeue, pkey)
+		}
+
+		if err := r.unqueueOffsets(unqueue); err != nil {
+			r.withErrorLogger(func(log *log.Logger) {
+				log.Printf("the %s kafka reader for the %s topic got an error trying to unqueue offsets: %s",
+					r.config.GroupID, r.config.Topic, err)
+			})
+			return
+		}
+
+		for pkey := range unqueue {
+			delete(unqueue, pkey)
+		}
+
+		if err := r.commitOffsetsWithRetry(conn, commits, defaultCommitRetries); err != nil {
+			r.withErrorLogger(func(log *log.Logger) {
+				log.Printf("the %s kafka reader for the %s topic got an error trying to commit offsets: %s",
+					r.config.GroupID, r.config.Topic, err)
+			})
+			return
+		}
+
+		commits.reset()
 	}
 
 	for {
@@ -761,7 +803,18 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 			commit()
 
 		case req := <-r.commits:
-			r.offsetStash.merge(req.commits)
+			commits.mergeCommits(req.commits)
+
+			for partition, offsets := range makeOffsetsFromCommits(req.commits) {
+				unqueue[partition] = append(unqueue[partition], offsets...)
+			}
+
+		case req := <-r.requeues:
+			commits.mergeOffsets(req.offsets)
+
+			for partition, offsets := range req.offsets {
+				requeue[partition] = append(requeue[partition], offsets...)
+			}
 		}
 	}
 }
@@ -832,21 +885,80 @@ func (r *Reader) run() {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
-	done := r.stctx.Done()
-
-	for {
+	for r.stctx.Err() == nil {
+		// After the handshake is established the method blocks until the
+		// consumer group is rebalanced, a hearbeat fails, or the connection
+		// is lost. It looks like a tight loop at this level but it's not ;)
 		if err := r.handshake(); err != nil {
 			r.withErrorLogger(func(l *log.Logger) {
 				l.Println(err)
 			})
 		}
+	}
+}
 
-		select {
-		case <-done:
-			return
-		default:
+func (r *Reader) requeueOffsets(offsets map[partition][]offset) error {
+	return r.forEachPartitionAndOffsets(offsets, func(r *reader, _ partition, offsets []offset) error {
+		if err := r.offsetStore.writeOffsets(offsets...); err != nil {
+			return err
+		}
+		r.offsetSched.schedule(offsets...)
+		return nil
+	})
+}
+
+func (r *Reader) unqueueOffsets(offsets map[partition][]offset) error {
+	return r.forEachPartitionAndOffsets(offsets, func(r *reader, _ partition, offsets []offset) error {
+		return r.offsetStore.deleteOffsets(offsets...)
+	})
+}
+
+func (r *Reader) forEachPartitionAndOffsets(offsets map[partition][]offset, do func(*reader, partition, []offset) error) error {
+	if len(offsets) == 0 {
+		return nil
+	}
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	if r.closed {
+		return io.ErrClosedPipe
+	}
+
+	for pkey := range offsets {
+		if _, ok := r.readers[pkey]; !ok {
+			// TODO: is this the right way to handle this issue? The assumption
+			// here is the consumer does not own the partition anymore, so it
+			// shouldn't be in charge of managing those offsets. This is racy
+			// and we will probably want to revisit later on after testing out
+			// this code in real situations.
+			return NotLeaderForPartition
 		}
 	}
+
+	join := sync.WaitGroup{}
+	errs := make(chan error, len(offsets))
+
+	for pkey, offsets := range offsets {
+		if r := r.readers[pkey]; r != nil {
+			join.Add(1)
+			go func(pkey partition, offsets []offset) {
+				defer join.Done()
+				errs <- do(r, pkey, offsets)
+			}(pkey, offsets)
+		}
+	}
+
+	join.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			return err // TODO: merge all the errors?
+		}
+	}
+
+	return nil
 }
 
 // ReaderConfig is a configuration object used to create new instances of
@@ -937,13 +1049,31 @@ type ReaderConfig struct {
 	// Only used when GroupID is set.
 	RetentionTime time.Duration
 
-	// OffsetTopic is the topic used by the reader to track offsets of requeued
+	// RequeueTopic is the topic used by the reader to track offsets of requeued
 	// messages.
 	//
 	// If this field is not set, support for requeuing messages is disabled.
 	//
 	// Only used when GroupID is set.
-	OffsetTopic string
+	RequeueTopic string
+
+	// RequeuePeriod is the duration between rescheduling events when the reader
+	// polls for messages to be requeued.
+	//
+	// Default: 10s
+	//
+	// Only used when RequeueTopic is set.
+	RequeuePeriod time.Duration
+
+	// RequeueFetchMaxunusedRatio is a value between 0 and 1 representing the
+	// percentage of bytes that the reader tolerates to waste to minimize the
+	// number of fetch requests it has to make to read messages that need to be
+	// rescheduled.
+	//
+	// Default: 0.25
+	//
+	// Only used when RequeueTopic is set.
+	RequeueFetchMaxUnusedRatio float64
 
 	// If not nil, specifies a logger used to report internal changes within the
 	// reader.
@@ -1069,6 +1199,14 @@ func NewReader(config ReaderConfig) *Reader {
 		}
 	}
 
+	if config.RequeuePeriod < 0 {
+		panic(fmt.Sprintf("RequeuePeriod out of bounds: %s", config.RequeuePeriod))
+	}
+
+	if config.RequeueFetchMaxUnusedRatio < 0 || config.RequeueFetchMaxUnusedRatio > 1 {
+		panic(fmt.Sprintf("RequeuFetchMaxUnusedRatio out of bounds: %g", config.RequeueFetchMaxUnusedRatio))
+	}
+
 	if config.Dialer == nil {
 		config.Dialer = DefaultDialer
 	}
@@ -1109,6 +1247,14 @@ func NewReader(config ReaderConfig) *Reader {
 		config.QueueCapacity = 100
 	}
 
+	if config.RequeuePeriod == 0 {
+		config.RequeuePeriod = 10 * time.Second
+	}
+
+	if config.RequeueFetchMaxUnusedRatio == 0 {
+		config.RequeueFetchMaxUnusedRatio = 0.25
+	}
+
 	// when configured as a consumer group; stats should report a partition of -1
 	readerStatsPartition := config.Partition
 	if config.GroupID != "" {
@@ -1143,8 +1289,7 @@ func NewReader(config ReaderConfig) *Reader {
 			// once when the reader is created.
 			partition: strconv.Itoa(readerStatsPartition),
 		},
-		version:     version,
-		offsetStash: offsetStash{},
+		version: version,
 	}
 
 	go r.run()
@@ -1165,6 +1310,7 @@ func (r *Reader) Close() error {
 	r.mutex.Lock()
 	closed := r.closed
 	r.closed = true
+	r.readers = nil
 	r.mutex.Unlock()
 
 	r.cancel()
@@ -1278,16 +1424,14 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 		return errOnlyAvailableWithGroup
 	}
 
-	if r.stctx.Err() != nil {
-		return io.ErrClosedPipe
-	}
-
-	var errch <-chan error
-	var sync = r.useSyncCommits()
-	var creq = commitRequest{
+	done := ctx.Done()
+	stop := r.stctx.Done()
+	sync := r.useSyncCommits()
+	creq := commitRequest{
 		commits: makeCommits(msgs...),
 	}
 
+	var errch <-chan error
 	if sync {
 		ch := make(chan error, 1)
 		errch, creq.errch = ch, ch
@@ -1295,7 +1439,9 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 
 	select {
 	case r.commits <- creq:
-	case <-ctx.Done():
+	case <-stop:
+		return io.ErrClosedPipe
+	case <-done:
 		return ctx.Err()
 	}
 
@@ -1303,11 +1449,18 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 	if sync {
 		select {
 		case err = <-errch:
-		case <-ctx.Done():
+		case <-done:
 			err = ctx.Err()
 		}
 	}
 	return err
+}
+
+// requeueRequest is the data type exchanged between the RequeueMessages method
+// and internals of the reader's implementation to process requeue requests.
+type requeueRequest struct {
+	offsets map[partition][]offset
+	errch   chan<- error
 }
 
 // RequeueMessages schedules the given list of messages to be requeued at a
@@ -1321,17 +1474,29 @@ func (r *Reader) RequeueMessages(ctx context.Context, at time.Time, msgs ...Mess
 		return errOnlyAvailableWithGroup
 	}
 
-	if r.stctx.Err() != nil {
-		return io.ErrClosedPipe
+	done := ctx.Done()
+	time := at.UnixNano()
+	stop := r.stctx.Done()
+	sync := r.useSyncCommits()
+	rreq := requeueRequest{
+		offsets: map[partition][]offset{},
+	}
+
+	for _, m := range msgs {
+		pkey := partition{
+			topic:  m.Topic,
+			number: m.Partition,
+		}
+
+		rreq.offsets[pkey] = append(rreq.offsets[pkey], offset{
+			value:   m.Offset,
+			attempt: int64(m.Attempt + 1),
+			size:    int64(len(m.Key) + len(m.Value)),
+			time:    time,
+		})
 	}
 
 	var errch <-chan error
-	var sync = r.useSyncCommits()
-	var rreq = requeueRequest{
-		requeues: makeRequeues(msgs...),
-		time:     at,
-	}
-
 	if sync {
 		ch := make(chan error, 1)
 		errch, rreq.errch = ch, ch
@@ -1339,7 +1504,9 @@ func (r *Reader) RequeueMessages(ctx context.Context, at time.Time, msgs ...Mess
 
 	select {
 	case r.requeues <- rreq:
-	case <-ctx.Done():
+	case <-stop:
+		return io.ErrClosedPipe
+	case <-done:
 		return ctx.Err()
 	}
 
@@ -1347,7 +1514,7 @@ func (r *Reader) RequeueMessages(ctx context.Context, at time.Time, msgs ...Mess
 	if sync {
 		select {
 		case err = <-errch:
-		case <-ctx.Done():
+		case <-done:
 			err = ctx.Err()
 		}
 	}
@@ -1592,27 +1759,54 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 	r.cancel() // always cancel the previous reader
 	r.cancel = cancel
 	r.version++
+	r.readers = make(map[partition]*reader, len(offsetsByPartition))
 
-	r.join.Add(len(offsetsByPartition))
-	for partition, offset := range offsetsByPartition {
-		go func(ctx context.Context, partition int, offset int64, join *sync.WaitGroup) {
+	for number, offset := range offsetsByPartition {
+		pk := partition{
+			topic:  r.config.Topic,
+			number: number,
+		}
+
+		pr := &reader{
+			dialer:      r.config.Dialer,
+			logger:      r.config.Logger,
+			errorLogger: r.config.ErrorLogger,
+			brokers:     r.config.Brokers,
+			topic:       r.config.Topic,
+			partition:   number,
+			minBytes:    r.config.MinBytes,
+			maxBytes:    r.config.MaxBytes,
+			maxWait:     r.config.MaxWait,
+			version:     r.version,
+			msgs:        r.msgs,
+			stats:       r.stats,
+			offsetStore: offsetLog{
+				topic:     r.config.RequeueTopic,
+				partition: number,
+				maxBytes:  r.config.MaxBytes,
+				dialer:    r.config.Dialer,
+			},
+			offsetSched: offsetScheduler{
+				period: r.config.RequeuePeriod,
+			},
+		}
+
+		r.readers[pk] = pr
+		r.join.Add(1)
+
+		go func(ctx context.Context, pr *reader, offset int64, join *sync.WaitGroup) {
 			defer join.Done()
+			pr.readLoop(ctx, offset)
+		}(ctx, pr, offset, &r.join)
 
-			(&reader{
-				dialer:      r.config.Dialer,
-				logger:      r.config.Logger,
-				errorLogger: r.config.ErrorLogger,
-				brokers:     r.config.Brokers,
-				topic:       r.config.Topic,
-				partition:   partition,
-				minBytes:    r.config.MinBytes,
-				maxBytes:    r.config.MaxBytes,
-				maxWait:     r.config.MaxWait,
-				version:     r.version,
-				msgs:        r.msgs,
-				stats:       r.stats,
-			}).run(ctx, offset)
-		}(ctx, partition, offset, &r.join)
+		if r.config.RequeueTopic != "" {
+			r.join.Add(1)
+
+			go func(ctx context.Context, pr *reader, fetchMaxUnusedRatio float64, join *sync.WaitGroup) {
+				defer join.Done()
+				pr.requeueLoop(ctx, fetchMaxUnusedRatio)
+			}(ctx, pr, r.config.RequeueFetchMaxUnusedRatio, &r.join)
+		}
 	}
 }
 
@@ -1632,6 +1826,8 @@ type reader struct {
 	version     int64
 	msgs        chan<- readerMessage
 	stats       *readerStats
+	offsetStore offsetLog
+	offsetSched offsetScheduler
 }
 
 type readerMessage struct {
@@ -1641,10 +1837,7 @@ type readerMessage struct {
 	error     error
 }
 
-func (r *reader) run(ctx context.Context, offset int64) {
-	const backoffDelayMin = 100 * time.Millisecond
-	const backoffDelayMax = 1 * time.Second
-
+func (r *reader) readLoop(ctx context.Context, offset int64) {
 	// This is the reader's main loop, it only ends if the context is canceled
 	// and will keep attempting to reader messages otherwise.
 	//
@@ -1847,6 +2040,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	t1 := time.Now()
 	r.stats.waitTime.observeDuration(t1.Sub(t0))
 
+	var done = ctx.Done()
 	var msg Message
 	var err error
 	var size int64
@@ -1871,7 +2065,17 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 		r.stats.messages.observe(1)
 		r.stats.bytes.observe(n)
 
-		if err = r.sendMessage(ctx, msg, highWaterMark); err != nil {
+		select {
+		case r.msgs <- readerMessage{
+			version:   r.version,
+			message:   msg,
+			watermark: highWaterMark,
+		}:
+		case <-done:
+			err = ctx.Err()
+		}
+
+		if err != nil {
 			err = batch.Close()
 			break
 		}
@@ -1893,18 +2097,154 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	return offset, err
 }
 
+func (r *reader) requeueLoop(ctx context.Context, fetchMaxUnusedRatio float64) {
+	done := ctx.Done()
+	join := sync.WaitGroup{}
+
+	for attempt := 1; true; attempt++ {
+		r.withLogger(func(log *log.Logger) {
+			log.Printf("syncing partition %d of the %s requeue topic", r.offsetStore.partition, r.offsetStore.topic)
+		})
+
+		offsets, err := r.offsetStore.readOffsets()
+
+		if err == nil {
+			r.offsetSched.schedule(offsets...)
+			break
+		}
+
+		r.withErrorLogger(func(log *log.Logger) {
+			log.Printf("syncing partition %d of the %s requeue topic failed: %s", r.offsetStore.partition, r.offsetStore.topic, err)
+		})
+
+		if !sleep(ctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
+			return
+		}
+	}
+
+	for {
+		var offsets []offset
+		select {
+		case offsets = <-r.offsetSched.offsets():
+		case <-done:
+			return
+		}
+
+		sortOffsets(offsets)
+
+		for _, fetch := range makeFetchRanges(fetchMaxUnusedRatio, offsets) {
+			join.Add(1)
+
+			go func(ctx context.Context, r *reader, fetch fetchRange, offsets []offset) {
+				defer join.Done()
+				r.requeue(ctx, fetch, offsets)
+			}(ctx, r, fetch, sliceSortedOffsets(offsets, fetch.startOffset, fetch.endOffset))
+		}
+
+		// Don't schedule the next batch of messages before this one has been
+		// fully produced to the program.
+		join.Wait()
+	}
+}
+
+func (r *reader) requeue(ctx context.Context, fetch fetchRange, sortedOffsets []offset) {
+	done := ctx.Done()
+
+	r.withLogger(func(log *log.Logger) {
+		log.Printf("reading back messages from partition %d of the %s topic between offsets %d and %d because they reached their scheduled requeue time",
+			r.partition, r.topic, fetch.startOffset, fetch.endOffset)
+	})
+
+	c, err := r.dialAndSeek(ctx, r.topic, r.partition, fetch.startOffset)
+	if err != nil {
+		r.stats.errors.observe(1)
+		// When the start offset does not exist anymore it indicates that the
+		// partition has evicted the offset because it was too old, in which
+		// case it is not possible to requeue the message anymore and we just
+		// need to remove it from the offset store.
+		//
+		// Note: this mechanism could end up discarding messages that are still
+		// available because the end of the range may still be within the bounds
+		// of the partition. For now we don't handle this case and just let it
+		// fall within the undefined behavior of the race condition that exists
+		// between concurrent offset expiration and requeuing the messages.
+		if err == OffsetOutOfRange {
+			if storeErr := r.offsetStore.deleteOffsets(sortedOffsets...); storeErr != nil {
+				r.withErrorLogger(func(log *log.Logger) {
+					log.Printf("the kafka reader for partition %d of the %s topic failed to delete offsets of requeued messages: %s",
+						r.partition, r.topic, storeErr)
+				})
+			}
+		} else {
+			r.offsetSched.schedule(sortedOffsets...)
+		}
+		r.withErrorLogger(func(log *log.Logger) {
+			log.Printf("the kafka reader for partition %d of the %s topic failed to establish a connection to the leader while requeuing messages: %s",
+				r.partition, r.topic, err)
+		})
+		return
+	}
+	defer c.Close()
+
+	for offset := fetch.startOffset; offset < fetch.endOffset; {
+		b := c.ReadBatch(int(fetch.minBytes), int(fetch.maxBytes))
+		w := b.HighWaterMark()
+
+		for {
+			m, err := b.ReadMessage()
+			if err != nil {
+				break
+			}
+
+			if sortedOffsetsContain(sortedOffsets, m.Offset) {
+
+				select {
+				case r.msgs <- readerMessage{
+					version:   r.version,
+					message:   m,
+					watermark: w,
+				}:
+				case <-done:
+					b.Close()
+					return
+				}
+			}
+
+			offset = m.Offset + 1
+		}
+
+		if err := b.Close(); err != nil {
+			reschedule := sliceSortedOffsets(sortedOffsets, offset, fetch.endOffset)
+			r.offsetSched.schedule(reschedule...)
+			r.stats.errors.observe(1)
+			r.withErrorLogger(func(log *log.Logger) {
+				log.Printf("the kafka reader for partition %d of the %s topic encountered an error while reading requeued messages between offsets %d and %d: %s",
+					r.partition, r.topic, fetch.startOffset, fetch.endOffset, err)
+			})
+			return
+		}
+	}
+}
+
+func (r *reader) dialAndSeek(ctx context.Context, topic string, partition int, offset int64) (conn *Conn, err error) {
+	for _, broker := range r.brokers {
+		conn, err = r.dialer.DialLeader(ctx, "tcp", broker, topic, partition)
+		if err == nil || ctx.Err() != nil {
+			break
+		}
+		if _, err = conn.Seek(offset, SeekAbsolute); err != nil {
+			conn.Close()
+			if err == OffsetOutOfRange {
+				break
+			}
+		}
+	}
+	return
+}
+
 func (r *reader) readOffsets(conn *Conn) (first, last int64, err error) {
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 	return conn.ReadOffsets()
-}
-
-func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) error {
-	select {
-	case r.msgs <- readerMessage{version: r.version, message: msg, watermark: watermark}:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 func (r *reader) sendError(ctx context.Context, err error) error {

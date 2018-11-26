@@ -33,12 +33,12 @@ func TestMakeFetchRanges(t *testing.T) {
 			scenario: "when tolerating no unused bytes each non-contiguous offset is placed in its own range",
 			unused:   0.0,
 			offsets: []offset{
-				{value: 5, size: 10},
-				{value: 7, size: 11},
-				{value: 9, size: 12},
 				{value: 1, size: 32},
 				{value: 2, size: 64},
 				{value: 3, size: 128},
+				{value: 5, size: 10},
+				{value: 7, size: 11},
+				{value: 9, size: 12},
 			},
 			ranges: []fetchRange{
 				{startOffset: 1, endOffset: 4, minBytes: 224, maxBytes: 224},
@@ -52,12 +52,12 @@ func TestMakeFetchRanges(t *testing.T) {
 			scenario: "when tolerating unused bytes some offsets are merged into the same range",
 			unused:   0.2,
 			offsets: []offset{
-				{value: 5, size: 10},
-				{value: 7, size: 11},
-				{value: 9, size: 12},
 				{value: 1, size: 32},
 				{value: 2, size: 64},
 				{value: 3, size: 128},
+				{value: 5, size: 10},
+				{value: 7, size: 11},
+				{value: 9, size: 12},
 			},
 			ranges: []fetchRange{
 				{startOffset: 1, endOffset: 4, minBytes: 224, maxBytes: 224},
@@ -69,12 +69,12 @@ func TestMakeFetchRanges(t *testing.T) {
 			scenario: "when tolerating all unused bytes all offsets are placed in the same range",
 			unused:   1.0,
 			offsets: []offset{
-				{value: 5, size: 10},
-				{value: 7, size: 11},
-				{value: 9, size: 12},
 				{value: 1, size: 32},
 				{value: 2, size: 64},
 				{value: 3, size: 128},
+				{value: 5, size: 10},
+				{value: 7, size: 11},
+				{value: 9, size: 12},
 			},
 			ranges: []fetchRange{
 				{startOffset: 1, endOffset: 10, minBytes: 257, maxBytes: 383},
@@ -90,7 +90,7 @@ func TestMakeFetchRanges(t *testing.T) {
 }
 
 func testMakeFetchRange(t *testing.T, unused float64, offsets []offset, ranges []fetchRange) {
-	result := makeFetchRanges(unused, offsets...)
+	result := makeFetchRanges(unused, offsets)
 
 	if !fetchRangesEqual(ranges, result) {
 		t.Error("ranges mismatch")
