@@ -116,7 +116,7 @@ type messageSetReader struct {
 func (r *messageSetReader) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, err error) {
+) (offset int64, timestamp int64, headers []Header, err error) {
 	switch r.version {
 	case 1:
 		return r.v1.readMessage(min, key, val)
@@ -200,7 +200,7 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, e
 func (r *messageSetReaderV1) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, err error) {
+) (offset int64, timestamp int64, headers []Header, err error) {
 	for r.readerStack != nil {
 		if r.remain == 0 {
 			r.readerStack = r.parent
@@ -375,7 +375,7 @@ const (
 	controlMessage    controlType = 1
 )
 
-type messageHeaderV2 struct {
+type Header struct {
 	key   string
 	value []byte
 }
@@ -451,7 +451,7 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 func (r *messageSetReaderV2) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, err error) {
+) (offset int64, timestamp int64, headers []Header, err error) {
 	var length int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &length); err != nil {
 		return
@@ -491,17 +491,17 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		return
 	}
 
-	var messageHeaders []messageHeaderV2 = make([]messageHeaderV2, headerCount)
+	headers = make([]Header, headerCount)
 
 	for i := 0; int32(i) < headerCount; i++ {
-		if err = r.readMessageHeader(&messageHeaders[i]); err != nil {
+		if err = r.readMessageHeader(&headers[i]); err != nil {
 			return
 		}
 	}
-	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, nil
+	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, nil
 }
 
-func (r *messageSetReaderV2) readMessageHeader(header *messageHeaderV2) (err error) {
+func (r *messageSetReaderV2) readMessageHeader(header *Header) (err error) {
 	var keyLen int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &keyLen); err != nil {
 		return
