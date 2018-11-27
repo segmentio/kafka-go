@@ -8,8 +8,9 @@ import (
 )
 
 func TestReadVarInt(t *testing.T) {
-	//buf := []byte{127, 10, 10, 0}
 	testCases := map[int64][]byte{
+		0:     []byte{0, 1, 10, 0},
+		1:     []byte{1, 1, 10, 0},
 		128:   []byte{128, 1, 10, 0},
 		127:   []byte{127, 1, 10, 0},
 		391:   []byte{135, 3, 10, 0},
