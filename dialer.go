@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -216,8 +217,8 @@ func (d *Dialer) LookupPartitions(ctx context.Context, network string, address s
 }
 
 // connectTLS returns a tls.Conn that has already completed the Handshake
-func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn) (tlsConn *tls.Conn, err error) {
-	tlsConn = tls.Client(conn, d.TLS)
+func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn, config *tls.Config) (tlsConn *tls.Conn, err error) {
+	tlsConn = tls.Client(conn, config)
 	errch := make(chan error)
 
 	go func() {
@@ -265,7 +266,20 @@ func (d *Dialer) dialContext(ctx context.Context, network string, address string
 	}
 
 	if d.TLS != nil {
-		return d.connectTLS(ctx, conn)
+		c := d.TLS
+		// If no ServerName is set, infer the ServerName
+		// from the hostname we're connecting to.
+		if c.ServerName == "" {
+			c = d.TLS.Clone()
+			// Copied from tls.go in the standard library.
+			colonPos := strings.LastIndex(address, ":")
+			if colonPos == -1 {
+				colonPos = len(address)
+			}
+			hostname := address[:colonPos]
+			c.ServerName = hostname
+		}
+		return d.connectTLS(ctx, conn, c)
 	}
 
 	return conn, nil

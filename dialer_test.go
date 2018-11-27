@@ -297,7 +297,7 @@ func TestDialerConnectTLSHonorsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*25)
 	defer cancel()
 
-	_, err := d.connectTLS(ctx, conn)
+	_, err := d.connectTLS(ctx, conn, d.TLS)
 	if context.DeadlineExceeded != err {
 		t.Errorf("expected err to be %v; got %v", context.DeadlineExceeded, err)
 		t.FailNow()
