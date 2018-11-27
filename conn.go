@@ -702,7 +702,7 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 			err:           dontExpectEOF(err),
 		}
 	}
-	var msgs messageSetReader
+	var msgs *messageSetReader
 	msgs, err = newMessageSetReader(&c.rbuf, remain)
 	return &Batch{
 		conn:          c,

@@ -358,12 +358,10 @@ func readFetchResponseHeader(r *bufio.Reader, size int) (throttle int32, waterma
 
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
-	/*
-		if remain != int(p.MessageSetSize) {
-			err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d)", p.MessageSetSize, remain)
-			return
-		}
-	*/
+	if remain != int(p.MessageSetSize) {
+		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d)", p.MessageSetSize, remain)
+		return
+	}
 
 	watermark = p.HighwaterMarkOffset
 	return

@@ -107,13 +107,46 @@ func (s messageSet) writeTo(w *bufio.Writer) {
 	}
 }
 
-type messageSetReader interface {
-	readMessage(min int64,
-		key func(*bufio.Reader, int, int) (int, error),
-		val func(*bufio.Reader, int, int) (int, error),
-	) (offset int64, timestamp int64, err error)
-	remaining() (remain int)
-	discard() (err error)
+type messageSetReader struct {
+	version int
+	v1      messageSetReaderV1
+	v2      messageSetReaderV2
+}
+
+func (r *messageSetReader) readMessage(min int64,
+	key func(*bufio.Reader, int, int) (int, error),
+	val func(*bufio.Reader, int, int) (int, error),
+) (offset int64, timestamp int64, err error) {
+	switch r.version {
+	case 1:
+		return r.v1.readMessage(min, key, val)
+	case 2:
+		return r.v2.readMessage(min, key, val)
+	default:
+		panic("Invalid messageSetReader - unknown message reader version")
+	}
+}
+
+func (r *messageSetReader) remaining() (remain int) {
+	switch r.version {
+	case 1:
+		return r.v1.remaining()
+	case 2:
+		return r.v2.remaining()
+	default:
+		panic("Invalid messageSetReader - unknown message reader version")
+	}
+}
+
+func (r *messageSetReader) discard() (err error) {
+	switch r.version {
+	case 1:
+		return r.v1.discard()
+	case 2:
+		return r.v2.discard()
+	default:
+		panic("Invalid messageSetReader - unknown message reader version")
+	}
 }
 
 type messageSetReaderV1 struct {
@@ -127,7 +160,7 @@ type readerStack struct {
 	parent *readerStack
 }
 
-func newMessageSetReader(reader *bufio.Reader, remain int) (messageSetReader, error) {
+func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, error) {
 	headerLength := 8 + 4 + 4 + 1 // offset + messageSize + crc + magicByte
 
 	if headerLength > remain {
@@ -144,16 +177,20 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (messageSetReader, er
 	case 0:
 		fallthrough
 	case 1:
-		return &messageSetReaderV1{&readerStack{
-			reader: reader,
-			remain: remain,
-		}}, nil
+		return &messageSetReader{
+			version: 1,
+			v1: messageSetReaderV1{&readerStack{
+				reader: reader,
+				remain: remain,
+			}}}, nil
 	case 2:
-		mr := &messageSetReaderV2{
-			reader: reader,
-			remain: remain,
-		}
-		err := mr.readHeader()
+		mr := &messageSetReader{
+			version: 2,
+			v2: messageSetReaderV2{
+				reader: reader,
+				remain: remain,
+			}}
+		err := mr.v2.readHeader()
 		return mr, err
 	default:
 		return nil, fmt.Errorf("unsupported message version %d found in fetch response", version)
