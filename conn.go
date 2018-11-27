@@ -688,22 +688,10 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 	}
 
 	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
-	if err != nil {
-		return &Batch{
-			conn:          c,
-			msgs:          nil,
-			deadline:      adjustedDeadline,
-			throttle:      duration(throttle),
-			lock:          lock,
-			topic:         c.topic,          // topic is copied to Batch to prevent race with Batch.close
-			partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
-			offset:        offset,
-			highWaterMark: highWaterMark,
-			err:           dontExpectEOF(err),
-		}
-	}
 	var msgs *messageSetReader
-	msgs, err = newMessageSetReader(&c.rbuf, remain)
+	if err == nil {
+		msgs, err = newMessageSetReader(&c.rbuf, remain)
+	}
 	return &Batch{
 		conn:          c,
 		msgs:          msgs,
