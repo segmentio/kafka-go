@@ -174,9 +174,7 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, e
 	var version int8 = int8(b[headerLength-1])
 
 	switch version {
-	case 0:
-		fallthrough
-	case 1:
+	case 0, 1:
 		return &messageSetReader{
 			version: 1,
 			v1: messageSetReaderV1{&readerStack{
