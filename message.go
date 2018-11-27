@@ -346,14 +346,6 @@ type messageSetHeaderV2 struct {
 	firstSequence        int32
 }
 
-type compression int8
-
-const (
-	plain  compression = 0
-	gzip   compression = 1
-	snappy compression = 2
-)
-
 type timestampType int8
 
 const (
@@ -380,8 +372,8 @@ type Header struct {
 	value []byte
 }
 
-func (h *messageSetHeaderV2) compression() compression {
-	return compression(h.batchAttributes & 7)
+func (h *messageSetHeaderV2) compression() int8 {
+	return int8(h.batchAttributes & 7)
 }
 
 func (h *messageSetHeaderV2) timestampType() timestampType {
