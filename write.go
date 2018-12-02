@@ -179,30 +179,30 @@ func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID, to
 	return w.Flush()
 }
 
-func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
-	var size int32
-	attributes := int8(CompressionNoneCode)
-
-	// if compressing, replace the slice of messages with a single compressed
-	// message set.
-	if codec != nil {
-		var err error
-		if msgs, err = compress(codec, msgs...); err != nil {
-			return err
-		}
-		attributes = codec.Code()
-	}
-
+func hasHeaders(msgs ...Message) bool {
 	for _, msg := range msgs {
-		size += 8 + // offset
-			4 + // message size
-			4 + // crc
-			1 + // magic byte
-			1 + // attributes
-			8 + // timestamp
-			sizeofBytes(msg.Key) +
-			sizeofBytes(msg.Value)
+		if len(msg.Headers) > 0 {
+			return true
+		}
 	}
+	return false
+}
+
+func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
+	var msgBuf []byte
+	if hasHeaders(msgs...) {
+		msgBuf, err = writeRecordBatch(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
+		if err != nil {
+			return
+		}
+	} else {
+		msgBuf, err = writeMessageSet(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
+		if err != nil {
+			return
+		}
+	}
+
+	var size int32 = int32(len(msgBuf))
 
 	h := requestHeader{
 		ApiKey:        int16(produceRequest),
@@ -232,12 +232,49 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	writeArrayLen(w, 1)
 	writeInt32(w, partition)
 	writeInt32(w, size)
+	w.Write(msgBuf)
+	return w.Flush()
+}
 
-	for _, msg := range msgs {
-		writeMessage(w, msg.Offset, attributes, msg.Time, msg.Key, msg.Value)
+func writeMessageSet(codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) ([]byte, error) {
+	var size int32
+	attributes := int8(CompressionNoneCode)
+
+	// if compressing, replace the slice of messages with a single compressed
+	// message set.
+	if codec != nil {
+		var err error
+		if msgs, err = compress(codec, msgs...); err != nil {
+			return nil, err
+		}
+		attributes = codec.Code()
 	}
 
-	return w.Flush()
+	for _, msg := range msgs {
+		size += 8 + // offset
+			4 + // message size
+			4 + // crc
+			1 + // magic byte
+			1 + // attributes
+			8 + // timestamp
+			sizeofBytes(msg.Key) +
+			sizeofBytes(msg.Value)
+	}
+
+	buf := &bytes.Buffer{}
+	buf.Grow(int(size))
+	bufWriter := bufio.NewWriter(buf)
+
+	for _, msg := range msgs {
+		writeMessage(bufWriter, msg.Offset, attributes, msg.Time, msg.Key, msg.Value)
+	}
+	bufWriter.Flush()
+
+	return buf.Bytes(), nil
+}
+
+func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) ([]byte, error) {
+	return nil, fmt.Errorf("writeRecordBatch is not implemented")
 }
 
 func compress(codec CompressionCodec, msgs ...Message) ([]Message, error) {
