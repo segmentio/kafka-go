@@ -3,6 +3,8 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"log"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -13,6 +15,32 @@ const (
 	testTopic         = "topic"
 	testPartition     = 42
 )
+
+type WriteVarIntTestCase struct {
+	v  []byte
+	tc int64
+}
+
+func TestWriteVarInt(t *testing.T) {
+	testCases := []*WriteVarIntTestCase{
+		&WriteVarIntTestCase{v: []byte{0}, tc: 0},
+		&WriteVarIntTestCase{v: []byte{1}, tc: 1},
+		&WriteVarIntTestCase{v: []byte{128, 1}, tc: 128},
+		&WriteVarIntTestCase{v: []byte{127}, tc: 127},
+		&WriteVarIntTestCase{v: []byte{135, 3}, tc: 391},
+		&WriteVarIntTestCase{v: []byte{135, 131, 3}, tc: 49543},
+	}
+
+	for _, tc := range testCases {
+		buf := &bytes.Buffer{}
+		bufWriter := bufio.NewWriter(buf)
+		writeVarInt(bufWriter, tc.tc)
+		bufWriter.Flush()
+		if !reflect.DeepEqual(buf.Bytes(), tc.v) {
+			t.Errorf("Expected %v; got %v", tc.v, buf.Bytes())
+		}
+	}
+}
 
 func TestWriteOptimizations(t *testing.T) {
 	t.Parallel()

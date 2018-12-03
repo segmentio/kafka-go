@@ -45,6 +45,14 @@ func writeInt64(w *bufio.Writer, i int64) {
 	w.WriteByte(b[7])
 }
 
+func writeVarInt(w *bufio.Writer, i int64) {
+	for i&0x7f != i {
+		w.WriteByte(byte(i&0x7f | 0x80))
+		i >>= 7
+	}
+	w.WriteByte(byte(i))
+}
+
 func writeString(w *bufio.Writer, s string) {
 	writeInt16(w, int16(len(s)))
 	w.WriteString(s)
