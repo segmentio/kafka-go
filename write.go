@@ -282,7 +282,82 @@ func writeMessageSet(codec CompressionCodec, correlationID int32, clientId, topi
 }
 
 func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) ([]byte, error) {
+	var size int32
+	size = 8 + // base offset
+		4 + // batch length
+		4 + // partition leader epoch
+		1 + // magic
+		4 + // crc
+		2 + // attributes
+		4 + // last offset delta
+		8 + // first timestamp
+		8 + // max timestamp
+		8 + // producer id
+		2 + // producer epoch
+		4 // base sequence
+
+	for _, msg := range msgs {
+		size += estimatedRecordSize(&msg)
+	}
+
+	buf := &bytes.Buffer{}
+	buf.Grow(int(size))
+	bufWriter := bufio.NewWriter(buf)
+
+	baseTime := baseTime(msgs...)
+
+	baseOffset := baseOffset(msgs...)
+
+	for _, msg := range msgs {
+		writeRecord(bufWriter, CompressionNoneCode, baseTime, baseOffset, msg)
+	}
+
 	return nil, fmt.Errorf("writeRecordBatch is not implemented")
+}
+
+var maxDate time.Time = time.Date(5000, time.January, 0, 0, 0, 0, 0, time.UTC)
+
+func baseTime(msgs ...Message) (baseTime time.Time) {
+	baseTime = maxDate
+	for _, msg := range msgs {
+		if msg.Time.Before(baseTime) {
+			baseTime = msg.Time
+		}
+	}
+	return
+}
+
+const MaxUint = ^uint64(0)
+const MinUint = 0
+const MaxInt = int64(MaxUint >> 1)
+const MinInt = -MaxInt - 1
+
+func baseOffset(msgs ...Message) (baseOffset int64) {
+	baseOffset = MaxInt
+	for _, msg := range msgs {
+		if msg.Offset < baseOffset {
+			baseOffset = msg.Offset
+		}
+	}
+	return
+}
+
+func estimatedRecordSize(msg *Message) (size int32) {
+	size += 8 + // length
+		1 + // attributes
+		8 + // timestamp delta
+		8 + // offset delta
+		8 + // key length
+		int32(len(msg.Key)) +
+		8 + // value length
+		int32(len(msg.Value))
+	for _, h := range msg.Headers {
+		size += 8 + // header key length
+			int32(len(h.Key)) +
+			8 + // header value length
+			int32(len(h.Value))
+	}
+	return
 }
 
 func compress(codec CompressionCodec, msgs ...Message) ([]Message, error) {
@@ -330,4 +405,31 @@ func msgSize(key, value []byte) int32 {
 		8 + // timestamp
 		sizeofBytes(key) +
 		sizeofBytes(value)
+}
+
+// Messages with magic >2 are called records. This method writes messages using message format 2.
+func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, baseOffset int64, msg Message) {
+	buf := &bytes.Buffer{}
+	buf.Grow(int(estimatedRecordSize(&msg)))
+	bufWriter := bufio.NewWriter(buf)
+
+	writeInt8(bufWriter, attributes)
+	writeVarInt(bufWriter, int64(msg.Time.Sub(baseTime)))
+	writeVarInt(bufWriter, int64(msg.Offset-baseOffset))
+
+	writeVarInt(bufWriter, int64(len(msg.Key)))
+	bufWriter.Write(msg.Key)
+	writeVarInt(bufWriter, int64(len(msg.Value)))
+	bufWriter.Write(msg.Value)
+
+	for _, h := range msg.Headers {
+		writeVarInt(bufWriter, int64(len(h.Key)))
+		bufWriter.Write([]byte(h.Key))
+		writeVarInt(bufWriter, int64(len(h.Value)))
+		bufWriter.Write(h.Value)
+	}
+
+	bufWriter.Flush()
+	writeVarInt(w, int64(len(buf.Bytes())))
+	w.Write(buf.Bytes())
 }
