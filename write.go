@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
+	"log"
 	"time"
 )
 
@@ -199,11 +201,13 @@ func hasHeaders(msgs ...Message) bool {
 func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
 	var msgBuf []byte
 	if hasHeaders(msgs...) {
+		log.Printf("Writing batch v2")
 		msgBuf, err = writeRecordBatch(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
 		if err != nil {
 			return
 		}
 	} else {
+		log.Printf("Writing message set v1")
 		msgBuf, err = writeMessageSet(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
 		if err != nil {
 			return
@@ -241,6 +245,7 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	writeInt32(w, partition)
 	writeInt32(w, size)
 	w.Write(msgBuf)
+	log.Printf("Wrote request v2")
 	return w.Flush()
 }
 
@@ -308,11 +313,47 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 
 	baseOffset := baseOffset(msgs...)
 
-	for _, msg := range msgs {
-		writeRecord(bufWriter, CompressionNoneCode, baseTime, baseOffset, msg)
-	}
+	writeInt64(bufWriter, baseOffset)
 
-	return nil, fmt.Errorf("writeRecordBatch is not implemented")
+	remainderBuf := &bytes.Buffer{}
+	remainderBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
+	remainderWriter := bufio.NewWriter(remainderBuf)
+
+	writeInt32(remainderWriter, 0) // partition leader epoch
+	writeInt8(remainderWriter, 2)  // magic byte
+
+	//writeInt16(remainderWriter, 0) // TODO write crc
+
+	crcBuf := &bytes.Buffer{}
+	crcBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
+	crcWriter := bufio.NewWriter(remainderBuf)
+
+	writeInt16(crcWriter, 0) // attributes no compression, timestamp type 0 - create time, not part of a transaction, no control messages
+	writeInt32(crcWriter, int32(msgs[len(msgs)-1].Offset-baseOffset))
+	writeInt64(crcWriter, timestamp(baseTime))
+	writeInt64(crcWriter, int64(msgs[len(msgs)-1].Time.Sub(baseTime)))
+	writeInt64(crcWriter, 0)                // default producer id for now
+	writeInt16(crcWriter, 0)                // default producer epoch for now
+	writeInt32(crcWriter, 0)                // default base sequence
+	writeInt32(crcWriter, int32(len(msgs))) // record count
+
+	for _, msg := range msgs {
+		writeRecord(crcWriter, CompressionNoneCode, baseTime, baseOffset, msg)
+	}
+	crcWriter.Flush()
+
+	crcTable := crc32.MakeTable(crc32.Castagnoli)
+	crcChecksum := crc32.Checksum(crcBuf.Bytes(), crcTable)
+
+	writeInt32(remainderWriter, int32(crcChecksum))
+	remainderWriter.Write(crcBuf.Bytes())
+
+	remainderWriter.Flush()
+
+	writeInt32(bufWriter, int32(remainderBuf.Len()))
+	bufWriter.Write(remainderBuf.Bytes())
+
+	return buf.Bytes(), nil
 }
 
 var maxDate time.Time = time.Date(5000, time.January, 0, 0, 0, 0, 0, time.UTC)
@@ -337,6 +378,17 @@ func baseOffset(msgs ...Message) (baseOffset int64) {
 	for _, msg := range msgs {
 		if msg.Offset < baseOffset {
 			baseOffset = msg.Offset
+		}
+	}
+	return
+}
+
+func maxOffsetDelta(baseOffset int64, msgs ...Message) (maxDelta int64) {
+	maxDelta = 0
+	for _, msg := range msgs {
+		curDelta := msg.Offset - baseOffset
+		if maxDelta > curDelta {
+			maxDelta = curDelta
 		}
 	}
 	return
@@ -421,6 +473,7 @@ func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, baseOffse
 	bufWriter.Write(msg.Key)
 	writeVarInt(bufWriter, int64(len(msg.Value)))
 	bufWriter.Write(msg.Value)
+	writeVarInt(bufWriter, int64(len(msg.Headers)))
 
 	for _, h := range msg.Headers {
 		writeVarInt(bufWriter, int64(len(h.Key)))
