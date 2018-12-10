@@ -48,6 +48,7 @@ func writeInt64(w *bufio.Writer, i int64) {
 }
 
 func writeVarInt(w *bufio.Writer, i int64) {
+	i = i<<1 ^ i>>63
 	for i&0x7f != i {
 		w.WriteByte(byte(i&0x7f | 0x80))
 		i >>= 7
@@ -214,6 +215,8 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 		}
 	}
 
+	log.Printf("Writing msgbuf: %v", msgBuf)
+	log.Printf("Writing msgbuf string: %v", string(msgBuf))
 	var size int32 = int32(len(msgBuf))
 
 	h := requestHeader{
@@ -309,7 +312,8 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	buf.Grow(int(size))
 	bufWriter := bufio.NewWriter(buf)
 
-	baseTime := baseTime(msgs...)
+	baseTime := msgs[0].Time
+	log.Printf("Basetime: %v", baseTime)
 
 	baseOffset := baseOffset(msgs...)
 
@@ -319,22 +323,24 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	remainderBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
 	remainderWriter := bufio.NewWriter(remainderBuf)
 
-	writeInt32(remainderWriter, 0) // partition leader epoch
-	writeInt8(remainderWriter, 2)  // magic byte
+	writeInt32(remainderWriter, -1) // partition leader epoch
+	writeInt8(remainderWriter, 2)   // magic byte
 
 	//writeInt16(remainderWriter, 0) // TODO write crc
 
 	crcBuf := &bytes.Buffer{}
 	crcBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
-	crcWriter := bufio.NewWriter(remainderBuf)
+	crcWriter := bufio.NewWriter(crcBuf)
 
 	writeInt16(crcWriter, 0) // attributes no compression, timestamp type 0 - create time, not part of a transaction, no control messages
 	writeInt32(crcWriter, int32(msgs[len(msgs)-1].Offset-baseOffset))
 	writeInt64(crcWriter, timestamp(baseTime))
-	writeInt64(crcWriter, int64(msgs[len(msgs)-1].Time.Sub(baseTime)))
-	writeInt64(crcWriter, 0)                // default producer id for now
-	writeInt16(crcWriter, 0)                // default producer epoch for now
-	writeInt32(crcWriter, 0)                // default base sequence
+	lastTime := timestamp(msgs[len(msgs)-1].Time)
+	log.Printf("Lasttime: %v", baseTime)
+	writeInt64(crcWriter, int64(lastTime))
+	writeInt64(crcWriter, -1)               // default producer id for now
+	writeInt16(crcWriter, -1)               // default producer epoch for now
+	writeInt32(crcWriter, -1)               // default base sequence
 	writeInt32(crcWriter, int32(len(msgs))) // record count
 
 	for _, msg := range msgs {
@@ -350,8 +356,11 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 
 	remainderWriter.Flush()
 
+	log.Printf("Remainder buf: %v", remainderBuf.Bytes())
+
 	writeInt32(bufWriter, int32(remainderBuf.Len()))
 	bufWriter.Write(remainderBuf.Bytes())
+	bufWriter.Flush()
 
 	return buf.Bytes(), nil
 }

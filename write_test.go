@@ -3,7 +3,6 @@ package kafka
 import (
 	"bufio"
 	"bytes"
-	"log"
 	"reflect"
 	"testing"
 	"time"
@@ -24,11 +23,13 @@ type WriteVarIntTestCase struct {
 func TestWriteVarInt(t *testing.T) {
 	testCases := []*WriteVarIntTestCase{
 		&WriteVarIntTestCase{v: []byte{0}, tc: 0},
-		&WriteVarIntTestCase{v: []byte{1}, tc: 1},
-		&WriteVarIntTestCase{v: []byte{128, 1}, tc: 128},
-		&WriteVarIntTestCase{v: []byte{127}, tc: 127},
-		&WriteVarIntTestCase{v: []byte{135, 3}, tc: 391},
-		&WriteVarIntTestCase{v: []byte{135, 131, 3}, tc: 49543},
+		&WriteVarIntTestCase{v: []byte{2}, tc: 1},
+		&WriteVarIntTestCase{v: []byte{1}, tc: -1},
+		&WriteVarIntTestCase{v: []byte{3}, tc: -2},
+		&WriteVarIntTestCase{v: []byte{128, 2}, tc: 128},
+		&WriteVarIntTestCase{v: []byte{254, 1}, tc: 127},
+		&WriteVarIntTestCase{v: []byte{142, 6}, tc: 391},
+		&WriteVarIntTestCase{v: []byte{142, 134, 6}, tc: 49543},
 	}
 
 	for _, tc := range testCases {
