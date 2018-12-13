@@ -29,10 +29,11 @@ const (
 type apiVersion int16
 
 const (
-	v0 apiVersion = 0
-	v1 apiVersion = 1
-	v2 apiVersion = 2
-	v3 apiVersion = 3
+	v0  apiVersion = 0
+	v1  apiVersion = 1
+	v2  apiVersion = 2
+	v3  apiVersion = 3
+	v10 apiVersion = 10
 )
 
 type requestHeader struct {

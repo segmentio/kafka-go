@@ -598,7 +598,7 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 		adjustedDeadline = deadline
-		return writeFetchRequestV2(
+		return writeFetchRequestV10(
 			&c.wbuf,
 			id,
 			c.clientID,

@@ -149,6 +149,61 @@ func writeFetchRequestV2(w *bufio.Writer, correlationID int32, clientID, topic s
 	return w.Flush()
 }
 
+// writeFetchRequestV10 implements the v10 of the FetchRequest.
+// v10 is required to use zstd compression.
+// Defined in http://kafka.apache.org/protocol.html#The_Messages_Fetch
+func writeFetchRequestV10(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration) error {
+	h := requestHeader{
+		ApiKey:        int16(fetchRequest),
+		ApiVersion:    int16(v10),
+		CorrelationID: correlationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		4 + // replica ID
+		4 + // max wait time
+		4 + // min bytes
+		4 + // max bytes
+		1 + // isolation level
+		4 + // fetch session ID
+		4 + // fetch session epoch
+		4 + // topic array length
+		sizeofString(topic) +
+		4 + // partition array length
+		4 + // partition
+		4 + // current leader epoch
+		8 + // offset
+		8 + // log start offset
+		4 + // partition max bytes
+		4 // forgotten topics array length
+
+	h.writeTo(w)
+	writeInt32(w, -1) // replica ID
+	writeInt32(w, milliseconds(maxWait))
+	writeInt32(w, int32(minBytes))
+	writeInt32(w, int32(maxBytes))
+	writeInt8(w, 0)   // no support for isolation level yet
+	writeInt32(w, 0)  // no support for fetch session id yet
+	writeInt32(w, -1) // no support for fetch session epoch yet
+
+	// topic array
+	writeArrayLen(w, 1)
+	writeString(w, topic)
+
+	// partition array
+	writeArrayLen(w, 1)
+	writeInt32(w, partition)
+	writeInt32(w, -1) // no partition leader epoch
+	writeInt64(w, offset)
+	writeInt64(w, -1) // log start offset
+	writeInt32(w, int32(maxBytes))
+
+	// forgotten topics array
+	writeArrayLen(w, 0) // forgotten topics not supported yet
+
+	return w.Flush()
+}
+
 func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, time int64) error {
 	h := requestHeader{
 		ApiKey:        int16(listOffsetRequest),
