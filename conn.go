@@ -619,7 +619,7 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 		return &Batch{err: dontExpectEOF(err)}
 	}
 
-	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
+	throttle, highWaterMark, remain, err := readFetchResponseHeaderV10(&c.rbuf, size)
 	return &Batch{
 		conn:          c,
 		msgs:          newMessageSetReader(&c.rbuf, remain),

@@ -335,6 +335,84 @@ func readFetchResponseHeader(r *bufio.Reader, size int) (throttle int32, waterma
 	return
 }
 
+func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, err error) {
+	var (
+		n              int32
+		errorCode      int16
+		fetchSessionID int32
+		p              struct {
+			Partition           int32
+			ErrorCode           int16
+			HighwaterMarkOffset int64
+			LastStableOffset    int64
+			LogStartOffset      int64
+		}
+	)
+
+	if remain, err = readInt32(r, size, &throttle); err != nil {
+		return
+	}
+
+	// Global error code
+	if remain, err = readInt16(r, remain, &errorCode); err != nil {
+		return
+	}
+	if errorCode != 0 {
+		err = Error(errorCode)
+		return
+	}
+
+	if remain, err = readInt32(r, remain, &fetchSessionID); err != nil {
+		return
+	}
+
+	if remain, err = readInt32(r, remain, &n); err != nil {
+		return
+	}
+
+	// This error should never trigger, unless there's a bug in the kafka client
+	// or server.
+	if n != 1 {
+		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d", n)
+		return
+	}
+
+	// We ignore the topic name because we've requests messages for a single
+	// topic, unless there's a bug in the kafka server we will have received
+	// the name of the topic that we requested.
+	if remain, err = discardString(r, remain); err != nil {
+		return
+	}
+
+	if remain, err = readInt32(r, remain, &n); err != nil {
+		return
+	}
+
+	// This error should never trigger, unless there's a bug in the kafka client
+	// or server.
+	if n != 1 {
+		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d", n)
+		return
+	}
+
+	if remain, err = read(r, remain, &p); err != nil {
+		return
+	}
+
+	if p.ErrorCode != 0 {
+		err = Error(p.ErrorCode)
+		return
+	}
+
+	// Ignore the aborted transactions since we don't support it
+	if remain, err = discardInt32(r, remain); err != nil {
+		return
+	}
+
+	watermark = p.HighwaterMarkOffset
+	return
+}
+
 func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, timestamp int64, remain int, err error) {
 	var version int8
 
