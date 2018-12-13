@@ -47,6 +47,6 @@ type CompressionCodec interface {
 	Decode(src []byte) ([]byte, error)
 }
 
-const compressionCodecMask int8 = 0x03
+const compressionCodecMask int8 = 0x07
 const DefaultCompressionLevel int = -1
 const CompressionNoneCode = 0
