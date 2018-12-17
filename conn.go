@@ -1012,6 +1012,66 @@ func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID
 	}
 }
 
+type ApiVersion struct {
+	ApiKey     int16
+	MinVersion int16
+	MaxVersion int16
+}
+
+func (c *Conn) ApiVersions() ([]ApiVersion, error) {
+	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
+		now := time.Now()
+		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+
+		h := requestHeader{
+			ApiKey:        int16(apiVersionsRequest),
+			ApiVersion:    int16(v0),
+			CorrelationID: id,
+			ClientID:      c.clientID,
+		}
+		h.Size = (h.size() - 4)
+
+		h.writeTo(&c.wbuf)
+		return c.wbuf.Flush()
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Unlock()
+
+	var errorCode int16
+	if size, err = readInt16(&c.rbuf, size, &errorCode); err != nil {
+		return nil, err
+	}
+	var arrSize int32
+	if size, err = readInt32(&c.rbuf, size, &arrSize); err != nil {
+		return nil, err
+	}
+	r := make([]ApiVersion, arrSize)
+	for i := 0; i < int(arrSize); i++ {
+		if size, err = readInt16(&c.rbuf, size, &r[i].ApiKey); err != nil {
+			return nil, err
+		}
+		if size, err = readInt16(&c.rbuf, size, &r[i].MinVersion); err != nil {
+			return nil, err
+		}
+		if size, err = readInt16(&c.rbuf, size, &r[i].MaxVersion); err != nil {
+			return nil, err
+		}
+	}
+
+	if errorCode != 0 {
+		return r, Error(errorCode)
+	}
+
+	return r, nil
+}
+
 // connDeadline is a helper type to implement read/write deadline management on
 // the kafka connection.
 type connDeadline struct {
