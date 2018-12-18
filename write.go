@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
-	"log"
 	"time"
 )
 
@@ -202,21 +201,17 @@ func hasHeaders(msgs ...Message) bool {
 func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
 	var msgBuf []byte
 	if hasHeaders(msgs...) {
-		log.Printf("Writing batch v2")
 		msgBuf, err = writeRecordBatch(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
 		if err != nil {
 			return
 		}
 	} else {
-		log.Printf("Writing message set v1")
 		msgBuf, err = writeMessageSet(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
 		if err != nil {
 			return
 		}
 	}
 
-	log.Printf("Writing msgbuf: %v", msgBuf)
-	log.Printf("Writing msgbuf string: %v", string(msgBuf))
 	var size int32 = int32(len(msgBuf))
 
 	h := requestHeader{
@@ -248,7 +243,6 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	writeInt32(w, partition)
 	writeInt32(w, size)
 	w.Write(msgBuf)
-	log.Printf("Wrote request v2")
 	return w.Flush()
 }
 
@@ -313,7 +307,6 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	bufWriter := bufio.NewWriter(buf)
 
 	baseTime := msgs[0].Time
-	log.Printf("Basetime: %v", baseTime)
 
 	baseOffset := baseOffset(msgs...)
 
@@ -336,7 +329,6 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	writeInt32(crcWriter, int32(msgs[len(msgs)-1].Offset-baseOffset))
 	writeInt64(crcWriter, timestamp(baseTime))
 	lastTime := timestamp(msgs[len(msgs)-1].Time)
-	log.Printf("Lasttime: %v", baseTime)
 	writeInt64(crcWriter, int64(lastTime))
 	writeInt64(crcWriter, -1)               // default producer id for now
 	writeInt16(crcWriter, -1)               // default producer epoch for now
@@ -355,8 +347,6 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	remainderWriter.Write(crcBuf.Bytes())
 
 	remainderWriter.Flush()
-
-	log.Printf("Remainder buf: %v", remainderBuf.Bytes())
 
 	writeInt32(bufWriter, int32(remainderBuf.Len()))
 	bufWriter.Write(remainderBuf.Bytes())
