@@ -3,6 +3,8 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -137,8 +139,7 @@ func testWriteProduceRequestV2(t *testing.T) {
 				TopicName: testTopic,
 				Partitions: []produceRequestPartitionV2{{
 					Partition:      testPartition,
-					MessageSetSize: msg.size(),
-					MessageSet:     messageSet{msg},
+					MessageSetSize: msg.size(), MessageSet: messageSet{msg},
 				}},
 			}},
 		},
@@ -187,5 +188,26 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*buf
 				}
 			}
 		}
+	}
+}
+
+func testWriteV2RecordBatch(t *testing.T) {
+	msgs := make([]Message, 3)
+	for i := range msgs {
+		value := fmt.Sprintf("Sample message content: %d!", i)
+		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{Header{Key: "hk", Value: []byte("hv")}}}
+	}
+	w := NewWriter(WriterConfig{
+		Brokers:   []string{"localhost:9092"},
+		Topic:     "test-topic",
+		BatchSize: 1,
+	})
+	defer w.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := w.WriteMessages(ctx, msgs...); err != nil {
+		t.Error("Failed to write v2 messages to kafka")
+		return
 	}
 }
