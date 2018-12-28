@@ -365,11 +365,6 @@ const (
 	controlMessage    controlType = 1
 )
 
-type Header struct {
-	key   string
-	value []byte
-}
-
 func (h *messageSetHeaderV2) compression() int8 {
 	return int8(h.batchAttributes & 7)
 }
@@ -496,14 +491,14 @@ func (r *messageSetReaderV2) readMessageHeader(header *Header) (err error) {
 	if r.remain, err = readVarInt(r.reader, r.remain, &keyLen); err != nil {
 		return
 	}
-	if r.remain, err = readString(r.reader, r.remain, &header.key); err != nil {
+	if r.remain, err = readString(r.reader, r.remain, &header.Key); err != nil {
 		return
 	}
 	var valLen int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &valLen); err != nil {
 		return
 	}
-	if r.remain, err = readBytes(r.reader, r.remain, &header.value); err != nil {
+	if r.remain, err = readBytes(r.reader, r.remain, &header.Value); err != nil {
 		return
 	}
 	return nil
