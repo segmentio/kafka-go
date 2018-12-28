@@ -802,30 +802,46 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 //
 // If the compression codec is not nil, the messages will be compressed.
 func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) (int, error) {
+	nbytes, _, _, _, err := c.writeCompressedMessages(codec, msgs...)
+	return nbytes, err
+}
+
+func (c *Conn) WriteCompressedMessagesAt(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, timestamp int64, err error) {
+	return c.writeCompressedMessages(codec, msgs...)
+}
+
+func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, timestamp int64, err error) {
+
+	nbytes = 0
+	partition = -1
+	offset = -1
+	timestamp = -1
+
 	if len(msgs) == 0 {
-		return 0, nil
+		return
 	}
 
 	writeTime := time.Now()
-	n := 0
 	for i, msg := range msgs {
 		// users may believe they can set the Topic and/or Partition
 		// on the kafka message.
 		if msg.Topic != "" && msg.Topic != c.topic {
-			return 0, errInvalidWriteTopic
+			err = errInvalidWriteTopic
+			return
 		}
 		if msg.Partition != 0 {
-			return 0, errInvalidWritePartition
+			err = errInvalidWritePartition
+			return
 		}
 
 		if msg.Time.IsZero() {
 			msgs[i].Time = writeTime
 		}
 
-		n += len(msg.Key) + len(msg.Value)
+		nbytes += len(msg.Key) + len(msg.Value)
 	}
 
-	err := c.writeOperation(
+	err = c.writeOperation(
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
@@ -858,6 +874,12 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					if err == nil && p.ErrorCode != 0 {
 						err = Error(p.ErrorCode)
 					}
+					if err == nil {
+						partition = p.Partition
+						offset = p.Offset
+						timestamp = p.Timestamp
+					}
+
 					return size, err
 				})
 				if err != nil {
@@ -872,10 +894,10 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 	)
 
 	if err != nil {
-		n = 0
+		nbytes = 0
 	}
 
-	return n, err
+	return
 }
 
 // SetRequiredAcks sets the number of acknowledges from replicas that the
