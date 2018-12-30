@@ -71,6 +71,7 @@ type Conn struct {
 
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
+	apiVersions  []ApiVersion
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -135,6 +136,11 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		}},
 	}).size()
 	c.fetchMaxBytes = math.MaxInt32 - c.fetchMinSize
+	var err error
+	c.apiVersions, err = c.ApiVersions()
+	if err != nil {
+		c.apiVersions = nil
+	}
 	return c
 }
 
@@ -183,6 +189,7 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV0) (findCoordinato
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
 			return c.writeRequest(groupCoordinatorRequest, v0, id, request)
+
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
