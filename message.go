@@ -396,6 +396,7 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt32(r.reader, r.remain, &h.length); err != nil {
 		return
 	}
+	r.remain = int(h.length) // For some reason the length that kafka returns in the header of response is bigger than the size of the batch. It looks very suspicious, but using batch length is the best shot that we have.
 	if r.remain, err = readInt32(r.reader, r.remain, &h.partitionLeaderEpoch); err != nil {
 		return
 	}
@@ -471,14 +472,14 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		return
 	}
 
-	var headerCount int32
-	if r.remain, err = readInt32(r.reader, r.remain, &headerCount); err != nil {
+	var headerCount int64
+	if r.remain, err = readVarInt(r.reader, r.remain, &headerCount); err != nil {
 		return
 	}
 
 	headers = make([]Header, headerCount)
 
-	for i := 0; int32(i) < headerCount; i++ {
+	for i := 0; i < int(headerCount); i++ {
 		if err = r.readMessageHeader(&headers[i]); err != nil {
 			return
 		}
@@ -491,14 +492,14 @@ func (r *messageSetReaderV2) readMessageHeader(header *Header) (err error) {
 	if r.remain, err = readVarInt(r.reader, r.remain, &keyLen); err != nil {
 		return
 	}
-	if r.remain, err = readString(r.reader, r.remain, &header.Key); err != nil {
+	if header.Key, r.remain, err = readNewString(r.reader, r.remain, int(keyLen)); err != nil {
 		return
 	}
 	var valLen int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &valLen); err != nil {
 		return
 	}
-	if r.remain, err = readBytes(r.reader, r.remain, &header.Value); err != nil {
+	if header.Value, r.remain, err = readNewBytes(r.reader, r.remain, int(valLen)); err != nil {
 		return
 	}
 	return nil
