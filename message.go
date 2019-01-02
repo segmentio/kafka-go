@@ -143,7 +143,7 @@ func (r *messageSetReader) readMessage(min int64,
 		code := attributes & compressionCodecMask
 		if code != 0 {
 			var codec CompressionCodec
-			if codec, err = resolveCodec(attributes); err != nil {
+			if codec, err = resolveCodec(code); err != nil {
 				return
 			}
 
