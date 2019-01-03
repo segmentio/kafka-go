@@ -903,7 +903,7 @@ type ReaderConfig struct {
 	// CommitInterval indicates the interval at which offsets are committed to
 	// the broker.  If 0, commits will be handled synchronously.
 	//
-	// Defaults to 1s
+	// Default: 0
 	//
 	// Only used when GroupID is set
 	CommitInterval time.Duration
