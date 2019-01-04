@@ -1012,10 +1012,6 @@ func NewReader(config ReaderConfig) *Reader {
 		panic(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
 	}
 
-	if config.MinBytes > config.MaxBytes {
-		panic(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
-	}
-
 	if config.MinBytes < 0 {
 		panic(fmt.Sprintf("invalid negative minimum batch size (min = %d)", config.MinBytes))
 	}
@@ -1067,6 +1063,10 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.MinBytes == 0 {
 		config.MinBytes = config.MaxBytes
+	}
+
+	if config.MinBytes > config.MaxBytes {
+		panic(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
 	}
 
 	if config.MaxWait == 0 {
