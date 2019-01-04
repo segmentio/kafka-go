@@ -1669,7 +1669,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			case RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
-				r.withErrorLogger(func(log *log.Logger) {
+				r.withLogger(func(log *log.Logger) {
 					log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, offset)
 				})
 				r.stats.timeouts.observe(1)
