@@ -801,21 +801,21 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 // operation, it either fully succeeds or fails.
 //
 // If the compression codec is not nil, the messages will be compressed.
-func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) (int, error) {
-	nbytes, _, _, _, err := c.writeCompressedMessages(codec, msgs...)
-	return nbytes, err
+func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) (nbytes int, err error) {
+	nbytes, _, _, _, err = c.writeCompressedMessages(codec, msgs...)
+	return
 }
 
-func (c *Conn) WriteCompressedMessagesAt(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, timestamp int64, err error) {
+func (c *Conn) WriteCompressedMessagesAt(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, appendTime time.Time, err error) {
 	return c.writeCompressedMessages(codec, msgs...)
 }
 
-func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, timestamp int64, err error) {
+func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, appendTime time.Time, err error) {
 
 	nbytes = 0
 	partition = -1
 	offset = -1
-	timestamp = -1
+	appendTime = time.Unix(-1, 0)
 
 	if len(msgs) == 0 {
 		return
@@ -877,7 +877,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					if err == nil {
 						partition = p.Partition
 						offset = p.Offset
-						timestamp = p.Timestamp
+						appendTime = time.Unix(p.Timestamp, 0)
 					}
 
 					return size, err
