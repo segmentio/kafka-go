@@ -636,7 +636,8 @@ func (w *writer) dial() (conn *Conn, err error) {
 			t1 := time.Now()
 			w.stats.dials.observe(1)
 			w.stats.dialTime.observeDuration(t1.Sub(t0))
-			conn.SetRequiredAcks(w.requiredAcks)
+			// set the error for a potential invalid requiredAcks value
+			err = conn.SetRequiredAcks(w.requiredAcks)
 			break
 		}
 	}

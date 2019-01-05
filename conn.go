@@ -870,7 +870,7 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 // connection requests when producing messages.
 func (c *Conn) SetRequiredAcks(n int) error {
 	switch n {
-	case -1, 1:
+	case -1, 0, 1:
 		atomic.StoreInt32(&c.requiredAcks, int32(n))
 		return nil
 	default:
@@ -939,21 +939,23 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func
 		return err
 	}
 
-	deadline, size, lock, err := c.waitResponse(d, id)
-	if err != nil {
-		return err
-	}
-
-	if err = read(deadline, size); err != nil {
-		switch err.(type) {
-		case Error:
-		default:
-			c.conn.Close()
+	if c.requiredAcks != 0 {
+		deadline, size, lock, err := c.waitResponse(d, id)
+		if err != nil {
+			return err
 		}
+
+		if err = read(deadline, size); err != nil {
+			switch err.(type) {
+			case Error:
+			default:
+				c.conn.Close()
+			}
+		}
+		lock.Unlock()
 	}
 
 	d.unsetConnReadDeadline()
-	lock.Unlock()
 	return err
 }
 
