@@ -112,7 +112,7 @@ r.Close()
 ### Consumer Groups
 
 ```kafka-go``` also supports Kafka consumer groups including broker managed offsets.
-To enable consumer groups, simplify specify the GroupID in the ReaderConfig.
+To enable consumer groups, simply specify the GroupID in the ReaderConfig.
 
 ReadMessage automatically commits offsets when using consumer groups.
 
