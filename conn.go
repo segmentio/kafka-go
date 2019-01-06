@@ -71,7 +71,7 @@ type Conn struct {
 
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
-	apiVersions  []ApiVersion
+	apiVersions  map[apiKey]ApiVersion
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -137,9 +137,14 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	}).size()
 	c.fetchMaxBytes = math.MaxInt32 - c.fetchMinSize
 	var err error
-	c.apiVersions, err = c.ApiVersions()
+	apiVersions, err := c.ApiVersions()
 	if err != nil {
-		c.apiVersions = nil
+		c.apiVersions = nil // TODO use currently supported versions
+	} else {
+		c.apiVersions = make(map[apiKey]ApiVersion)
+		for _, v := range apiVersions {
+			c.apiVersions[apiKey(v.ApiKey)] = v
+		}
 	}
 	return c
 }
