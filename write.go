@@ -319,8 +319,6 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	writeInt32(remainderWriter, -1) // partition leader epoch
 	writeInt8(remainderWriter, 2)   // magic byte
 
-	//writeInt16(remainderWriter, 0) // TODO write crc
-
 	crcBuf := &bytes.Buffer{}
 	crcBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
 	crcWriter := bufio.NewWriter(crcBuf)
