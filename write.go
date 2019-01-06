@@ -365,13 +365,8 @@ func baseTime(msgs ...Message) (baseTime time.Time) {
 	return
 }
 
-const MaxUint = ^uint64(0)
-const MinUint = 0
-const MaxInt = int64(MaxUint >> 1)
-const MinInt = -MaxInt - 1
-
 func baseOffset(msgs ...Message) (baseOffset int64) {
-	baseOffset = MaxInt
+	baseOffset = math.MaxInt64
 	for _, msg := range msgs {
 		if msg.Offset < baseOffset {
 			baseOffset = msg.Offset
