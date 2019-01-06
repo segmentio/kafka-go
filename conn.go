@@ -139,7 +139,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	var err error
 	apiVersions, err := c.ApiVersions()
 	if err != nil {
-		c.apiVersions = nil // TODO use currently supported versions
+		c.apiVersions = defaultApiVersions
 	} else {
 		c.apiVersions = make(map[apiKey]ApiVersion)
 		for _, v := range apiVersions {
@@ -1028,6 +1028,25 @@ type ApiVersion struct {
 	ApiKey     int16
 	MinVersion int16
 	MaxVersion int16
+}
+
+var defaultApiVersions map[apiKey]ApiVersion = map[apiKey]ApiVersion{
+	produceRequest:          ApiVersion{int16(produceRequest), int16(v2), int16(v2)},
+	fetchRequest:            ApiVersion{int16(fetchRequest), int16(v2), int16(v2)},
+	listOffsetRequest:       ApiVersion{int16(listOffsetRequest), int16(v1), int16(v1)},
+	metadataRequest:         ApiVersion{int16(metadataRequest), int16(v1), int16(v1)},
+	offsetCommitRequest:     ApiVersion{int16(offsetCommitRequest), int16(v2), int16(v2)},
+	offsetFetchRequest:      ApiVersion{int16(offsetFetchRequest), int16(v1), int16(v1)},
+	groupCoordinatorRequest: ApiVersion{int16(groupCoordinatorRequest), int16(v0), int16(v0)},
+	joinGroupRequest:        ApiVersion{int16(joinGroupRequest), int16(v1), int16(v1)},
+	heartbeatRequest:        ApiVersion{int16(heartbeatRequest), int16(v0), int16(v0)},
+	leaveGroupRequest:       ApiVersion{int16(leaveGroupRequest), int16(v0), int16(v0)},
+	syncGroupRequest:        ApiVersion{int16(syncGroupRequest), int16(v0), int16(v0)},
+	describeGroupsRequest:   ApiVersion{int16(describeGroupsRequest), int16(v1), int16(v1)},
+	listGroupsRequest:       ApiVersion{int16(listGroupsRequest), int16(v1), int16(v1)},
+	apiVersionsRequest:      ApiVersion{int16(apiVersionsRequest), int16(v0), int16(v0)},
+	createTopicsRequest:     ApiVersion{int16(createTopicsRequest), int16(v0), int16(v0)},
+	deleteTopicsRequest:     ApiVersion{int16(deleteTopicsRequest), int16(v1), int16(v1)},
 }
 
 func (c *Conn) ApiVersions() ([]ApiVersion, error) {
