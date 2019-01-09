@@ -1,4 +1,4 @@
-package kafka
+package kafka_test
 
 import (
 	"context"
@@ -77,7 +77,7 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 	t.Run("produce/consume with"+codecToStr(codec.Code()), func(t *testing.T) {
 		t.Parallel()
 
-		topic := CreateTopic(t, 1)
+		topic := kafka.CreateTopic(t, 1)
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
 			Topic:            topic,
@@ -144,7 +144,7 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 func TestMixedCompressedMessages(t *testing.T) {
 	t.Parallel()
 
-	topic := CreateTopic(t, 1)
+	topic := kafka.CreateTopic(t, 1)
 
 	offset := 0
 	var values []string

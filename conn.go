@@ -813,9 +813,9 @@ func (c *Conn) WriteCompressedMessagesAt(codec CompressionCodec, msgs ...Message
 func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, appendTime time.Time, err error) {
 
 	nbytes = 0
-	partition = -1
-	offset = -1
-	appendTime = time.Unix(-1, 0)
+	partition = 0
+	offset = 0
+	appendTime = time.Unix(0, 0)
 
 	if len(msgs) == 0 {
 		return
