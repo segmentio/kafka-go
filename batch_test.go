@@ -22,10 +22,11 @@ func TestBatchDontExpectEOF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot connect to partition leader at %s:%d: %s", broker.Host, broker.Port, err)
 	}
-	nc.(*net.TCPConn).CloseRead()
 
 	conn := NewConn(nc, topic, 0)
 	defer conn.Close()
+
+	nc.(*net.TCPConn).CloseRead()
 
 	batch := conn.ReadBatch(1024, 8192)
 

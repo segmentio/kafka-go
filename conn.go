@@ -71,6 +71,7 @@ type Conn struct {
 
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
+	apiVersions  map[apiKey]ApiVersion
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -135,6 +136,16 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		}},
 	}).size()
 	c.fetchMaxBytes = math.MaxInt32 - c.fetchMinSize
+	var err error
+	apiVersions, err := c.ApiVersions()
+	if err != nil {
+		c.apiVersions = defaultApiVersions
+	} else {
+		c.apiVersions = make(map[apiKey]ApiVersion)
+		for _, v := range apiVersions {
+			c.apiVersions[apiKey(v.ApiKey)] = v
+		}
+	}
 	return c
 }
 
@@ -183,6 +194,7 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV0) (findCoordinato
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
 			return c.writeRequest(groupCoordinatorRequest, v0, id, request)
+
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -1010,6 +1022,85 @@ func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID
 		CorrelationID: correlationID,
 		ClientID:      c.clientID,
 	}
+}
+
+type ApiVersion struct {
+	ApiKey     int16
+	MinVersion int16
+	MaxVersion int16
+}
+
+var defaultApiVersions map[apiKey]ApiVersion = map[apiKey]ApiVersion{
+	produceRequest:          ApiVersion{int16(produceRequest), int16(v2), int16(v2)},
+	fetchRequest:            ApiVersion{int16(fetchRequest), int16(v2), int16(v2)},
+	listOffsetRequest:       ApiVersion{int16(listOffsetRequest), int16(v1), int16(v1)},
+	metadataRequest:         ApiVersion{int16(metadataRequest), int16(v1), int16(v1)},
+	offsetCommitRequest:     ApiVersion{int16(offsetCommitRequest), int16(v2), int16(v2)},
+	offsetFetchRequest:      ApiVersion{int16(offsetFetchRequest), int16(v1), int16(v1)},
+	groupCoordinatorRequest: ApiVersion{int16(groupCoordinatorRequest), int16(v0), int16(v0)},
+	joinGroupRequest:        ApiVersion{int16(joinGroupRequest), int16(v1), int16(v1)},
+	heartbeatRequest:        ApiVersion{int16(heartbeatRequest), int16(v0), int16(v0)},
+	leaveGroupRequest:       ApiVersion{int16(leaveGroupRequest), int16(v0), int16(v0)},
+	syncGroupRequest:        ApiVersion{int16(syncGroupRequest), int16(v0), int16(v0)},
+	describeGroupsRequest:   ApiVersion{int16(describeGroupsRequest), int16(v1), int16(v1)},
+	listGroupsRequest:       ApiVersion{int16(listGroupsRequest), int16(v1), int16(v1)},
+	apiVersionsRequest:      ApiVersion{int16(apiVersionsRequest), int16(v0), int16(v0)},
+	createTopicsRequest:     ApiVersion{int16(createTopicsRequest), int16(v0), int16(v0)},
+	deleteTopicsRequest:     ApiVersion{int16(deleteTopicsRequest), int16(v1), int16(v1)},
+}
+
+func (c *Conn) ApiVersions() ([]ApiVersion, error) {
+	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
+		now := time.Now()
+		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+
+		h := requestHeader{
+			ApiKey:        int16(apiVersionsRequest),
+			ApiVersion:    int16(v0),
+			CorrelationID: id,
+			ClientID:      c.clientID,
+		}
+		h.Size = (h.size() - 4)
+
+		h.writeTo(&c.wbuf)
+		return c.wbuf.Flush()
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Unlock()
+
+	var errorCode int16
+	if size, err = readInt16(&c.rbuf, size, &errorCode); err != nil {
+		return nil, err
+	}
+	var arrSize int32
+	if size, err = readInt32(&c.rbuf, size, &arrSize); err != nil {
+		return nil, err
+	}
+	r := make([]ApiVersion, arrSize)
+	for i := 0; i < int(arrSize); i++ {
+		if size, err = readInt16(&c.rbuf, size, &r[i].ApiKey); err != nil {
+			return nil, err
+		}
+		if size, err = readInt16(&c.rbuf, size, &r[i].MinVersion); err != nil {
+			return nil, err
+		}
+		if size, err = readInt16(&c.rbuf, size, &r[i].MaxVersion); err != nil {
+			return nil, err
+		}
+	}
+
+	if errorCode != 0 {
+		return r, Error(errorCode)
+	}
+
+	return r, nil
 }
 
 // connDeadline is a helper type to implement read/write deadline management on
