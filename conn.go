@@ -877,7 +877,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					if err == nil {
 						partition = p.Partition
 						offset = p.Offset
-						appendTime = time.Unix(p.Timestamp, 0)
+						appendTime = time.Unix(0, p.Timestamp*int64(time.Millisecond))
 					}
 
 					return size, err
