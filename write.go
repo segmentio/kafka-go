@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"time"
 )
 
@@ -53,6 +54,16 @@ func writeVarInt(w *bufio.Writer, i int64) {
 		i >>= 7
 	}
 	w.WriteByte(byte(i))
+}
+
+func calcVarIntLen(i int64) (l int) {
+	i = i<<1 ^ i>>63
+	for i&0x7f != i {
+		l++
+		i >>= 7
+	}
+	l++
+	return l
 }
 
 func writeString(w *bufio.Writer, s string) {
@@ -404,6 +415,24 @@ func estimatedRecordSize(msg *Message) (size int32) {
 	return
 }
 
+func calcRecordSize(msg *Message, timestampDelta int64, offsetDelta int64) (size int) {
+	size += 1 + // attributes
+		calcVarIntLen(timestampDelta) +
+		calcVarIntLen(offsetDelta) +
+		calcVarIntLen(int64(len(msg.Key))) +
+		len(msg.Key) +
+		calcVarIntLen(int64(len(msg.Value))) +
+		len(msg.Value) +
+		calcVarIntLen(int64(len(msg.Headers)))
+	for _, h := range msg.Headers {
+		size += calcVarIntLen(int64(len([]byte(h.Key)))) +
+			len([]byte(h.Key)) +
+			calcVarIntLen(int64(len(h.Value))) +
+			len(h.Value)
+	}
+	return
+}
+
 func compress(codec CompressionCodec, msgs ...Message) ([]Message, error) {
 	estimatedLen := 0
 	for _, msg := range msgs {
@@ -453,28 +482,26 @@ func msgSize(key, value []byte) int32 {
 
 // Messages with magic >2 are called records. This method writes messages using message format 2.
 func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, baseOffset int64, msg Message) {
-	buf := &bytes.Buffer{}
-	buf.Grow(int(estimatedRecordSize(&msg)))
-	bufWriter := bufio.NewWriter(buf)
 
-	writeInt8(bufWriter, attributes)
-	writeVarInt(bufWriter, int64(msg.Time.Sub(baseTime)))
-	writeVarInt(bufWriter, int64(msg.Offset-baseOffset))
+	timestampDelta := int64(msg.Time.Sub(baseTime))
+	offsetDelta := int64(msg.Offset - baseOffset)
 
-	writeVarInt(bufWriter, int64(len(msg.Key)))
-	bufWriter.Write(msg.Key)
-	writeVarInt(bufWriter, int64(len(msg.Value)))
-	bufWriter.Write(msg.Value)
-	writeVarInt(bufWriter, int64(len(msg.Headers)))
+	writeVarInt(w, int64(calcRecordSize(&msg, timestampDelta, offsetDelta)))
+
+	writeInt8(w, attributes)
+	writeVarInt(w, timestampDelta)
+	writeVarInt(w, offsetDelta)
+
+	writeVarInt(w, int64(len(msg.Key)))
+	w.Write(msg.Key)
+	writeVarInt(w, int64(len(msg.Value)))
+	w.Write(msg.Value)
+	writeVarInt(w, int64(len(msg.Headers)))
 
 	for _, h := range msg.Headers {
-		writeVarInt(bufWriter, int64(len(h.Key)))
-		bufWriter.Write([]byte(h.Key))
-		writeVarInt(bufWriter, int64(len(h.Value)))
-		bufWriter.Write(h.Value)
+		writeVarInt(w, int64(len(h.Key)))
+		w.Write([]byte(h.Key))
+		writeVarInt(w, int64(len(h.Value)))
+		w.Write(h.Value)
 	}
-
-	bufWriter.Flush()
-	writeVarInt(w, int64(len(buf.Bytes())))
-	w.Write(buf.Bytes())
 }
