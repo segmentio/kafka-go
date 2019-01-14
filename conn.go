@@ -806,6 +806,12 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 	return
 }
 
+// WriteCompressedMessages writes a batch of messages to the connection's topic
+// and partition, returning the number of bytes written, partition and offset numbers
+// and timestamp assigned by the kafka broker to the message set. The write is an atomic
+// operation, it either fully succeeds or fails.
+//
+// If the compression codec is not nil, the messages will be compressed.
 func (c *Conn) WriteCompressedMessagesAt(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, appendTime time.Time, err error) {
 	return c.writeCompressedMessages(codec, msgs...)
 }
