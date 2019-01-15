@@ -56,7 +56,7 @@ func writeVarInt(w *bufio.Writer, i int64) {
 	w.WriteByte(byte(i))
 }
 
-func calcVarIntLen(i int64) (l int) {
+func varIntLen(i int64) (l int) {
 	i = i<<1 ^ i>>63
 	for i&0x7f != i {
 		l++
@@ -417,17 +417,17 @@ func estimatedRecordSize(msg *Message) (size int32) {
 
 func calcRecordSize(msg *Message, timestampDelta int64, offsetDelta int64) (size int) {
 	size += 1 + // attributes
-		calcVarIntLen(timestampDelta) +
-		calcVarIntLen(offsetDelta) +
-		calcVarIntLen(int64(len(msg.Key))) +
+		varIntLen(timestampDelta) +
+		varIntLen(offsetDelta) +
+		varIntLen(int64(len(msg.Key))) +
 		len(msg.Key) +
-		calcVarIntLen(int64(len(msg.Value))) +
+		varIntLen(int64(len(msg.Value))) +
 		len(msg.Value) +
-		calcVarIntLen(int64(len(msg.Headers)))
+		varIntLen(int64(len(msg.Headers)))
 	for _, h := range msg.Headers {
-		size += calcVarIntLen(int64(len([]byte(h.Key)))) +
+		size += varIntLen(int64(len([]byte(h.Key)))) +
 			len([]byte(h.Key)) +
-			calcVarIntLen(int64(len(h.Value))) +
+			varIntLen(int64(len(h.Value))) +
 			len(h.Value)
 	}
 	return
