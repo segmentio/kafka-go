@@ -296,8 +296,7 @@ func writeMessageSet(codec CompressionCodec, correlationID int32, clientId, topi
 	return buf.Bytes(), nil
 }
 
-func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) ([]byte, error) {
-	var size int32
+func recordBatchSize(msgs ...Message) (size int32) {
 	size = 8 + // base offset
 		4 + // batch length
 		4 + // partition leader epoch
@@ -318,6 +317,16 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	for _, msg := range msgs {
 		size += int32(recordSize(&msg, msg.Time.Sub(baseTime), msg.Offset-baseOffset))
 	}
+	return
+}
+
+func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) ([]byte, error) {
+
+	baseTime := msgs[0].Time
+
+	baseOffset := baseOffset(msgs...)
+
+	size := recordBatchSize(msgs...)
 
 	buf := &bytes.Buffer{}
 	buf.Grow(int(size))
