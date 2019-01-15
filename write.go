@@ -417,7 +417,7 @@ func estimatedRecordSize(msg *Message) (size int32) {
 	return
 }
 
-func calcRecordSize(msg *Message, timestampDelta int64, offsetDelta int64) (size int) {
+func recordSize(msg *Message, timestampDelta int64, offsetDelta int64) (size int) {
 	size += 1 + // attributes
 		varIntLen(timestampDelta) +
 		varIntLen(offsetDelta) +
@@ -488,7 +488,7 @@ func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, baseOffse
 	timestampDelta := int64(msg.Time.Sub(baseTime))
 	offsetDelta := int64(msg.Offset - baseOffset)
 
-	writeVarInt(w, int64(calcRecordSize(&msg, timestampDelta, offsetDelta)))
+	writeVarInt(w, int64(recordSize(&msg, timestampDelta, offsetDelta)))
 
 	writeInt8(w, attributes)
 	writeVarInt(w, timestampDelta)
