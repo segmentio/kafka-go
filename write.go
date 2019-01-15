@@ -254,6 +254,20 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	return w.Flush()
 }
 
+func messageSetSize(msgs ...Message) (size int32) {
+	for _, msg := range msgs {
+		size += 8 + // offset
+			4 + // message size
+			4 + // crc
+			1 + // magic byte
+			1 + // attributes
+			8 + // timestamp
+			sizeofBytes(msg.Key) +
+			sizeofBytes(msg.Value)
+	}
+	return
+}
+
 func writeMessageSet(codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) ([]byte, error) {
 	var size int32
 	attributes := int8(CompressionNoneCode)
@@ -268,16 +282,7 @@ func writeMessageSet(codec CompressionCodec, correlationID int32, clientId, topi
 		attributes = codec.Code()
 	}
 
-	for _, msg := range msgs {
-		size += 8 + // offset
-			4 + // message size
-			4 + // crc
-			1 + // magic byte
-			1 + // attributes
-			8 + // timestamp
-			sizeofBytes(msg.Key) +
-			sizeofBytes(msg.Value)
-	}
+	size += messageSetSize(msgs...)
 
 	buf := &bytes.Buffer{}
 	buf.Grow(int(size))
