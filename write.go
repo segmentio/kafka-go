@@ -417,9 +417,9 @@ func estimatedRecordSize(msg *Message) (size int32) {
 	return
 }
 
-func recordSize(msg *Message, timestampDelta int64, offsetDelta int64) (size int) {
+func recordSize(msg *Message, timestampDelta time.Duration, offsetDelta int64) (size int) {
 	size += 1 + // attributes
-		varIntLen(timestampDelta) +
+		varIntLen(int64(timestampDelta)) +
 		varIntLen(offsetDelta) +
 		varIntLen(int64(len(msg.Key))) +
 		len(msg.Key) +
@@ -485,13 +485,13 @@ func msgSize(key, value []byte) int32 {
 // Messages with magic >2 are called records. This method writes messages using message format 2.
 func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, baseOffset int64, msg Message) {
 
-	timestampDelta := int64(msg.Time.Sub(baseTime))
+	timestampDelta := msg.Time.Sub(baseTime)
 	offsetDelta := int64(msg.Offset - baseOffset)
 
 	writeVarInt(w, int64(recordSize(&msg, timestampDelta, offsetDelta)))
 
 	writeInt8(w, attributes)
-	writeVarInt(w, timestampDelta)
+	writeVarInt(w, int64(timestampDelta))
 	writeVarInt(w, offsetDelta)
 
 	writeVarInt(w, int64(len(msg.Key)))
