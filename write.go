@@ -311,17 +311,17 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 		2 + // producer epoch
 		4 // base sequence
 
+	baseTime := msgs[0].Time
+
+	baseOffset := baseOffset(msgs...)
+
 	for _, msg := range msgs {
-		size += estimatedRecordSize(&msg)
+		size += int32(recordSize(&msg, msg.Time.Sub(baseTime), msg.Offset-baseOffset))
 	}
 
 	buf := &bytes.Buffer{}
 	buf.Grow(int(size))
 	bufWriter := bufio.NewWriter(buf)
-
-	baseTime := msgs[0].Time
-
-	baseOffset := baseOffset(msgs...)
 
 	writeInt64(bufWriter, baseOffset)
 
