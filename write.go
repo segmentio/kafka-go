@@ -213,14 +213,11 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	var msgBuf []byte
 	if hasHeaders(msgs...) {
 		msgBuf, err = writeRecordBatch(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
-		if err != nil {
-			return
-		}
 	} else {
 		msgBuf, err = writeMessageSet(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
-		if err != nil {
-			return
-		}
+	}
+	if err != nil {
+		return
 	}
 
 	var size int32 = int32(len(msgBuf))
