@@ -210,17 +210,13 @@ func hasHeaders(msgs ...Message) bool {
 }
 
 func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
-	var msgBuf []byte
-	if hasHeaders(msgs...) {
-		msgBuf, err = writeRecordBatch(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
-	} else {
-		msgBuf, err = writeMessageSet(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
-	}
-	if err != nil {
-		return
-	}
 
-	var size int32 = int32(len(msgBuf))
+	var size int32
+	if hasHeaders(msgs...) {
+		size = recordBatchSize(msgs...)
+	} else {
+		size = messageSetSize(msgs...)
+	}
 
 	h := requestHeader{
 		ApiKey:        int16(produceRequest),
@@ -250,6 +246,19 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	writeArrayLen(w, 1)
 	writeInt32(w, partition)
 	writeInt32(w, size)
+
+	var msgBuf []byte
+	if hasHeaders(msgs...) {
+		msgBuf, err = writeRecordBatch(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
+	} else {
+		msgBuf, err = writeMessageSet(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
+	}
+	if len(msgBuf) != int(size) {
+		panic(fmt.Sprintf("msgBuf len and size don't match. len: %v, size: %v", len(msgBuf), size))
+	}
+	if err != nil {
+		return
+	}
 	w.Write(msgBuf)
 	return w.Flush()
 }
@@ -308,14 +317,19 @@ func recordBatchSize(msgs ...Message) (size int32) {
 		8 + // max timestamp
 		8 + // producer id
 		2 + // producer epoch
-		4 // base sequence
+		4 + // base sequence
+		4 // msg count
 
 	baseTime := msgs[0].Time
 
 	baseOffset := baseOffset(msgs...)
 
 	for _, msg := range msgs {
-		size += int32(recordSize(&msg, msg.Time.Sub(baseTime), msg.Offset-baseOffset))
+
+		sz := recordSize(&msg, msg.Time.Sub(baseTime), msg.Offset-baseOffset)
+
+		size += int32(sz + varIntLen(int64(sz)))
+		//size += int32(sz)
 	}
 	return
 }
