@@ -338,7 +338,11 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 
 	baseTime := msgs[0].Time
 
-	baseOffset := baseOffset(msgs...)
+	baseOffset := int64(0)
+
+	for i := 0; i < len(msgs); i++ {
+		msgs[i].Offset = int64(i)
+	}
 
 	size := recordBatchSize(msgs...)
 
@@ -359,8 +363,8 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	crcBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
 	crcWriter := bufio.NewWriter(crcBuf)
 
-	writeInt16(crcWriter, 0) // attributes no compression, timestamp type 0 - create time, not part of a transaction, no control messages
-	writeInt32(crcWriter, int32(msgs[len(msgs)-1].Offset-baseOffset))
+	writeInt16(crcWriter, 0)                  // attributes no compression, timestamp type 0 - create time, not part of a transaction, no control messages
+	writeInt32(crcWriter, int32(len(msgs)-1)) // max offset
 	writeInt64(crcWriter, timestamp(baseTime))
 	lastTime := timestamp(msgs[len(msgs)-1].Time)
 	writeInt64(crcWriter, int64(lastTime))
@@ -382,6 +386,9 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 
 	remainderWriter.Flush()
 
+	if remainderBuf.Len() != int(size-12) {
+		panic(fmt.Sprintf("Buf len doesn't match: size - %v, buf - %v", size-12, remainderBuf.Len()))
+	}
 	writeInt32(bufWriter, int32(remainderBuf.Len()))
 	bufWriter.Write(remainderBuf.Bytes())
 	bufWriter.Flush()
