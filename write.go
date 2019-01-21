@@ -247,10 +247,8 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	writeInt32(w, partition)
 	writeInt32(w, size)
 
-	var msgBuf []byte
 	if hasHeaders(msgs...) {
-		msgBuf, err = writeRecordBatch(codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
-		w.Write(msgBuf)
+		err = writeRecordBatch(w, codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
 	} else {
 		err = writeMessageSet(w, codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
 	}
@@ -323,7 +321,7 @@ func recordBatchSize(msgs ...Message) (size int32) {
 	return
 }
 
-func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) ([]byte, error) {
+func writeRecordBatch(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
 
 	baseTime := msgs[0].Time
 
@@ -335,11 +333,7 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 
 	size := recordBatchSize(msgs...)
 
-	buf := &bytes.Buffer{}
-	buf.Grow(int(size))
-	bufWriter := bufio.NewWriter(buf)
-
-	writeInt64(bufWriter, baseOffset)
+	writeInt64(w, baseOffset)
 
 	remainderBuf := &bytes.Buffer{}
 	remainderBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
@@ -378,11 +372,10 @@ func writeRecordBatch(codec CompressionCodec, correlationID int32, clientId, top
 	if remainderBuf.Len() != int(size-12) {
 		panic(fmt.Sprintf("Buf len doesn't match: size - %v, buf - %v", size-12, remainderBuf.Len()))
 	}
-	writeInt32(bufWriter, int32(remainderBuf.Len()))
-	bufWriter.Write(remainderBuf.Bytes())
-	bufWriter.Flush()
+	writeInt32(w, int32(remainderBuf.Len()))
+	w.Write(remainderBuf.Bytes())
 
-	return buf.Bytes(), nil
+	return nil
 }
 
 var maxDate time.Time = time.Date(5000, time.January, 0, 0, 0, 0, 0, time.UTC)
