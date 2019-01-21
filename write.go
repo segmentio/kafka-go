@@ -335,12 +335,10 @@ func writeRecordBatch(w *bufio.Writer, codec CompressionCodec, correlationID int
 
 	writeInt64(w, baseOffset)
 
-	remainderBuf := &bytes.Buffer{}
-	remainderBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
-	remainderWriter := bufio.NewWriter(remainderBuf)
+	writeInt32(w, int32(size-12)) // 12 = batch length + base offset sizes
 
-	writeInt32(remainderWriter, -1) // partition leader epoch
-	writeInt8(remainderWriter, 2)   // magic byte
+	writeInt32(w, -1) // partition leader epoch
+	writeInt8(w, 2)   // magic byte
 
 	crcBuf := &bytes.Buffer{}
 	crcBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
@@ -364,16 +362,8 @@ func writeRecordBatch(w *bufio.Writer, codec CompressionCodec, correlationID int
 	crcTable := crc32.MakeTable(crc32.Castagnoli)
 	crcChecksum := crc32.Checksum(crcBuf.Bytes(), crcTable)
 
-	writeInt32(remainderWriter, int32(crcChecksum))
-	remainderWriter.Write(crcBuf.Bytes())
-
-	remainderWriter.Flush()
-
-	if remainderBuf.Len() != int(size-12) {
-		panic(fmt.Sprintf("Buf len doesn't match: size - %v, buf - %v", size-12, remainderBuf.Len()))
-	}
-	writeInt32(w, int32(remainderBuf.Len()))
-	w.Write(remainderBuf.Bytes())
+	writeInt32(w, int32(crcChecksum))
+	w.Write(crcBuf.Bytes())
 
 	return nil
 }
