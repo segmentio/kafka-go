@@ -316,7 +316,6 @@ func recordBatchSize(msgs ...Message) (size int32) {
 		sz := recordSize(&msg, msg.Time.Sub(baseTime), msg.Offset-baseOffset)
 
 		size += int32(sz + varIntLen(int64(sz)))
-		//size += int32(sz)
 	}
 	return
 }
