@@ -1661,7 +1661,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				conn.Close()
 
 				// The next call to .initialize will re-establish a connection to the proper
-				// partition leader.
+				// topic/partition broker combo.
 				r.stats.rebalances.observe(1)
 				break readLoop
 			case NotLeaderForPartition:
