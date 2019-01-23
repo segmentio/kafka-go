@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -39,7 +38,7 @@ func TestWriteVarInt(t *testing.T) {
 		bufWriter := bufio.NewWriter(buf)
 		writeVarInt(bufWriter, tc.tc)
 		bufWriter.Flush()
-		if !reflect.DeepEqual(buf.Bytes(), tc.v) {
+		if !bytes.Equal(buf.Bytes(), tc.v) {
 			t.Errorf("Expected %v; got %v", tc.v, buf.Bytes())
 		}
 	}
