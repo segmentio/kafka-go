@@ -789,8 +789,9 @@ func (r *Reader) commitLoop(conn *Conn) func(stop <-chan struct{}) {
 
 // partitionWatcher queries kafka and watches for partition changes, triggering a rebalance if changes are found.
 func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
-	ticker := time.NewTicker(defaultPartitionWatchTime)
 	return func(stop <-chan struct{}) {
+		ticker := time.NewTicker(defaultPartitionWatchTime)
+		defer ticker.Stop()
 		ops, err := conn.ReadPartitions(r.config.Topic)
 		if err != nil {
 			r.withErrorLogger(func(l *log.Logger) {
@@ -801,7 +802,7 @@ func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
 		// It's possible that the list of partitions returned are not in any order
 		// so put them into a map to compare.
 		oParts := make(map[int]struct{})
-		for _,p := range ops {
+		for _, p := range ops {
 			oParts[p.ID] = struct{}{}
 		}
 		for {
@@ -816,21 +817,16 @@ func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
 					})
 					return
 				}
-				nParts := make(map[int]struct{})
-				for _,p := range ops {
-					nParts[p.ID] = struct{}{}
-				}
-				if len(nParts) != len(oParts) {
+				if len(ops) != len(oParts) {
 					r.withErrorLogger(func(l *log.Logger) {
 						l.Printf("Partition changes found, reblancing group: %v.", r.config.GroupID)
 					})
 					return
 				}
-
-				for i, _ := range nParts {
-					if _, ok := oParts[i]; !ok {
+				for _, p := range ops {
+					if _, ok := oParts[p.ID]; !ok {
 						r.withErrorLogger(func(l *log.Logger) {
-							l.Printf("Found new partition %v, on group %v", i, r.config.GroupID)
+							l.Printf("Found new partition %v, on group %v", p.ID, r.config.GroupID)
 						})
 						return
 					}
