@@ -787,38 +787,50 @@ func (r *Reader) commitLoop(conn *Conn) func(stop <-chan struct{}) {
 	}
 }
 
-// partitionWatcher queries kafka and watches for partition changes, triggering a rebalance if any are found.
+// partitionWatcher queries kafka and watches for partition changes, triggering a rebalance if changes are found.
 func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
 	ticker := time.NewTicker(defaultPartitionWatchTime)
 	return func(stop <-chan struct{}) {
-		oParts ,err := conn.ReadPartitions(r.config.Topic)
+		ops, err := conn.ReadPartitions(r.config.Topic)
 		if err != nil {
 			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("Problem getting partitions during startup, %v\n Closing the reader.", err)
+				l.Printf("Problem getting partitions during startup, %v\n, Returning and setting up handshake", err)
 			})
-			r.Close()
 			return
+		}
+		// It's possible that the list of partitions returned are not in any order
+		// so put them into a map to compare.
+		oParts := make(map[int]struct{})
+		for _,p := range ops {
+			oParts[p.ID] = struct{}{}
 		}
 		for {
 			select {
+			case <-stop:
+				return
 			case <-ticker.C:
-				nParts ,err := conn.ReadPartitions(r.config.Topic)
+				ops, err := conn.ReadPartitions(r.config.Topic)
 				if err != nil {
 					r.withErrorLogger(func(l *log.Logger) {
 						l.Printf("Problem getting partitions while checking for changes, %v\n", err)
 					})
 					return
 				}
+				nParts := make(map[int]struct{})
+				for _,p := range ops {
+					nParts[p.ID] = struct{}{}
+				}
 				if len(nParts) != len(oParts) {
-					r.withLogger(func(l *log.Logger) {
+					r.withErrorLogger(func(l *log.Logger) {
 						l.Printf("Partition changes found, reblancing group: %v.", r.config.GroupID)
 					})
 					return
 				}
-				for i,_ := range nParts {
-					if nParts[i].ID != oParts[i].ID {
+
+				for i, _ := range nParts {
+					if _, ok := oParts[i]; !ok {
 						r.withErrorLogger(func(l *log.Logger) {
-							l.Printf("Found new partition %v, on group %v", nParts[i].ID,r.config.GroupID)
+							l.Printf("Found new partition %v, on group %v", i, r.config.GroupID)
 						})
 						return
 					}
