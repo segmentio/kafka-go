@@ -58,6 +58,10 @@ const (
 	// defaultRetentionTime holds the length of time a the consumer group will be
 	// saved by kafka
 	defaultRetentionTime = time.Hour * 24
+
+	// defaultPartitionWatchTime contains the amount of time the kafka-go will wait to
+	// query the brokers looking for partition changes.
+	defaultPartitionWatchTime = 5 * time.Second
 )
 
 // Reader provides a high-level API for consuming messages from kafka.
@@ -783,6 +787,47 @@ func (r *Reader) commitLoop(conn *Conn) func(stop <-chan struct{}) {
 	}
 }
 
+// partitionWatcher queries kafka and watches for partition changes, triggering a rebalance if any are found.
+func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
+	ticker := time.NewTicker(defaultPartitionWatchTime)
+	return func(stop <-chan struct{}) {
+		oParts ,err := conn.ReadPartitions(r.config.Topic)
+		if err != nil {
+			r.withErrorLogger(func(l *log.Logger) {
+				l.Printf("Problem getting partitions during startup, %v\n Closing the reader.", err)
+			})
+			r.Close()
+			return
+		}
+		for {
+			select {
+			case <-ticker.C:
+				nParts ,err := conn.ReadPartitions(r.config.Topic)
+				if err != nil {
+					r.withErrorLogger(func(l *log.Logger) {
+						l.Printf("Problem getting partitions while checking for changes, %v\n", err)
+					})
+					return
+				}
+				if len(nParts) != len(oParts) {
+					r.withLogger(func(l *log.Logger) {
+						l.Printf("Partition changes found, reblancing group: %v.", r.config.GroupID)
+					})
+					return
+				}
+				for i,_ := range nParts {
+					if nParts[i].ID != oParts[i].ID {
+						r.withErrorLogger(func(l *log.Logger) {
+							l.Printf("Found new partition %v, on group %v", nParts[i].ID,r.config.GroupID)
+						})
+						return
+					}
+				}
+			}
+		}
+	}
+}
+
 // handshake performs the necessary incantations to join this Reader to the desired
 // consumer group.  handshake will be called whenever the group is disrupted
 // (member join, member leave, coordinator changed, etc)
@@ -806,6 +851,9 @@ func (r *Reader) handshake() error {
 	rg = rg.WithContext(r.stctx)
 	rg.Go(r.heartbeatLoop(conn))
 	rg.Go(r.commitLoop(conn))
+	if r.config.WatchPartitionChanges {
+		rg.Go(r.partitionWatcher(conn))
+	}
 
 	// subscribe to assignments
 	if err := r.subscribe(assignments); err != nil {
@@ -940,6 +988,10 @@ type ReaderConfig struct {
 	// ErrorLogger is the logger used to report errors. If nil, the reader falls
 	// back to using Logger instead.
 	ErrorLogger *log.Logger
+
+	// WatchForPartitionChanges is used to inform kafka-go that a consumer group should be
+	// polling the brokers and rebalancing if any partition changes happen to the topic.
+	WatchPartitionChanges bool
 }
 
 // ReaderStats is a data structure returned by a call to Reader.Stats that exposes
