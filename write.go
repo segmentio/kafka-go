@@ -201,7 +201,11 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 			1 + // attributes
 			8 + // timestamp
 			sizeofBytes(msg.Key) +
-			sizeofBytes(msg.Value)
+			sizeofBytes(msg.Value) +
+			sizeofArray(len(msg.Headers), func(i int) int32 {
+				return sizeofBytes(msg.Headers[i].Key) +
+					sizeofBytes(msg.Headers[i].Value)
+			})
 	}
 
 	h := requestHeader{
@@ -231,10 +235,10 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	// partition array
 	writeArrayLen(w, 1)
 	writeInt32(w, partition)
-	writeInt32(w, size)
 
+	writeInt32(w, size)
 	for _, msg := range msgs {
-		writeMessage(w, msg.Offset, attributes, msg.Time, msg.Key, msg.Value)
+		writeMessage(w, msg.Offset, attributes, msg.Time, msg.Key, msg.Value, msg.Headers)
 	}
 
 	return w.Flush()
@@ -243,13 +247,13 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 func compress(codec CompressionCodec, msgs ...Message) ([]Message, error) {
 	estimatedLen := 0
 	for _, msg := range msgs {
-		estimatedLen += int(msgSize(msg.Key, msg.Value))
+		estimatedLen += int(msgSize(msg.Key, msg.Value, msg.Headers))
 	}
 	buf := &bytes.Buffer{}
 	buf.Grow(estimatedLen)
 	bufWriter := bufio.NewWriter(buf)
 	for offset, msg := range msgs {
-		writeMessage(bufWriter, int64(offset), CompressionNoneCode, msg.Time, msg.Key, msg.Value)
+		writeMessage(bufWriter, int64(offset), CompressionNoneCode, msg.Time, msg.Key, msg.Value, msg.Headers)
 	}
 	bufWriter.Flush()
 
@@ -263,10 +267,10 @@ func compress(codec CompressionCodec, msgs ...Message) ([]Message, error) {
 
 const magicByte = 1 // compatible with kafka 0.10.0.0+
 
-func writeMessage(w *bufio.Writer, offset int64, attributes int8, time time.Time, key, value []byte) {
+func writeMessage(w *bufio.Writer, offset int64, attributes int8, time time.Time, key, value []byte, headers []Header) {
 	timestamp := timestamp(time)
-	crc32 := crc32OfMessage(magicByte, attributes, timestamp, key, value)
-	size := msgSize(key, value)
+	crc32 := crc32OfMessage(magicByte, attributes, timestamp, key, value, headers)
+	size := msgSize(key, value, headers)
 
 	writeInt64(w, offset)
 	writeInt32(w, size)
@@ -276,13 +280,22 @@ func writeMessage(w *bufio.Writer, offset int64, attributes int8, time time.Time
 	writeInt64(w, timestamp)
 	writeBytes(w, key)
 	writeBytes(w, value)
+
+	writeArray(w, len(headers), func(i int) {
+		writeBytes(w, headers[i].Key)
+		writeBytes(w, headers[i].Value)
+	})
 }
 
-func msgSize(key, value []byte) int32 {
+func msgSize(key, value []byte, headers []Header) int32 {
 	return 4 + // crc
 		1 + // magic byte
 		1 + // attributes
 		8 + // timestamp
 		sizeofBytes(key) +
-		sizeofBytes(value)
+		sizeofBytes(value) +
+		sizeofArray(len(headers), func(i int) int32 {
+			return sizeofBytes(headers[i].Key) +
+				sizeofBytes(headers[i].Value)
+		})
 }

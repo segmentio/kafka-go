@@ -16,6 +16,9 @@ func ExampleWriter() {
 		kafka.Message{
 			Key:   []byte("Key-A"),
 			Value: []byte("Hello World!"),
+			Headers: []kafka.Header{
+				{Key: []byte("Key-A"), Value: []byte("Value-A")},
+			},
 		},
 	)
 

@@ -839,6 +839,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 			msgs[i].Time = writeTime
 		}
 
+		// TODO: add len headers?
 		nbytes += len(msg.Key) + len(msg.Value)
 	}
 

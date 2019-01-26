@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+type Header struct {
+	Key   []byte
+	Value []byte
+}
+
 // Message is a data structure representing kafka messages.
 type Message struct {
 	// Topic is reads only and MUST NOT be set when writing messages
@@ -16,6 +21,7 @@ type Message struct {
 	Offset    int64
 	Key       []byte
 	Value     []byte
+	Headers   []Header
 
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
@@ -52,7 +58,7 @@ type message struct {
 }
 
 func (m message) crc32() int32 {
-	return int32(crc32OfMessage(m.MagicByte, m.Attributes, m.Timestamp, m.Key, m.Value))
+	return int32(crc32OfMessage(m.MagicByte, m.Attributes, m.Timestamp, m.Key, m.Value, []Header{}))
 }
 
 func (m message) size() int32 {
