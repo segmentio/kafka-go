@@ -1161,7 +1161,18 @@ func (r *Reader) Close() error {
 	if r.useConsumerGroup() {
 		// gracefully attempt to leave the consumer group on close
 		if generationID, membershipID := r.membership(); generationID > 0 && membershipID != "" {
-			if conn, err := r.coordinator(); err == nil {
+
+			// note that we do not call r.coordinator() because that passes
+			// r.stctx go DialContext.  we just cancelled that context a couple
+			// lines above by calling r.stop().
+			r.mutex.Lock()
+			address := r.address
+			r.mutex.Unlock()
+
+			// DialContext will wrap the background context to add appropriate
+			// timeout/deadline configuration.
+			conn, err := r.config.Dialer.DialContext(context.Background(), "tcp", address)
+			if err == nil {
 				_ = r.leaveGroup(conn)
 			}
 		}
