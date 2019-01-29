@@ -509,6 +509,63 @@ func BenchmarkReader(b *testing.B) {
 	b.SetBytes(int64(len(benchmarkReaderPayload)))
 }
 
+func TestCloseLeavesGroup(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	r := NewReader(ReaderConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    topic,
+		GroupID:  makeGroupID(),
+		MinBytes: 1,
+		MaxBytes: 10e6,
+		MaxWait:  100 * time.Millisecond,
+	})
+	prepareReader(t, ctx, r)
+	groupID := r.Config().GroupID
+
+	// wait for generationID > 0 so we know our reader has joined the group
+	membershipTimer := time.After(1 * time.Second)
+	for {
+		done := false
+		select {
+		case <-membershipTimer:
+			t.Fatalf("our reader never joind its group")
+		default:
+			generationID, _ := r.membership()
+			if generationID > 0 {
+				done = true
+			}
+		}
+		if done {
+			break
+		}
+	}
+
+	err := r.Close()
+	if err != nil {
+		t.Fatalf("unexpected error closing reader: %s", err.Error())
+	}
+
+	conn, err := Dial("tcp", "localhost:9092")
+	if err != nil {
+		t.Fatalf("error dialing: %v", err)
+	}
+	resp, err := conn.describeGroups(describeGroupsRequestV1{
+		GroupIDs: []string{groupID},
+	})
+	if err != nil {
+		t.Fatalf("error from describeGroups %v", err)
+	}
+	if len(resp.Groups) != 1 {
+		t.Fatalf("expected 1 group. got: %d", len(resp.Groups))
+	}
+	if len(resp.Groups[0].Members) != 0 {
+		t.Fatalf("expected group membership size of %d, but got %d", 0, len(resp.Groups[0].Members))
+	}
+}
+
 func TestConsumerGroup(t *testing.T) {
 	t.Parallel()
 
