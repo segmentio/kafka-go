@@ -815,6 +815,14 @@ func (r *Reader) handshake() error {
 
 	rg.Wait()
 
+	select {
+	case <-r.stctx.Done():
+		// this reader is closing...leave the consumer group.
+		_ = r.leaveGroup(conn)
+	default:
+		// another consumer has left the group
+	}
+
 	return nil
 }
 
@@ -1157,26 +1165,6 @@ func (r *Reader) Close() error {
 	r.cancel()
 	r.stop()
 	r.join.Wait()
-
-	if r.useConsumerGroup() {
-		// gracefully attempt to leave the consumer group on close
-		if generationID, membershipID := r.membership(); generationID > 0 && membershipID != "" {
-
-			// note that we do not call r.coordinator() because that passes
-			// r.stctx go DialContext.  we just cancelled that context a couple
-			// lines above by calling r.stop().
-			r.mutex.Lock()
-			address := r.address
-			r.mutex.Unlock()
-
-			// DialContext will wrap the background context to add appropriate
-			// timeout/deadline configuration.
-			conn, err := r.config.Dialer.DialContext(context.Background(), "tcp", address)
-			if err == nil {
-				_ = r.leaveGroup(conn)
-			}
-		}
-	}
 
 	<-r.done
 
