@@ -166,6 +166,10 @@ func (d *Dialer) LookupPartition(ctx context.Context, network string, address st
 				return
 			}
 
+			if len(partitions) == 0 {
+				break
+			}
+
 			for _, p := range partitions {
 				if p.ID == partition {
 					brkch <- p
