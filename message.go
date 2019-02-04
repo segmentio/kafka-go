@@ -185,11 +185,11 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, e
 		mr := &messageSetReader{
 			version: 2,
 			v2: messageSetReaderV2{
-				reader: reader,
-				remain: remain,
+				reader:       reader,
+				remain:       remain,
+				messageCount: 0,
 			}}
-		err := mr.v2.readHeader()
-		return mr, err
+		return mr, nil
 	default:
 		return nil, fmt.Errorf("unsupported message version %d found in fetch response", version)
 	}
@@ -382,8 +382,9 @@ func (h *messageSetHeaderV2) controlType() controlType {
 }
 
 type messageSetReaderV2 struct {
-	reader *bufio.Reader
-	remain int
+	reader       *bufio.Reader
+	remain       int
+	messageCount int
 
 	header messageSetHeaderV2
 }
@@ -396,7 +397,6 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt32(r.reader, r.remain, &h.length); err != nil {
 		return
 	}
-	r.remain = int(h.length) // For some reason the length that kafka returns in the header of response is bigger than the size of the batch. It looks very suspicious, but using batch length is the best shot that we have.
 	if r.remain, err = readInt32(r.reader, r.remain, &h.partitionLeaderEpoch); err != nil {
 		return
 	}
@@ -431,6 +431,8 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 	if r.remain, err = readInt32(r.reader, r.remain, &messageCount); err != nil {
 		return
 	}
+	r.messageCount = int(messageCount)
+
 	return nil
 }
 
@@ -438,6 +440,13 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
 ) (offset int64, timestamp int64, headers []Header, err error) {
+
+	if r.messageCount == 0 {
+		if err = r.readHeader(); err != nil {
+			return
+		}
+	}
+
 	var length int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &length); err != nil {
 		return
@@ -484,6 +493,7 @@ func (r *messageSetReaderV2) readMessage(min int64,
 			return
 		}
 	}
+	r.messageCount--
 	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, nil
 }
 
