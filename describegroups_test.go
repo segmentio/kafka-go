@@ -7,17 +7,16 @@ import (
 	"testing"
 )
 
-func TestDescribeGroupsResponseV1(t *testing.T) {
-	item := describeGroupsResponseV1{
-		ThrottleTimeMS: 1,
-		Groups: []describeGroupsResponseGroupV1{
+func TestDescribeGroupsResponseV0(t *testing.T) {
+	item := describeGroupsResponseV0{
+		Groups: []describeGroupsResponseGroupV0{
 			{
 				ErrorCode:    2,
 				GroupID:      "a",
 				State:        "b",
 				ProtocolType: "c",
 				Protocol:     "d",
-				Members: []describeGroupsResponseMemberV1{
+				Members: []describeGroupsResponseMemberV0{
 					{
 						MemberID:          "e",
 						ClientID:          "f",
@@ -35,7 +34,7 @@ func TestDescribeGroupsResponseV1(t *testing.T) {
 	item.writeTo(w)
 	w.Flush()
 
-	var found describeGroupsResponseV1
+	var found describeGroupsResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
 	if err != nil {
 		t.Error(err)

@@ -552,7 +552,7 @@ func TestCloseLeavesGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error dialing: %v", err)
 	}
-	resp, err := conn.describeGroups(describeGroupsRequestV1{
+	resp, err := conn.describeGroups(describeGroupsRequestV0{
 		GroupIDs: []string{groupID},
 	})
 	if err != nil {
