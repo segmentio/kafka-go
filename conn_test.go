@@ -867,7 +867,7 @@ func testConnReadEmptyWithDeadline(t *testing.T, conn *Conn) {
 	b := make([]byte, 100)
 
 	start := time.Now()
-	deadline := start.Add(100 * time.Millisecond)
+	deadline := start.Add(250 * time.Millisecond)
 
 	conn.SetReadDeadline(deadline)
 	n, err := conn.Read(b)
