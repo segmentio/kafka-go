@@ -934,7 +934,13 @@ func testReaderConsumerGroupVerifyOffsetCommitted(t *testing.T, ctx context.Cont
 		t.Errorf("bad commit message: %v", err)
 	}
 
-	offsets, err := r.fetchOffsets(map[string][]int32{
+	conn, err := r.coordinator()
+	if err != nil {
+		t.Errorf("unable to connect to coordinator: %v", err)
+	}
+	defer conn.Close()
+
+	offsets, err := r.fetchOffsets(conn, map[string][]int32{
 		r.config.Topic: {0},
 	})
 	if err != nil {
@@ -969,7 +975,13 @@ func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx cont
 	// wait for committer to pick up the commits
 	time.Sleep(r.config.CommitInterval * 3)
 
-	offsets, err := r.fetchOffsets(map[string][]int32{
+	conn, err := r.coordinator()
+	if err != nil {
+		t.Errorf("unable to connect to coordinator: %v", err)
+	}
+	defer conn.Close()
+
+	offsets, err := r.fetchOffsets(conn, map[string][]int32{
 		r.config.Topic: {0},
 	})
 	if err != nil {
@@ -1004,7 +1016,13 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 	r2 := NewReader(r.config)
 	defer r2.Close()
 
-	offsets, err := r2.fetchOffsets(map[string][]int32{
+	conn, err := r2.coordinator()
+	if err != nil {
+		t.Errorf("unable to connect to coordinator: %v", err)
+	}
+	defer conn.Close()
+
+	offsets, err := r2.fetchOffsets(conn, map[string][]int32{
 		r.config.Topic: {0},
 	})
 	if err != nil {
