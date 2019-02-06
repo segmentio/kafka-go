@@ -526,7 +526,7 @@ func TestCloseLeavesGroup(t *testing.T) {
 	groupID := r.Config().GroupID
 
 	// wait for generationID > 0 so we know our reader has joined the group
-	membershipTimer := time.After(1 * time.Second)
+	membershipTimer := time.After(5 * time.Second)
 	for {
 		done := false
 		select {
