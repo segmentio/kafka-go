@@ -526,7 +526,7 @@ func TestCloseLeavesGroup(t *testing.T) {
 	groupID := r.Config().GroupID
 
 	// wait for generationID > 0 so we know our reader has joined the group
-	membershipTimer := time.After(1 * time.Second)
+	membershipTimer := time.After(5 * time.Second)
 	for {
 		done := false
 		select {
@@ -552,7 +552,7 @@ func TestCloseLeavesGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error dialing: %v", err)
 	}
-	resp, err := conn.describeGroups(describeGroupsRequestV1{
+	resp, err := conn.describeGroups(describeGroupsRequestV0{
 		GroupIDs: []string{groupID},
 	})
 	if err != nil {

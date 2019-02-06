@@ -590,7 +590,7 @@ func testConnDescribeGroupRetrievesAllGroups(t *testing.T, conn *Conn) {
 	_, _, stop1 := createGroup(t, conn, groupID)
 	defer stop1()
 
-	out, err := conn.describeGroups(describeGroupsRequestV1{
+	out, err := conn.describeGroups(describeGroupsRequestV0{
 		GroupIDs: []string{groupID},
 	})
 	if err != nil {
