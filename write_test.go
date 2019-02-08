@@ -3,6 +3,8 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -13,6 +15,34 @@ const (
 	testTopic         = "topic"
 	testPartition     = 42
 )
+
+type WriteVarIntTestCase struct {
+	v  []byte
+	tc int64
+}
+
+func TestWriteVarInt(t *testing.T) {
+	testCases := []*WriteVarIntTestCase{
+		&WriteVarIntTestCase{v: []byte{0}, tc: 0},
+		&WriteVarIntTestCase{v: []byte{2}, tc: 1},
+		&WriteVarIntTestCase{v: []byte{1}, tc: -1},
+		&WriteVarIntTestCase{v: []byte{3}, tc: -2},
+		&WriteVarIntTestCase{v: []byte{128, 2}, tc: 128},
+		&WriteVarIntTestCase{v: []byte{254, 1}, tc: 127},
+		&WriteVarIntTestCase{v: []byte{142, 6}, tc: 391},
+		&WriteVarIntTestCase{v: []byte{142, 134, 6}, tc: 49543},
+	}
+
+	for _, tc := range testCases {
+		buf := &bytes.Buffer{}
+		bufWriter := bufio.NewWriter(buf)
+		writeVarInt(bufWriter, tc.tc)
+		bufWriter.Flush()
+		if !bytes.Equal(buf.Bytes(), tc.v) {
+			t.Errorf("Expected %v; got %v", tc.v, buf.Bytes())
+		}
+	}
+}
 
 func TestWriteOptimizations(t *testing.T) {
 	t.Parallel()
@@ -108,8 +138,7 @@ func testWriteProduceRequestV2(t *testing.T) {
 				TopicName: testTopic,
 				Partitions: []produceRequestPartitionV2{{
 					Partition:      testPartition,
-					MessageSetSize: msg.size(),
-					MessageSet:     messageSet{msg},
+					MessageSetSize: msg.size(), MessageSet: messageSet{msg},
 				}},
 			}},
 		},
@@ -158,5 +187,26 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*buf
 				}
 			}
 		}
+	}
+}
+
+func testWriteV2RecordBatch(t *testing.T) {
+	msgs := make([]Message, 3)
+	for i := range msgs {
+		value := fmt.Sprintf("Sample message content: %d!", i)
+		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{Header{Key: "hk", Value: []byte("hv")}}}
+	}
+	w := NewWriter(WriterConfig{
+		Brokers:   []string{"localhost:9092"},
+		Topic:     "test-topic",
+		BatchSize: 1,
+	})
+	defer w.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := w.WriteMessages(ctx, msgs...); err != nil {
+		t.Error("Failed to write v2 messages to kafka")
+		return
 	}
 }

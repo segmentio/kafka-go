@@ -290,13 +290,7 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 //  * InconsistentGroupProtocol:
 //  * InvalidSessionTimeout:
 //  * GroupAuthorizationFailed:
-func (r *Reader) joinGroup() (GroupMemberAssignments, error) {
-	conn, err := r.coordinator()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
+func (r *Reader) joinGroup(conn *Conn) (GroupMemberAssignments, error) {
 	request, err := r.makejoinGroupRequestV1()
 	if err != nil {
 		return nil, err
@@ -407,13 +401,7 @@ func (r *Reader) makeSyncGroupRequestV0(memberAssignments GroupMemberAssignments
 //  * IllegalGeneration:
 //  * RebalanceInProgress:
 //  * GroupAuthorizationFailed:
-func (r *Reader) syncGroup(memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
-	conn, err := r.coordinator()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
+func (r *Reader) syncGroup(conn *Conn, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
 	request := r.makeSyncGroupRequestV0(memberAssignments)
 	response, err := conn.syncGroups(request)
 	if err != nil {
@@ -454,21 +442,17 @@ func (r *Reader) syncGroup(memberAssignments GroupMemberAssignments) (map[string
 	return assignments.Topics, nil
 }
 
-func (r *Reader) rebalance() (map[string][]int32, error) {
+func (r *Reader) rebalance(conn *Conn) (map[string][]int32, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("rebalancing consumer group, %v", r.config.GroupID)
 	})
 
-	if err := r.refreshCoordinator(); err != nil {
-		return nil, err
-	}
-
-	members, err := r.joinGroup()
+	members, err := r.joinGroup(conn)
 	if err != nil {
 		return nil, err
 	}
 
-	assignments, err := r.syncGroup(members)
+	assignments, err := r.syncGroup(conn, members)
 	if err != nil {
 		return nil, err
 	}
@@ -482,13 +466,7 @@ func (r *Reader) unsubscribe() error {
 	return nil
 }
 
-func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
-	conn, err := r.coordinator()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
+func (r *Reader) fetchOffsets(conn *Conn, subs map[string][]int32) (map[int]int64, error) {
 	partitions := subs[r.config.Topic]
 	offsets, err := conn.offsetFetch(offsetFetchRequestV1{
 		GroupID: r.config.GroupID,
@@ -520,19 +498,13 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 	return offsetsByPartition, nil
 }
 
-func (r *Reader) subscribe(subs map[string][]int32) error {
+func (r *Reader) subscribe(conn *Conn, subs map[string][]int32) error {
 	if len(subs[r.config.Topic]) == 0 {
 		return nil
 	}
 
-	offsetsByPartition, err := r.fetchOffsets(subs)
+	offsetsByPartition, err := r.fetchOffsets(conn, subs)
 	if err != nil {
-		if conn, err := r.coordinator(); err == nil {
-			// make an attempt at leaving the group
-			_ = r.leaveGroup(conn)
-			conn.Close()
-		}
-
 		return err
 	}
 
@@ -790,17 +762,33 @@ func (r *Reader) handshake() error {
 	// always clear prior to subscribe
 	r.unsubscribe()
 
+	// make sure we have the most up-to-date coordinator.
+	if err := r.refreshCoordinator(); err != nil {
+		return err
+	}
+
+	// establish a connection to the coordinator.  this connection will be
+	// shared by all of the consumer group go routines.
+	conn, err := r.coordinator()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		select {
+		case <-r.stctx.Done():
+			// this reader is closing...leave the consumer group.
+			_ = r.leaveGroup(conn)
+		default:
+			// another consumer has left the group
+		}
+		_ = conn.Close()
+	}()
+
 	// rebalance and fetch assignments
-	assignments, err := r.rebalance()
+	assignments, err := r.rebalance(conn)
 	if err != nil {
 		return fmt.Errorf("rebalance failed for consumer group, %v: %v", r.config.GroupID, err)
 	}
-
-	conn, err := r.coordinator()
-	if err != nil {
-		return fmt.Errorf("heartbeat: unable to connect to coordinator: %v", err)
-	}
-	defer conn.Close()
 
 	rg := &runGroup{}
 	rg = rg.WithContext(r.stctx)
@@ -808,7 +796,7 @@ func (r *Reader) handshake() error {
 	rg.Go(r.commitLoop(conn))
 
 	// subscribe to assignments
-	if err := r.subscribe(assignments); err != nil {
+	if err := r.subscribe(conn, assignments); err != nil {
 		rg.Stop()
 		return fmt.Errorf("subscribe failed for consumer group, %v: %v\n", r.config.GroupID, err)
 	}
@@ -1157,15 +1145,6 @@ func (r *Reader) Close() error {
 	r.cancel()
 	r.stop()
 	r.join.Wait()
-
-	if r.useConsumerGroup() {
-		// gracefully attempt to leave the consumer group on close
-		if generationID, membershipID := r.membership(); generationID > 0 && membershipID != "" {
-			if conn, err := r.coordinator(); err == nil {
-				_ = r.leaveGroup(conn)
-			}
-		}
-	}
 
 	<-r.done
 
