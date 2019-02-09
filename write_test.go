@@ -190,7 +190,8 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*buf
 	}
 }
 
-func testWriteV2RecordBatch(t *testing.T) {
+func TestWriteV2RecordBatch(t *testing.T) {
+	const topic = "test-topic-v2-record"
 	msgs := make([]Message, 3)
 	for i := range msgs {
 		value := fmt.Sprintf("Sample message content: %d!", i)
@@ -198,7 +199,7 @@ func testWriteV2RecordBatch(t *testing.T) {
 	}
 	w := NewWriter(WriterConfig{
 		Brokers:   []string{"localhost:9092"},
-		Topic:     "test-topic",
+		Topic:     topic,
 		BatchSize: 1,
 	})
 	defer w.Close()
@@ -207,6 +208,28 @@ func testWriteV2RecordBatch(t *testing.T) {
 	defer cancel()
 	if err := w.WriteMessages(ctx, msgs...); err != nil {
 		t.Error("Failed to write v2 messages to kafka")
+		return
+	}
+	w.Close()
+
+	r := NewReader(ReaderConfig{
+		Brokers: []string{"kafka:9092"},
+		Topic:   topic,
+	})
+	defer r.Close()
+
+	msg, err := r.ReadMessage(context.Background())
+	if err != nil {
+		t.Error("Failed to read message")
+		return
+	}
+
+	if string(msg.Key) != "Key" {
+		t.Error("Received message's key doesn't match")
+		return
+	}
+	if msg.Headers[0].Key != "hk" {
+		t.Error("Received message header's key doesn't match")
 		return
 	}
 }
