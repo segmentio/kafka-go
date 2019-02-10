@@ -154,7 +154,10 @@ func (d *Dialer) LookupPartition(ctx context.Context, network string, address st
 	go func() {
 		for attempt := 0; true; attempt++ {
 			if attempt != 0 {
-				sleep(ctx, backoff(attempt, 100*time.Millisecond, 10*time.Second))
+				if !sleep(ctx, backoff(attempt, 100*time.Millisecond, 10*time.Second)) {
+					errch <- ctx.Err()
+					return
+				}
 			}
 
 			partitions, err := c.ReadPartitions(topic)
