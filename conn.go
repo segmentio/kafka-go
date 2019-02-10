@@ -160,12 +160,12 @@ func (c *Conn) DeleteTopics(topics ...string) error {
 // describeGroups retrieves the specified groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
-func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsResponseV1, error) {
-	var response describeGroupsResponseV1
+func (c *Conn) describeGroups(request describeGroupsRequestV0) (describeGroupsResponseV0, error) {
+	var response describeGroupsResponseV0
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(describeGroupsRequest, v1, id, request)
+			return c.writeRequest(describeGroupsRequest, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -174,11 +174,11 @@ func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsRe
 		},
 	)
 	if err != nil {
-		return describeGroupsResponseV1{}, err
+		return describeGroupsResponseV0{}, err
 	}
 	for _, group := range response.Groups {
 		if group.ErrorCode != 0 {
-			return describeGroupsResponseV1{}, Error(group.ErrorCode)
+			return describeGroupsResponseV0{}, Error(group.ErrorCode)
 		}
 	}
 
