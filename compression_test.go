@@ -39,7 +39,8 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCode
 			t.Error(err)
 		}
 	})
-	t.Run("encode with "+codecToStr(code), func(t *testing.T) {
+
+	t.Run("decode with "+codecToStr(code), func(t *testing.T) {
 		r2, err = codec.Decode(r1)
 		if err != nil {
 			t.Error(err)

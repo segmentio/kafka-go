@@ -185,8 +185,10 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, e
 		mr := &messageSetReader{
 			version: 2,
 			v2: messageSetReaderV2{
-				reader:       reader,
-				remain:       remain,
+				readerStack: &readerStack{
+					reader: reader,
+					remain: remain,
+				},
 				messageCount: 0,
 			}}
 		return mr, nil
@@ -382,8 +384,7 @@ func (h *messageSetHeaderV2) controlType() controlType {
 }
 
 type messageSetReaderV2 struct {
-	reader       *bufio.Reader
-	remain       int
+	*readerStack
 	messageCount int
 
 	header messageSetHeaderV2
@@ -442,8 +443,43 @@ func (r *messageSetReaderV2) readMessage(min int64,
 ) (offset int64, timestamp int64, headers []Header, err error) {
 
 	if r.messageCount == 0 {
+		if r.remain == 0 {
+			if r.parent != nil {
+				r.readerStack = r.parent
+			}
+		}
 		if err = r.readHeader(); err != nil {
 			return
+		}
+		code := r.header.compression()
+		var decompressed []byte
+		if code != 0 {
+			var codec CompressionCodec
+			if codec, err = resolveCodec(code); err != nil {
+				return
+			}
+			batchRemain := int(r.header.length - 49)
+			if batchRemain > r.remain {
+				err = errShortRead
+				return
+			}
+			var b []byte
+			if b, err = r.reader.Peek(batchRemain); err != nil {
+				return
+			}
+			if decompressed, err = codec.Decode(b); err != nil {
+				return
+			}
+			if r.remain, err = discardN(r.reader, r.remain, batchRemain); err != nil {
+				return
+			}
+
+			r.readerStack = &readerStack{
+				reader: bufio.NewReader(bytes.NewReader(decompressed)),
+				remain: len(decompressed),
+				base:   -1, // base is unused here
+				parent: r.readerStack,
+			}
 		}
 	}
 
