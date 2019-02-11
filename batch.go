@@ -184,7 +184,7 @@ func (batch *Batch) readMessage(
 		batch.offset = offset + 1
 	case errShortRead:
 		// As an "optimization" kafka truncates the returned response after
-		// producing MaxBytes, which could then cause the code to return
+		// producing MaxMessageBytes, which could then cause the code to return
 		// errShortRead.
 		err = batch.msgs.discard()
 		switch {

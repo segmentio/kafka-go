@@ -169,8 +169,8 @@ func testWriterMaxBytes(t *testing.T) {
 
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
-		Topic:    topic,
-		MaxBytes: 25,
+		Topic:           topic,
+		MaxMessageBytes: 25,
 	})
 	defer w.Close()
 
@@ -244,10 +244,10 @@ func testWrtierBatchBytes(t *testing.T) {
 	}
 
 	w := newTestWriter(WriterConfig{
-		Topic:        topic,
-		MaxBytes:     48,
-		BatchTimeout: math.MaxInt32 * time.Second,
-		Balancer:     &RoundRobin{},
+		Topic:           topic,
+		MaxMessageBytes: 48,
+		BatchTimeout:    math.MaxInt32 * time.Second,
+		Balancer:        &RoundRobin{},
 	})
 	defer w.Close()
 
