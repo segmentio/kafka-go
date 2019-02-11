@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
+	"math"
 	"time"
 )
 
@@ -43,6 +45,25 @@ func writeInt64(w *bufio.Writer, i int64) {
 	w.WriteByte(b[5])
 	w.WriteByte(b[6])
 	w.WriteByte(b[7])
+}
+
+func writeVarInt(w *bufio.Writer, i int64) {
+	i = i<<1 ^ i>>63
+	for i&0x7f != i {
+		w.WriteByte(byte(i&0x7f | 0x80))
+		i >>= 7
+	}
+	w.WriteByte(byte(i))
+}
+
+func varIntLen(i int64) (l int) {
+	i = i<<1 ^ i>>63
+	for i&0x7f != i {
+		l++
+		i >>= 7
+	}
+	l++
+	return l
 }
 
 func writeString(w *bufio.Writer, s string) {
@@ -179,29 +200,30 @@ func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID, to
 	return w.Flush()
 }
 
-func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
-	var size int32
+func hasHeaders(msgs ...Message) bool {
+	for _, msg := range msgs {
+		if len(msg.Headers) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
+
 	attributes := int8(CompressionNoneCode)
 
-	// if compressing, replace the slice of messages with a single compressed
-	// message set.
-	if codec != nil {
-		var err error
-		if msgs, err = compress(codec, msgs...); err != nil {
-			return err
+	var size int32
+	if hasHeaders(msgs...) {
+		size = recordBatchSize(msgs...)
+	} else {
+		if codec != nil {
+			if msgs, err = compress(codec, msgs...); err != nil {
+				return err
+			}
+			attributes = codec.Code()
 		}
-		attributes = codec.Code()
-	}
-
-	for _, msg := range msgs {
-		size += 8 + // offset
-			4 + // message size
-			4 + // crc
-			1 + // magic byte
-			1 + // attributes
-			8 + // timestamp
-			sizeofBytes(msg.Key) +
-			sizeofBytes(msg.Value)
+		size = messageSetSize(msgs...)
 	}
 
 	h := requestHeader{
@@ -233,11 +255,176 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	writeInt32(w, partition)
 	writeInt32(w, size)
 
+	if hasHeaders(msgs...) {
+		err = writeRecordBatch(w, codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
+	} else {
+		for _, msg := range msgs {
+			writeMessage(w, msg.Offset, attributes, msg.Time, msg.Key, msg.Value)
+		}
+
+	}
+	if err != nil {
+		return
+	}
+	return w.Flush()
+}
+
+func messageSetSize(msgs ...Message) (size int32) {
 	for _, msg := range msgs {
-		writeMessage(w, msg.Offset, attributes, msg.Time, msg.Key, msg.Value)
+		size += 8 + // offset
+			4 + // message size
+			4 + // crc
+			1 + // magic byte
+			1 + // attributes
+			8 + // timestamp
+			sizeofBytes(msg.Key) +
+			sizeofBytes(msg.Value)
+	}
+	return
+}
+
+func recordBatchSize(msgs ...Message) (size int32) {
+	size = 8 + // base offset
+		4 + // batch length
+		4 + // partition leader epoch
+		1 + // magic
+		4 + // crc
+		2 + // attributes
+		4 + // last offset delta
+		8 + // first timestamp
+		8 + // max timestamp
+		8 + // producer id
+		2 + // producer epoch
+		4 + // base sequence
+		4 // msg count
+
+	baseTime := msgs[0].Time
+
+	baseOffset := baseOffset(msgs...)
+
+	for _, msg := range msgs {
+
+		sz := recordSize(&msg, msg.Time.Sub(baseTime), msg.Offset-baseOffset)
+
+		size += int32(sz + varIntLen(int64(sz)))
+	}
+	return
+}
+
+func writeRecordBatch(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
+
+	baseTime := msgs[0].Time
+
+	baseOffset := int64(0)
+
+	for i := 0; i < len(msgs); i++ {
+		msgs[i].Offset = int64(i)
 	}
 
-	return w.Flush()
+	size := recordBatchSize(msgs...)
+
+	writeInt64(w, baseOffset)
+
+	writeInt32(w, int32(size-12)) // 12 = batch length + base offset sizes
+
+	writeInt32(w, -1) // partition leader epoch
+	writeInt8(w, 2)   // magic byte
+
+	crcBuf := &bytes.Buffer{}
+	crcBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
+	crcWriter := bufio.NewWriter(crcBuf)
+
+	writeInt16(crcWriter, 0)                  // attributes no compression, timestamp type 0 - create time, not part of a transaction, no control messages
+	writeInt32(crcWriter, int32(len(msgs)-1)) // max offset
+	writeInt64(crcWriter, timestamp(baseTime))
+	lastTime := timestamp(msgs[len(msgs)-1].Time)
+	writeInt64(crcWriter, int64(lastTime))
+	writeInt64(crcWriter, -1)               // default producer id for now
+	writeInt16(crcWriter, -1)               // default producer epoch for now
+	writeInt32(crcWriter, -1)               // default base sequence
+	writeInt32(crcWriter, int32(len(msgs))) // record count
+
+	for _, msg := range msgs {
+		writeRecord(crcWriter, CompressionNoneCode, baseTime, baseOffset, msg)
+	}
+	crcWriter.Flush()
+
+	crcTable := crc32.MakeTable(crc32.Castagnoli)
+	crcChecksum := crc32.Checksum(crcBuf.Bytes(), crcTable)
+
+	writeInt32(w, int32(crcChecksum))
+	w.Write(crcBuf.Bytes())
+
+	return nil
+}
+
+var maxDate time.Time = time.Date(5000, time.January, 0, 0, 0, 0, 0, time.UTC)
+
+func baseTime(msgs ...Message) (baseTime time.Time) {
+	baseTime = maxDate
+	for _, msg := range msgs {
+		if msg.Time.Before(baseTime) {
+			baseTime = msg.Time
+		}
+	}
+	return
+}
+
+func baseOffset(msgs ...Message) (baseOffset int64) {
+	baseOffset = math.MaxInt64
+	for _, msg := range msgs {
+		if msg.Offset < baseOffset {
+			baseOffset = msg.Offset
+		}
+	}
+	return
+}
+
+func maxOffsetDelta(baseOffset int64, msgs ...Message) (maxDelta int64) {
+	maxDelta = 0
+	for _, msg := range msgs {
+		curDelta := msg.Offset - baseOffset
+		if maxDelta > curDelta {
+			maxDelta = curDelta
+		}
+	}
+	return
+}
+
+func estimatedRecordSize(msg *Message) (size int32) {
+	size += 8 + // length
+		1 + // attributes
+		8 + // timestamp delta
+		8 + // offset delta
+		8 + // key length
+		int32(len(msg.Key)) +
+		8 + // value length
+		int32(len(msg.Value))
+	for _, h := range msg.Headers {
+		size += 8 + // header key length
+			int32(len(h.Key)) +
+			8 + // header value length
+			int32(len(h.Value))
+	}
+	return
+}
+
+func recordSize(msg *Message, timestampDelta time.Duration, offsetDelta int64) (size int) {
+	size += 1 + // attributes
+		varIntLen(int64(timestampDelta)) +
+		varIntLen(offsetDelta) +
+		varIntLen(int64(len(msg.Key))) +
+		len(msg.Key) +
+		varIntLen(int64(len(msg.Value))) +
+		len(msg.Value) +
+		varIntLen(int64(len(msg.Headers)))
+	for _, h := range msg.Headers {
+		size += varIntLen(int64(len([]byte(h.Key)))) +
+			len([]byte(h.Key)) +
+			varIntLen(int64(len(h.Value))) +
+			len(h.Value)
+	}
+	return
 }
 
 func compress(codec CompressionCodec, msgs ...Message) ([]Message, error) {
@@ -285,4 +472,30 @@ func msgSize(key, value []byte) int32 {
 		8 + // timestamp
 		sizeofBytes(key) +
 		sizeofBytes(value)
+}
+
+// Messages with magic >2 are called records. This method writes messages using message format 2.
+func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, baseOffset int64, msg Message) {
+
+	timestampDelta := msg.Time.Sub(baseTime)
+	offsetDelta := int64(msg.Offset - baseOffset)
+
+	writeVarInt(w, int64(recordSize(&msg, timestampDelta, offsetDelta)))
+
+	writeInt8(w, attributes)
+	writeVarInt(w, int64(timestampDelta))
+	writeVarInt(w, offsetDelta)
+
+	writeVarInt(w, int64(len(msg.Key)))
+	w.Write(msg.Key)
+	writeVarInt(w, int64(len(msg.Value)))
+	w.Write(msg.Value)
+	writeVarInt(w, int64(len(msg.Headers)))
+
+	for _, h := range msg.Headers {
+		writeVarInt(w, int64(len(h.Key)))
+		w.Write([]byte(h.Key))
+		writeVarInt(w, int64(len(h.Value)))
+		w.Write(h.Value)
+	}
 }

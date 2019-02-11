@@ -16,6 +16,7 @@ type Message struct {
 	Offset    int64
 	Key       []byte
 	Value     []byte
+	Headers   []Header
 
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
@@ -250,4 +251,9 @@ func extractOffset(base int64, msgSet []byte) (offset int64, err error) {
 	}
 	offset = base - offset
 	return
+}
+
+type Header struct {
+	Key   string
+	Value []byte
 }

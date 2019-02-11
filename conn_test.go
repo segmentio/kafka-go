@@ -106,8 +106,9 @@ func TestConn(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		scenario string
-		function func(*testing.T, *Conn)
+		scenario   string
+		function   func(*testing.T, *Conn)
+		minVersion string
 	}{
 		{
 			scenario: "close right away",
@@ -180,8 +181,9 @@ func TestConn(t *testing.T) {
 		},
 
 		{
-			scenario: "describe groups retrieves all groups when no groupID specified",
-			function: testConnDescribeGroupRetrievesAllGroups,
+			scenario:   "describe groups retrieves all groups when no groupID specified",
+			function:   testConnDescribeGroupRetrievesAllGroups,
+			minVersion: "0.11.0",
 		},
 
 		{
@@ -220,8 +222,9 @@ func TestConn(t *testing.T) {
 		},
 
 		{
-			scenario: "test list groups",
-			function: testConnListGroupsReturnsGroups,
+			scenario:   "test list groups",
+			function:   testConnListGroupsReturnsGroups,
+			minVersion: "0.11.0",
 		},
 
 		{
@@ -230,13 +233,15 @@ func TestConn(t *testing.T) {
 		},
 
 		{
-			scenario: "test delete topics",
-			function: testDeleteTopics,
+			scenario:   "test delete topics",
+			function:   testDeleteTopics,
+			minVersion: "0.11.0",
 		},
 
 		{
-			scenario: "test delete topics with an invalid topic",
-			function: testDeleteTopicsInvalidTopic,
+			scenario:   "test delete topics with an invalid topic",
+			function:   testDeleteTopicsInvalidTopic,
+			minVersion: "0.11.0",
 		},
 	}
 
@@ -246,6 +251,11 @@ func TestConn(t *testing.T) {
 	)
 
 	for _, test := range tests {
+		if !KafkaIsAtLeast(test.minVersion) {
+			t.Log("skipping " + test.scenario + " because broker is not at least version " + test.minVersion)
+			continue
+		}
+
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
 			t.Parallel()
@@ -580,7 +590,7 @@ func testConnDescribeGroupRetrievesAllGroups(t *testing.T, conn *Conn) {
 	_, _, stop1 := createGroup(t, conn, groupID)
 	defer stop1()
 
-	out, err := conn.describeGroups(describeGroupsRequestV1{
+	out, err := conn.describeGroups(describeGroupsRequestV0{
 		GroupIDs: []string{groupID},
 	})
 	if err != nil {
@@ -857,7 +867,7 @@ func testConnReadEmptyWithDeadline(t *testing.T, conn *Conn) {
 	b := make([]byte, 100)
 
 	start := time.Now()
-	deadline := start.Add(100 * time.Millisecond)
+	deadline := start.Add(250 * time.Millisecond)
 
 	conn.SetReadDeadline(deadline)
 	n, err := conn.Read(b)
