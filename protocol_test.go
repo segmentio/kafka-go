@@ -41,7 +41,7 @@ func TestProtocol(t *testing.T) {
 		metadataResponseV1{
 			Brokers: []brokerMetadataV1{
 				{NodeID: 1, Host: "localhost", Port: 9001},
-				{NodeID: 2, Host: "localhost", Port: 9002, Rack:"rack2"},
+				{NodeID: 2, Host: "localhost", Port: 9002, Rack: "rack2"},
 			},
 			ControllerID: 2,
 			Topics: []topicMetadataV1{

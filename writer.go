@@ -272,7 +272,6 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return nil
 	}
 
-
 	var res = make(chan error, len(msgs))
 	var err error
 
@@ -288,9 +287,9 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 		for _, msg := range msgs {
 			if int(msg.message().size()) > w.config.MaxBytes {
-				err := errors.New(fmt.Sprintf("The message is %d bytes " +
-					"when serialized which is larger than the maximum request size you " +
-					"have configured with the %v configuration.",msg.message().size(), w.config.MaxBytes))
+				err := errors.New(fmt.Sprintf("The message is %d bytes "+
+					"when serialized which is larger than the maximum request size you "+
+					"have configured with the %v configuration.", msg.message().size(), w.config.MaxBytes))
 				w.mutex.RUnlock()
 				return err
 			}
