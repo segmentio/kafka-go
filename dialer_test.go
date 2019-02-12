@@ -50,7 +50,6 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 	w.Close()
 
 	partitions, err := d.LookupPartitions(ctx, "tcp", "localhost:9092", topic)
-
 	if err != nil {
 		t.Error(err)
 		return

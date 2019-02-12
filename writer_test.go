@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,18 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "running out of max attempts should return an error",
 			function: testWriterMaxAttemptsErr,
+		},
+		{
+			scenario: "writing a message larger then the max bytes should return an error",
+			function: testWriterMaxBytes,
+		},
+		{
+			scenario: "writing a batch of message based on batch byte size",
+			function: testWrtierBatchBytes,
+		},
+		{
+			scenario: "writing a batch of messages",
+			function: testWrtierBatchSize,
 		},
 	}
 
@@ -151,6 +164,37 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 	}
 }
 
+func testWriterMaxBytes(t *testing.T) {
+	const topic = "test-writer-2"
+
+	createTopic(t, topic, 1)
+	w := newTestWriter(WriterConfig{
+		Topic:           topic,
+		MaxMessageBytes: 25,
+	})
+	defer w.Close()
+
+	if err := w.WriteMessages(context.Background(), Message{
+		Value: []byte("Hi"),
+	}); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err := w.WriteMessages(context.Background(), Message{
+		Value: []byte("Hello World!"),
+	}); err == nil {
+		t.Error("expected error")
+		return
+	} else if err != nil {
+		if !strings.Contains(err.Error(), "larger than the maximum request") {
+			t.Errorf("unexpected error: %s", err)
+			return
+		}
+	}
+
+}
+
 func readOffset(topic string, partition int) (offset int64, err error) {
 	var conn *Conn
 
@@ -187,5 +231,103 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 		}
 
 		msgs = append(msgs, msg)
+	}
+}
+
+func testWrtierBatchBytes(t *testing.T) {
+	const topic = "test-writer-1-bytes"
+
+	createTopic(t, topic, 1)
+	offset, err := readOffset(topic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newTestWriter(WriterConfig{
+		Topic:           topic,
+		MaxMessageBytes: 48,
+		BatchTimeout:    math.MaxInt32 * time.Second,
+		Balancer:        &RoundRobin{},
+	})
+	defer w.Close()
+
+	if err := w.WriteMessages(context.Background(), []Message{
+		Message{Value: []byte("Hi")}, // 24 Bytes
+		Message{Value: []byte("By")}, // 24 Bytes
+	}...); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if w.Stats().Writes > 1 {
+		t.Error("didn't batch messages")
+		return
+	}
+	msgs, err := readPartition(topic, 0, offset)
+
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+
+	if len(msgs) != 2 {
+		t.Error("bad messages in partition", msgs)
+		return
+	}
+
+	for _, m := range msgs {
+		if string(m.Value) == "Hi" || string(m.Value) == "By" {
+			continue
+		}
+		t.Error("bad messages in partition", msgs)
+	}
+}
+
+func testWrtierBatchSize(t *testing.T) {
+	const topic = "test-writer-1-batch"
+
+	createTopic(t, topic, 1)
+	offset, err := readOffset(topic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newTestWriter(WriterConfig{
+		Topic:        topic,
+		BatchSize:    2,
+		BatchTimeout: math.MaxInt32 * time.Second,
+		Balancer:     &RoundRobin{},
+	})
+	defer w.Close()
+
+	if err := w.WriteMessages(context.Background(), []Message{
+		Message{Value: []byte("Hi")}, // 24 Bytes
+		Message{Value: []byte("By")}, // 24 Bytes
+	}...); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if w.Stats().Writes > 1 {
+		t.Error("didn't batch messages")
+		return
+	}
+	msgs, err := readPartition(topic, 0, offset)
+
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+
+	if len(msgs) != 2 {
+		t.Error("bad messages in partition", msgs)
+		return
+	}
+
+	for _, m := range msgs {
+		if string(m.Value) == "Hi" || string(m.Value) == "By" {
+			continue
+		}
+		t.Error("bad messages in partition", msgs)
 	}
 }
