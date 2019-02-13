@@ -151,7 +151,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 
 // DeleteTopics deletes the specified topics.
 func (c *Conn) DeleteTopics(topics ...string) error {
-	_, err := c.deleteTopics(deleteTopicsRequestV1{
+	_, err := c.deleteTopics(deleteTopicsRequestV0{
 		Topics: topics,
 	})
 	return err
