@@ -788,9 +788,12 @@ func (r *Reader) commitLoop(conn *Conn) func(stop <-chan struct{}) {
 }
 
 // partitionWatcher queries kafka and watches for partition changes, triggering a rebalance if changes are found.
+// Similar to heartbeat it's okay to return on error here as if you are unable to ask a broker for baisc metadata
+// you're in a bad spot and should rebalance. Commonly you will see an error here if there is a problem with
+// the connection to the coordinator and a rebalance will establish a new connection to the coordinator.
 func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
 	return func(stop <-chan struct{}) {
-		ticker := time.NewTicker(defaultPartitionWatchTime)
+		ticker := time.NewTicker(r.config.PartitionWatchInterval)
 		defer ticker.Stop()
 		ops, err := conn.ReadPartitions(r.config.Topic)
 		if err != nil {
@@ -799,12 +802,7 @@ func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
 			})
 			return
 		}
-		// It's possible that the list of partitions returned are not in any order
-		// so put them into a map to compare.
-		oParts := make(map[int]struct{})
-		for _, p := range ops {
-			oParts[p.ID] = struct{}{}
-		}
+		oParts := make([]int, len(ops))
 		for {
 			select {
 			case <-stop:
@@ -822,14 +820,6 @@ func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
 						l.Printf("Partition changes found, reblancing group: %v.", r.config.GroupID)
 					})
 					return
-				}
-				for _, p := range ops {
-					if _, ok := oParts[p.ID]; !ok {
-						r.withErrorLogger(func(l *log.Logger) {
-							l.Printf("Found new partition %v, on group %v", p.ID, r.config.GroupID)
-						})
-						return
-					}
 				}
 			}
 		}
@@ -963,6 +953,15 @@ type ReaderConfig struct {
 	//
 	// Only used when GroupID is set
 	CommitInterval time.Duration
+
+	// PartitionWatchInterval indicates how often a reader checks for partition changes.
+	// If a reader sees a partition change (such as a partition add) it will rebalance the group
+	// picking up new partitions.
+	//
+	// Default: 5s
+	//
+	// Only used when GroupID is set
+	PartitionWatchInterval time.Duration
 
 	// SessionTimeout optionally sets the length of time that may pass without a heartbeat
 	// before the coordinator considers the consumer dead and initiates a rebalance.
@@ -1111,6 +1110,11 @@ func NewReader(config ReaderConfig) *Reader {
 		if config.CommitInterval < 0 || (config.CommitInterval/time.Millisecond) >= math.MaxInt32 {
 			panic(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
 		}
+
+		if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
+			panic(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
+		}
+
 	}
 
 	if config.Dialer == nil {
@@ -1143,6 +1147,10 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.SessionTimeout == 0 {
 		config.SessionTimeout = defaultSessionTimeout
+	}
+
+	if config.PartitionWatchInterval == 0 {
+		config.PartitionWatchInterval = defaultPartitionWatchTime
 	}
 
 	if config.RebalanceTimeout == 0 {
