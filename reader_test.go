@@ -1060,13 +1060,18 @@ type MockConnWatcher struct {
 }
 func (m *MockConnWatcher) ReadPartitions(topics ...string) (partitions []Partition, err error) {
 	partitions = m.partitions[m.count]
-	m.count++
+	// cap the count at len(partitions) -1 so ReadPartitions doesn't even go out of bounds
+	// and long running tests don't fail
+	if m.count < len(m.partitions) {
+		m.count++
+	}
+
 	return partitions, err
 }
 
 func testReaderConsumerGroupRebalanceOnPartitionAdd(t *testing.T, ctx context.Context, r *Reader) {
 	// Sadly this test is time based, so at the end will be seeing if the runGroup run to completion within the
-	// allotted time. The allotted time is 2x the PartitionWatchInterval.
+	// allotted time. The allotted time is 4x the PartitionWatchInterval.
 	now := time.Now()
 	watchTime := 500 * time.Millisecond
 	conn := &MockConnWatcher{
@@ -1095,7 +1100,7 @@ func testReaderConsumerGroupRebalanceOnPartitionAdd(t *testing.T, ctx context.Co
 	r.config.PartitionWatchInterval = watchTime
 	rg.Go(r.partitionWatcher(conn))
 	rg.Wait()
-	if time.Now().Sub(now).Seconds() > r.config.PartitionWatchInterval.Seconds() * 2 {
+	if time.Now().Sub(now).Seconds() > r.config.PartitionWatchInterval.Seconds() * 4 {
 		t.Error("partitionWatcher didn't see update")
 	}
 }
