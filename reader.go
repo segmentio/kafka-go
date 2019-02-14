@@ -58,6 +58,10 @@ const (
 	// defaultRetentionTime holds the length of time a the consumer group will be
 	// saved by kafka
 	defaultRetentionTime = time.Hour * 24
+
+	// defaultPartitionWatchTime contains the amount of time the kafka-go will wait to
+	// query the brokers looking for partition changes.
+	defaultPartitionWatchTime = 5 * time.Second
 )
 
 // Reader provides a high-level API for consuming messages from kafka.
@@ -755,6 +759,45 @@ func (r *Reader) commitLoop(conn *Conn) func(stop <-chan struct{}) {
 	}
 }
 
+// partitionWatcher queries kafka and watches for partition changes, triggering a rebalance if changes are found.
+// Similar to heartbeat it's okay to return on error here as if you are unable to ask a broker for basic metadata
+// you're in a bad spot and should rebalance. Commonly you will see an error here if there is a problem with
+// the connection to the coordinator and a rebalance will establish a new connection to the coordinator.
+func (r *Reader) partitionWatcher(conn partitionReader) func(stop <-chan struct{}) {
+	return func(stop <-chan struct{}) {
+		ticker := time.NewTicker(r.config.PartitionWatchInterval)
+		defer ticker.Stop()
+		ops, err := conn.ReadPartitions(r.config.Topic)
+		if err != nil {
+			r.withErrorLogger(func(l *log.Logger) {
+				l.Printf("Problem getting partitions during startup, %v\n, Returning and setting up handshake", err)
+			})
+			return
+		}
+		oParts := len(ops)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				ops, err := conn.ReadPartitions(r.config.Topic)
+				if err != nil {
+					r.withErrorLogger(func(l *log.Logger) {
+						l.Printf("Problem getting partitions while checking for changes, %v\n", err)
+					})
+					return
+				}
+				if len(ops) != oParts {
+					r.withErrorLogger(func(l *log.Logger) {
+						l.Printf("Partition changes found, reblancing group: %v.", r.config.GroupID)
+					})
+					return
+				}
+			}
+		}
+	}
+}
+
 // handshake performs the necessary incantations to join this Reader to the desired
 // consumer group.  handshake will be called whenever the group is disrupted
 // (member join, member leave, coordinator changed, etc)
@@ -794,6 +837,9 @@ func (r *Reader) handshake() error {
 	rg = rg.WithContext(r.stctx)
 	rg.Go(r.heartbeatLoop(conn))
 	rg.Go(r.commitLoop(conn))
+	if r.config.WatchPartitionChanges {
+		rg.Go(r.partitionWatcher(conn))
+	}
 
 	// subscribe to assignments
 	if err := r.subscribe(conn, assignments); err != nil {
@@ -895,6 +941,19 @@ type ReaderConfig struct {
 	//
 	// Only used when GroupID is set
 	CommitInterval time.Duration
+
+	// PartitionWatchInterval indicates how often a reader checks for partition changes.
+	// If a reader sees a partition change (such as a partition add) it will rebalance the group
+	// picking up new partitions.
+	//
+	// Default: 5s
+	//
+	// Only used when GroupID is set and WatchPartitionChanges is set.
+	PartitionWatchInterval time.Duration
+
+	// WatchForPartitionChanges is used to inform kafka-go that a consumer group should be
+	// polling the brokers and rebalancing if any partition changes happen to the topic.
+	WatchPartitionChanges bool
 
 	// SessionTimeout optionally sets the length of time that may pass without a heartbeat
 	// before the coordinator considers the consumer dead and initiates a rebalance.
@@ -1039,6 +1098,11 @@ func NewReader(config ReaderConfig) *Reader {
 		if config.CommitInterval < 0 || (config.CommitInterval/time.Millisecond) >= math.MaxInt32 {
 			panic(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
 		}
+
+		if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
+			panic(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
+		}
+
 	}
 
 	if config.Dialer == nil {
@@ -1071,6 +1135,10 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.SessionTimeout == 0 {
 		config.SessionTimeout = defaultSessionTimeout
+	}
+
+	if config.PartitionWatchInterval == 0 {
+		config.PartitionWatchInterval = defaultPartitionWatchTime
 	}
 
 	if config.RebalanceTimeout == 0 {
