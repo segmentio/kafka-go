@@ -788,10 +788,10 @@ func (r *Reader) commitLoop(conn *Conn) func(stop <-chan struct{}) {
 }
 
 // partitionWatcher queries kafka and watches for partition changes, triggering a rebalance if changes are found.
-// Similar to heartbeat it's okay to return on error here as if you are unable to ask a broker for baisc metadata
+// Similar to heartbeat it's okay to return on error here as if you are unable to ask a broker for basic metadata
 // you're in a bad spot and should rebalance. Commonly you will see an error here if there is a problem with
 // the connection to the coordinator and a rebalance will establish a new connection to the coordinator.
-func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
+func (r *Reader) partitionWatcher(conn partitionReader) func(stop <-chan struct{}) {
 	return func(stop <-chan struct{}) {
 		ticker := time.NewTicker(r.config.PartitionWatchInterval)
 		defer ticker.Stop()
@@ -802,7 +802,7 @@ func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
 			})
 			return
 		}
-		oParts := make([]int, len(ops))
+		oParts := len(ops)
 		for {
 			select {
 			case <-stop:
@@ -815,7 +815,7 @@ func (r *Reader) partitionWatcher(conn *Conn) func(stop <-chan struct{}) {
 					})
 					return
 				}
-				if len(ops) != len(oParts) {
+				if len(ops) != oParts {
 					r.withErrorLogger(func(l *log.Logger) {
 						l.Printf("Partition changes found, reblancing group: %v.", r.config.GroupID)
 					})
@@ -960,8 +960,12 @@ type ReaderConfig struct {
 	//
 	// Default: 5s
 	//
-	// Only used when GroupID is set
+	// Only used when GroupID is set and WatchPartitionChanges is set.
 	PartitionWatchInterval time.Duration
+
+	// WatchForPartitionChanges is used to inform kafka-go that a consumer group should be
+	// polling the brokers and rebalancing if any partition changes happen to the topic.
+	WatchPartitionChanges bool
 
 	// SessionTimeout optionally sets the length of time that may pass without a heartbeat
 	// before the coordinator considers the consumer dead and initiates a rebalance.
@@ -995,10 +999,6 @@ type ReaderConfig struct {
 	// ErrorLogger is the logger used to report errors. If nil, the reader falls
 	// back to using Logger instead.
 	ErrorLogger *log.Logger
-
-	// WatchForPartitionChanges is used to inform kafka-go that a consumer group should be
-	// polling the brokers and rebalancing if any partition changes happen to the topic.
-	WatchPartitionChanges bool
 }
 
 // ReaderStats is a data structure returned by a call to Reader.Stats that exposes
