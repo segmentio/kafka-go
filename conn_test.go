@@ -241,6 +241,10 @@ func TestConn(t *testing.T) {
 			scenario: "test delete topics with an invalid topic",
 			function: testDeleteTopicsInvalidTopic,
 		},
+		{
+			scenario: "test retrieve controller",
+			function: testController,
+		},
 	}
 
 	const (
@@ -934,6 +938,26 @@ func testDeleteTopicsInvalidTopic(t *testing.T, conn *Conn) {
 	}
 	if len(partitions) != 0 {
 		t.Fatal("expected partitions to be empty")
+	}
+}
+
+func testController(t *testing.T, conn *Conn) {
+	b, err := conn.Controller()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if b.Host != "localhost" {
+		t.Errorf("expected localhost received %s", b.Host)
+	}
+	if b.Port != 9092 {
+		t.Errorf("expected 9092 received %d", b.Port)
+	}
+	if b.ID != 1 {
+		t.Errorf("expected 0 received %d", b.ID)
+	}
+	if b.Rack != "" {
+		t.Errorf("expected empty string for rack received %s", b.Rack)
 	}
 }
 
