@@ -82,6 +82,7 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 			Brokers:          []string{"127.0.0.1:9092"},
 			Topic:            topic,
 			CompressionCodec: codec,
+			BatchTimeout:     10 * time.Millisecond,
 		})
 		defer w.Close()
 

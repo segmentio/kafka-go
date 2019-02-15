@@ -57,7 +57,7 @@ func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	err = writer.Flush()
+	err = writer.Close()
 	if err != nil {
 		// don't return writer to pool on error.
 		return nil, err

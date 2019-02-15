@@ -94,13 +94,11 @@ func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 // Decode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
 	reader := readerPool.Get().(*gzip.Reader)
-	res, err := func() ([]byte, error) {
-		err := reader.Reset(bytes.NewReader(src))
-		if err != nil {
-			return nil, err
-		}
-		return ioutil.ReadAll(reader)
-	}()
+	err := reader.Reset(bytes.NewReader(src))
+	if err != nil {
+		return nil, err
+	}
+	res, err := ioutil.ReadAll(reader)
 	// only return the reader to pool if the read was a success.
 	if err == nil {
 		readerPool.Put(reader)
