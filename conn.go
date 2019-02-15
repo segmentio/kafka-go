@@ -123,7 +123,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		requiredAcks: -1,
 	}
 
-	// The fetch request needs to ask for a MaxBytes value that is at least
+	// The fetch request needs to ask for a MaxMessageBytes value that is at least
 	// enough to load the control data of the response. To avoid having to
 	// recompute it on every read, it is cached here in the Conn value.
 	c.fetchMinSize = (fetchResponseV2{
