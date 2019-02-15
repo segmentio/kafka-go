@@ -918,6 +918,12 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 3,
 			function:   testReaderConsumerGroupReadContentAcrossPartitions,
 		},
+
+		{
+			scenario:   "consumer group notices when partitions are added",
+			partitions: 2,
+			function:   testReaderConsumerGroupRebalanceOnPartitionAdd,
+		},
 	}
 
 	for _, test := range tests {
@@ -1121,6 +1127,59 @@ func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx contex
 		t.Errorf("expected messages across 3 partitions; got messages across %v partitions", v)
 	}
 }
+
+// Build a struct to implement the ReadPartitions interface.
+type MockConnWatcher struct {
+	count int
+	partitions [][]Partition
+}
+func (m *MockConnWatcher) ReadPartitions(topics ...string) (partitions []Partition, err error) {
+	partitions = m.partitions[m.count]
+	// cap the count at len(partitions) -1 so ReadPartitions doesn't even go out of bounds
+	// and long running tests don't fail
+	if m.count < len(m.partitions) {
+		m.count++
+	}
+
+	return partitions, err
+}
+
+func testReaderConsumerGroupRebalanceOnPartitionAdd(t *testing.T, ctx context.Context, r *Reader) {
+	// Sadly this test is time based, so at the end will be seeing if the runGroup run to completion within the
+	// allotted time. The allotted time is 4x the PartitionWatchInterval.
+	now := time.Now()
+	watchTime := 500 * time.Millisecond
+	conn := &MockConnWatcher{
+		partitions: [][]Partition{
+			{
+				Partition{
+					Topic: "topic-1",
+					ID:    0,
+				},
+			},
+			{
+				Partition{
+					Topic: "topic-1",
+					ID:    0,
+				},
+				{
+					Topic: "topic-1",
+					ID:    1,
+				},
+			},
+		},
+	}
+
+	rg := &runGroup{}
+	rg = rg.WithContext(ctx)
+	r.config.PartitionWatchInterval = watchTime
+	rg.Go(r.partitionWatcher(conn))
+	rg.Wait()
+	if time.Now().Sub(now).Seconds() > r.config.PartitionWatchInterval.Seconds() * 4 {
+		t.Error("partitionWatcher didn't see update")
+	}
+}
+
 
 func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Reader) {
 	r2 := NewReader(r.config)

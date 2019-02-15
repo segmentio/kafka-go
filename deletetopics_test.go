@@ -8,9 +8,8 @@ import (
 )
 
 func TestDeleteTopicsResponseV1(t *testing.T) {
-	item := deleteTopicsResponseV1{
-		ThrottleTimeMS: 123,
-		TopicErrorCodes: []deleteTopicsResponseV1TopicErrorCode{
+	item := deleteTopicsResponseV0{
+		TopicErrorCodes: []deleteTopicsResponseV0TopicErrorCode{
 			{
 				Topic:     "a",
 				ErrorCode: 7,
@@ -23,7 +22,7 @@ func TestDeleteTopicsResponseV1(t *testing.T) {
 	item.writeTo(w)
 	w.Flush()
 
-	var found deleteTopicsResponseV1
+	var found deleteTopicsResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
 	if err != nil {
 		t.Fatal(err)

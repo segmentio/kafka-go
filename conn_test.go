@@ -233,15 +233,13 @@ func TestConn(t *testing.T) {
 		},
 
 		{
-			scenario:   "test delete topics",
-			function:   testDeleteTopics,
-			minVersion: "0.11.0",
+			scenario: "test delete topics",
+			function: testDeleteTopics,
 		},
 
 		{
-			scenario:   "test delete topics with an invalid topic",
-			function:   testDeleteTopicsInvalidTopic,
-			minVersion: "0.11.0",
+			scenario: "test delete topics with an invalid topic",
+			function: testDeleteTopicsInvalidTopic,
 		},
 	}
 
@@ -925,7 +923,7 @@ func testDeleteTopicsInvalidTopic(t *testing.T, conn *Conn) {
 	if err != nil {
 		t.Fatalf("bad CreateTopics: %v", err)
 	}
-	conn.SetDeadline(time.Now().Add(time.Second))
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
 	err = conn.DeleteTopics("invalid-topic", topic)
 	if err != UnknownTopicOrPartition {
 		t.Fatalf("expected UnknownTopicOrPartition error, but got %v", err)
@@ -935,7 +933,7 @@ func testDeleteTopicsInvalidTopic(t *testing.T, conn *Conn) {
 		t.Fatalf("bad ReadPartitions: %v", err)
 	}
 	if len(partitions) != 0 {
-		t.Fatal("exepected partitions to be empty")
+		t.Fatal("expected partitions to be empty")
 	}
 }
 
