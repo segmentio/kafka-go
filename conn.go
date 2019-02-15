@@ -139,7 +139,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 }
 
 // GetController requests kafka for the current controller and returns its URL
-func (c *Conn) GetController() (controller string, err error) {
+func (c *Conn) Controller() (broker Broker, err error) {
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
 			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
@@ -150,16 +150,19 @@ func (c *Conn) GetController() (controller string, err error) {
 			if err := c.readResponse(size, &res); err != nil {
 				return err
 			}
-			for _, broker := range res.Brokers {
-				if broker.NodeID == res.ControllerID {
-					controller = fmt.Sprintf("%s:%d", broker.Host, broker.Port)
+			for _, brokerMeta := range res.Brokers {
+				if brokerMeta.NodeID == res.ControllerID {
+					broker = Broker{ID: int(brokerMeta.NodeID),
+						Port: int(brokerMeta.Port),
+						Host: brokerMeta.Host,
+						Rack: brokerMeta.Rack}
 					break
 				}
 			}
 			return nil
 		},
 	)
-	return controller, err
+	return broker, err
 }
 
 // DeleteTopics deletes the specified topics.
