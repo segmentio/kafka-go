@@ -150,16 +150,23 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	msg := Message{}
 	batch.mutex.Lock()
 
-	offset, timestamp, headers, err := batch.readMessage(
-		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
-			msg.Key, remain, err = readNewBytes(r, size, nbytes)
-			return
-		},
-		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
-			msg.Value, remain, err = readNewBytes(r, size, nbytes)
-			return
-		},
-	)
+	var offset, timestamp int64
+	offset = 0
+	var headers []Header
+	var err error
+
+	for offset < batch.conn.offset {
+		offset, timestamp, headers, err = batch.readMessage(
+			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
+				msg.Key, remain, err = readNewBytes(r, size, nbytes)
+				return
+			},
+			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
+				msg.Value, remain, err = readNewBytes(r, size, nbytes)
+				return
+			},
+		)
+	}
 
 	batch.mutex.Unlock()
 	msg.Topic = batch.topic
