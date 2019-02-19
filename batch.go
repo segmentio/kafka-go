@@ -155,7 +155,20 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	var headers []Header
 	var err error
 
-	for offset < batch.conn.offset {
+	offset, timestamp, headers, err = batch.readMessage(
+		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
+			msg.Key, remain, err = readNewBytes(r, size, nbytes)
+			return
+		},
+		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
+			msg.Value, remain, err = readNewBytes(r, size, nbytes)
+			return
+		},
+	)
+	for batch.conn != nil && offset < batch.conn.offset {
+		if err != nil {
+			goto end
+		}
 		offset, timestamp, headers, err = batch.readMessage(
 			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
 				msg.Key, remain, err = readNewBytes(r, size, nbytes)
@@ -168,6 +181,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 		)
 	}
 
+end:
 	batch.mutex.Unlock()
 	msg.Topic = batch.topic
 	msg.Partition = batch.partition
