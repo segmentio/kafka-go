@@ -245,6 +245,10 @@ func TestConn(t *testing.T) {
 			scenario: "test retrieve controller",
 			function: testController,
 		},
+		{
+			scenario: "test list brokers",
+			function: testBrokers,
+		},
 	}
 
 	const (
@@ -954,10 +958,25 @@ func testController(t *testing.T, conn *Conn) {
 		t.Errorf("expected 9092 received %d", b.Port)
 	}
 	if b.ID != 1 {
-		t.Errorf("expected 0 received %d", b.ID)
+		t.Errorf("expected 1 received %d", b.ID)
 	}
 	if b.Rack != "" {
 		t.Errorf("expected empty string for rack received %s", b.Rack)
+	}
+}
+
+func testBrokers(t *testing.T, conn *Conn) {
+	brokers, err := conn.Brokers()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(brokers) != 1 {
+		t.Errorf("expected 1 broker in %+v", brokers)
+	}
+
+	if brokers[0].ID != 1 {
+		t.Errorf("expected ID 1 received %d", brokers[0].ID)
 	}
 }
 
