@@ -220,6 +220,13 @@ func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
 		bytes += int64(len(m.Key) + len(m.Value))
 	}
 
+	// there's a possible go routine scheduling order whereby the stats have not
+	// been fully updated yet and the following assertions would fail if we
+	// retrieved stats immediately.  the issue rarely happens locally but
+	// happens with some degree of regularity in CI.  we don't have a way
+	// to ensure stats are updated, so approximating it with a sleep. :|
+	time.Sleep(10 * time.Millisecond)
+
 	stats := r.Stats()
 
 	// First verify that metrics with unpredictable values are not zero.
