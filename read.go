@@ -100,12 +100,22 @@ func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (in
 func readNewBytes(r *bufio.Reader, sz int, n int) ([]byte, int, error) {
 	var err error
 	var b []byte
+	var shortRead bool
 
 	if n > 0 {
+		if sz < n {
+			n = sz
+			shortRead = true
+		}
+
 		b = make([]byte, n)
 		n, err = io.ReadFull(r, b)
 		b = b[:n]
 		sz -= n
+
+		if err == nil && shortRead {
+			err = errShortRead
+		}
 	}
 
 	return b, sz, err
