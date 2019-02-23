@@ -726,10 +726,16 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 	default:
 		throttle, highWaterMark, remain, err = readFetchResponseHeaderV2(&c.rbuf, size)
 	}
+	if err == errShortRead {
+		err = checkTimeoutErr(adjustedDeadline)
+	}
 
 	var msgs *messageSetReader
 	if err == nil {
 		msgs, err = newMessageSetReader(&c.rbuf, remain)
+	}
+	if err == errShortRead {
+		err = checkTimeoutErr(adjustedDeadline)
 	}
 	return &Batch{
 		conn:          c,

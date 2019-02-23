@@ -220,16 +220,21 @@ func (batch *Batch) readMessage(
 			// This design decision was made to maximize the chances of keeping
 			// the connection open, the trade off being to lose precision on the
 			// read deadline management.
-			if !batch.deadline.IsZero() && time.Now().After(batch.deadline) {
-				err = RequestTimedOut
-			} else {
-				err = io.EOF
-			}
+			err = checkTimeoutErr(batch.deadline)
 			batch.err = err
 		}
 	default:
 		batch.err = err
 	}
 
+	return
+}
+
+func checkTimeoutErr(deadline time.Time) (err error) {
+	if !deadline.IsZero() && time.Now().After(deadline) {
+		err = RequestTimedOut
+	} else {
+		err = io.EOF
+	}
 	return
 }
