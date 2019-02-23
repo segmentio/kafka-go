@@ -10,26 +10,32 @@ import (
 	kafka "github.com/segmentio/kafka-go"
 )
 
-func main() {
-	fmt.Println("start producing ... !!")
-	kafkaURL := os.Getenv("kafkaURL")
-	topic := os.Getenv("topic")
-
-	w := kafka.NewWriter(kafka.WriterConfig{
+func getKafkaWriter(kafkaURL, topic string) *kafka.Writer {
+	return kafka.NewWriter(kafka.WriterConfig{
 		Brokers:  []string{kafkaURL},
 		Topic:    topic,
 		Balancer: &kafka.LeastBytes{},
 	})
-	i := 0
-	for {
-		i++
-		w.WriteMessages(context.Background(),
-			kafka.Message{
-				Key:   []byte(fmt.Sprintf("Key-%d", i)),
-				Value: []byte(fmt.Sprint(uuid.New())),
-			})
+}
+
+func main() {
+	// get kafka writer using environment variables.
+	kafkaURL := os.Getenv("kafkaURL")
+	topic := os.Getenv("topic")
+	writer := getKafkaWriter(kafkaURL, topic)
+
+	fmt.Println("start producing ... !!")
+	for i := 0; ; i++ {
+		msg := kafka.Message{
+			Key:   []byte(fmt.Sprintf("Key-%d", i)),
+			Value: []byte(fmt.Sprint(uuid.New())),
+		}
+		err := writer.WriteMessages(context.Background(), msg)
+		if err != nil {
+			fmt.Println(err)
+		}
 		time.Sleep(1 * time.Second)
 	}
 
-	w.Close()
+	writer.Close()
 }

@@ -10,47 +10,56 @@ import (
 	kafka "github.com/segmentio/kafka-go"
 )
 
-func main() {
-	mongoURL := os.Getenv("mongoURL")
+func getMongoCollection(mongoURL, dbName, collectionName string) *mongo.Collection {
 	client, err := mongo.Connect(context.Background(), mongoURL)
-
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Check the connection
 	err = client.Ping(context.Background(), nil)
-
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	fmt.Println("Connected to MongoDB ... !!")
 
-	dbName := os.Getenv("dbName")
-	collectionName := os.Getenv("collectionName")
-	collection := client.Database(dbName).Collection(collectionName)
+	db := client.Database(dbName)
+	collection := db.Collection(collectionName)
+	return collection
+}
 
-	fmt.Println("start consuming ... !!")
-	kafkaURL := os.Getenv("kafkaURL")
-	topic := os.Getenv("topic")
-	groupID := os.Getenv("groupID")
-
-	r := kafka.NewReader(kafka.ReaderConfig{
+func getKafkaReader(kafkaURL, topic, groupID string) *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  []string{kafkaURL},
 		GroupID:  groupID,
 		Topic:    topic,
 		MinBytes: 10e3, // 10KB
 		MaxBytes: 10e6, // 10MB
 	})
+}
+
+func main() {
+
+	// get Mongo db Collection using environment variables.
+	mongoURL := os.Getenv("mongoURL")
+	dbName := os.Getenv("dbName")
+	collectionName := os.Getenv("collectionName")
+	collection := getMongoCollection(mongoURL, dbName, collectionName)
+
+	// get kafka reader using environment variables.
+	kafkaURL := os.Getenv("kafkaURL")
+	topic := os.Getenv("topic")
+	groupID := os.Getenv("groupID")
+	reader := getKafkaReader(kafkaURL, topic, groupID)
+
+	fmt.Println("start consuming ... !!")
 
 	for {
-		msg, err := r.ReadMessage(context.Background())
+		msg, err := reader.ReadMessage(context.Background())
 		if err != nil {
-			fmt.Println(err)
-			break
+			log.Fatal(err)
 		}
-		// msg := Data{data: m}
 		insertResult, err := collection.InsertOne(context.Background(), msg)
 		if err != nil {
 			log.Fatal(err)
@@ -59,6 +68,5 @@ func main() {
 		fmt.Println("Inserted a single document: ", insertResult.InsertedID)
 	}
 
-	r.Close()
-
+	reader.Close()
 }
