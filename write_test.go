@@ -3,9 +3,8 @@ package kafka
 import (
 	"bufio"
 	"bytes"
-	//"context"
-	//	"fmt"
-	//"log"
+	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -191,10 +190,9 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*buf
 	}
 }
 
-/*
 func TestWriteV2RecordBatch(t *testing.T) {
 	topic := CreateTopic(t, 1)
-	msgs := make([]Message, 3)
+	msgs := make([]Message, 15)
 	for i := range msgs {
 		value := fmt.Sprintf("Sample message content: %d!", i)
 		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{Header{Key: "hk", Value: []byte("hv")}}}
@@ -202,7 +200,7 @@ func TestWriteV2RecordBatch(t *testing.T) {
 	w := NewWriter(WriterConfig{
 		Brokers:   []string{"localhost:9092"},
 		Topic:     topic,
-		BatchSize: 1,
+		BatchSize: 5,
 	})
 
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
@@ -213,14 +211,11 @@ func TestWriteV2RecordBatch(t *testing.T) {
 	w.Close()
 
 	r := NewReader(ReaderConfig{
-		Brokers: []string{"kafka:9092"},
+		Brokers: []string{"localhost:9092"},
 		Topic:   topic,
 	})
-	//defer r.Close()
+	defer r.Close()
 
-	log.Printf("Message written\n")
-
-	log.Printf("Reading message\n")
 	msg, err := r.ReadMessage(context.Background())
 	if err != nil {
 		t.Error("Failed to read message")
@@ -235,7 +230,4 @@ func TestWriteV2RecordBatch(t *testing.T) {
 		t.Error("Received message header's key doesn't match")
 		return
 	}
-	log.Printf("Test passed")
-	//r.Close()
 }
-*/
