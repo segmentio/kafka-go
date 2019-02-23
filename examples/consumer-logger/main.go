@@ -3,18 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	kafka "github.com/segmentio/kafka-go"
 )
 
 func main() {
 	fmt.Println("start consuming ... !!")
+	kafkaURL := os.Getenv("kafkaURL")
+	topic := os.Getenv("topic")
+	groupID := os.Getenv("groupID")
 
-	topic := "topic1"
-	// make a new reader that consumes from topic1
 	r := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  []string{"kafka:9092"},
-		GroupID:  "consumer-group-id",
+		Brokers:  []string{kafkaURL},
+		GroupID:  groupID,
 		Topic:    topic,
 		MinBytes: 10e3, // 10KB
 		MaxBytes: 10e6, // 10MB
