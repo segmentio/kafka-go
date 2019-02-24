@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -78,7 +77,7 @@ type WriterConfig struct {
 	// a partition.
 	//
 	// The default is to use a kafka default value of 1048576.
-	MaxMessageBytes int
+	BatchBytes int
 
 	// Time limit on how often incomplete message batches will be flushed to
 	// kafka.
@@ -139,12 +138,12 @@ type WriterStats struct {
 	Rebalances int64 `metric:"kafka.writer.rebalance.count" type:"counter"`
 	Errors     int64 `metric:"kafka.writer.error.count"     type:"counter"`
 
-	DialTime       DurationStats `metric:"kafka.writer.dial.seconds"`
-	WriteTime      DurationStats `metric:"kafka.writer.write.seconds"`
-	WaitTime       DurationStats `metric:"kafka.writer.wait.seconds"`
-	Retries        SummaryStats  `metric:"kafka.writer.retries.count"`
-	BatchSize      SummaryStats  `metric:"kafka.writer.batch.size"`
-	BatchSizeBytes SummaryStats  `metric:"kafka.writer.batch.size.bytes"`
+	DialTime   DurationStats `metric:"kafka.writer.dial.seconds"`
+	WriteTime  DurationStats `metric:"kafka.writer.write.seconds"`
+	WaitTime   DurationStats `metric:"kafka.writer.wait.seconds"`
+	Retries    SummaryStats  `metric:"kafka.writer.retries.count"`
+	BatchSize  SummaryStats  `metric:"kafka.writer.batch.size"`
+	BatchBytes SummaryStats  `metric:"kafka.writer.batch.bytes"`
 
 	MaxAttempts       int64         `metric:"kafka.writer.attempts.max"       type:"gauge"`
 	MaxBatchSize      int64         `metric:"kafka.writer.batch.max"          type:"gauge"`
@@ -217,9 +216,9 @@ func NewWriter(config WriterConfig) *Writer {
 		config.BatchSize = 100
 	}
 
-	if config.MaxMessageBytes == 0 {
+	if config.BatchBytes == 0 {
 		// 1048576 == 1MB which is the Kafka default.
-		config.MaxMessageBytes = 1048576
+		config.BatchBytes = 1048576
 	}
 
 	if config.BatchTimeout == 0 {
@@ -289,10 +288,10 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		for _, msg := range msgs {
-			if int(msg.message().size()) > w.config.MaxMessageBytes {
-				err := errors.New(fmt.Sprintf("The message is %d bytes "+
+			if int(msg.message().size()) > w.config.BatchBytes {
+				err := fmt.Errorf("The message is %d bytes "+
 					"when serialized which is larger than the maximum request size you "+
-					"have configured with the %v configuration.", msg.message().size(), w.config.MaxMessageBytes))
+					"have configured with the %v configuration.", msg.message().size(), w.config.BatchBytes)
 				w.mutex.RUnlock()
 				return err
 			}
@@ -381,7 +380,7 @@ func (w *Writer) Stats() WriterStats {
 		WaitTime:          w.stats.waitTime.snapshotDuration(),
 		Retries:           w.stats.retries.snapshot(),
 		BatchSize:         w.stats.batchSize.snapshot(),
-		BatchSizeBytes:    w.stats.batchSizeBytes.snapshot(),
+		BatchBytes:        w.stats.batchSizeBytes.snapshot(),
 		MaxAttempts:       int64(w.config.MaxAttempts),
 		MaxBatchSize:      int64(w.config.BatchSize),
 		BatchTimeout:      w.config.BatchTimeout,
@@ -551,7 +550,7 @@ func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
 		partition:       partition,
 		requiredAcks:    config.RequiredAcks,
 		batchSize:       config.BatchSize,
-		maxMessageBytes: config.MaxMessageBytes,
+		maxMessageBytes: config.BatchBytes,
 		batchTimeout:    config.BatchTimeout,
 		writeTimeout:    config.WriteTimeout,
 		dialer:          config.Dialer,
@@ -599,7 +598,7 @@ func (w *writer) run() {
 	var done bool
 	var batch = make([]Message, 0, w.batchSize)
 	var resch = make([](chan<- error), 0, w.batchSize)
-	var lstMsg *writerMessage
+	var lastMsg writerMessage
 	var lastFlushAt = time.Now()
 	var batchSizeBytes int
 
@@ -613,11 +612,11 @@ func (w *writer) run() {
 		var mustFlush bool
 		// lstMsg gets set when the next message would put the maxMessageBytes  over the limit.
 		// If a lstMsg exists we need to add it to the batch so we don't lose it.
-		if lstMsg != nil {
-			batch = append(batch, lstMsg.msg)
-			resch = append(resch, lstMsg.res)
-			batchSizeBytes += int(lstMsg.msg.message().size())
-			lstMsg = nil
+		if len(lastMsg.msg.Value) != 0 {
+			batch = append(batch, lastMsg.msg)
+			resch = append(resch, lastMsg.res)
+			batchSizeBytes += int(lastMsg.msg.message().size())
+			lastMsg = writerMessage{}
 		}
 		select {
 		case wm, ok := <-w.msgs:
@@ -628,7 +627,7 @@ func (w *writer) run() {
 					// If the size of the current message puts us over the maxMessageBytes limit,
 					// store the message but don't send it in this batch.
 					mustFlush = true
-					lstMsg = &wm
+					lastMsg = wm
 					break
 				}
 				batch = append(batch, wm.msg)
@@ -648,7 +647,6 @@ func (w *writer) run() {
 			if len(batch) == 0 {
 				continue
 			}
-
 			var err error
 			if conn, err = w.write(conn, batch, resch); err != nil {
 				if conn != nil {
@@ -664,7 +662,6 @@ func (w *writer) run() {
 			for i := range resch {
 				resch[i] = nil
 			}
-
 			batch = batch[:0]
 			resch = resch[:0]
 			batchSizeBytes = 0
@@ -703,7 +700,6 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 
 	t0 := time.Now()
 	conn.SetWriteDeadline(time.Now().Add(w.writeTimeout))
-
 	if _, err = conn.WriteCompressedMessages(w.codec, batch...); err != nil {
 		w.stats.errors.observe(1)
 		w.withErrorLogger(func(logger *log.Logger) {
@@ -721,7 +717,6 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 			res <- nil
 		}
 	}
-
 	t1 := time.Now()
 	w.stats.waitTime.observeDuration(t1.Sub(t0))
 	w.stats.batchSize.observe(int64(len(batch)))

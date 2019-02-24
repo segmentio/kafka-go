@@ -37,11 +37,15 @@ func TestWriter(t *testing.T) {
 		},
 		{
 			scenario: "writing a batch of message based on batch byte size",
-			function: testWrtierBatchBytes,
+			function: testWriterBatchBytes,
 		},
 		{
 			scenario: "writing a batch of messages",
-			function: testWrtierBatchSize,
+			function: testWriterBatchSize,
+		},
+		{
+			scenario: "writing messsages with a small batch byte size",
+			function: testWriterSmallBatchBytes,
 		},
 	}
 
@@ -169,8 +173,8 @@ func testWriterMaxBytes(t *testing.T) {
 
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
-		Topic:           topic,
-		MaxMessageBytes: 25,
+		Topic:      topic,
+		BatchBytes: 25,
 	})
 	defer w.Close()
 
@@ -234,7 +238,9 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 	}
 }
 
-func testWrtierBatchBytes(t *testing.T) {
+func testWriterBatchBytes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	const topic = "test-writer-1-bytes"
 
 	createTopic(t, topic, 1)
@@ -244,14 +250,14 @@ func testWrtierBatchBytes(t *testing.T) {
 	}
 
 	w := newTestWriter(WriterConfig{
-		Topic:           topic,
-		MaxMessageBytes: 48,
-		BatchTimeout:    math.MaxInt32 * time.Second,
-		Balancer:        &RoundRobin{},
+		Topic:        topic,
+		BatchBytes:   48,
+		BatchTimeout: math.MaxInt32 * time.Second,
+		Balancer:     &RoundRobin{},
 	})
 	defer w.Close()
 
-	if err := w.WriteMessages(context.Background(), []Message{
+	if err := w.WriteMessages(ctx, []Message{
 		Message{Value: []byte("Hi")}, // 24 Bytes
 		Message{Value: []byte("By")}, // 24 Bytes
 	}...); err != nil {
@@ -283,7 +289,9 @@ func testWrtierBatchBytes(t *testing.T) {
 	}
 }
 
-func testWrtierBatchSize(t *testing.T) {
+func testWriterBatchSize(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	const topic = "test-writer-1-batch"
 
 	createTopic(t, topic, 1)
@@ -300,7 +308,7 @@ func testWrtierBatchSize(t *testing.T) {
 	})
 	defer w.Close()
 
-	if err := w.WriteMessages(context.Background(), []Message{
+	if err := w.WriteMessages(ctx, []Message{
 		Message{Value: []byte("Hi")}, // 24 Bytes
 		Message{Value: []byte("By")}, // 24 Bytes
 	}...); err != nil {
@@ -309,6 +317,57 @@ func testWrtierBatchSize(t *testing.T) {
 	}
 
 	if w.Stats().Writes > 1 {
+		t.Error("didn't batch messages")
+		return
+	}
+	msgs, err := readPartition(topic, 0, offset)
+
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+
+	if len(msgs) != 2 {
+		t.Error("bad messages in partition", msgs)
+		return
+	}
+
+	for _, m := range msgs {
+		if string(m.Value) == "Hi" || string(m.Value) == "By" {
+			continue
+		}
+		t.Error("bad messages in partition", msgs)
+	}
+}
+
+func testWriterSmallBatchBytes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const topic = "test-writer-1-sbytes"
+
+	createTopic(t, topic, 1)
+	offset, err := readOffset(topic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newTestWriter(WriterConfig{
+		Topic:        topic,
+		BatchBytes:   25,
+		BatchTimeout: 500 * time.Millisecond,
+		Balancer:     &RoundRobin{},
+	})
+	defer w.Close()
+
+	if err := w.WriteMessages(ctx, []Message{
+		Message{Value: []byte("Hi")}, // 24 Bytes
+		Message{Value: []byte("By")}, // 24 Bytes
+	}...); err != nil {
+		t.Error(err)
+		return
+	}
+	if w.Stats().Writes != 2 {
 		t.Error("didn't batch messages")
 		return
 	}
