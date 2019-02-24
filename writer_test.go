@@ -169,7 +169,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 }
 
 func testWriterMaxBytes(t *testing.T) {
-	const topic = "test-writer-2"
+	topic := makeTopic()
 
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
@@ -292,8 +292,8 @@ func testWriterBatchBytes(t *testing.T) {
 func testWriterBatchSize(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	const topic = "test-writer-1-batch"
 
+	topic := makeTopic()
 	createTopic(t, topic, 1)
 	offset, err := readOffset(topic, 0)
 	if err != nil {
@@ -344,8 +344,7 @@ func testWriterSmallBatchBytes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	const topic = "test-writer-1-sbytes"
-
+	topic := makeTopic()
 	createTopic(t, topic, 1)
 	offset, err := readOffset(topic, 0)
 	if err != nil {
