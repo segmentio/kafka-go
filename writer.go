@@ -276,12 +276,12 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 	var res = make(chan error, len(msgs))
 	var err error
-
+	skippedMsgs := 0
 	t0 := time.Now()
 
 	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
 		w.mutex.RLock()
-
+		skippedMsgs = 0
 		if w.closed {
 			w.mutex.RUnlock()
 			return io.ErrClosedPipe
@@ -289,11 +289,15 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 		for _, msg := range msgs {
 			if int(msg.message().size()) > w.config.BatchBytes {
-				err := fmt.Errorf("The message is %d bytes "+
-					"when serialized which is larger than the maximum request size you "+
-					"have configured with the %v configuration.", msg.message().size(), w.config.BatchBytes)
-				w.mutex.RUnlock()
-				return err
+				if w.config.ErrorLogger != nil {
+					w.config.ErrorLogger.Printf("The message is %d bytes "+
+						"when serialized which is larger than the maximum request size you "+
+						"have configured with the %v configuration.", msg.message().size(), w.config.BatchBytes)
+				}
+				w.stats.errors.observe(1)
+				//Don't watch for errors from this msg, as it's never sent.
+				skippedMsgs++
+				continue
 			}
 			select {
 			case w.msgs <- writerMessage{
@@ -314,7 +318,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 		var retry []Message
 
-		for i := 0; i != len(msgs); i++ {
+		for i := 0; i != len(msgs)-skippedMsgs; i++ {
 			select {
 			case e := <-res:
 				if e != nil {

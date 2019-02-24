@@ -142,8 +142,9 @@ func (f *fakeWriter) close() {
 }
 
 func testWriterMaxAttemptsErr(t *testing.T) {
-	const topic = "test-writer-2"
-
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	topic := makeTopic()
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
 		Topic:       topic,
@@ -155,7 +156,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 	})
 	defer w.Close()
 
-	if err := w.WriteMessages(context.Background(), Message{
+	if err := w.WriteMessages(ctx, Message{
 		Value: []byte("Hello World!"),
 	}); err == nil {
 		t.Error("expected error")
@@ -169,34 +170,33 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 }
 
 func testWriterMaxBytes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	topic := makeTopic()
-
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
 		Topic:      topic,
+		BatchSize:  1,
 		BatchBytes: 25,
 	})
 	defer w.Close()
 
-	if err := w.WriteMessages(context.Background(), Message{
+	if err := w.WriteMessages(ctx, Message{
 		Value: []byte("Hi"),
 	}); err != nil {
 		t.Error(err)
 		return
 	}
-
-	if err := w.WriteMessages(context.Background(), Message{
+	if err := w.WriteMessages(ctx, Message{
 		Value: []byte("Hello World!"),
-	}); err == nil {
-		t.Error("expected error")
+	}); err != nil {
+		t.Error("got error when not expecting one: ", err)
 		return
-	} else if err != nil {
-		if !strings.Contains(err.Error(), "larger than the maximum request") {
-			t.Errorf("unexpected error: %s", err)
-			return
-		}
 	}
-
+	if w.Stats().Errors < 1 {
+		t.Error("exepecting error count to be at least 1 due to max message bytes")
+	}
+	return
 }
 
 func readOffset(topic string, partition int) (offset int64, err error) {
