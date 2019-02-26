@@ -30,6 +30,12 @@ APIs for interacting with Kafka, mirroring concepts and implementing interfaces 
 the Go standard library to make it easy to use and integrate with existing
 software.
 
+## Supported Kafka versions
+
+`kafka-go` is currently supporting Kafka versions from 0.10.1.0 to 2.1.0. While latest versions are supported
+some features available from the Kafka API may not be implemented yet.
+
+
 ## Connection [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Conn)
 
 The `Conn` type is the core of the `kafka-go` package. It wraps around a raw
