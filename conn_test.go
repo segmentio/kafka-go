@@ -980,6 +980,23 @@ func testBrokers(t *testing.T, conn *Conn) {
 	}
 }
 
+func TestUnsupportedSASLMechanism(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := (&Dialer{
+		Resolver: &net.Resolver{},
+	}).DialContext(ctx, "tcp", "127.0.0.1:9093")
+	if err != nil {
+		t.Fatal("failed to open a new kafka connection:", err)
+	}
+	defer conn.Close()
+
+	if err := conn.saslHandshake("FOO"); err != UnsupportedSASLMechanism {
+		t.Errorf("Expected UnsupportedSASLMechanism but got %v", err)
+	}
+}
+
 const benchmarkMessageCount = 100
 
 func BenchmarkConn(b *testing.B) {
