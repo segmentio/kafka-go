@@ -190,8 +190,7 @@ func testReaderSetOffsetWithTimeStamp(t *testing.T, ctx context.Context, r *Read
 		}
 	}
 
-	setCtx, _ := context.WithDeadline(context.Background(), time.Now().Add(time.Second*5))
-	err := r.SetOffsetWithTimestamp(setCtx, ts)
+	err := r.SetOffsetWithTimestamp(ctx, ts)
 	if err != nil {
 		t.Fatal("error setting offset by timestamp", err)
 	}
