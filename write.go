@@ -170,7 +170,7 @@ func writeFetchRequestV2(w *bufio.Writer, correlationID int32, clientID, topic s
 	return w.Flush()
 }
 
-func writeFetchRequestV5(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration) error {
+func writeFetchRequestV5(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration, isolationLevel int8) error {
 	h := requestHeader{
 		ApiKey:        int16(fetchRequest),
 		ApiVersion:    int16(v5),
@@ -196,7 +196,7 @@ func writeFetchRequestV5(w *bufio.Writer, correlationID int32, clientID, topic s
 	writeInt32(w, milliseconds(maxWait))
 	writeInt32(w, int32(minBytes))
 	writeInt32(w, int32(maxBytes))
-	writeInt8(w, int8(0)) // isolation level 0 - read uncommitted
+	writeInt8(w, isolationLevel) // isolation level 0 - read uncommitted
 
 	// topic array
 	writeArrayLen(w, 1)

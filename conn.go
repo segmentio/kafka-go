@@ -83,9 +83,17 @@ type ConnConfig struct {
 }
 
 type BatchReadConfig struct {
-	MinBytes int
-	MaxBytes int
+	MinBytes       int
+	MaxBytes       int
+	IsolationLevel IsolationLevel
 }
+
+type IsolationLevel int8
+
+const (
+	READ_UNCOMMITTED IsolationLevel = 0
+	READ_COMMITTED   IsolationLevel = 1
+)
 
 var (
 	// DefaultClientID is the default value used as ClientID of kafka
@@ -706,6 +714,7 @@ func (c *Conn) ReadBatchWithConfig(cfg BatchReadConfig) *Batch {
 				cfg.MinBytes,
 				cfg.MaxBytes+int(c.fetchMinSize),
 				deadlineToTimeout(deadline, now),
+				int8(cfg.IsolationLevel),
 			)
 		default:
 			return writeFetchRequestV2(
