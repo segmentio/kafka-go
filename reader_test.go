@@ -39,6 +39,11 @@ func TestReader(t *testing.T) {
 		},
 
 		{
+			scenario: "setting the offset by TimeStamp",
+			function: testReaderSetOffsetWithTimeStamp,
+		},
+
+		{
 			scenario: "calling Lag returns the lag of the last message read from kafka",
 			function: testReaderLag,
 		},
@@ -161,6 +166,46 @@ func testReaderSetRandomOffset(t *testing.T, ctx context.Context, r *Reader) {
 			return
 		}
 	}
+}
+
+func testReaderSetOffsetWithTimeStamp(t *testing.T, ctx context.Context, r *Reader) {
+	// We make 2 batches of messages here with a brief 2 second pause
+	// to ensure messages 0...9 will be written a few seconds before messages 10...19
+	// We'll then fetch the timestamp for message offset 10 and use that timestamp to set
+	// our reader
+	const N = 10
+	prepareReader(t, ctx, r, makeTestSequence(N)...)
+	time.Sleep(time.Second * 2)
+	prepareReader(t, ctx, r, makeTestSequence(N)...)
+
+	var ts time.Time
+	for i := 0; i < N*2; i++ {
+		m, err := r.ReadMessage(ctx)
+		if err != nil {
+			t.Error("error reading message", err)
+		}
+
+		// grab the time for the 10th message
+		if i == 10 {
+			ts = m.Time
+		}
+	}
+
+	setCtx, _ := context.WithDeadline(context.Background(), time.Now().Add(time.Second*5))
+	err := r.SetOffsetWithTimestamp(setCtx, ts)
+	if err != nil {
+		t.Fatal("error setting offset by timestamp", err)
+	}
+
+	m, err := r.ReadMessage(context.Background())
+	if err != nil {
+		t.Fatal("error reading message", err)
+	}
+
+	if m.Offset != 10 {
+		t.Errorf("expected offset of 10, received offset %d", m.Offset)
+	}
+
 }
 
 func testReaderLag(t *testing.T, ctx context.Context, r *Reader) {
@@ -1137,9 +1182,10 @@ func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx contex
 
 // Build a struct to implement the ReadPartitions interface.
 type MockConnWatcher struct {
-	count int
+	count      int
 	partitions [][]Partition
 }
+
 func (m *MockConnWatcher) ReadPartitions(topics ...string) (partitions []Partition, err error) {
 	partitions = m.partitions[m.count]
 	// cap the count at len(partitions) -1 so ReadPartitions doesn't even go out of bounds
@@ -1182,11 +1228,10 @@ func testReaderConsumerGroupRebalanceOnPartitionAdd(t *testing.T, ctx context.Co
 	r.config.PartitionWatchInterval = watchTime
 	rg.Go(r.partitionWatcher(conn))
 	rg.Wait()
-	if time.Now().Sub(now).Seconds() > r.config.PartitionWatchInterval.Seconds() * 4 {
+	if time.Now().Sub(now).Seconds() > r.config.PartitionWatchInterval.Seconds()*4 {
 		t.Error("partitionWatcher didn't see update")
 	}
 }
-
 
 func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Reader) {
 	r2 := NewReader(r.config)

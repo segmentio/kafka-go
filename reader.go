@@ -1488,25 +1488,33 @@ func (r *Reader) SetOffset(offset int64) error {
 //
 // The method fails if the unable to connect to the coordinator, or unable to read the offset
 // given the ts, or if the reader has been closed.
-func (r *Reader) SetOffsetWithTimestamp(t time.Time) error {
+func (r *Reader) SetOffsetWithTimestamp(ctx context.Context, t time.Time) error {
 	r.mutex.Lock()
-	defer r.mutex.Unlock()
 
 	if r.closed {
+		r.mutex.Unlock()
 		return io.ErrClosedPipe
 	}
 
-	conn, err := r.coordinator()
-	if err != nil {
-		return err
+	r.mutex.Unlock()
+
+	for _, broker := range r.config.Brokers {
+		conn, err := r.config.Dialer.DialLeader(ctx, "tcp", broker, r.config.Topic, r.config.Partition)
+		if err != nil {
+			continue
+		}
+
+		deadline, _ := ctx.Deadline()
+		conn.SetDeadline(deadline)
+		offset, err := conn.ReadOffset(t)
+		if err != nil {
+			return err
+		}
+
+		return r.SetOffset(offset)
 	}
 
-	offset, err := conn.ReadOffset(t)
-	if err != nil {
-		return err
-	}
-
-	return r.SetOffset(offset)
+	return fmt.Errorf("error setting offset for timestamp %+v", t)
 }
 
 // Stats returns a snapshot of the reader stats since the last time the method
