@@ -82,6 +82,11 @@ type ConnConfig struct {
 	Partition int
 }
 
+type BatchReadConfig struct {
+	MinBytes int
+	MaxBytes int
+}
+
 var (
 	// DefaultClientID is the default value used as ClientID of kafka
 	// connections.
@@ -658,17 +663,26 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // gives the minimum and maximum number of bytes that it wants to receive from
 // the kafka server.
 func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
+	cfg := BatchReadConfig{
+		MinBytes: minBytes,
+		MaxBytes: maxBytes,
+	}
+	return c.ReadBatchWithConfig(cfg)
+}
+
+func (c *Conn) ReadBatchWithConfig(cfg BatchReadConfig) *Batch {
+
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
 
-	if minBytes < 0 || minBytes > maxFetch {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", minBytes, maxFetch)}
+	if cfg.MinBytes < 0 || cfg.MinBytes > maxFetch {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", cfg.MinBytes, maxFetch)}
 	}
-	if maxBytes < 0 || maxBytes > maxFetch {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", maxBytes, maxFetch)}
+	if cfg.MaxBytes < 0 || cfg.MaxBytes > maxFetch {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", cfg.MaxBytes, maxFetch)}
 	}
-	if minBytes > maxBytes {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", minBytes, maxBytes)}
+	if cfg.MinBytes > cfg.MaxBytes {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", cfg.MinBytes, cfg.MaxBytes)}
 	}
 
 	offset, err := c.Seek(c.Offset())
@@ -689,8 +703,8 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 				c.topic,
 				c.partition,
 				offset,
-				minBytes,
-				maxBytes+int(c.fetchMinSize),
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
 				deadlineToTimeout(deadline, now),
 			)
 		default:
@@ -701,8 +715,8 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 				c.topic,
 				c.partition,
 				offset,
-				minBytes,
-				maxBytes+int(c.fetchMinSize),
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
 				deadlineToTimeout(deadline, now),
 			)
 		}
