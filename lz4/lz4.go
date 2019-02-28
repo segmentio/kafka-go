@@ -2,21 +2,36 @@ package lz4
 
 import (
 	"bytes"
+	"io/ioutil"
+	"sync"
 
 	"github.com/pierrec/lz4"
-	kafka "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go"
+)
+
+var (
+	readerPool sync.Pool
+	writerPool sync.Pool
 )
 
 func init() {
+	readerPool = sync.Pool{
+		New: func() interface{} {
+			return lz4.NewReader(nil)
+		},
+	}
+	writerPool = sync.Pool{
+		New: func() interface{} {
+			return lz4.NewWriter(nil)
+		},
+	}
+
 	kafka.RegisterCompressionCodec(func() kafka.CompressionCodec {
 		return NewCompressionCodec()
 	})
 }
 
-type CompressionCodec struct {
-	writer *lz4.Writer
-	reader *lz4.Reader
-}
+type CompressionCodec struct{}
 
 const Code = 3
 
@@ -30,47 +45,37 @@ func (c CompressionCodec) Code() int8 {
 }
 
 // Encode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Encode(dst, src []byte) (int, error) {
-	buf := buffer{data: dst}
-	if c.writer == nil {
-		c.writer = lz4.NewWriter(&buf)
-	} else {
-		c.writer.Reset(&buf)
-	}
+func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
+	buf := bytes.Buffer{}
+	buf.Grow(len(src)) // guess a size to avoid repeat allocations.
+	writer := writerPool.Get().(*lz4.Writer)
+	writer.Reset(&buf)
 
-	_, err := c.writer.Write(src)
+	_, err := writer.Write(src)
 	if err != nil {
-		return 0, err
+		// don't return writer to pool on error.
+		return nil, err
 	}
 
-	err = c.writer.Close()
+	err = writer.Close()
 	if err != nil {
-		return 0, err
+		// don't return writer to pool on error.
+		return nil, err
 	}
 
-	return buf.size, err
+	writerPool.Put(writer)
+
+	return buf.Bytes(), err
 }
 
 // Decode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Decode(dst, src []byte) (int, error) {
-	if c.reader == nil {
-		c.reader = lz4.NewReader(bytes.NewReader(src))
-	} else {
-		c.reader.Reset(bytes.NewReader(src))
+func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
+	reader := readerPool.Get().(*lz4.Reader)
+	reader.Reset(bytes.NewReader(src))
+	res, err := ioutil.ReadAll(reader)
+	// only return the reader to pool if the read was a success.
+	if err == nil {
+		readerPool.Put(reader)
 	}
-	return c.reader.Read(dst)
-}
-
-type buffer struct {
-	data []byte
-	size int
-}
-
-func (buf *buffer) Write(b []byte) (int, error) {
-	n := copy(buf.data[buf.size:], b)
-	buf.size += n
-	if n != len(b) {
-		return n, bytes.ErrTooLarge
-	}
-	return n, nil
+	return res, err
 }

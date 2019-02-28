@@ -29,6 +29,11 @@ func TestReader(t *testing.T) {
 		},
 
 		{
+			scenario: "test special offsets -1 and -2",
+			function: testReaderSetSpecialOffsets,
+		},
+
+		{
 			scenario: "setting the offset to random values returns the expected messages when Read is called",
 			function: testReaderSetRandomOffset,
 		},
@@ -101,6 +106,39 @@ func testReaderReadMessages(t *testing.T, ctx context.Context, r *Reader) {
 		if v != i {
 			t.Error("message at index", i, "has wrong value:", v)
 			return
+		}
+	}
+}
+
+func testReaderSetSpecialOffsets(t *testing.T, ctx context.Context, r *Reader) {
+	prepareReader(t, ctx, r, Message{Value: []byte("first")})
+	prepareReader(t, ctx, r, makeTestSequence(3)...)
+
+	go func() {
+		time.Sleep(1 * time.Second)
+		prepareReader(t, ctx, r, Message{Value: []byte("last")})
+	}()
+
+	for _, test := range []struct {
+		off, final int64
+		want       string
+	}{
+		{FirstOffset, 1, "first"},
+		{LastOffset, 5, "last"},
+	} {
+		offset := test.off
+		if err := r.SetOffset(offset); err != nil {
+			t.Error("setting offset", offset, "failed:", err)
+		}
+		m, err := r.ReadMessage(ctx)
+		if err != nil {
+			t.Error("reading at offset", offset, "failed:", err)
+		}
+		if string(m.Value) != test.want {
+			t.Error("message at offset", offset, "has wrong value:", string(m.Value))
+		}
+		if off := r.Offset(); off != test.final {
+			t.Errorf("bad final offset: got %d, want %d", off, test.final)
 		}
 	}
 }
@@ -182,6 +220,13 @@ func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
 		bytes += int64(len(m.Key) + len(m.Value))
 	}
 
+	// there's a possible go routine scheduling order whereby the stats have not
+	// been fully updated yet and the following assertions would fail if we
+	// retrieved stats immediately.  the issue rarely happens locally but
+	// happens with some degree of regularity in CI.  we don't have a way
+	// to ensure stats are updated, so approximating it with a sleep. :|
+	time.Sleep(10 * time.Millisecond)
+
 	stats := r.Stats()
 
 	// First verify that metrics with unpredictable values are not zero.
@@ -222,6 +267,9 @@ func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
 		ClientID:      "",
 		Topic:         stats.Topic,
 		Partition:     "0",
+
+		// TODO: remove when we get rid of the deprecated field.
+		DeprecatedFetchesWithTypo: 1,
 	}
 
 	if stats != expect {
@@ -264,8 +312,8 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	}
 	defer conn.Close()
 
-	_, err = conn.createTopics(createTopicsRequestV2{
-		Topics: []createTopicsRequestV2Topic{
+	_, err = conn.createTopics(createTopicsRequestV0{
+		Topics: []createTopicsRequestV0Topic{
 			{
 				Topic:             topic,
 				NumPartitions:     int32(partitions),
@@ -345,6 +393,38 @@ func testReaderSetsTopicAndPartition(t *testing.T, ctx context.Context, r *Reade
 		if m.Partition != r.config.Partition {
 			t.Errorf("expected partition to be set; expected 1, got %v", m.Partition)
 			return
+		}
+	}
+}
+
+// TestReadTruncatedMessages uses a configuration designed to get the Broker to
+// return truncated messages.  It exercises the case where an earlier bug caused
+// reading to time out by attempting to read beyond the current response.  This
+// test is not perfect, but it is pretty reliable about reproducing the issue.
+//
+// NOTE : it currently only succeeds against kafka 0.10.1.0, so it will be
+// skipped.  It's here so that it can be manually run.
+func TestReadTruncatedMessages(t *testing.T) {
+	// todo : it would be great to get it to work against 0.11.0.0 so we could
+	//        include it in CI unit tests.
+	t.Skip()
+
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r := NewReader(ReaderConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    makeTopic(),
+		MinBytes: 1,
+		MaxBytes: 100,
+		MaxWait:  100 * time.Millisecond,
+	})
+	defer r.Close()
+	n := 500
+	prepareReader(t, ctx, r, makeTestSequence(n)...)
+	for i := 0; i < n; i++ {
+		if _, err := r.ReadMessage(ctx); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
@@ -436,6 +516,63 @@ func BenchmarkReader(b *testing.B) {
 	b.SetBytes(int64(len(benchmarkReaderPayload)))
 }
 
+func TestCloseLeavesGroup(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	r := NewReader(ReaderConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    topic,
+		GroupID:  makeGroupID(),
+		MinBytes: 1,
+		MaxBytes: 10e6,
+		MaxWait:  100 * time.Millisecond,
+	})
+	prepareReader(t, ctx, r)
+	groupID := r.Config().GroupID
+
+	// wait for generationID > 0 so we know our reader has joined the group
+	membershipTimer := time.After(5 * time.Second)
+	for {
+		done := false
+		select {
+		case <-membershipTimer:
+			t.Fatalf("our reader never joind its group")
+		default:
+			generationID, _ := r.membership()
+			if generationID > 0 {
+				done = true
+			}
+		}
+		if done {
+			break
+		}
+	}
+
+	err := r.Close()
+	if err != nil {
+		t.Fatalf("unexpected error closing reader: %s", err.Error())
+	}
+
+	conn, err := Dial("tcp", "localhost:9092")
+	if err != nil {
+		t.Fatalf("error dialing: %v", err)
+	}
+	resp, err := conn.describeGroups(describeGroupsRequestV0{
+		GroupIDs: []string{groupID},
+	})
+	if err != nil {
+		t.Fatalf("error from describeGroups %v", err)
+	}
+	if len(resp.Groups) != 1 {
+		t.Fatalf("expected 1 group. got: %d", len(resp.Groups))
+	}
+	if len(resp.Groups[0].Members) != 0 {
+		t.Fatalf("expected group membership size of %d, but got %d", 0, len(resp.Groups[0].Members))
+	}
+}
+
 func TestConsumerGroup(t *testing.T) {
 	t.Parallel()
 
@@ -505,7 +642,7 @@ func testConsumerGroupSimple(t *testing.T, ctx context.Context, r *Reader) {
 
 func TestReaderSetOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if err := r.SetOffset(-1); err != errNotAvailableWithGroup {
+	if err := r.SetOffset(LastOffset); err != errNotAvailableWithGroup {
 		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
 	}
 }
@@ -546,45 +683,60 @@ func TestReaderPartitionWhenConsumerGroupsEnabled(t *testing.T) {
 }
 
 func TestExtractTopics(t *testing.T) {
-	newMeta := func(memberID string, topics ...string) memberGroupMetadata {
-		return memberGroupMetadata{
-			MemberID: memberID,
-			Metadata: groupMetadata{
-				Topics: topics,
-			},
-		}
-	}
-
 	testCases := map[string]struct {
-		Members []memberGroupMetadata
+		Members []GroupMember
 		Topics  []string
 	}{
 		"nil": {},
 		"single member, single topic": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic"},
+				},
 			},
 			Topics: []string{"topic"},
 		},
 		"two members, single topic": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic"),
-				newMeta("b", "topic"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic"},
+				},
 			},
 			Topics: []string{"topic"},
 		},
 		"two members, two topics": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1"),
-				newMeta("b", "topic-2"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic-2"},
+				},
 			},
 			Topics: []string{"topic-1", "topic-2"},
 		},
 		"three members, three shared topics": {
-			Members: []memberGroupMetadata{
-				newMeta("a", "topic-1", "topic-2"),
-				newMeta("b", "topic-2", "topic-3"),
-				newMeta("c", "topic-3", "topic-1"),
+			Members: []GroupMember{
+				{
+					ID:     "a",
+					Topics: []string{"topic-1", "topic-2"},
+				},
+				{
+					ID:     "b",
+					Topics: []string{"topic-2", "topic-3"},
+				},
+				{
+					ID:     "c",
+					Topics: []string{"topic-3", "topic-1"},
+				},
 			},
 			Topics: []string{"topic-1", "topic-2", "topic-3"},
 		},
@@ -622,13 +774,13 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 		},
 	}
 
-	newJoinGroupResponseV2 := func(topicsByMemberID map[string][]string) joinGroupResponseV2 {
-		resp := joinGroupResponseV2{
-			GroupProtocol: roundrobinStrategy{}.ProtocolName(),
+	newJoinGroupResponseV1 := func(topicsByMemberID map[string][]string) joinGroupResponseV1 {
+		resp := joinGroupResponseV1{
+			GroupProtocol: RoundRobinGroupBalancer{}.ProtocolName(),
 		}
 
 		for memberID, topics := range topicsByMemberID {
-			resp.Members = append(resp.Members, joinGroupResponseMemberV2{
+			resp.Members = append(resp.Members, joinGroupResponseMemberV1{
 				MemberID: memberID,
 				MemberMetadata: groupMetadata{
 					Topics: topics,
@@ -640,58 +792,58 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		Members     joinGroupResponseV2
-		Assignments memberGroupAssignments
+		Members     joinGroupResponseV1
+		Assignments GroupMemberAssignments
 	}{
 		"nil": {
-			Members:     newJoinGroupResponseV2(nil),
-			Assignments: memberGroupAssignments{},
+			Members:     newJoinGroupResponseV1(nil),
+			Assignments: GroupMemberAssignments{},
 		},
 		"one member, one topic": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: GroupMemberAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
 			},
 		},
 		"one member, two topics": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1", "topic-2"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: GroupMemberAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 					"topic-2": {0},
 				},
 			},
 		},
 		"two members, one topic": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-1"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: GroupMemberAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 2},
 				},
-				"member-2": map[string][]int32{
+				"member-2": map[string][]int{
 					"topic-1": {1},
 				},
 			},
 		},
 		"two members, two unshared topics": {
-			Members: newJoinGroupResponseV2(map[string][]string{
+			Members: newJoinGroupResponseV1(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-2"},
 			}),
-			Assignments: memberGroupAssignments{
-				"member-1": map[string][]int32{
+			Assignments: GroupMemberAssignments{
+				"member-1": map[string][]int{
 					"topic-1": {0, 1, 2},
 				},
-				"member-2": map[string][]int32{
+				"member-2": map[string][]int{
 					"topic-2": {0},
 				},
 			},
@@ -701,6 +853,10 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 	for label, tc := range testCases {
 		t.Run(label, func(t *testing.T) {
 			r := &Reader{}
+			r.config.GroupBalancers = []GroupBalancer{
+				RangeGroupBalancer{},
+				RoundRobinGroupBalancer{},
+			}
 			assignments, err := r.assignTopicPartitions(conn, tc.Members)
 			if err != nil {
 				t.Fatalf("bad err: %v", err)
@@ -768,6 +924,12 @@ func TestReaderConsumerGroup(t *testing.T) {
 			scenario:   "consumer group reads content across partitions",
 			partitions: 3,
 			function:   testReaderConsumerGroupReadContentAcrossPartitions,
+		},
+
+		{
+			scenario:   "consumer group notices when partitions are added",
+			partitions: 2,
+			function:   testReaderConsumerGroupRebalanceOnPartitionAdd,
 		},
 	}
 
@@ -842,7 +1004,13 @@ func testReaderConsumerGroupVerifyOffsetCommitted(t *testing.T, ctx context.Cont
 		t.Errorf("bad commit message: %v", err)
 	}
 
-	offsets, err := r.fetchOffsets(map[string][]int32{
+	conn, err := r.coordinator()
+	if err != nil {
+		t.Errorf("unable to connect to coordinator: %v", err)
+	}
+	defer conn.Close()
+
+	offsets, err := r.fetchOffsets(conn, map[string][]int32{
 		r.config.Topic: {0},
 	})
 	if err != nil {
@@ -877,7 +1045,13 @@ func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx cont
 	// wait for committer to pick up the commits
 	time.Sleep(r.config.CommitInterval * 3)
 
-	offsets, err := r.fetchOffsets(map[string][]int32{
+	conn, err := r.coordinator()
+	if err != nil {
+		t.Errorf("unable to connect to coordinator: %v", err)
+	}
+	defer conn.Close()
+
+	offsets, err := r.fetchOffsets(conn, map[string][]int32{
 		r.config.Topic: {0},
 	})
 	if err != nil {
@@ -912,7 +1086,13 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 	r2 := NewReader(r.config)
 	defer r2.Close()
 
-	offsets, err := r2.fetchOffsets(map[string][]int32{
+	conn, err := r2.coordinator()
+	if err != nil {
+		t.Errorf("unable to connect to coordinator: %v", err)
+	}
+	defer conn.Close()
+
+	offsets, err := r2.fetchOffsets(conn, map[string][]int32{
 		r.config.Topic: {0},
 	})
 	if err != nil {
@@ -954,6 +1134,59 @@ func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx contex
 		t.Errorf("expected messages across 3 partitions; got messages across %v partitions", v)
 	}
 }
+
+// Build a struct to implement the ReadPartitions interface.
+type MockConnWatcher struct {
+	count int
+	partitions [][]Partition
+}
+func (m *MockConnWatcher) ReadPartitions(topics ...string) (partitions []Partition, err error) {
+	partitions = m.partitions[m.count]
+	// cap the count at len(partitions) -1 so ReadPartitions doesn't even go out of bounds
+	// and long running tests don't fail
+	if m.count < len(m.partitions) {
+		m.count++
+	}
+
+	return partitions, err
+}
+
+func testReaderConsumerGroupRebalanceOnPartitionAdd(t *testing.T, ctx context.Context, r *Reader) {
+	// Sadly this test is time based, so at the end will be seeing if the runGroup run to completion within the
+	// allotted time. The allotted time is 4x the PartitionWatchInterval.
+	now := time.Now()
+	watchTime := 500 * time.Millisecond
+	conn := &MockConnWatcher{
+		partitions: [][]Partition{
+			{
+				Partition{
+					Topic: "topic-1",
+					ID:    0,
+				},
+			},
+			{
+				Partition{
+					Topic: "topic-1",
+					ID:    0,
+				},
+				{
+					Topic: "topic-1",
+					ID:    1,
+				},
+			},
+		},
+	}
+
+	rg := &runGroup{}
+	rg = rg.WithContext(ctx)
+	r.config.PartitionWatchInterval = watchTime
+	rg.Go(r.partitionWatcher(conn))
+	rg.Wait()
+	if time.Now().Sub(now).Seconds() > r.config.PartitionWatchInterval.Seconds() * 4 {
+		t.Error("partitionWatcher didn't see update")
+	}
+}
+
 
 func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Reader) {
 	r2 := NewReader(r.config)
@@ -1165,15 +1398,15 @@ type mockOffsetCommitter struct {
 	err         error
 }
 
-func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error) {
+func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
 	m.invocations++
 
 	if m.failCount > 0 {
 		m.failCount--
-		return offsetCommitResponseV3{}, io.EOF
+		return offsetCommitResponseV2{}, io.EOF
 	}
 
-	return offsetCommitResponseV3{}, nil
+	return offsetCommitResponseV2{}, nil
 }
 
 func TestCommitOffsetsWithRetry(t *testing.T) {

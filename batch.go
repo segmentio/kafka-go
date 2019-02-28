@@ -20,10 +20,9 @@ type Batch struct {
 	mutex         sync.Mutex
 	conn          *Conn
 	lock          *sync.Mutex
-	reader        *bufio.Reader
+	msgs          *messageSetReader
 	deadline      time.Time
 	throttle      time.Duration
-	remain        int
 	topic         string
 	partition     int
 	offset        int64
@@ -65,7 +64,9 @@ func (batch *Batch) close() (err error) {
 
 	batch.conn = nil
 	batch.lock = nil
-	batch.discard(batch.remain)
+	if batch.msgs != nil {
+		batch.msgs.discard()
+	}
 
 	if err = batch.err; err == io.EOF {
 		err = nil
@@ -166,10 +167,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	msg.Offset = offset
 	msg.Time = timestampToTime(timestamp)
 
-	if err != nil {
-		return msg, err
-	}
-	return msg.decode()
+	return msg, err
 }
 
 func (batch *Batch) readMessage(
@@ -180,13 +178,7 @@ func (batch *Batch) readMessage(
 		return
 	}
 
-	offset, timestamp, batch.remain, err = readMessage(
-		batch.reader,
-		batch.remain,
-		batch.offset,
-		key, val,
-	)
-
+	offset, timestamp, err = batch.msgs.readMessage(batch.offset, key, val)
 	switch err {
 	case nil:
 		batch.offset = offset + 1
@@ -194,33 +186,28 @@ func (batch *Batch) readMessage(
 		// As an "optimization" kafka truncates the returned response after
 		// producing MaxBytes, which could then cause the code to return
 		// errShortRead.
-		err = batch.discard(batch.remain)
+		err = batch.msgs.discard()
+		switch {
+		case err != nil:
+			batch.err = err
+		case batch.msgs.remaining() == 0:
+			// Because we use the adjusted deadline we could end up returning
+			// before the actual deadline occurred. This is necessary otherwise
+			// timing out the connection for real could end up leaving it in an
+			// unpredictable state, which would require closing it.
+			// This design decision was made to maximize the chances of keeping
+			// the connection open, the trade off being to lose precision on the
+			// read deadline management.
+			if !batch.deadline.IsZero() && time.Now().After(batch.deadline) {
+				err = RequestTimedOut
+			} else {
+				err = io.EOF
+			}
+			batch.err = err
+		}
 	default:
 		batch.err = err
 	}
 
-	return
-}
-
-func (batch *Batch) discard(n int) (err error) {
-	batch.remain, err = discardN(batch.reader, batch.remain, n)
-	switch {
-	case err != nil:
-		batch.err = err
-	case batch.err == nil && batch.remain == 0:
-		// Because we use the adjusted deadline we could end up returning
-		// before the actual deadline occurred. This is necessary otherwise
-		// timing out the connection for real could end up leaving it in an
-		// unpredictable state, which would require closing it.
-		// This design decision was main to maximize the changes of keeping
-		// the connection open, the trade off being to lose precision on the
-		// read deadline management.
-		if !batch.deadline.IsZero() && time.Now().After(batch.deadline) {
-			err = RequestTimedOut
-		} else {
-			err = io.EOF
-		}
-		batch.err = err
-	}
 	return
 }

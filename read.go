@@ -42,6 +42,10 @@ func readInt64(r *bufio.Reader, sz int, v *int64) (int, error) {
 	return peekRead(r, sz, 8, func(b []byte) { *v = makeInt64(b) })
 }
 
+func readBool(r *bufio.Reader, sz int, v *bool) (int, error) {
+	return peekRead(r, sz, 1, func(b []byte) { *v = b[0] != 0 })
+}
+
 func readString(r *bufio.Reader, sz int, v *string) (int, error) {
 	return readStringWith(r, sz, func(r *bufio.Reader, sz int, n int) (remain int, err error) {
 		*v, remain, err = readNewString(r, sz, n)
@@ -96,12 +100,22 @@ func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (in
 func readNewBytes(r *bufio.Reader, sz int, n int) ([]byte, int, error) {
 	var err error
 	var b []byte
+	var shortRead bool
 
 	if n > 0 {
+		if sz < n {
+			n = sz
+			shortRead = true
+		}
+
 		b = make([]byte, n)
 		n, err = io.ReadFull(r, b)
 		b = b[:n]
 		sz -= n
+
+		if err == nil && shortRead {
+			err = errShortRead
+		}
 	}
 
 	return b, sz, err
@@ -186,6 +200,8 @@ func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
 		return readInt32(r, sz, v)
 	case *int64:
 		return readInt64(r, sz, v)
+	case *bool:
+		return readBool(r, sz, v)
 	case *string:
 		return readString(r, sz, v)
 	case *[]byte:
@@ -367,34 +383,4 @@ func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, 
 	}
 
 	return
-}
-
-func readMessage(r *bufio.Reader, sz int, min int64,
-	key func(*bufio.Reader, int, int) (int, error),
-	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, remain int, err error) {
-	for {
-		// TODO: read attributes and decompress the message
-		if offset, _, timestamp, remain, err = readMessageHeader(r, sz); err != nil {
-			return
-		}
-
-		// When the messages are compressed kafka may return messages at an
-		// earlier offset than the one that was requested, apparently it's the
-		// client's responsibility to ignore those.
-		if offset >= min {
-			if remain, err = readBytesWith(r, remain, key); err != nil {
-				return
-			}
-			remain, err = readBytesWith(r, remain, val)
-			return
-		}
-
-		if remain, err = discardBytes(r, remain); err != nil {
-			return
-		}
-		if remain, err = discardBytes(r, remain); err != nil {
-			return
-		}
-	}
 }

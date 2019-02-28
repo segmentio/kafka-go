@@ -7,12 +7,10 @@ import (
 	"testing"
 )
 
-func TestFindCoordinatorResponseV1(t *testing.T) {
-	item := findCoordinatorResponseV1{
-		ThrottleTimeMS: 1,
-		ErrorCode:      2,
-		ErrorMessage:   "a",
-		Coordinator: findCoordinatorResponseCoordinatorV1{
+func TestFindCoordinatorResponseV0(t *testing.T) {
+	item := findCoordinatorResponseV0{
+		ErrorCode: 2,
+		Coordinator: findCoordinatorResponseCoordinatorV0{
 			NodeID: 3,
 			Host:   "b",
 			Port:   4,
@@ -24,7 +22,7 @@ func TestFindCoordinatorResponseV1(t *testing.T) {
 	item.writeTo(w)
 	w.Flush()
 
-	var found findCoordinatorResponseV1
+	var found findCoordinatorResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
 	if err != nil {
 		t.Error(err)

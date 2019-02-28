@@ -60,16 +60,17 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 		return partitions[i].ID < partitions[j].ID
 	})
 
-	if !reflect.DeepEqual(partitions, []Partition{
+	want := []Partition{
 		{
 			Topic:    "test-dialer-LookupPartitions",
-			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1001},
-			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1001}},
-			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1001}},
+			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
+			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
 			ID:       0,
 		},
-	}) {
-		t.Error("bad partitions:", partitions)
+	}
+	if !reflect.DeepEqual(partitions, want) {
+		t.Errorf("bad partitions:\ngot:  %+v\nwant: %+v", partitions, want)
 	}
 }
 
@@ -230,16 +231,17 @@ func TestDialerTLS(t *testing.T) {
 		return partitions[i].ID < partitions[j].ID
 	})
 
-	if !reflect.DeepEqual(partitions, []Partition{
+	want := []Partition{
 		{
 			Topic:    topic,
-			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1001},
-			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1001}},
-			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1001}},
+			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
+			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
 			ID:       0,
 		},
-	}) {
-		t.Error("bad partitions:", partitions)
+	}
+	if !reflect.DeepEqual(partitions, want) {
+		t.Errorf("bad partitions:\ngot:  %+v\nwant: %+v", partitions, want)
 	}
 }
 
@@ -295,7 +297,7 @@ func TestDialerConnectTLSHonorsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*25)
 	defer cancel()
 
-	_, err := d.connectTLS(ctx, conn)
+	_, err := d.connectTLS(ctx, conn, d.TLS)
 	if context.DeadlineExceeded != err {
 		t.Errorf("expected err to be %v; got %v", context.DeadlineExceeded, err)
 		t.FailNow()

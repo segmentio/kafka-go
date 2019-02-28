@@ -24,6 +24,7 @@ type Broker struct {
 	Host string
 	Port int
 	ID   int
+	Rack string
 }
 
 // Partition carries the metadata associated with a kafka partition.
@@ -70,6 +71,7 @@ type Conn struct {
 
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
+	apiVersions  map[apiKey]ApiVersion
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -100,6 +102,7 @@ func NewConn(conn net.Conn, topic string, partition int) *Conn {
 }
 
 // NewConnWith returns a new kafka connection configured with config.
+// The offset is initialized to FirstOffset.
 func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	if len(config.ClientID) == 0 {
 		config.ClientID = DefaultClientID
@@ -116,29 +119,95 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		clientID:     config.ClientID,
 		topic:        config.Topic,
 		partition:    int32(config.Partition),
-		offset:       -2,
+		offset:       FirstOffset,
 		requiredAcks: -1,
 	}
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
 	// enough to load the control data of the response. To avoid having to
 	// recompute it on every read, it is cached here in the Conn value.
-	c.fetchMinSize = (fetchResponseV1{
-		Topics: []fetchResponseTopicV1{{
+	c.fetchMinSize = (fetchResponseV2{
+		Topics: []fetchResponseTopicV2{{
 			TopicName: config.Topic,
-			Partitions: []fetchResponsePartitionV1{{
+			Partitions: []fetchResponsePartitionV2{{
 				Partition:  int32(config.Partition),
 				MessageSet: messageSet{{}},
 			}},
 		}},
 	}).size()
 	c.fetchMaxBytes = math.MaxInt32 - c.fetchMinSize
+	var err error
+	apiVersions, err := c.ApiVersions()
+	if err != nil {
+		c.apiVersions = defaultApiVersions
+	} else {
+		c.apiVersions = make(map[apiKey]ApiVersion)
+		for _, v := range apiVersions {
+			c.apiVersions[apiKey(v.ApiKey)] = v
+		}
+	}
 	return c
+}
+
+// Controller requests kafka for the current controller and returns its URL
+func (c *Conn) Controller() (broker Broker, err error) {
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV1
+
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+			for _, brokerMeta := range res.Brokers {
+				if brokerMeta.NodeID == res.ControllerID {
+					broker = Broker{ID: int(brokerMeta.NodeID),
+						Port: int(brokerMeta.Port),
+						Host: brokerMeta.Host,
+						Rack: brokerMeta.Rack}
+					break
+				}
+			}
+			return nil
+		},
+	)
+	return broker, err
+}
+
+// Brokers retrieve the broker list from the Kafka metadata
+func (c *Conn) Brokers() ([]Broker, error) {
+	var brokers []Broker
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV1
+
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+
+			brokers = make([]Broker, len(res.Brokers))
+			for i, brokerMeta := range res.Brokers {
+				brokers[i] = Broker{
+					ID:   int(brokerMeta.NodeID),
+					Port: int(brokerMeta.Port),
+					Host: brokerMeta.Host,
+					Rack: brokerMeta.Rack,
+				}
+			}
+			return nil
+		},
+	)
+	return brokers, err
 }
 
 // DeleteTopics deletes the specified topics.
 func (c *Conn) DeleteTopics(topics ...string) error {
-	_, err := c.deleteTopics(deleteTopicsRequestV1{
+	_, err := c.deleteTopics(deleteTopicsRequestV0{
 		Topics: topics,
 	})
 	return err
@@ -147,12 +216,12 @@ func (c *Conn) DeleteTopics(topics ...string) error {
 // describeGroups retrieves the specified groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
-func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsResponseV1, error) {
-	var response describeGroupsResponseV1
+func (c *Conn) describeGroups(request describeGroupsRequestV0) (describeGroupsResponseV0, error) {
+	var response describeGroupsResponseV0
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(describeGroupsRequest, v1, id, request)
+			return c.writeRequest(describeGroupsRequest, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -161,11 +230,11 @@ func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsRe
 		},
 	)
 	if err != nil {
-		return describeGroupsResponseV1{}, err
+		return describeGroupsResponseV0{}, err
 	}
 	for _, group := range response.Groups {
 		if group.ErrorCode != 0 {
-			return describeGroupsResponseV1{}, Error(group.ErrorCode)
+			return describeGroupsResponseV0{}, Error(group.ErrorCode)
 		}
 	}
 
@@ -175,12 +244,13 @@ func (c *Conn) describeGroups(request describeGroupsRequestV1) (describeGroupsRe
 // findCoordinator finds the coordinator for the specified group or transaction
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
-func (c *Conn) findCoordinator(request findCoordinatorRequestV1) (findCoordinatorResponseV1, error) {
-	var response findCoordinatorResponseV1
+func (c *Conn) findCoordinator(request findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
+	var response findCoordinatorResponseV0
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(groupCoordinatorRequest, v1, id, request)
+			return c.writeRequest(groupCoordinatorRequest, v0, id, request)
+
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -189,10 +259,10 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV1) (findCoordinato
 		},
 	)
 	if err != nil {
-		return findCoordinatorResponseV1{}, err
+		return findCoordinatorResponseV0{}, err
 	}
 	if response.ErrorCode != 0 {
-		return findCoordinatorResponseV1{}, Error(response.ErrorCode)
+		return findCoordinatorResponseV0{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -201,12 +271,12 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV1) (findCoordinato
 // heartbeat sends a heartbeat message required by consumer groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_Heartbeat
-func (c *Conn) heartbeat(request heartbeatRequestV1) (heartbeatResponseV1, error) {
-	var response heartbeatResponseV1
+func (c *Conn) heartbeat(request heartbeatRequestV0) (heartbeatResponseV0, error) {
+	var response heartbeatResponseV0
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(heartbeatRequest, v1, id, request)
+			return c.writeRequest(heartbeatRequest, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -215,10 +285,10 @@ func (c *Conn) heartbeat(request heartbeatRequestV1) (heartbeatResponseV1, error
 		},
 	)
 	if err != nil {
-		return heartbeatResponseV1{}, err
+		return heartbeatResponseV0{}, err
 	}
 	if response.ErrorCode != 0 {
-		return heartbeatResponseV1{}, Error(response.ErrorCode)
+		return heartbeatResponseV0{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -227,12 +297,12 @@ func (c *Conn) heartbeat(request heartbeatRequestV1) (heartbeatResponseV1, error
 // joinGroup attempts to join a consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_JoinGroup
-func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV2, error) {
-	var response joinGroupResponseV2
+func (c *Conn) joinGroup(request joinGroupRequestV1) (joinGroupResponseV1, error) {
+	var response joinGroupResponseV1
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(joinGroupRequest, v2, id, request)
+			return c.writeRequest(joinGroupRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -241,10 +311,10 @@ func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV2, error
 		},
 	)
 	if err != nil {
-		return joinGroupResponseV2{}, err
+		return joinGroupResponseV1{}, err
 	}
 	if response.ErrorCode != 0 {
-		return joinGroupResponseV2{}, Error(response.ErrorCode)
+		return joinGroupResponseV1{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -253,12 +323,12 @@ func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV2, error
 // leaveGroup leaves the consumer from the consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_LeaveGroup
-func (c *Conn) leaveGroup(request leaveGroupRequestV1) (leaveGroupResponseV1, error) {
-	var response leaveGroupResponseV1
+func (c *Conn) leaveGroup(request leaveGroupRequestV0) (leaveGroupResponseV0, error) {
+	var response leaveGroupResponseV0
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(leaveGroupRequest, v1, id, request)
+			return c.writeRequest(leaveGroupRequest, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -267,10 +337,10 @@ func (c *Conn) leaveGroup(request leaveGroupRequestV1) (leaveGroupResponseV1, er
 		},
 	)
 	if err != nil {
-		return leaveGroupResponseV1{}, err
+		return leaveGroupResponseV0{}, err
 	}
 	if response.ErrorCode != 0 {
-		return leaveGroupResponseV1{}, Error(response.ErrorCode)
+		return leaveGroupResponseV0{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -305,12 +375,12 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 // offsetCommit commits the specified topic partition offsets
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_OffsetCommit
-func (c *Conn) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error) {
-	var response offsetCommitResponseV3
+func (c *Conn) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+	var response offsetCommitResponseV2
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(offsetCommitRequest, v3, id, request)
+			return c.writeRequest(offsetCommitRequest, v2, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -319,12 +389,12 @@ func (c *Conn) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponse
 		},
 	)
 	if err != nil {
-		return offsetCommitResponseV3{}, err
+		return offsetCommitResponseV2{}, err
 	}
 	for _, r := range response.Responses {
 		for _, pr := range r.PartitionResponses {
 			if pr.ErrorCode != 0 {
-				return offsetCommitResponseV3{}, Error(pr.ErrorCode)
+				return offsetCommitResponseV2{}, Error(pr.ErrorCode)
 			}
 		}
 	}
@@ -332,15 +402,16 @@ func (c *Conn) offsetCommit(request offsetCommitRequestV3) (offsetCommitResponse
 	return response, nil
 }
 
-// offsetFetch fetches the offsets for the specified topic partitions
+// offsetFetch fetches the offsets for the specified topic partitions.
+// -1 indicates that there is no offset saved for the partition.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_OffsetFetch
-func (c *Conn) offsetFetch(request offsetFetchRequestV3) (offsetFetchResponseV3, error) {
-	var response offsetFetchResponseV3
+func (c *Conn) offsetFetch(request offsetFetchRequestV1) (offsetFetchResponseV1, error) {
+	var response offsetFetchResponseV1
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(offsetFetchRequest, v3, id, request)
+			return c.writeRequest(offsetFetchRequest, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -349,15 +420,12 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV3) (offsetFetchResponseV3,
 		},
 	)
 	if err != nil {
-		return offsetFetchResponseV3{}, err
-	}
-	if response.ErrorCode != 0 {
-		return offsetFetchResponseV3{}, Error(response.ErrorCode)
+		return offsetFetchResponseV1{}, err
 	}
 	for _, r := range response.Responses {
 		for _, pr := range r.PartitionResponses {
 			if pr.ErrorCode != 0 {
-				return offsetFetchResponseV3{}, Error(pr.ErrorCode)
+				return offsetFetchResponseV1{}, Error(pr.ErrorCode)
 			}
 		}
 	}
@@ -368,12 +436,12 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV3) (offsetFetchResponseV3,
 // syncGroups completes the handshake to join a consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SyncGroup
-func (c *Conn) syncGroups(request syncGroupRequestV1) (syncGroupResponseV1, error) {
-	var response syncGroupResponseV1
+func (c *Conn) syncGroups(request syncGroupRequestV0) (syncGroupResponseV0, error) {
+	var response syncGroupResponseV0
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(syncGroupRequest, v1, id, request)
+			return c.writeRequest(syncGroupRequest, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -382,10 +450,10 @@ func (c *Conn) syncGroups(request syncGroupRequestV1) (syncGroupResponseV1, erro
 		},
 	)
 	if err != nil {
-		return syncGroupResponseV1{}, err
+		return syncGroupResponseV0{}, err
 	}
 	if response.ErrorCode != 0 {
-		return syncGroupResponseV1{}, Error(response.ErrorCode)
+		return syncGroupResponseV0{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -449,15 +517,16 @@ func (c *Conn) Offset() (offset int64, whence int) {
 	c.mutex.Lock()
 	offset = c.offset
 	c.mutex.Unlock()
+
 	switch offset {
-	case -1:
+	case FirstOffset:
 		offset = 0
-		whence = 2
-	case -2:
+		whence = SeekStart
+	case LastOffset:
 		offset = 0
-		whence = 0
+		whence = SeekEnd
 	default:
-		whence = 1
+		whence = SeekAbsolute
 	}
 	return
 }
@@ -479,7 +548,7 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case SeekStart, SeekAbsolute, SeekEnd, SeekCurrent:
 	default:
-		return 0, fmt.Errorf("whence must be one of 0, 1, 2, 3, or 4. (whence = %d)", whence)
+		return 0, fmt.Errorf("whence must be one of 0, 1, 2, or 3. (whence = %d)", whence)
 	}
 
 	if whence == SeekAbsolute {
@@ -574,7 +643,7 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // A program doesn't specify the number of messages in wants from a batch, but
 // gives the minimum and maximum number of bytes that it wants to receive from
 // the kafka server.
-func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
+func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
 
@@ -597,7 +666,7 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 		adjustedDeadline = deadline
-		return writeFetchRequestV1(
+		return writeFetchRequestV2(
 			&c.wbuf,
 			id,
 			c.clientID,
@@ -621,11 +690,10 @@ func (c *Conn) ReadBatch(minBytes int, maxBytes int) *Batch {
 	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
 	return &Batch{
 		conn:          c,
-		reader:        &c.rbuf,
+		msgs:          newMessageSetReader(&c.rbuf, remain),
 		deadline:      adjustedDeadline,
 		throttle:      duration(throttle),
 		lock:          lock,
-		remain:        remain,
 		topic:         c.topic,          // topic is copied to Batch to prevent race with Batch.close
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
@@ -642,17 +710,17 @@ func (c *Conn) ReadOffset(t time.Time) (int64, error) {
 
 // ReadFirstOffset returns the first offset available on the connection.
 func (c *Conn) ReadFirstOffset() (int64, error) {
-	return c.readOffset(-2)
+	return c.readOffset(FirstOffset)
 }
 
 // ReadLastOffset returns the last offset available on the connection.
 func (c *Conn) ReadLastOffset() (int64, error) {
-	return c.readOffset(-1)
+	return c.readOffset(LastOffset)
 }
 
 // ReadOffsets returns the absolute first and last offsets of the topic used by
 // the connection.
-func (c *Conn) ReadOffsets() (first int64, last int64, err error) {
+func (c *Conn) ReadOffsets() (first, last int64, err error) {
 	// We have to submit two different requests to fetch the first and last
 	// offsets because kafka refuses requests that ask for multiple offsets
 	// on the same topic and partition.
@@ -715,10 +783,10 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequestV0(topics))
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1(topics))
 		},
 		func(deadline time.Time, size int) error {
-			var res metadataResponseV0
+			var res metadataResponseV1
 
 			if err := c.readResponse(size, &res); err != nil {
 				return err
@@ -730,6 +798,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 					Host: b.Host,
 					Port: int(b.Port),
 					ID:   int(b.NodeID),
+					Rack: b.Rack,
 				}
 			}
 
@@ -742,7 +811,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 			}
 
 			for _, t := range res.Topics {
-				if t.TopicErrorCode != 0 && t.TopicName == c.topic {
+				if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
 					// We only report errors if they happened for the topic of
 					// the connection, otherwise the topic will simply have no
 					// partitions in the result set.
@@ -773,48 +842,69 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 // This method is exposed to satisfy the net.Conn interface but is less efficient
 // than the more general purpose WriteMessages method.
 func (c *Conn) Write(b []byte) (int, error) {
-	return c.WriteMessages(Message{Value: b})
+	return c.WriteCompressedMessages(nil, Message{Value: b})
 }
 
 // WriteMessages writes a batch of messages to the connection's topic and
 // partition, returning the number of bytes written. The write is an atomic
 // operation, it either fully succeeds or fails.
 func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
+	return c.WriteCompressedMessages(nil, msgs...)
+}
+
+// WriteCompressedMessages writes a batch of messages to the connection's topic
+// and partition, returning the number of bytes written. The write is an atomic
+// operation, it either fully succeeds or fails.
+//
+// If the compression codec is not nil, the messages will be compressed.
+func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) (nbytes int, err error) {
+	nbytes, _, _, _, err = c.writeCompressedMessages(codec, msgs...)
+	return
+}
+
+// WriteCompressedMessages writes a batch of messages to the connection's topic
+// and partition, returning the number of bytes written, partition and offset numbers
+// and timestamp assigned by the kafka broker to the message set. The write is an atomic
+// operation, it either fully succeeds or fails.
+//
+// If the compression codec is not nil, the messages will be compressed.
+func (c *Conn) WriteCompressedMessagesAt(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, appendTime time.Time, err error) {
+	return c.writeCompressedMessages(codec, msgs...)
+}
+
+func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, appendTime time.Time, err error) {
+
 	if len(msgs) == 0 {
-		return 0, nil
+		return
 	}
 
 	writeTime := time.Now()
-	n := 0
 	for i, msg := range msgs {
 		// users may believe they can set the Topic and/or Partition
 		// on the kafka message.
 		if msg.Topic != "" && msg.Topic != c.topic {
-			return 0, errInvalidWriteTopic
+			err = errInvalidWriteTopic
+			return
 		}
 		if msg.Partition != 0 {
-			return 0, errInvalidWritePartition
+			err = errInvalidWritePartition
+			return
 		}
 
 		if msg.Time.IsZero() {
 			msgs[i].Time = writeTime
 		}
 
-		var err error
-		msg, err = msg.encode()
-		if err != nil {
-			return 0, err
-		}
-
-		n += len(msg.Key) + len(msg.Value)
+		nbytes += len(msg.Key) + len(msg.Value)
 	}
 
-	err := c.writeOperation(
+	err = c.writeOperation(
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 			return writeProduceRequestV2(
 				&c.wbuf,
+				codec,
 				id,
 				c.clientID,
 				c.topic,
@@ -841,6 +931,12 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 					if err == nil && p.ErrorCode != 0 {
 						err = Error(p.ErrorCode)
 					}
+					if err == nil {
+						partition = p.Partition
+						offset = p.Offset
+						appendTime = time.Unix(0, p.Timestamp*int64(time.Millisecond))
+					}
+
 					return size, err
 				})
 				if err != nil {
@@ -855,10 +951,10 @@ func (c *Conn) WriteMessages(msgs ...Message) (int, error) {
 	)
 
 	if err != nil {
-		n = 0
+		nbytes = 0
 	}
 
-	return n, err
+	return
 }
 
 // SetRequiredAcks sets the number of acknowledges from replicas that the
@@ -1005,6 +1101,85 @@ func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID
 		CorrelationID: correlationID,
 		ClientID:      c.clientID,
 	}
+}
+
+type ApiVersion struct {
+	ApiKey     int16
+	MinVersion int16
+	MaxVersion int16
+}
+
+var defaultApiVersions map[apiKey]ApiVersion = map[apiKey]ApiVersion{
+	produceRequest:          ApiVersion{int16(produceRequest), int16(v2), int16(v2)},
+	fetchRequest:            ApiVersion{int16(fetchRequest), int16(v2), int16(v2)},
+	listOffsetRequest:       ApiVersion{int16(listOffsetRequest), int16(v1), int16(v1)},
+	metadataRequest:         ApiVersion{int16(metadataRequest), int16(v1), int16(v1)},
+	offsetCommitRequest:     ApiVersion{int16(offsetCommitRequest), int16(v2), int16(v2)},
+	offsetFetchRequest:      ApiVersion{int16(offsetFetchRequest), int16(v1), int16(v1)},
+	groupCoordinatorRequest: ApiVersion{int16(groupCoordinatorRequest), int16(v0), int16(v0)},
+	joinGroupRequest:        ApiVersion{int16(joinGroupRequest), int16(v1), int16(v1)},
+	heartbeatRequest:        ApiVersion{int16(heartbeatRequest), int16(v0), int16(v0)},
+	leaveGroupRequest:       ApiVersion{int16(leaveGroupRequest), int16(v0), int16(v0)},
+	syncGroupRequest:        ApiVersion{int16(syncGroupRequest), int16(v0), int16(v0)},
+	describeGroupsRequest:   ApiVersion{int16(describeGroupsRequest), int16(v1), int16(v1)},
+	listGroupsRequest:       ApiVersion{int16(listGroupsRequest), int16(v1), int16(v1)},
+	apiVersionsRequest:      ApiVersion{int16(apiVersionsRequest), int16(v0), int16(v0)},
+	createTopicsRequest:     ApiVersion{int16(createTopicsRequest), int16(v0), int16(v0)},
+	deleteTopicsRequest:     ApiVersion{int16(deleteTopicsRequest), int16(v1), int16(v1)},
+}
+
+func (c *Conn) ApiVersions() ([]ApiVersion, error) {
+	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
+		now := time.Now()
+		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+
+		h := requestHeader{
+			ApiKey:        int16(apiVersionsRequest),
+			ApiVersion:    int16(v0),
+			CorrelationID: id,
+			ClientID:      c.clientID,
+		}
+		h.Size = (h.size() - 4)
+
+		h.writeTo(&c.wbuf)
+		return c.wbuf.Flush()
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Unlock()
+
+	var errorCode int16
+	if size, err = readInt16(&c.rbuf, size, &errorCode); err != nil {
+		return nil, err
+	}
+	var arrSize int32
+	if size, err = readInt32(&c.rbuf, size, &arrSize); err != nil {
+		return nil, err
+	}
+	r := make([]ApiVersion, arrSize)
+	for i := 0; i < int(arrSize); i++ {
+		if size, err = readInt16(&c.rbuf, size, &r[i].ApiKey); err != nil {
+			return nil, err
+		}
+		if size, err = readInt16(&c.rbuf, size, &r[i].MinVersion); err != nil {
+			return nil, err
+		}
+		if size, err = readInt16(&c.rbuf, size, &r[i].MaxVersion); err != nil {
+			return nil, err
+		}
+	}
+
+	if errorCode != 0 {
+		return r, Error(errorCode)
+	}
+
+	return r, nil
 }
 
 // connDeadline is a helper type to implement read/write deadline management on

@@ -2,33 +2,41 @@ package kafka
 
 import "sort"
 
-// strategy encapsulates the client side rebalancing logic
-type strategy interface {
-	// ProtocolName of strategy
+// GroupMember describes a single participant in a consumer group.
+type GroupMember struct {
+	// ID is the unique ID for this member as taken from the JoinGroup response.
+	ID string
+
+	// Topics is a list of topics that this member is consuming.
+	Topics []string
+
+	// UserData contains any information that the GroupBalancer sent to the
+	// consumer group coordinator.
+	UserData []byte
+}
+
+// GroupMemberAssignments holds MemberID => topic => partitions
+type GroupMemberAssignments map[string]map[string][]int
+
+// GroupBalancer encapsulates the client side rebalancing logic
+type GroupBalancer interface {
+	// ProtocolName of the GroupBalancer
 	ProtocolName() string
 
-	// ProtocolMetadata provides the strategy an opportunity to embed custom
+	// UserData provides the GroupBalancer an opportunity to embed custom
 	// UserData into the metadata.
 	//
 	// Will be used by JoinGroup to begin the consumer group handshake.
 	//
 	// See https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-JoinGroupRequest
-	GroupMetadata(topics []string) (groupMetadata, error)
+	UserData() ([]byte, error)
 
 	// DefineMemberships returns which members will be consuming
 	// which topic partitions
-	AssignGroups(members []memberGroupMetadata, partitions []Partition) memberGroupAssignments
+	AssignGroups(members []GroupMember, partitions []Partition) GroupMemberAssignments
 }
 
-var (
-	// allStrategies the kafka-go Reader supports
-	allStrategies = []strategy{
-		rangeStrategy{},
-		roundrobinStrategy{},
-	}
-)
-
-// rangeStrategy groups consumers by partition
+// RangeGroupBalancer groups consumers by partition
 //
 // Example: 5 partitions, 2 consumers
 // 		C0: [0, 1, 2]
@@ -39,21 +47,18 @@ var (
 // 		C1: [2, 3]
 // 		C2: [4, 5]
 //
-type rangeStrategy struct{}
+type RangeGroupBalancer struct{}
 
-func (r rangeStrategy) ProtocolName() string {
+func (r RangeGroupBalancer) ProtocolName() string {
 	return "range"
 }
 
-func (r rangeStrategy) GroupMetadata(topics []string) (groupMetadata, error) {
-	return groupMetadata{
-		Version: 1,
-		Topics:  topics,
-	}, nil
+func (r RangeGroupBalancer) UserData() ([]byte, error) {
+	return nil, nil
 }
 
-func (r rangeStrategy) AssignGroups(members []memberGroupMetadata, topicPartitions []Partition) memberGroupAssignments {
-	groupAssignments := memberGroupAssignments{}
+func (r RangeGroupBalancer) AssignGroups(members []GroupMember, topicPartitions []Partition) GroupMemberAssignments {
+	groupAssignments := GroupMemberAssignments{}
 	membersByTopic := findMembersByTopic(members)
 
 	for topic, members := range membersByTopic {
@@ -62,10 +67,10 @@ func (r rangeStrategy) AssignGroups(members []memberGroupMetadata, topicPartitio
 		memberCount := len(members)
 
 		for memberIndex, member := range members {
-			assignmentsByTopic, ok := groupAssignments[member.MemberID]
+			assignmentsByTopic, ok := groupAssignments[member.ID]
 			if !ok {
-				assignmentsByTopic = map[string][]int32{}
-				groupAssignments[member.MemberID] = assignmentsByTopic
+				assignmentsByTopic = map[string][]int{}
+				groupAssignments[member.ID] = assignmentsByTopic
 			}
 
 			minIndex := memberIndex * partitionCount / memberCount
@@ -82,7 +87,7 @@ func (r rangeStrategy) AssignGroups(members []memberGroupMetadata, topicPartitio
 	return groupAssignments
 }
 
-// roundrobinStrategy divides partitions evenly among consumers
+// RoundrobinGroupBalancer divides partitions evenly among consumers
 //
 // Example: 5 partitions, 2 consumers
 // 		C0: [0, 2, 4]
@@ -93,31 +98,28 @@ func (r rangeStrategy) AssignGroups(members []memberGroupMetadata, topicPartitio
 // 		C1: [1, 4]
 // 		C2: [2, 5]
 //
-type roundrobinStrategy struct{}
+type RoundRobinGroupBalancer struct{}
 
-func (r roundrobinStrategy) ProtocolName() string {
+func (r RoundRobinGroupBalancer) ProtocolName() string {
 	return "roundrobin"
 }
 
-func (r roundrobinStrategy) GroupMetadata(topics []string) (groupMetadata, error) {
-	return groupMetadata{
-		Version: 1,
-		Topics:  topics,
-	}, nil
+func (r RoundRobinGroupBalancer) UserData() ([]byte, error) {
+	return nil, nil
 }
 
-func (r roundrobinStrategy) AssignGroups(members []memberGroupMetadata, topicPartitions []Partition) memberGroupAssignments {
-	groupAssignments := memberGroupAssignments{}
+func (r RoundRobinGroupBalancer) AssignGroups(members []GroupMember, topicPartitions []Partition) GroupMemberAssignments {
+	groupAssignments := GroupMemberAssignments{}
 	membersByTopic := findMembersByTopic(members)
 	for topic, members := range membersByTopic {
 		partitionIDs := findPartitions(topic, topicPartitions)
 		memberCount := len(members)
 
 		for memberIndex, member := range members {
-			assignmentsByTopic, ok := groupAssignments[member.MemberID]
+			assignmentsByTopic, ok := groupAssignments[member.ID]
 			if !ok {
-				assignmentsByTopic = map[string][]int32{}
-				groupAssignments[member.MemberID] = assignmentsByTopic
+				assignmentsByTopic = map[string][]int{}
+				groupAssignments[member.ID] = assignmentsByTopic
 			}
 
 			for partitionIndex, partition := range partitionIDs {
@@ -133,21 +135,21 @@ func (r roundrobinStrategy) AssignGroups(members []memberGroupMetadata, topicPar
 
 // findPartitions extracts the partition ids associated with the topic from the
 // list of Partitions provided
-func findPartitions(topic string, partitions []Partition) []int32 {
-	var ids []int32
+func findPartitions(topic string, partitions []Partition) []int {
+	var ids []int
 	for _, partition := range partitions {
 		if partition.Topic == topic {
-			ids = append(ids, int32(partition.ID))
+			ids = append(ids, partition.ID)
 		}
 	}
 	return ids
 }
 
 // findMembersByTopic groups the memberGroupMetadata by topic
-func findMembersByTopic(members []memberGroupMetadata) map[string][]memberGroupMetadata {
-	membersByTopic := map[string][]memberGroupMetadata{}
+func findMembersByTopic(members []GroupMember) map[string][]GroupMember {
+	membersByTopic := map[string][]GroupMember{}
 	for _, member := range members {
-		for _, topic := range member.Metadata.Topics {
+		for _, topic := range member.Topics {
 			membersByTopic[topic] = append(membersByTopic[topic], member)
 		}
 	}
@@ -166,19 +168,19 @@ func findMembersByTopic(members []memberGroupMetadata) map[string][]memberGroupM
 	//
 	for _, members := range membersByTopic {
 		sort.Slice(members, func(i, j int) bool {
-			return members[i].MemberID < members[j].MemberID
+			return members[i].ID < members[j].ID
 		})
 	}
 
 	return membersByTopic
 }
 
-// findStrategy returns the strategy with the specified protocolName from the
-// slice provided
-func findStrategy(protocolName string, strategies []strategy) (strategy, bool) {
-	for _, strategy := range strategies {
-		if strategy.ProtocolName() == protocolName {
-			return strategy, true
+// findGroupBalancer returns the GroupBalancer with the specified protocolName
+// from the slice provided
+func findGroupBalancer(protocolName string, balancers []GroupBalancer) (GroupBalancer, bool) {
+	for _, balancer := range balancers {
+		if balancer.ProtocolName() == protocolName {
+			return balancer, true
 		}
 	}
 	return nil, false

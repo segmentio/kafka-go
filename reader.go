@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	firstOffset = -1
-	lastOffset  = -2
+	LastOffset  int64 = -1 // The most recent offset available for a partition.
+	FirstOffset       = -2 // The least recent offset available for a partition.
 )
 
 const (
@@ -58,6 +58,10 @@ const (
 	// defaultRetentionTime holds the length of time a the consumer group will be
 	// saved by kafka
 	defaultRetentionTime = time.Hour * 24
+
+	// defaultPartitionWatchTime contains the amount of time the kafka-go will wait to
+	// query the brokers looking for partition changes.
+	defaultPartitionWatchTime = 5 * time.Second
 )
 
 // Reader provides a high-level API for consuming messages from kafka.
@@ -127,7 +131,7 @@ func (r *Reader) lookupCoordinator() (string, error) {
 	}
 	defer conn.Close()
 
-	out, err := conn.findCoordinator(findCoordinatorRequestV1{
+	out, err := conn.findCoordinator(findCoordinatorRequestV0{
 		CoordinatorKey: r.config.GroupID,
 	})
 	if err != nil {
@@ -174,12 +178,12 @@ func (r *Reader) refreshCoordinator() (err error) {
 	return nil
 }
 
-// makeJoinGroupRequestV2 handles the logic of constructing a joinGroup
+// makejoinGroupRequestV1 handles the logic of constructing a joinGroup
 // request
-func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
+func (r *Reader) makejoinGroupRequestV1() (joinGroupRequestV1, error) {
 	_, memberID := r.membership()
 
-	request := joinGroupRequestV2{
+	request := joinGroupRequestV1{
 		GroupID:          r.config.GroupID,
 		MemberID:         memberID,
 		SessionTimeout:   int32(r.config.SessionTimeout / time.Millisecond),
@@ -187,24 +191,27 @@ func (r *Reader) makeJoinGroupRequestV2() (joinGroupRequestV2, error) {
 		ProtocolType:     defaultProtocolType,
 	}
 
-	for _, strategy := range allStrategies {
-		meta, err := strategy.GroupMetadata([]string{r.config.Topic})
+	for _, balancer := range r.config.GroupBalancers {
+		userData, err := balancer.UserData()
 		if err != nil {
-			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", strategy.ProtocolName(), err)
+			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v\n", balancer.ProtocolName(), err)
 		}
-
-		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV2{
-			ProtocolName:     strategy.ProtocolName(),
-			ProtocolMetadata: meta.bytes(),
+		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
+			ProtocolName: balancer.ProtocolName(),
+			ProtocolMetadata: groupMetadata{
+				Version:  1,
+				Topics:   []string{r.config.Topic},
+				UserData: userData,
+			}.bytes(),
 		})
 	}
 
 	return request, nil
 }
 
-// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into memberGroupMetadata
-func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]memberGroupMetadata, error) {
-	members := make([]memberGroupMetadata, 0, len(in))
+// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember
+func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]GroupMember, error) {
+	members := make([]GroupMember, 0, len(in))
 	for _, item := range in {
 		metadata := groupMetadata{}
 		reader := bufio.NewReader(bytes.NewReader(item.MemberMetadata))
@@ -212,11 +219,11 @@ func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV2) ([]m
 			return nil, fmt.Errorf("unable to read metadata for member, %v: %v\n", item.MemberID, err)
 		}
 
-		member := memberGroupMetadata{
-			MemberID: item.MemberID,
-			Metadata: metadata,
-		}
-		members = append(members, member)
+		members = append(members, GroupMember{
+			ID:       item.MemberID,
+			Topics:   metadata.Topics,
+			UserData: metadata.UserData,
+		})
 	}
 	return members, nil
 }
@@ -227,16 +234,16 @@ type partitionReader interface {
 	ReadPartitions(topics ...string) (partitions []Partition, err error)
 }
 
-// assignTopicPartitions uses the selected strategy to assign members to their
-// various partitions
-func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV2) (memberGroupAssignments, error) {
+// assignTopicPartitions uses the selected GroupBalancer to assign members to
+// their various partitions
+func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV1) (GroupMemberAssignments, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
 
-	strategy, ok := findStrategy(group.GroupProtocol, allStrategies)
+	balancer, ok := findGroupBalancer(group.GroupProtocol, r.config.GroupBalancers)
 	if !ok {
-		return nil, fmt.Errorf("unable to find selected strategy, %v, for group, %v", group.GroupProtocol, r.config.GroupID)
+		return nil, fmt.Errorf("unable to find selected balancer, %v, for group, %v", group.GroupProtocol, r.config.GroupID)
 	}
 
 	members, err := r.makeMemberProtocolMetadata(group.Members)
@@ -251,18 +258,21 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 	}
 
 	r.withLogger(func(l *log.Logger) {
-		l.Printf("using '%v' strategy to assign group, %v\n", group.GroupProtocol, r.config.GroupID)
+		l.Printf("using '%v' balancer to assign group, %v\n", group.GroupProtocol, r.config.GroupID)
+		for _, member := range members {
+			l.Printf("found member: %v/%#v", member.ID, member.UserData)
+		}
 		for _, partition := range partitions {
 			l.Printf("found topic/partition: %v/%v", partition.Topic, partition.ID)
 		}
 	})
 
-	return strategy.AssignGroups(members, partitions), nil
+	return balancer.AssignGroups(members, partitions), nil
 }
 
 func (r *Reader) leaveGroup(conn *Conn) error {
 	_, memberID := r.membership()
-	_, err := conn.leaveGroup(leaveGroupRequestV1{
+	_, err := conn.leaveGroup(leaveGroupRequestV0{
 		GroupID:  r.config.GroupID,
 		MemberID: memberID,
 	})
@@ -274,8 +284,8 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 }
 
 // joinGroup attempts to join the reader to the consumer group.
-// Returns memberGroupAssignments is this Reader was selected as
-// the leader.  Otherwise, memberGroupAssignments will be nil.
+// Returns GroupMemberAssignments is this Reader was selected as
+// the leader.  Otherwise, GroupMemberAssignments will be nil.
 //
 // Possible kafka error codes returned:
 //  * GroupLoadInProgress:
@@ -284,14 +294,8 @@ func (r *Reader) leaveGroup(conn *Conn) error {
 //  * InconsistentGroupProtocol:
 //  * InvalidSessionTimeout:
 //  * GroupAuthorizationFailed:
-func (r *Reader) joinGroup() (memberGroupAssignments, error) {
-	conn, err := r.coordinator()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	request, err := r.makeJoinGroupRequestV2()
+func (r *Reader) joinGroup(conn *Conn) (GroupMemberAssignments, error) {
+	request, err := r.makejoinGroupRequestV1()
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +333,7 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 		})
 	}
 
-	var assignments memberGroupAssignments
+	var assignments GroupMemberAssignments
 	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
 		v, err := r.assignTopicPartitions(conn, response)
 		if err != nil {
@@ -354,26 +358,38 @@ func (r *Reader) joinGroup() (memberGroupAssignments, error) {
 	return assignments, nil
 }
 
-func (r *Reader) makeSyncGroupRequestV1(memberAssignments memberGroupAssignments) syncGroupRequestV1 {
+func (r *Reader) makeSyncGroupRequestV0(memberAssignments GroupMemberAssignments) syncGroupRequestV0 {
 	generationID, memberID := r.membership()
-	request := syncGroupRequestV1{
+	request := syncGroupRequestV0{
 		GroupID:      r.config.GroupID,
 		GenerationID: generationID,
 		MemberID:     memberID,
 	}
 
 	if memberAssignments != nil {
-		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV1, 0, 1)
+		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV0, 0, 1)
 
 		for memberID, topics := range memberAssignments {
-			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV1{
+			topics32 := make(map[string][]int32)
+			for topic, partitions := range topics {
+				partitions32 := make([]int32, len(partitions))
+				for i := range partitions {
+					partitions32[i] = int32(partitions[i])
+				}
+				topics32[topic] = partitions32
+			}
+			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
 				MemberID: memberID,
 				MemberAssignments: groupAssignment{
 					Version: 1,
-					Topics:  topics,
+					Topics:  topics32,
 				}.bytes(),
 			})
 		}
+
+		r.withErrorLogger(func(logger *log.Logger) {
+			logger.Printf("Syncing %d assignments for generation %d as member %s", len(request.GroupAssignments), generationID, memberID)
+		})
 	}
 
 	return request
@@ -389,14 +405,8 @@ func (r *Reader) makeSyncGroupRequestV1(memberAssignments memberGroupAssignments
 //  * IllegalGeneration:
 //  * RebalanceInProgress:
 //  * GroupAuthorizationFailed:
-func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string][]int32, error) {
-	conn, err := r.coordinator()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	request := r.makeSyncGroupRequestV1(memberAssignments)
+func (r *Reader) syncGroup(conn *Conn, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
+	request := r.makeSyncGroupRequestV0(memberAssignments)
 	response, err := conn.syncGroups(request)
 	if err != nil {
 		switch err {
@@ -424,6 +434,11 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 		return nil, fmt.Errorf("unable to read SyncGroup response for group, %v: %v\n", r.config.GroupID, err)
 	}
 
+	if len(assignments.Topics) == 0 {
+		generation, memberID := r.membership()
+		return nil, fmt.Errorf("received empty assignments for group, %v as member %s for generation %d", r.config.GroupID, memberID, generation)
+	}
+
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("sync group finished for group, %v\n", r.config.GroupID)
 	})
@@ -431,21 +446,17 @@ func (r *Reader) syncGroup(memberAssignments memberGroupAssignments) (map[string
 	return assignments.Topics, nil
 }
 
-func (r *Reader) rebalance() (map[string][]int32, error) {
+func (r *Reader) rebalance(conn *Conn) (map[string][]int32, error) {
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("rebalancing consumer group, %v", r.config.GroupID)
 	})
 
-	if err := r.refreshCoordinator(); err != nil {
-		return nil, err
-	}
-
-	members, err := r.joinGroup()
+	members, err := r.joinGroup(conn)
 	if err != nil {
 		return nil, err
 	}
 
-	assignments, err := r.syncGroup(members)
+	assignments, err := r.syncGroup(conn, members)
 	if err != nil {
 		return nil, err
 	}
@@ -459,17 +470,11 @@ func (r *Reader) unsubscribe() error {
 	return nil
 }
 
-func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
-	conn, err := r.coordinator()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
+func (r *Reader) fetchOffsets(conn *Conn, subs map[string][]int32) (map[int]int64, error) {
 	partitions := subs[r.config.Topic]
-	offsets, err := conn.offsetFetch(offsetFetchRequestV3{
+	offsets, err := conn.offsetFetch(offsetFetchRequestV1{
 		GroupID: r.config.GroupID,
-		Topics: []offsetFetchRequestV3Topic{
+		Topics: []offsetFetchRequestV1Topic{
 			{
 				Topic:      r.config.Topic,
 				Partitions: partitions,
@@ -485,6 +490,10 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 		for _, partition := range partitions {
 			if partition == pr.Partition {
 				offset := pr.Offset
+				if offset < 0 {
+					// No offset stored
+					offset = FirstOffset
+				}
 				offsetsByPartition[int(partition)] = offset
 			}
 		}
@@ -493,19 +502,13 @@ func (r *Reader) fetchOffsets(subs map[string][]int32) (map[int]int64, error) {
 	return offsetsByPartition, nil
 }
 
-func (r *Reader) subscribe(subs map[string][]int32) error {
+func (r *Reader) subscribe(conn *Conn, subs map[string][]int32) error {
 	if len(subs[r.config.Topic]) == 0 {
 		return nil
 	}
 
-	offsetsByPartition, err := r.fetchOffsets(subs)
+	offsetsByPartition, err := r.fetchOffsets(conn, subs)
 	if err != nil {
-		if conn, err := r.coordinator(); err == nil {
-			// make an attempt at leaving the group
-			_ = r.leaveGroup(conn)
-			conn.Close()
-		}
-
 		return err
 	}
 
@@ -567,7 +570,7 @@ func (r *Reader) heartbeat(conn *Conn) error {
 		return nil
 	}
 
-	resp, err := conn.heartbeat(heartbeatRequestV1{
+	_, err := conn.heartbeat(heartbeatRequestV0{
 		GroupID:      r.config.GroupID,
 		GenerationID: generationID,
 		MemberID:     memberID,
@@ -575,8 +578,6 @@ func (r *Reader) heartbeat(conn *Conn) error {
 	if err != nil {
 		return fmt.Errorf("heartbeat failed: %v", err)
 	}
-
-	r.waitThrottleTime(resp.ThrottleTimeMS)
 
 	return nil
 }
@@ -608,7 +609,7 @@ func (r *Reader) heartbeatLoop(conn *Conn) func(stop <-chan struct{}) {
 }
 
 type offsetCommitter interface {
-	offsetCommit(request offsetCommitRequestV3) (offsetCommitResponseV3, error)
+	offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error)
 }
 
 func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) error {
@@ -617,7 +618,7 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) er
 	}
 
 	generationID, memberID := r.membership()
-	request := offsetCommitRequestV3{
+	request := offsetCommitRequestV2{
 		GroupID:       r.config.GroupID,
 		GenerationID:  generationID,
 		MemberID:      memberID,
@@ -625,9 +626,9 @@ func (r *Reader) commitOffsets(conn offsetCommitter, offsetStash offsetStash) er
 	}
 
 	for topic, partitions := range offsetStash {
-		t := offsetCommitRequestV3Topic{Topic: topic}
+		t := offsetCommitRequestV2Topic{Topic: topic}
 		for partition, offset := range partitions {
-			t.Partitions = append(t.Partitions, offsetCommitRequestV3Partition{
+			t.Partitions = append(t.Partitions, offsetCommitRequestV2Partition{
 				Partition: int32(partition),
 				Offset:    offset,
 			})
@@ -758,6 +759,45 @@ func (r *Reader) commitLoop(conn *Conn) func(stop <-chan struct{}) {
 	}
 }
 
+// partitionWatcher queries kafka and watches for partition changes, triggering a rebalance if changes are found.
+// Similar to heartbeat it's okay to return on error here as if you are unable to ask a broker for basic metadata
+// you're in a bad spot and should rebalance. Commonly you will see an error here if there is a problem with
+// the connection to the coordinator and a rebalance will establish a new connection to the coordinator.
+func (r *Reader) partitionWatcher(conn partitionReader) func(stop <-chan struct{}) {
+	return func(stop <-chan struct{}) {
+		ticker := time.NewTicker(r.config.PartitionWatchInterval)
+		defer ticker.Stop()
+		ops, err := conn.ReadPartitions(r.config.Topic)
+		if err != nil {
+			r.withErrorLogger(func(l *log.Logger) {
+				l.Printf("Problem getting partitions during startup, %v\n, Returning and setting up handshake", err)
+			})
+			return
+		}
+		oParts := len(ops)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				ops, err := conn.ReadPartitions(r.config.Topic)
+				if err != nil {
+					r.withErrorLogger(func(l *log.Logger) {
+						l.Printf("Problem getting partitions while checking for changes, %v\n", err)
+					})
+					return
+				}
+				if len(ops) != oParts {
+					r.withErrorLogger(func(l *log.Logger) {
+						l.Printf("Partition changes found, reblancing group: %v.", r.config.GroupID)
+					})
+					return
+				}
+			}
+		}
+	}
+}
+
 // handshake performs the necessary incantations to join this Reader to the desired
 // consumer group.  handshake will be called whenever the group is disrupted
 // (member join, member leave, coordinator changed, etc)
@@ -765,25 +805,44 @@ func (r *Reader) handshake() error {
 	// always clear prior to subscribe
 	r.unsubscribe()
 
+	// make sure we have the most up-to-date coordinator.
+	if err := r.refreshCoordinator(); err != nil {
+		return err
+	}
+
+	// establish a connection to the coordinator.  this connection will be
+	// shared by all of the consumer group go routines.
+	conn, err := r.coordinator()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		select {
+		case <-r.stctx.Done():
+			// this reader is closing...leave the consumer group.
+			_ = r.leaveGroup(conn)
+		default:
+			// another consumer has left the group
+		}
+		_ = conn.Close()
+	}()
+
 	// rebalance and fetch assignments
-	assignments, err := r.rebalance()
+	assignments, err := r.rebalance(conn)
 	if err != nil {
 		return fmt.Errorf("rebalance failed for consumer group, %v: %v", r.config.GroupID, err)
 	}
-
-	conn, err := r.coordinator()
-	if err != nil {
-		return fmt.Errorf("heartbeat: unable to connect to coordinator: %v", err)
-	}
-	defer conn.Close()
 
 	rg := &runGroup{}
 	rg = rg.WithContext(r.stctx)
 	rg.Go(r.heartbeatLoop(conn))
 	rg.Go(r.commitLoop(conn))
+	if r.config.WatchPartitionChanges {
+		rg.Go(r.partitionWatcher(conn))
+	}
 
 	// subscribe to assignments
-	if err := r.subscribe(assignments); err != nil {
+	if err := r.subscribe(conn, assignments); err != nil {
 		rg.Stop()
 		return fmt.Errorf("subscribe failed for consumer group, %v: %v\n", r.config.GroupID, err)
 	}
@@ -858,6 +917,15 @@ type ReaderConfig struct {
 	// Setting this field to a negative value disables lag reporting.
 	ReadLagInterval time.Duration
 
+	// GroupBalancers is the priority-ordered list of client-side consumer group
+	// balancing strategies that will be offered to the coordinator.  The first
+	// strategy that all group members support will be chosen by the leader.
+	//
+	// Default: [Range, RoundRobin]
+	//
+	// Only used when GroupID is set
+	GroupBalancers []GroupBalancer
+
 	// HeartbeatInterval sets the optional frequency at which the reader sends the consumer
 	// group heartbeat update.
 	//
@@ -869,10 +937,23 @@ type ReaderConfig struct {
 	// CommitInterval indicates the interval at which offsets are committed to
 	// the broker.  If 0, commits will be handled synchronously.
 	//
-	// Defaults to 1s
+	// Default: 0
 	//
 	// Only used when GroupID is set
 	CommitInterval time.Duration
+
+	// PartitionWatchInterval indicates how often a reader checks for partition changes.
+	// If a reader sees a partition change (such as a partition add) it will rebalance the group
+	// picking up new partitions.
+	//
+	// Default: 5s
+	//
+	// Only used when GroupID is set and WatchPartitionChanges is set.
+	PartitionWatchInterval time.Duration
+
+	// WatchForPartitionChanges is used to inform kafka-go that a consumer group should be
+	// polling the brokers and rebalancing if any partition changes happen to the topic.
+	WatchPartitionChanges bool
 
 	// SessionTimeout optionally sets the length of time that may pass without a heartbeat
 	// before the coordinator considers the consumer dead and initiates a rebalance.
@@ -912,7 +993,7 @@ type ReaderConfig struct {
 // details about the behavior of the reader.
 type ReaderStats struct {
 	Dials      int64 `metric:"kafka.reader.dial.count"      type:"counter"`
-	Fetches    int64 `metric:"kafak.reader.fetch.count"     type:"counter"` // typo here, but I'm reluctant to fix it
+	Fetches    int64 `metric:"kafka.reader.fetch.count"     type:"counter"`
 	Messages   int64 `metric:"kafka.reader.message.count"   type:"counter"`
 	Bytes      int64 `metric:"kafka.reader.message.bytes"   type:"counter"`
 	Rebalances int64 `metric:"kafka.reader.rebalance.count" type:"counter"`
@@ -936,6 +1017,12 @@ type ReaderStats struct {
 	ClientID  string `tag:"client_id"`
 	Topic     string `tag:"topic"`
 	Partition string `tag:"partition"`
+
+	// The original `Fetches` field had a typo where the metric name was called
+	// "kafak..." instead of "kafka...", in order to offer time to fix monitors
+	// that may be relying on this mistake we are temporarily introducing this
+	// field.
+	DeprecatedFetchesWithTypo int64 `metric:"kafak.reader.fetch.count" type:"counter"`
 }
 
 // readerStats is a struct that contains statistics on a reader.
@@ -958,6 +1045,7 @@ type readerStats struct {
 }
 
 // NewReader creates and returns a new Reader configured with config.
+// The offset is initialized to FirstOffset.
 func NewReader(config ReaderConfig) *Reader {
 	if len(config.Brokers) == 0 {
 		panic("cannot create a new kafka reader with an empty list of broker addresses")
@@ -969,10 +1057,6 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.Partition < 0 || config.Partition >= math.MaxInt32 {
 		panic(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
-	}
-
-	if config.MinBytes > config.MaxBytes {
-		panic(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
 	}
 
 	if config.MinBytes < 0 {
@@ -988,6 +1072,13 @@ func NewReader(config ReaderConfig) *Reader {
 	}
 
 	if config.GroupID != "" {
+		if len(config.GroupBalancers) == 0 {
+			config.GroupBalancers = []GroupBalancer{
+				RangeGroupBalancer{},
+				RoundRobinGroupBalancer{},
+			}
+		}
+
 		if config.HeartbeatInterval < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
 			panic(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
 		}
@@ -1000,13 +1091,18 @@ func NewReader(config ReaderConfig) *Reader {
 			panic(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
 		}
 
-		if config.RetentionTime < 0 || (config.RetentionTime/time.Millisecond) >= math.MaxInt32 {
+		if config.RetentionTime < 0 {
 			panic(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
 		}
 
 		if config.CommitInterval < 0 || (config.CommitInterval/time.Millisecond) >= math.MaxInt32 {
 			panic(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
 		}
+
+		if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
+			panic(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
+		}
+
 	}
 
 	if config.Dialer == nil {
@@ -1019,6 +1115,10 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.MinBytes == 0 {
 		config.MinBytes = config.MaxBytes
+	}
+
+	if config.MinBytes > config.MaxBytes {
+		panic(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
 	}
 
 	if config.MaxWait == 0 {
@@ -1035,6 +1135,10 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.SessionTimeout == 0 {
 		config.SessionTimeout = defaultSessionTimeout
+	}
+
+	if config.PartitionWatchInterval == 0 {
+		config.PartitionWatchInterval = defaultPartitionWatchTime
 	}
 
 	if config.RebalanceTimeout == 0 {
@@ -1068,9 +1172,9 @@ func NewReader(config ReaderConfig) *Reader {
 		msgs:    make(chan readerMessage, config.QueueCapacity),
 		cancel:  func() {},
 		done:    make(chan struct{}),
-		commits: make(chan commitRequest),
+		commits: make(chan commitRequest, config.QueueCapacity),
 		stop:    stop,
-		offset:  firstOffset,
+		offset:  FirstOffset,
 		stctx:   stctx,
 		stats: &readerStats{
 			dialTime:   makeSummary(),
@@ -1110,15 +1214,6 @@ func (r *Reader) Close() error {
 	r.stop()
 	r.join.Wait()
 
-	if r.useConsumerGroup() {
-		// gracefully attempt to leave the consumer group on close
-		if generationID, membershipID := r.membership(); generationID > 0 && membershipID != "" {
-			if conn, err := r.coordinator(); err == nil {
-				_ = r.leaveGroup(conn)
-			}
-		}
-	}
-
 	<-r.done
 
 	if !closed {
@@ -1148,7 +1243,7 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 		}
 	}
 
-	return m.decode()
+	return m, nil
 }
 
 // FetchMessage reads and return the next message from the r. The method call
@@ -1203,10 +1298,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 					m.error = io.ErrUnexpectedEOF
 				}
 
-				if m.error != nil {
-					return m.message, m.error
-				}
-				return m.message.decode()
+				return m.message, m.error
 			}
 		}
 	}
@@ -1309,10 +1401,10 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	select {
 	case off := <-offch:
 		switch cur := r.Offset(); {
-		case cur == firstOffset:
+		case cur == FirstOffset:
 			lag = off.last - off.first
 
-		case cur == lastOffset:
+		case cur == LastOffset:
 			lag = 0
 
 		default:
@@ -1326,7 +1418,8 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	return
 }
 
-// Offset returns the current offset of the reader.
+// Offset returns the current absolute offset of the reader, or -1
+// if r is backed by a consumer group.
 func (r *Reader) Offset() int64 {
 	if r.useConsumerGroup() {
 		return -1
@@ -1341,7 +1434,8 @@ func (r *Reader) Offset() int64 {
 	return offset
 }
 
-// Lag returns the lag of the last message returned by ReadMessage.
+// Lag returns the lag of the last message returned by ReadMessage, or -1
+// if r is backed by a consumer group.
 func (r *Reader) Lag() int64 {
 	if r.useConsumerGroup() {
 		return -1
@@ -1354,12 +1448,13 @@ func (r *Reader) Lag() int64 {
 }
 
 // SetOffset changes the offset from which the next batch of messages will be
-// read.
+// read. The method fails with io.ErrClosedPipe if the reader has already been closed.
 //
-// Setting the offset ot -1 means to seek to the first offset.
-// Setting the offset to -2 means to seek to the last offset.
-//
-// The method fails with io.ErrClosedPipe if the reader has already been closed.
+// From version 0.2.0, FirstOffset and LastOffset can be used to indicate the first
+// or last available offset in the partition. Please note while -1 and -2 were accepted
+// to indicate the first or last offset in previous versions, the meanings of the numbers
+// were swapped in 0.2.0 to match the meanings in other libraries and the Kafka protocol
+// specification.
 func (r *Reader) SetOffset(offset int64) error {
 	if r.useConsumerGroup() {
 		return errNotAvailableWithGroup
@@ -1422,7 +1517,7 @@ func (r *Reader) SetOffsetWithTimestamp(t time.Time) error {
 // call Stats on a kafka reader and report the metrics to a stats collection
 // system.
 func (r *Reader) Stats() ReaderStats {
-	return ReaderStats{
+	stats := ReaderStats{
 		Dials:         r.stats.dials.snapshot(),
 		Fetches:       r.stats.fetches.snapshot(),
 		Messages:      r.stats.messages.snapshot(),
@@ -1446,6 +1541,9 @@ func (r *Reader) Stats() ReaderStats {
 		Topic:         r.config.Topic,
 		Partition:     r.stats.partition,
 	}
+	// TODO: remove when we get rid of the deprecated field.
+	stats.DeprecatedFetchesWithTypo = stats.Fetches
+	return stats
 }
 
 func (r *Reader) withLogger(do func(*log.Logger)) {
@@ -1628,7 +1726,17 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			switch offset, err = r.read(ctx, offset, conn); err {
 			case nil:
 				errcount = 0
+			case UnknownTopicOrPartition:
+				r.withErrorLogger(func(log *log.Logger) {
+					log.Printf("failed to read from current broker for partition %d of %s at offset %d, topic or parition not found on this broker, %v", r.partition, r.topic, offset, r.brokers)
+				})
 
+				conn.Close()
+
+				// The next call to .initialize will re-establish a connection to the proper
+				// topic/partition broker combo.
+				r.stats.rebalances.observe(1)
+				break readLoop
 			case NotLeaderForPartition:
 				r.withErrorLogger(func(log *log.Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d, not the leader", r.partition, r.topic, offset)
@@ -1644,7 +1752,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			case RequestTimedOut:
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
-				r.withErrorLogger(func(log *log.Logger) {
+				r.withLogger(func(log *log.Logger) {
 					log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, offset)
 				})
 				r.stats.timeouts.observe(1)
@@ -1706,8 +1814,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, start int64, err error) {
 	for i := 0; i != len(r.brokers) && conn == nil; i++ {
 		var broker = r.brokers[i]
-		var first int64
-		var last int64
+		var first, last int64
 
 		t0 := time.Now()
 		conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition)
@@ -1726,10 +1833,10 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 		}
 
 		switch {
-		case offset == firstOffset:
+		case offset == FirstOffset:
 			offset = first
 
-		case offset == lastOffset:
+		case offset == LastOffset:
 			offset = last
 
 		case offset < first:
@@ -1811,7 +1918,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	return offset, err
 }
 
-func (r *reader) readOffsets(conn *Conn) (first int64, last int64, err error) {
+func (r *reader) readOffsets(conn *Conn) (first, last int64, err error) {
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 	return conn.ReadOffsets()
 }
@@ -1850,12 +1957,12 @@ func (r *reader) withErrorLogger(do func(*log.Logger)) {
 
 // extractTopics returns the unique list of topics represented by the set of
 // provided members
-func extractTopics(members []memberGroupMetadata) []string {
+func extractTopics(members []GroupMember) []string {
 	var visited = map[string]struct{}{}
 	var topics []string
 
 	for _, member := range members {
-		for _, topic := range member.Metadata.Topics {
+		for _, topic := range member.Topics {
 			if _, seen := visited[topic]; seen {
 				continue
 			}

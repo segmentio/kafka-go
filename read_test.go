@@ -70,3 +70,55 @@ func TestReadMapStringInt32(t *testing.T) {
 		})
 	}
 }
+
+func TestReadNewBytes(t *testing.T) {
+
+	t.Run("reads new bytes", func(t *testing.T) {
+		r := bufio.NewReader(bytes.NewReader([]byte("foobar")))
+
+		b, remain, err := readNewBytes(r, 6, 3)
+		if string(b) != "foo" {
+			t.Error("should have returned 3 bytes")
+		}
+		if remain != 3 {
+			t.Error("should have calculated remaining correctly")
+		}
+		if err != nil {
+			t.Error("should not have errored")
+		}
+
+		b, remain, err = readNewBytes(r, remain, 3)
+		if string(b) != "bar" {
+			t.Error("should have returned 3 bytes")
+		}
+		if remain != 0 {
+			t.Error("should have calculated remaining correctly")
+		}
+		if err != nil {
+			t.Error("should not have errored")
+		}
+
+		b, err = r.Peek(0)
+		if len(b) > 0 {
+			t.Error("not all bytes were consumed")
+		}
+	})
+
+	t.Run("discards bytes when insufficient", func(t *testing.T) {
+		r := bufio.NewReader(bytes.NewReader([]byte("foo")))
+		b, remain, err := readNewBytes(bufio.NewReader(r), 3, 4)
+		if string(b) != "foo" {
+			t.Error("should have returned available bytes")
+		}
+		if remain != 0 {
+			t.Error("all bytes should have been consumed")
+		}
+		if err != errShortRead {
+			t.Error("should have returned errShortRead")
+		}
+		b, err = r.Peek(0)
+		if len(b) > 0 {
+			t.Error("not all bytes were consumed")
+		}
+	})
+}
