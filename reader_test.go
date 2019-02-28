@@ -40,7 +40,7 @@ func TestReader(t *testing.T) {
 
 		{
 			scenario: "setting the offset by TimeStamp",
-			function: testReaderSetOffsetWithTimeStamp,
+			function: testReaderSetOffsetAt,
 		},
 
 		{
@@ -168,7 +168,7 @@ func testReaderSetRandomOffset(t *testing.T, ctx context.Context, r *Reader) {
 	}
 }
 
-func testReaderSetOffsetWithTimeStamp(t *testing.T, ctx context.Context, r *Reader) {
+func testReaderSetOffsetAt(t *testing.T, ctx context.Context, r *Reader) {
 	// We make 2 batches of messages here with a brief 2 second pause
 	// to ensure messages 0...9 will be written a few seconds before messages 10...19
 	// We'll then fetch the timestamp for message offset 10 and use that timestamp to set
@@ -190,7 +190,7 @@ func testReaderSetOffsetWithTimeStamp(t *testing.T, ctx context.Context, r *Read
 		}
 	}
 
-	err := r.SetOffsetWithTimestamp(ctx, ts)
+	err := r.SetOffsetAt(ctx, ts)
 	if err != nil {
 		t.Fatal("error setting offset by timestamp", err)
 	}
