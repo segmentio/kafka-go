@@ -1490,12 +1490,10 @@ func (r *Reader) SetOffset(offset int64) error {
 // given the ts, or if the reader has been closed.
 func (r *Reader) SetOffsetWithTimestamp(ctx context.Context, t time.Time) error {
 	r.mutex.Lock()
-
 	if r.closed {
 		r.mutex.Unlock()
 		return io.ErrClosedPipe
 	}
-
 	r.mutex.Unlock()
 
 	for _, broker := range r.config.Brokers {
@@ -1513,7 +1511,6 @@ func (r *Reader) SetOffsetWithTimestamp(ctx context.Context, t time.Time) error 
 
 		return r.SetOffset(offset)
 	}
-
 	return fmt.Errorf("error setting offset for timestamp %+v", t)
 }
 

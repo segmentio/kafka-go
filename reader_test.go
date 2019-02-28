@@ -184,7 +184,6 @@ func testReaderSetOffsetWithTimeStamp(t *testing.T, ctx context.Context, r *Read
 		if err != nil {
 			t.Error("error reading message", err)
 		}
-
 		// grab the time for the 10th message
 		if i == 10 {
 			ts = m.Time
@@ -205,7 +204,6 @@ func testReaderSetOffsetWithTimeStamp(t *testing.T, ctx context.Context, r *Read
 	if m.Offset != 10 {
 		t.Errorf("expected offset of 10, received offset %d", m.Offset)
 	}
-
 }
 
 func testReaderLag(t *testing.T, ctx context.Context, r *Reader) {
