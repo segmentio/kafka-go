@@ -1505,6 +1505,7 @@ func (r *Reader) SetOffsetAt(ctx context.Context, t time.Time) error {
 		deadline, _ := ctx.Deadline()
 		conn.SetDeadline(deadline)
 		offset, err := conn.ReadOffset(t)
+		conn.Close()
 		if err != nil {
 			return err
 		}
