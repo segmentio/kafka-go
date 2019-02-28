@@ -1486,7 +1486,7 @@ func (r *Reader) SetOffset(offset int64) error {
 // SetOffsetWithTimestamp changes the offset from which the next batch of messages will be
 // read given the timestamp t.
 //
-// The method fails if the unable to connect to the coordinator, or unable to read the offset
+// The method fails if the unable to connect partition leader, or unable to read the offset
 // given the ts, or if the reader has been closed.
 func (r *Reader) SetOffsetWithTimestamp(ctx context.Context, t time.Time) error {
 	r.mutex.Lock()
