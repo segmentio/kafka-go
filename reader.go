@@ -1483,6 +1483,38 @@ func (r *Reader) SetOffset(offset int64) error {
 	return err
 }
 
+// SetOffsetAt changes the offset from which the next batch of messages will be
+// read given the timestamp t.
+//
+// The method fails if the unable to connect partition leader, or unable to read the offset
+// given the ts, or if the reader has been closed.
+func (r *Reader) SetOffsetAt(ctx context.Context, t time.Time) error {
+	r.mutex.Lock()
+	if r.closed {
+		r.mutex.Unlock()
+		return io.ErrClosedPipe
+	}
+	r.mutex.Unlock()
+
+	for _, broker := range r.config.Brokers {
+		conn, err := r.config.Dialer.DialLeader(ctx, "tcp", broker, r.config.Topic, r.config.Partition)
+		if err != nil {
+			continue
+		}
+
+		deadline, _ := ctx.Deadline()
+		conn.SetDeadline(deadline)
+		offset, err := conn.ReadOffset(t)
+		conn.Close()
+		if err != nil {
+			return err
+		}
+
+		return r.SetOffset(offset)
+	}
+	return fmt.Errorf("error setting offset for timestamp %+v", t)
+}
+
 // Stats returns a snapshot of the reader stats since the last time the method
 // was called, or since the reader was created if it is called for the first
 // time.
