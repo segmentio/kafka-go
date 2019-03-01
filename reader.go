@@ -715,7 +715,7 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 // commitLoopInterval handles each commit asynchronously with a period defined
 // by ReaderConfig.CommitInterval
 func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) {
-	ticker := time.NewTicker(r.config.HeartbeatInterval)
+	ticker := time.NewTicker(r.config.CommitInterval)
 	defer ticker.Stop()
 
 	commit := func() {

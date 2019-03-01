@@ -987,7 +987,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 				Brokers:           []string{"localhost:9092"},
 				Topic:             topic,
 				GroupID:           groupID,
-				HeartbeatInterval: time.Second,
+				HeartbeatInterval: 2 * time.Second,
 				CommitInterval:    test.commitInterval,
 				RebalanceTimeout:  8 * time.Second,
 				RetentionTime:     time.Hour,
