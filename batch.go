@@ -167,7 +167,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	)
 	for batch.conn != nil && offset < batch.conn.offset {
 		if err != nil {
-			goto end
+			break
 		}
 		offset, timestamp, headers, err = batch.readMessage(
 			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
@@ -181,7 +181,6 @@ func (batch *Batch) ReadMessage() (Message, error) {
 		)
 	}
 
-end:
 	batch.mutex.Unlock()
 	msg.Topic = batch.topic
 	msg.Partition = batch.partition
