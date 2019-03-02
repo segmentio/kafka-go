@@ -43,6 +43,8 @@ func main() {
 	topic := os.Getenv("topic")
 	kafkaWriter := getKafkaWriter(kafkaURL, topic)
 
+	defer kafkaWriter.Close()
+
 	// Add handle func for producer.
 	http.HandleFunc("/", producerHandler(kafkaWriter))
 

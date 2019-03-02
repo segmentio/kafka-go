@@ -27,6 +27,8 @@ func main() {
 
 	reader := getKafkaReader(kafkaURL, topic, groupID)
 
+	defer reader.Close()
+
 	fmt.Println("start consuming ... !!")
 	for {
 		m, err := reader.ReadMessage(context.Background())
@@ -35,6 +37,4 @@ func main() {
 		}
 		fmt.Printf("message at topic:%v partition:%v offset:%v	%s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
 	}
-
-	reader.Close()
 }

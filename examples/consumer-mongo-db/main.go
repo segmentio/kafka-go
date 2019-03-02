@@ -53,6 +53,8 @@ func main() {
 	groupID := os.Getenv("groupID")
 	reader := getKafkaReader(kafkaURL, topic, groupID)
 
+	defer reader.Close()
+
 	fmt.Println("start consuming ... !!")
 
 	for {
@@ -67,6 +69,4 @@ func main() {
 
 		fmt.Println("Inserted a single document: ", insertResult.InsertedID)
 	}
-
-	reader.Close()
 }

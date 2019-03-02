@@ -23,7 +23,7 @@ func main() {
 	kafkaURL := os.Getenv("kafkaURL")
 	topic := os.Getenv("topic")
 	writer := getKafkaWriter(kafkaURL, topic)
-
+	defer writer.Close()
 	fmt.Println("start producing ... !!")
 	for i := 0; ; i++ {
 		msg := kafka.Message{
@@ -36,6 +36,4 @@ func main() {
 		}
 		time.Sleep(1 * time.Second)
 	}
-
-	writer.Close()
 }
