@@ -170,6 +170,48 @@ func writeFetchRequestV2(w *bufio.Writer, correlationID int32, clientID, topic s
 	return w.Flush()
 }
 
+func writeFetchRequestV5(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration) error {
+	h := requestHeader{
+		ApiKey:        int16(fetchRequest),
+		ApiVersion:    int16(v5),
+		CorrelationID: correlationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		4 + // replica ID
+		4 + // max wait time
+		4 + // min bytes
+		4 + // max bytes
+		1 + // isolation level
+		4 + // topic array length
+		sizeofString(topic) +
+		4 + // partition array length
+		4 + // partition
+		8 + // offset
+		8 + // log start offset
+		4 // max bytes
+
+	h.writeTo(w)
+	writeInt32(w, -1) // replica ID
+	writeInt32(w, milliseconds(maxWait))
+	writeInt32(w, int32(minBytes))
+	writeInt32(w, int32(maxBytes))
+	writeInt8(w, int8(0)) // isolation level 0 - read uncommitted
+
+	// topic array
+	writeArrayLen(w, 1)
+	writeString(w, topic)
+
+	// partition array
+	writeArrayLen(w, 1)
+	writeInt32(w, partition)
+	writeInt64(w, offset)
+	writeInt64(w, int64(0)) // log start offset only used when is sent by follower
+	writeInt32(w, int32(maxBytes))
+
+	return w.Flush()
+}
+
 func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, time int64) error {
 	h := requestHeader{
 		ApiKey:        int16(listOffsetRequest),

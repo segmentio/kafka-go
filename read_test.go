@@ -7,6 +7,51 @@ import (
 	"testing"
 )
 
+type VarIntTestCase struct {
+	v  int64
+	r  int
+	tc []byte
+}
+
+func TestReadVarInt(t *testing.T) {
+	testCases := []*VarIntTestCase{
+		&VarIntTestCase{v: 0, r: 3, tc: []byte{0, 1, 10, 0}},
+		&VarIntTestCase{v: -1, r: 3, tc: []byte{1, 1, 10, 0}},
+		&VarIntTestCase{v: 1, r: 3, tc: []byte{2, 1, 10, 0}},
+		&VarIntTestCase{v: -2, r: 3, tc: []byte{3, 1, 10, 0}},
+		&VarIntTestCase{v: 2, r: 3, tc: []byte{4, 1, 10, 0}},
+		&VarIntTestCase{v: 64, r: 2, tc: []byte{128, 1, 10, 0}},
+		&VarIntTestCase{v: -64, r: 3, tc: []byte{127, 1, 10, 0}},
+		&VarIntTestCase{v: -196, r: 2, tc: []byte{135, 3, 10, 0}},
+		&VarIntTestCase{v: -24772, r: 1, tc: []byte{135, 131, 3, 0}},
+	}
+
+	for _, tc := range testCases {
+		var v int64
+		rd := bufio.NewReader(bytes.NewReader(tc.tc))
+		remain, err := readVarInt(rd, len(tc.tc), &v)
+		if err != nil {
+			t.Errorf("Failure during reading: %v", err)
+		}
+		if v != tc.v {
+			t.Errorf("Expected %v; got %v", tc.v, v)
+		}
+		if remain != tc.r {
+			t.Errorf("Expected remain %v; got %v", tc.r, remain)
+		}
+	}
+}
+
+func TestReadVarIntFailing(t *testing.T) {
+	var v int64
+	testCase := []byte{135, 135}
+	rd := bufio.NewReader(bytes.NewReader(testCase))
+	_, err := readVarInt(rd, len(testCase), &v)
+	if err != errShortRead {
+		t.Errorf("Expected error while parsing var int: %v", err)
+	}
+}
+
 func TestReadStringArray(t *testing.T) {
 	testCases := map[string]struct {
 		Value []string

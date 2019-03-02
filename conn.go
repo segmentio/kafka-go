@@ -72,6 +72,7 @@ type Conn struct {
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
 	apiVersions  map[apiKey]ApiVersion
+	fetchVersion apiVersion
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -135,7 +136,12 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 			}},
 		}},
 	}).size()
+	c.selectVersions()
 	c.fetchMaxBytes = math.MaxInt32 - c.fetchMinSize
+	return c
+}
+
+func (c *Conn) selectVersions() {
 	var err error
 	apiVersions, err := c.ApiVersions()
 	if err != nil {
@@ -146,7 +152,15 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 			c.apiVersions[apiKey(v.ApiKey)] = v
 		}
 	}
-	return c
+	for _, v := range c.apiVersions {
+		if apiKey(v.ApiKey) == fetchRequest {
+			if v.MaxVersion >= 5 {
+				c.fetchVersion = 5
+			} else {
+				c.fetchVersion = 2
+			}
+		}
+	}
 }
 
 // Controller requests kafka for the current controller and returns its URL
@@ -666,17 +680,32 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 		adjustedDeadline = deadline
-		return writeFetchRequestV2(
-			&c.wbuf,
-			id,
-			c.clientID,
-			c.topic,
-			c.partition,
-			offset,
-			minBytes,
-			maxBytes+int(c.fetchMinSize),
-			deadlineToTimeout(deadline, now),
-		)
+		switch c.fetchVersion {
+		case v5:
+			return writeFetchRequestV5(
+				&c.wbuf,
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				offset,
+				minBytes,
+				maxBytes+int(c.fetchMinSize),
+				deadlineToTimeout(deadline, now),
+			)
+		default:
+			return writeFetchRequestV2(
+				&c.wbuf,
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				offset,
+				minBytes,
+				maxBytes+int(c.fetchMinSize),
+				deadlineToTimeout(deadline, now),
+			)
+		}
 	})
 	if err != nil {
 		return &Batch{err: dontExpectEOF(err)}
@@ -687,10 +716,30 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 		return &Batch{err: dontExpectEOF(err)}
 	}
 
-	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
+	var throttle int32
+	var highWaterMark int64
+	var remain int
+
+	switch c.fetchVersion {
+	case v5:
+		throttle, highWaterMark, remain, err = readFetchResponseHeaderV5(&c.rbuf, size)
+	default:
+		throttle, highWaterMark, remain, err = readFetchResponseHeaderV2(&c.rbuf, size)
+	}
+	if err == errShortRead {
+		err = checkTimeoutErr(adjustedDeadline)
+	}
+
+	var msgs *messageSetReader
+	if err == nil {
+		msgs, err = newMessageSetReader(&c.rbuf, remain)
+	}
+	if err == errShortRead {
+		err = checkTimeoutErr(adjustedDeadline)
+	}
 	return &Batch{
 		conn:          c,
-		msgs:          newMessageSetReader(&c.rbuf, remain),
+		msgs:          msgs,
 		deadline:      adjustedDeadline,
 		throttle:      duration(throttle),
 		lock:          lock,
