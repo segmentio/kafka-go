@@ -381,7 +381,7 @@ func readFetchResponseHeaderV5(r *bufio.Reader, size int) (throttle int32, water
 		LastStableOffset    int64
 		LogStartOffset      int64
 	}
-	var MessageSetSize int32
+	var messageSetSize int32
 	var abortedTransactions []AbortedTransaction
 
 	if remain, err = readInt32(r, size, &throttle); err != nil {
@@ -442,15 +442,15 @@ func readFetchResponseHeaderV5(r *bufio.Reader, size int) (throttle int32, water
 		return
 	}
 
-	remain, err = readInt32(r, remain, &MessageSetSize)
+	remain, err = readInt32(r, remain, &messageSetSize)
 	if err != nil {
 		return
 	}
 
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
-	if remain != int(MessageSetSize) {
-		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d)", MessageSetSize, remain)
+	if remain != int(messageSetSize) {
+		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d)", messageSetSize, remain)
 		return
 	}
 
