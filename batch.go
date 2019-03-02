@@ -151,7 +151,6 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	batch.mutex.Lock()
 
 	var offset, timestamp int64
-	offset = 0
 	var headers []Header
 	var err error
 
