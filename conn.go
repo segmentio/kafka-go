@@ -82,7 +82,7 @@ type ConnConfig struct {
 	Partition int
 }
 
-type BatchReadConfig struct {
+type ReadBatchConfig struct {
 	MinBytes       int
 	MaxBytes       int
 	IsolationLevel IsolationLevel
@@ -671,14 +671,14 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // gives the minimum and maximum number of bytes that it wants to receive from
 // the kafka server.
 func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
-	cfg := BatchReadConfig{
+	cfg := ReadBatchConfig{
 		MinBytes: minBytes,
 		MaxBytes: maxBytes,
 	}
 	return c.ReadBatchWith(cfg)
 }
 
-func (c *Conn) ReadBatchWith(cfg BatchReadConfig) *Batch {
+func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
