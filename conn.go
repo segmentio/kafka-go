@@ -675,10 +675,10 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 		MinBytes: minBytes,
 		MaxBytes: maxBytes,
 	}
-	return c.ReadBatchWithConfig(cfg)
+	return c.ReadBatchWith(cfg)
 }
 
-func (c *Conn) ReadBatchWithConfig(cfg BatchReadConfig) *Batch {
+func (c *Conn) ReadBatchWith(cfg BatchReadConfig) *Batch {
 
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
