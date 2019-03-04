@@ -91,8 +91,8 @@ type BatchReadConfig struct {
 type IsolationLevel int8
 
 const (
-	READ_UNCOMMITTED IsolationLevel = 0
-	READ_COMMITTED   IsolationLevel = 1
+	ReadUncommitted IsolationLevel = 0
+	ReadCommitted   IsolationLevel = 1
 )
 
 var (
