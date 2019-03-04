@@ -671,11 +671,10 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // gives the minimum and maximum number of bytes that it wants to receive from
 // the kafka server.
 func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
-	cfg := ReadBatchConfig{
+	return c.ReadBatchWith(ReadBatchConfig{
 		MinBytes: minBytes,
 		MaxBytes: maxBytes,
-	}
-	return c.ReadBatchWith(cfg)
+	})
 }
 
 func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
