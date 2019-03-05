@@ -82,9 +82,14 @@ type ConnConfig struct {
 	Partition int
 }
 
+// ReadBatchConfig is a configuration object used for reading batches of messages.
 type ReadBatchConfig struct {
-	MinBytes       int
-	MaxBytes       int
+	MinBytes int
+	MaxBytes int
+
+	// IsolationLevel controls the visibility of transactional records.
+	// ReadUncommitted makes all records visible. With ReadCommitted only
+	// non-transactional and committed records are visible.
 	IsolationLevel IsolationLevel
 }
 
@@ -677,6 +682,8 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 	})
 }
 
+// ReadBatchWith in every way is similar to ReadBatch. ReadBatch is configured
+// with the default values in ReadBatchConfig except for minBytes and maxBytes.
 func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 
 	var adjustedDeadline time.Time
