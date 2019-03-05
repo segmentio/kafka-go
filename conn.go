@@ -990,6 +990,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					c.partition,
 					deadlineToTimeout(deadline, now),
 					int16(atomic.LoadInt32(&c.requiredAcks)),
+					nil,
 					msgs...,
 				)
 			}
