@@ -82,6 +82,24 @@ type ConnConfig struct {
 	Partition int
 }
 
+// ReadBatchConfig is a configuration object used for reading batches of messages.
+type ReadBatchConfig struct {
+	MinBytes int
+	MaxBytes int
+
+	// IsolationLevel controls the visibility of transactional records.
+	// ReadUncommitted makes all records visible. With ReadCommitted only
+	// non-transactional and committed records are visible.
+	IsolationLevel IsolationLevel
+}
+
+type IsolationLevel int8
+
+const (
+	ReadUncommitted IsolationLevel = 0
+	ReadCommitted   IsolationLevel = 1
+)
+
 var (
 	// DefaultClientID is the default value used as ClientID of kafka
 	// connections.
@@ -658,17 +676,27 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // gives the minimum and maximum number of bytes that it wants to receive from
 // the kafka server.
 func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
+	return c.ReadBatchWith(ReadBatchConfig{
+		MinBytes: minBytes,
+		MaxBytes: maxBytes,
+	})
+}
+
+// ReadBatchWith in every way is similar to ReadBatch. ReadBatch is configured
+// with the default values in ReadBatchConfig except for minBytes and maxBytes.
+func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
+
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
 
-	if minBytes < 0 || minBytes > maxFetch {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", minBytes, maxFetch)}
+	if cfg.MinBytes < 0 || cfg.MinBytes > maxFetch {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", cfg.MinBytes, maxFetch)}
 	}
-	if maxBytes < 0 || maxBytes > maxFetch {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", maxBytes, maxFetch)}
+	if cfg.MaxBytes < 0 || cfg.MaxBytes > maxFetch {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", cfg.MaxBytes, maxFetch)}
 	}
-	if minBytes > maxBytes {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", minBytes, maxBytes)}
+	if cfg.MinBytes > cfg.MaxBytes {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", cfg.MinBytes, cfg.MaxBytes)}
 	}
 
 	offset, err := c.Seek(c.Offset())
@@ -689,9 +717,10 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 				c.topic,
 				c.partition,
 				offset,
-				minBytes,
-				maxBytes+int(c.fetchMinSize),
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
 				deadlineToTimeout(deadline, now),
+				int8(cfg.IsolationLevel),
 			)
 		default:
 			return writeFetchRequestV2(
@@ -701,8 +730,8 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 				c.topic,
 				c.partition,
 				offset,
-				minBytes,
-				maxBytes+int(c.fetchMinSize),
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
 				deadlineToTimeout(deadline, now),
 			)
 		}
