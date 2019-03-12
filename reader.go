@@ -240,9 +240,6 @@ type partitionReader interface {
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
 // their various partitions
 func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResponseV1) (GroupMemberAssignments, error) {
-	const backoffDelayMin = 100 * time.Millisecond
-	const backoffDelayMax = 1 * time.Second
-
 	r.withLogger(func(l *log.Logger) {
 		l.Println("selected as leader for group,", r.config.GroupID)
 	})
@@ -258,23 +255,9 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 	}
 
 	topics := extractTopics(members)
-	var partitions []Partition
-	for attempt := 0; true; attempt++ {
-		if attempt != 0 {
-			if !sleep(r.stctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
-				return nil, r.stctx.Err()
-			}
-		}
-		partitions, err = conn.ReadPartitions(topics...)
-		if err == UnknownTopicOrPartition {
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("error reading partitions, retrying: %v", err)
-			})
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("unable to read partitions: %v", err)
-		}
+	partitions, err := conn.ReadPartitions(topics...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read partitions: %v", err)
 	}
 
 	r.withLogger(func(l *log.Logger) {
@@ -469,33 +452,47 @@ func (r *Reader) syncGroup(conn *Conn, memberAssignments GroupMemberAssignments)
 }
 
 func (r *Reader) rebalance(conn *Conn) (map[string][]int32, error) {
-	const backoffDelayMin = 100 * time.Millisecond
-	const backoffDelayMax = 1 * time.Second
 
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("rebalancing consumer group, %v", r.config.GroupID)
 	})
 
+	members, err := r.joinGroup(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	assignments, err := r.syncGroup(conn, members)
+	if err != nil {
+		return nil, err
+	}
+
+	return assignments, nil
+}
+
+func (r *Reader) waitForTopic(conn *Conn) error {
+	const backoffDelayMin = 1 * time.Second
+	const backoffDelayMax = 30 * time.Second
+
 	for attempt := 0; true; attempt++ {
 		if attempt != 0 {
 			if !sleep(r.stctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
-				return nil, r.stctx.Err()
+				return r.stctx.Err()
 			}
 		}
-
-		members, err := r.joinGroup(conn)
-		if err != nil {
-			return nil, err
+		_, err := conn.ReadPartitions(r.config.Topic)
+		if err == UnknownTopicOrPartition {
+			r.withErrorLogger(func(l *log.Logger) {
+				l.Printf("unknown topic or partition %q, retrying", r.config.Topic)
+			})
+			continue
+		} else if err != nil {
+			return err
+		} else {
+			break
 		}
-
-		assignments, err := r.syncGroup(conn, members)
-		if err != nil {
-			return nil, err
-		}
-
-		return assignments, nil
 	}
-	return nil, fmt.Errorf("failed all attempts to rebalance consumer group %v", r.config.GroupID)
+	return nil
 }
 
 func (r *Reader) unsubscribe() error {
@@ -860,6 +857,9 @@ func (r *Reader) handshake() error {
 		}
 		_ = conn.Close()
 	}()
+
+	// wait for topic to exist
+	r.waitForTopic(conn)
 
 	// rebalance and fetch assignments
 	assignments, err := r.rebalance(conn)
