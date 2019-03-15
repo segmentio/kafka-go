@@ -73,13 +73,16 @@ type Conn struct {
 	requiredAcks int32
 	apiVersions  map[apiKey]ApiVersion
 	fetchVersion apiVersion
+
+	transactionalId *string
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
 type ConnConfig struct {
-	ClientID  string
-	Topic     string
-	Partition int
+	ClientID        string
+	Topic           string
+	Partition       int
+	TransactionalId *string
 }
 
 // ReadBatchConfig is a configuration object used for reading batches of messages.
@@ -132,14 +135,15 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	}
 
 	c := &Conn{
-		conn:         conn,
-		rbuf:         *bufio.NewReader(conn),
-		wbuf:         *bufio.NewWriter(conn),
-		clientID:     config.ClientID,
-		topic:        config.Topic,
-		partition:    int32(config.Partition),
-		offset:       FirstOffset,
-		requiredAcks: -1,
+		conn:            conn,
+		rbuf:            *bufio.NewReader(conn),
+		wbuf:            *bufio.NewWriter(conn),
+		clientID:        config.ClientID,
+		topic:           config.Topic,
+		partition:       int32(config.Partition),
+		offset:          FirstOffset,
+		requiredAcks:    -1,
+		transactionalId: config.TransactionalId,
 	}
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
@@ -990,7 +994,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					c.partition,
 					deadlineToTimeout(deadline, now),
 					int16(atomic.LoadInt32(&c.requiredAcks)),
-					nil,
+					c.transactionalId,
 					msgs...,
 				)
 			}
