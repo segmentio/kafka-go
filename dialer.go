@@ -68,6 +68,8 @@ type Dialer struct {
 	// SASLMechanism configures the Dialer to use SASL authentication.  If nil,
 	// no authentication will be performed.
 	SASLMechanism sasl.Mechanism
+
+	TransactionalId *string
 }
 
 // Dial connects to the address on the named network.
@@ -101,7 +103,15 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 		defer cancel()
 	}
 
-	return d.connect(ctx, network, address, ConnConfig{ClientID: d.ClientID})
+	return d.connect(
+		ctx,
+		network,
+		address,
+		ConnConfig{
+			ClientID:        d.ClientID,
+			TransactionalId: d.TransactionalId,
+		},
+	)
 }
 
 // DialLeader opens a connection to the leader of the partition for a given
@@ -125,9 +135,10 @@ func (d *Dialer) DialLeader(ctx context.Context, network string, address string,
 // functions LookupPartition or LookupPartitions.
 func (d *Dialer) DialPartition(ctx context.Context, network string, address string, partition Partition) (*Conn, error) {
 	return d.connect(ctx, network, net.JoinHostPort(partition.Leader.Host, strconv.Itoa(partition.Leader.Port)), ConnConfig{
-		ClientID:  d.ClientID,
-		Topic:     partition.Topic,
-		Partition: partition.ID,
+		ClientID:        d.ClientID,
+		Topic:           partition.Topic,
+		Partition:       partition.ID,
+		TransactionalId: d.TransactionalId,
 	})
 }
 
