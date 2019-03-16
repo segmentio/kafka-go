@@ -980,6 +980,19 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+			if c.apiVersions[produceRequest].MaxVersion >= 3 {
+				return writeProduceRequestV3(
+					&c.wbuf,
+					codec,
+					id,
+					c.clientID,
+					c.topic,
+					c.partition,
+					deadlineToTimeout(deadline, now),
+					int16(atomic.LoadInt32(&c.requiredAcks)),
+					msgs...,
+				)
+			}
 			return writeProduceRequestV2(
 				&c.wbuf,
 				codec,
