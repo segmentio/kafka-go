@@ -992,6 +992,9 @@ type ReaderConfig struct {
 	// back to using Logger instead.
 	ErrorLogger *log.Logger
 
+	// IsolationLevel controls the visibility of transactional records.
+	// ReadUncommitted makes all records visible. With ReadCommitted only
+	// non-transactional and committed records are visible.
 	IsolationLevel IsolationLevel
 }
 
