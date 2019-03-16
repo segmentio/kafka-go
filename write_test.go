@@ -191,6 +191,12 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*buf
 }
 
 func TestWriteV2RecordBatch(t *testing.T) {
+
+	if !KafkaIsAtLeast("0.11.0") {
+		t.Skip("RecordBatch was added in kafka 0.11.0")
+		return
+	}
+
 	topic := CreateTopic(t, 1)
 	msgs := make([]Message, 15)
 	for i := range msgs {
@@ -216,6 +222,7 @@ func TestWriteV2RecordBatch(t *testing.T) {
 	r := NewReader(ReaderConfig{
 		Brokers: []string{"localhost:9092"},
 		Topic:   topic,
+		MaxWait: 100 * time.Millisecond,
 	})
 	defer r.Close()
 
