@@ -69,6 +69,9 @@ type Dialer struct {
 	// no authentication will be performed.
 	SASLMechanism sasl.Mechanism
 
+	// The transactional id to use for transactional delivery. Idempotent
+	// deliver should be enabled if transactional id is configured.
+	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
 	TransactionalId *string
 }
 

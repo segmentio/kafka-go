@@ -79,9 +79,13 @@ type Conn struct {
 
 // ConnConfig is a configuration object used to create new instances of Conn.
 type ConnConfig struct {
-	ClientID        string
-	Topic           string
-	Partition       int
+	ClientID  string
+	Topic     string
+	Partition int
+
+	// The transactional id to use for transactional delivery. Idempotent
+	// deliver should be enabled if transactional id is configured.
+	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
 	TransactionalId *string
 }
 
