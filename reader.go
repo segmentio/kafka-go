@@ -991,6 +991,8 @@ type ReaderConfig struct {
 	// ErrorLogger is the logger used to report errors. If nil, the reader falls
 	// back to using Logger instead.
 	ErrorLogger *log.Logger
+
+	IsolationLevel IsolationLevel
 }
 
 // ReaderStats is a data structure returned by a call to Reader.Stats that exposes
@@ -1624,18 +1626,19 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 			defer join.Done()
 
 			(&reader{
-				dialer:      r.config.Dialer,
-				logger:      r.config.Logger,
-				errorLogger: r.config.ErrorLogger,
-				brokers:     r.config.Brokers,
-				topic:       r.config.Topic,
-				partition:   partition,
-				minBytes:    r.config.MinBytes,
-				maxBytes:    r.config.MaxBytes,
-				maxWait:     r.config.MaxWait,
-				version:     r.version,
-				msgs:        r.msgs,
-				stats:       r.stats,
+				dialer:         r.config.Dialer,
+				logger:         r.config.Logger,
+				errorLogger:    r.config.ErrorLogger,
+				brokers:        r.config.Brokers,
+				topic:          r.config.Topic,
+				partition:      partition,
+				minBytes:       r.config.MinBytes,
+				maxBytes:       r.config.MaxBytes,
+				maxWait:        r.config.MaxWait,
+				version:        r.version,
+				msgs:           r.msgs,
+				stats:          r.stats,
+				isolationLevel: r.config.IsolationLevel,
 			}).run(ctx, offset)
 		}(ctx, partition, offset, &r.join)
 	}
