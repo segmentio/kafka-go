@@ -2,71 +2,68 @@ package scram
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/sha512"
 	"hash"
 
-	"github.com/pkg/errors"
 	"github.com/xdg/scram"
 )
 
-// HashFunction determines the hash function used by SCRAM to protect the user's
+// Algorithm determines the hash function used by SCRAM to protect the user's
 // credentials.
-type HashFunction int
+type Algorithm interface {
+	// Name returns the algorithm's name, e.g. "SCRAM-SHA-256"
+	Name() string
 
-const (
-	_ HashFunction = iota
-	SHA256
-	SHA512
+	// Hash returns a new hash.Hash.
+	Hash() hash.Hash
+}
+
+type sha256Algo struct{}
+
+func (sha256Algo) Name() string {
+	return "SCRAM-SHA-256"
+}
+
+func (sha256Algo) Hash() hash.Hash {
+	return sha256.New()
+}
+
+type sha512Algo struct{}
+
+func (sha512Algo) Name() string {
+	return "SCRAM-SHA-512"
+}
+
+func (sha512Algo) Hash() hash.Hash {
+	return sha512.New()
+}
+
+var (
+	SHA256 Algorithm = sha256Algo{}
+	SHA512 Algorithm = sha512Algo{}
 )
 
-func (a HashFunction) name() string {
-	switch a {
-	case SHA256:
-		return "SCRAM-SHA-256"
-	case SHA512:
-		return "SCRAM-SHA-512"
-	}
-	return "invalid"
-}
-
-func (a HashFunction) hashGenerator() scram.HashGeneratorFcn {
-	switch a {
-	case SHA256:
-		return scram.SHA256
-	case SHA512:
-		// for whatever reason, the scram package doesn't have a predefined
-		// constant for 512, but we can roll our own.
-		return scram.HashGeneratorFcn(func() hash.Hash {
-			return sha512.New()
-		})
-	}
-	return nil
-}
-
 type mechanism struct {
-	hash   HashFunction
+	algo   Algorithm
 	client *scram.Client
 	convo  *scram.ClientConversation
 }
 
 // Mechanism returns a new sasl.Mechanism that will use SCRAM with the provided
-// hash function to securely transmit the provided credentials to Kafka.
+// Algorithm to securely transmit the provided credentials to Kafka.
 //
 // SCRAM-SHA-256 and SCRAM-SHA-512 were added to Kafka in 0.10.2.0.  These
 // mechanisms will not work with older versions.
-func Mechanism(hash HashFunction, username, password string) (*mechanism, error) {
-	hashGen := hash.hashGenerator()
-	if hashGen == nil {
-		return nil, errors.New("invalid hash function")
-	}
-
+func Mechanism(algo Algorithm, username, password string) (*mechanism, error) {
+	hashGen := scram.HashGeneratorFcn(algo.Hash)
 	client, err := hashGen.NewClient(username, password, "")
 	if err != nil {
 		return nil, err
 	}
 
 	return &mechanism{
-		hash:   hash,
+		algo:   algo,
 		client: client,
 	}, nil
 }
@@ -74,7 +71,7 @@ func Mechanism(hash HashFunction, username, password string) (*mechanism, error)
 func (m *mechanism) Start(ctx context.Context) (string, []byte, error) {
 	m.convo = m.client.NewConversation()
 	str, err := m.convo.Step("")
-	return m.hash.name(), []byte(str), err
+	return m.algo.Name(), []byte(str), err
 }
 
 func (m *mechanism) Next(ctx context.Context, challenge []byte) (bool, []byte, error) {
