@@ -6,7 +6,7 @@ import (
 	"crypto/sha512"
 	"hash"
 
-	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
 	"github.com/xdg/scram"
 )
 
@@ -56,7 +56,7 @@ type mechanism struct {
 //
 // SCRAM-SHA-256 and SCRAM-SHA-512 were added to Kafka in 0.10.2.0.  These
 // mechanisms will not work with older versions.
-func Mechanism(algo Algorithm, username, password string) (kafka.SASLMechanism, error) {
+func Mechanism(algo Algorithm, username, password string) (sasl.Mechanism, error) {
 	hashGen := scram.HashGeneratorFcn(algo.Hash)
 	client, err := hashGen.NewClient(username, password, "")
 	if err != nil {

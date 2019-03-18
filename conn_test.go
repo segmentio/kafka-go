@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	ktesting "github.com/segmentio/kafka-go/testing"
 	"golang.org/x/net/nettest"
 )
 
@@ -257,7 +258,7 @@ func TestConn(t *testing.T) {
 	)
 
 	for _, test := range tests {
-		if !KafkaIsAtLeast(test.minVersion) {
+		if !ktesting.KafkaIsAtLeast(test.minVersion) {
 			t.Log("skipping " + test.scenario + " because broker is not at least version " + test.minVersion)
 			continue
 		}

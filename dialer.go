@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/segmentio/kafka-go/sasl"
 )
 
 // The Dialer type mirrors the net.Dialer API but is designed to open kafka
@@ -65,7 +67,7 @@ type Dialer struct {
 
 	// SASLMechanism configures the Dialer to use SASL authentication.  If nil,
 	// no authentication will be performed.
-	SASLMechanism SASLMechanism
+	SASLMechanism sasl.Mechanism
 }
 
 // Dial connects to the address on the named network.
