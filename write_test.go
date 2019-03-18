@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 const (
@@ -192,7 +194,7 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*buf
 
 func TestWriteV2RecordBatch(t *testing.T) {
 
-	if !KafkaIsAtLeast("0.11.0") {
+	if !ktesting.KafkaIsAtLeast("0.11.0") {
 		t.Skip("RecordBatch was added in kafka 0.11.0")
 		return
 	}
