@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	ktesting "github.com/segmentio/kafka-go/testing"
 	"golang.org/x/net/nettest"
 )
 
@@ -257,7 +258,7 @@ func TestConn(t *testing.T) {
 	)
 
 	for _, test := range tests {
-		if !KafkaIsAtLeast(test.minVersion) {
+		if !ktesting.KafkaIsAtLeast(test.minVersion) {
 			t.Log("skipping " + test.scenario + " because broker is not at least version " + test.minVersion)
 			continue
 		}
@@ -977,6 +978,23 @@ func testBrokers(t *testing.T, conn *Conn) {
 
 	if brokers[0].ID != 1 {
 		t.Errorf("expected ID 1 received %d", brokers[0].ID)
+	}
+}
+
+func TestUnsupportedSASLMechanism(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := (&Dialer{
+		Resolver: &net.Resolver{},
+	}).DialContext(ctx, "tcp", "127.0.0.1:9093")
+	if err != nil {
+		t.Fatal("failed to open a new kafka connection:", err)
+	}
+	defer conn.Close()
+
+	if err := conn.saslHandshake("FOO"); err != UnsupportedSASLMechanism {
+		t.Errorf("Expected UnsupportedSASLMechanism but got %v", err)
 	}
 }
 
