@@ -73,7 +73,7 @@ type Dialer struct {
 	// deliver should be enabled if transactional id is configured.
 	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
 	// Empty string means that the connection will be non-transactional.
-	TransactionalId string
+	TransactionalID string
 }
 
 // Dial connects to the address on the named network.
@@ -113,7 +113,7 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 		address,
 		ConnConfig{
 			ClientID:        d.ClientID,
-			TransactionalId: d.TransactionalId,
+			TransactionalID: d.TransactionalID,
 		},
 	)
 }
@@ -142,7 +142,7 @@ func (d *Dialer) DialPartition(ctx context.Context, network string, address stri
 		ClientID:        d.ClientID,
 		Topic:           partition.Topic,
 		Partition:       partition.ID,
-		TransactionalId: d.TransactionalId,
+		TransactionalID: d.TransactionalID,
 	})
 }
 

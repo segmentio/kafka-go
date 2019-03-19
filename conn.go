@@ -74,7 +74,7 @@ type Conn struct {
 	apiVersions  map[apiKey]ApiVersion
 	fetchVersion apiVersion
 
-	transactionalId *string
+	transactionalID *string
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -87,7 +87,7 @@ type ConnConfig struct {
 	// deliver should be enabled if transactional id is configured.
 	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
 	// Empty string means that this connection can't be transactional.
-	TransactionalId string
+	TransactionalID string
 }
 
 // ReadBatchConfig is a configuration object used for reading batches of messages.
@@ -128,9 +128,9 @@ func NewConn(conn net.Conn, topic string, partition int) *Conn {
 	})
 }
 
-func transactionalIdToNullableString(transactionalId string) (result *string) {
-	if transactionalId != "" {
-		*result = transactionalId
+func transactionalIDToNullableString(transactionalID string) (result *string) {
+	if transactionalID != "" {
+		*result = transactionalID
 	}
 	return result
 }
@@ -155,7 +155,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		partition:       int32(config.Partition),
 		offset:          FirstOffset,
 		requiredAcks:    -1,
-		transactionalId: transactionalIdToNullableString(config.TransactionalId),
+		transactionalID: transactionalIDToNullableString(config.TransactionalID),
 	}
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
@@ -1006,7 +1006,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					c.partition,
 					deadlineToTimeout(deadline, now),
 					int16(atomic.LoadInt32(&c.requiredAcks)),
-					c.transactionalId,
+					c.transactionalID,
 					msgs...,
 				)
 			}
