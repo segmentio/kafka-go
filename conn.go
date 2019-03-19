@@ -128,7 +128,7 @@ func NewConn(conn net.Conn, topic string, partition int) *Conn {
 	})
 }
 
-func transactionalIDToNullableString(transactionalID string) (result *string) {
+func emptyToNullable(transactionalID string) (result *string) {
 	if transactionalID != "" {
 		*result = transactionalID
 	}
@@ -155,7 +155,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		partition:       int32(config.Partition),
 		offset:          FirstOffset,
 		requiredAcks:    -1,
-		transactionalID: transactionalIDToNullableString(config.TransactionalID),
+		transactionalID: emptyToNullable(config.TransactionalID),
 	}
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
