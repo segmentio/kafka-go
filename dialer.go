@@ -72,7 +72,8 @@ type Dialer struct {
 	// The transactional id to use for transactional delivery. Idempotent
 	// deliver should be enabled if transactional id is configured.
 	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
-	TransactionalId *string
+	// Empty string means that the connection will be non-transactional.
+	TransactionalId string
 }
 
 // Dial connects to the address on the named network.

@@ -86,7 +86,8 @@ type ConnConfig struct {
 	// The transactional id to use for transactional delivery. Idempotent
 	// deliver should be enabled if transactional id is configured.
 	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
-	TransactionalId *string
+	// Empty string means that this connection can't be transactional.
+	TransactionalId string
 }
 
 // ReadBatchConfig is a configuration object used for reading batches of messages.
@@ -127,6 +128,13 @@ func NewConn(conn net.Conn, topic string, partition int) *Conn {
 	})
 }
 
+func transactionalIdToNullableString(transactionalId string) (result *string) {
+	if transactionalId != "" {
+		*result = transactionalId
+	}
+	return result
+}
+
 // NewConnWith returns a new kafka connection configured with config.
 // The offset is initialized to FirstOffset.
 func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
@@ -147,7 +155,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		partition:       int32(config.Partition),
 		offset:          FirstOffset,
 		requiredAcks:    -1,
-		transactionalId: config.TransactionalId,
+		transactionalId: transactionalIdToNullableString(config.TransactionalId),
 	}
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
