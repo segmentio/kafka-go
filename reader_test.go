@@ -1491,3 +1491,38 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 		})
 	}
 }
+
+// Test that a reader won't continually rebalance when there are more consumers
+// than partitions in a group.
+// https://github.com/segmentio/kafka-go/issues/200
+func TestRebalanceTooManyConsumers(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	conf := ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		GroupID: makeGroupID(),
+		Topic:   makeTopic(),
+		MaxWait: time.Second,
+	}
+
+	// Create the first reader and wait for it to become the leader.
+	r1 := NewReader(conf)
+	prepareReader(t, ctx, r1, makeTestSequence(1)...)
+	r1.ReadMessage(ctx)
+	// Clear the stats from the first rebalance.
+	r1.Stats()
+
+	// Second reader should cause one rebalance for each r1 and r2.
+	r2 := NewReader(conf)
+
+	// Wait for rebalances.
+	time.Sleep(5 * time.Second)
+
+	// Before the fix, r2 would cause continuous rebalances,
+	// as it tried to handshake() repeatedly.
+	rebalances := r1.Stats().Rebalances + r2.Stats().Rebalances
+	if rebalances > 2 {
+		t.Errorf("unexpected rebalances to first reader, got %d", rebalances)
+	}
+}
