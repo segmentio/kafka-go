@@ -436,7 +436,9 @@ func (r *Reader) syncGroup(conn *Conn, memberAssignments GroupMemberAssignments)
 
 	if len(assignments.Topics) == 0 {
 		generation, memberID := r.membership()
-		return nil, fmt.Errorf("received empty assignments for group, %v as member %s for generation %d", r.config.GroupID, memberID, generation)
+		r.withLogger(func(l *log.Logger) {
+			l.Printf("received empty assignments for group, %v as member %s for generation %d", r.config.GroupID, memberID, generation)
+		})
 	}
 
 	r.withLogger(func(l *log.Logger) {
@@ -447,6 +449,7 @@ func (r *Reader) syncGroup(conn *Conn, memberAssignments GroupMemberAssignments)
 }
 
 func (r *Reader) rebalance(conn *Conn) (map[string][]int32, error) {
+	r.stats.rebalances.observe(1)
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("rebalancing consumer group, %v", r.config.GroupID)
 	})
@@ -867,6 +870,7 @@ func (r *Reader) run() {
 
 	for {
 		if err := r.handshake(); err != nil {
+			r.stats.errors.observe(1)
 			r.withErrorLogger(func(l *log.Logger) {
 				l.Println(err)
 			})
