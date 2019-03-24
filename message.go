@@ -149,7 +149,8 @@ func (r *messageSetReader) readMessage(min int64,
 		meta, err := r.v1.readMessage(min, key, val)
 		return meta.Offset, meta.Timestamp, meta.Headers, err
 	case 2:
-		return r.v2.readMessage(min, key, val)
+		meta, err := r.v2.readMessage(min, key, val)
+		return meta.Offset, meta.Timestamp, meta.Headers, err
 	default:
 		panic("Invalid messageSetReader - unknown message reader version")
 	}
@@ -483,7 +484,7 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 func (r *messageSetReaderV2) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, headers []Header, err error) {
+) (meta MetaData, err error) {
 
 	if r.messageCount == 0 {
 		if r.remain == 0 {
@@ -570,15 +571,17 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		return
 	}
 
-	headers = make([]Header, headerCount)
+	meta.Headers = make([]Header, headerCount)
 
 	for i := 0; i < int(headerCount); i++ {
-		if err = r.readMessageHeader(&headers[i]); err != nil {
+		if err = r.readMessageHeader(&meta.Headers[i]); err != nil {
 			return
 		}
 	}
 	r.messageCount--
-	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, nil
+	meta.Offset = r.header.firstOffset + offsetDelta
+	meta.Timestamp = r.header.firstTimestamp + timestampDelta
+	return meta, nil
 }
 
 func (r *messageSetReaderV2) readMessageHeader(header *Header) (err error) {
