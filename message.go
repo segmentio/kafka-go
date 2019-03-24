@@ -140,17 +140,16 @@ type messageSetReader struct {
 func (r *messageSetReader) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, headers []Header, err error) {
+) (meta MetaData, err error) {
 	if r.empty {
-		return 0, 0, nil, RequestTimedOut
+		return MetaData{}, RequestTimedOut
 	}
 	switch r.version {
 	case 1:
-		meta, err := r.v1.readMessage(min, key, val)
-		return meta.Offset, meta.Timestamp, meta.Headers, err
+		return r.v1.readMessage(min, key, val)
+		//return meta.Offset, meta.Timestamp, meta.Headers, err
 	case 2:
-		meta, err := r.v2.readMessage(min, key, val)
-		return meta.Offset, meta.Timestamp, meta.Headers, err
+		return r.v2.readMessage(min, key, val)
 	default:
 		panic("Invalid messageSetReader - unknown message reader version")
 	}

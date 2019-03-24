@@ -219,7 +219,10 @@ func (batch *Batch) readMessage(
 		return
 	}
 
-	offset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
+	meta, err := batch.msgs.readMessage(batch.offset, key, val)
+	offset = meta.Offset
+	timestamp = meta.Timestamp
+	headers = meta.Headers
 	switch err {
 	case nil:
 		batch.offset = offset + 1
