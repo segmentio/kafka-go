@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 const (
@@ -190,23 +192,54 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*buf
 	}
 }
 
-func testWriteV2RecordBatch(t *testing.T) {
-	msgs := make([]Message, 3)
+func TestWriteV2RecordBatch(t *testing.T) {
+
+	if !ktesting.KafkaIsAtLeast("0.11.0") {
+		t.Skip("RecordBatch was added in kafka 0.11.0")
+		return
+	}
+
+	topic := CreateTopic(t, 1)
+	msgs := make([]Message, 15)
 	for i := range msgs {
 		value := fmt.Sprintf("Sample message content: %d!", i)
 		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{Header{Key: "hk", Value: []byte("hv")}}}
 	}
 	w := NewWriter(WriterConfig{
-		Brokers:   []string{"localhost:9092"},
-		Topic:     "test-topic",
-		BatchSize: 1,
+		Brokers:      []string{"localhost:9092"},
+		Topic:        topic,
+		BatchTimeout: 100 * time.Millisecond,
+		BatchSize:    5,
 	})
-	defer w.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
 	if err := w.WriteMessages(ctx, msgs...); err != nil {
-		t.Error("Failed to write v2 messages to kafka")
+		t.Errorf("Failed to write v2 messages to kafka: %v", err)
+		return
+	}
+	w.Close()
+
+	r := NewReader(ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   topic,
+		MaxWait: 100 * time.Millisecond,
+	})
+	defer r.Close()
+
+	msg, err := r.ReadMessage(context.Background())
+	if err != nil {
+		t.Error("Failed to read message")
+		return
+	}
+
+	if string(msg.Key) != "Key" {
+		t.Error("Received message's key doesn't match")
+		return
+	}
+	if msg.Headers[0].Key != "hk" {
+		t.Error("Received message header's key doesn't match")
 		return
 	}
 }

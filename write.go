@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
-	"math"
 	"time"
 )
 
@@ -170,6 +169,48 @@ func writeFetchRequestV2(w *bufio.Writer, correlationID int32, clientID, topic s
 	return w.Flush()
 }
 
+func writeFetchRequestV5(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration, isolationLevel int8) error {
+	h := requestHeader{
+		ApiKey:        int16(fetchRequest),
+		ApiVersion:    int16(v5),
+		CorrelationID: correlationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		4 + // replica ID
+		4 + // max wait time
+		4 + // min bytes
+		4 + // max bytes
+		1 + // isolation level
+		4 + // topic array length
+		sizeofString(topic) +
+		4 + // partition array length
+		4 + // partition
+		8 + // offset
+		8 + // log start offset
+		4 // max bytes
+
+	h.writeTo(w)
+	writeInt32(w, -1) // replica ID
+	writeInt32(w, milliseconds(maxWait))
+	writeInt32(w, int32(minBytes))
+	writeInt32(w, int32(maxBytes))
+	writeInt8(w, isolationLevel) // isolation level 0 - read uncommitted
+
+	// topic array
+	writeArrayLen(w, 1)
+	writeString(w, topic)
+
+	// partition array
+	writeArrayLen(w, 1)
+	writeInt32(w, partition)
+	writeInt64(w, offset)
+	writeInt64(w, int64(0)) // log start offset only used when is sent by follower
+	writeInt32(w, int32(maxBytes))
+
+	return w.Flush()
+}
+
 func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, time int64) error {
 	h := requestHeader{
 		ApiKey:        int16(listOffsetRequest),
@@ -200,31 +241,16 @@ func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID, to
 	return w.Flush()
 }
 
-func hasHeaders(msgs ...Message) bool {
-	for _, msg := range msgs {
-		if len(msg.Headers) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
 
 	attributes := int8(CompressionNoneCode)
-
-	var size int32
-	if hasHeaders(msgs...) {
-		size = recordBatchSize(msgs...)
-	} else {
-		if codec != nil {
-			if msgs, err = compress(codec, msgs...); err != nil {
-				return err
-			}
-			attributes = codec.Code()
+	if codec != nil {
+		if msgs, err = compress(codec, msgs...); err != nil {
+			return err
 		}
-		size = messageSetSize(msgs...)
+		attributes = codec.Code()
 	}
+	size := messageSetSize(msgs...)
 
 	h := requestHeader{
 		ApiKey:        int16(produceRequest),
@@ -253,19 +279,85 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	// partition array
 	writeArrayLen(w, 1)
 	writeInt32(w, partition)
+
 	writeInt32(w, size)
+	for _, msg := range msgs {
+		writeMessage(w, msg.Offset, attributes, msg.Time, msg.Key, msg.Value)
+	}
+	return w.Flush()
+}
 
-	if hasHeaders(msgs...) {
-		err = writeRecordBatch(w, codec, correlationID, clientID, topic, partition, timeout, requiredAcks, msgs...)
-	} else {
-		for _, msg := range msgs {
-			writeMessage(w, msg.Offset, attributes, msg.Time, msg.Key, msg.Value)
+func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
+
+	var size int32
+	var compressed []byte
+	var attributes int16
+	if codec != nil {
+		attributes = int16(codec.Code())
+		recordBuf := &bytes.Buffer{}
+		recordBuf.Grow(int(recordBatchSize(msgs...)))
+		compressedWriter := bufio.NewWriter(recordBuf)
+		for i, msg := range msgs {
+			writeRecord(compressedWriter, 0, msgs[0].Time, int64(i), msg)
 		}
+		compressedWriter.Flush()
 
+		compressed, err = codec.Encode(recordBuf.Bytes())
+		if err != nil {
+			return
+		}
+		attributes = int16(codec.Code())
+		size = recordBatchHeaderSize() + int32(len(compressed))
+	} else {
+		size = recordBatchSize(msgs...)
+	}
+
+	h := requestHeader{
+		ApiKey:        int16(produceRequest),
+		ApiVersion:    int16(v3),
+		CorrelationID: correlationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		2 + // transactional_id
+		2 + // required acks
+		4 + // timeout
+		4 + // topic array length
+		sizeofString(topic) + // topic
+		4 + // partition array length
+		4 + // partition
+		4 + // message set size
+		size
+
+	h.writeTo(w)
+	writeInt16(w, -1)           // null transactional_id
+	writeInt16(w, requiredAcks) // required acks
+	writeInt32(w, milliseconds(timeout))
+
+	// topic array
+	writeArrayLen(w, 1)
+	writeString(w, topic)
+
+	// partition array
+	writeArrayLen(w, 1)
+	writeInt32(w, partition)
+
+	writeInt32(w, size)
+	if codec != nil {
+		err = writeRecordBatch(w, attributes, size, func(w *bufio.Writer) {
+			w.Write(compressed)
+		}, msgs...)
+	} else {
+		err = writeRecordBatch(w, attributes, size, func(w *bufio.Writer) {
+			for i, msg := range msgs {
+				writeRecord(w, 0, msgs[0].Time, int64(i), msg)
+			}
+		}, msgs...)
 	}
 	if err != nil {
 		return
 	}
+
 	return w.Flush()
 }
 
@@ -283,8 +375,8 @@ func messageSetSize(msgs ...Message) (size int32) {
 	return
 }
 
-func recordBatchSize(msgs ...Message) (size int32) {
-	size = 8 + // base offset
+func recordBatchHeaderSize() int32 {
+	return 8 + // base offset
 		4 + // batch length
 		4 + // partition leader epoch
 		1 + // magic
@@ -297,33 +389,27 @@ func recordBatchSize(msgs ...Message) (size int32) {
 		2 + // producer epoch
 		4 + // base sequence
 		4 // msg count
+}
+
+func recordBatchSize(msgs ...Message) (size int32) {
+	size = recordBatchHeaderSize()
 
 	baseTime := msgs[0].Time
 
-	baseOffset := baseOffset(msgs...)
+	for i, msg := range msgs {
 
-	for _, msg := range msgs {
-
-		sz := recordSize(&msg, msg.Time.Sub(baseTime), msg.Offset-baseOffset)
+		sz := recordSize(&msg, msg.Time.Sub(baseTime), int64(i))
 
 		size += int32(sz + varIntLen(int64(sz)))
 	}
 	return
 }
 
-func writeRecordBatch(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientId, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) error {
+func writeRecordBatch(w *bufio.Writer, attributes int16, size int32, write func(*bufio.Writer), msgs ...Message) error {
 
 	baseTime := msgs[0].Time
 
-	baseOffset := int64(0)
-
-	for i := 0; i < len(msgs); i++ {
-		msgs[i].Offset = int64(i)
-	}
-
-	size := recordBatchSize(msgs...)
-
-	writeInt64(w, baseOffset)
+	writeInt64(w, int64(0))
 
 	writeInt32(w, int32(size-12)) // 12 = batch length + base offset sizes
 
@@ -334,7 +420,7 @@ func writeRecordBatch(w *bufio.Writer, codec CompressionCodec, correlationID int
 	crcBuf.Grow(int(size - 12)) // 12 = batch length + base offset sizes
 	crcWriter := bufio.NewWriter(crcBuf)
 
-	writeInt16(crcWriter, 0)                  // attributes no compression, timestamp type 0 - create time, not part of a transaction, no control messages
+	writeInt16(crcWriter, attributes)         // attributes, timestamp type 0 - create time, not part of a transaction, no control messages
 	writeInt32(crcWriter, int32(len(msgs)-1)) // max offset
 	writeInt64(crcWriter, timestamp(baseTime))
 	lastTime := timestamp(msgs[len(msgs)-1].Time)
@@ -344,70 +430,23 @@ func writeRecordBatch(w *bufio.Writer, codec CompressionCodec, correlationID int
 	writeInt32(crcWriter, -1)               // default base sequence
 	writeInt32(crcWriter, int32(len(msgs))) // record count
 
-	for _, msg := range msgs {
-		writeRecord(crcWriter, CompressionNoneCode, baseTime, baseOffset, msg)
+	write(crcWriter)
+	if err := crcWriter.Flush(); err != nil {
+		return err
 	}
-	crcWriter.Flush()
 
 	crcTable := crc32.MakeTable(crc32.Castagnoli)
 	crcChecksum := crc32.Checksum(crcBuf.Bytes(), crcTable)
 
 	writeInt32(w, int32(crcChecksum))
-	w.Write(crcBuf.Bytes())
+	if _, err := w.Write(crcBuf.Bytes()); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-var maxDate time.Time = time.Date(5000, time.January, 0, 0, 0, 0, 0, time.UTC)
-
-func baseTime(msgs ...Message) (baseTime time.Time) {
-	baseTime = maxDate
-	for _, msg := range msgs {
-		if msg.Time.Before(baseTime) {
-			baseTime = msg.Time
-		}
-	}
-	return
-}
-
-func baseOffset(msgs ...Message) (baseOffset int64) {
-	baseOffset = math.MaxInt64
-	for _, msg := range msgs {
-		if msg.Offset < baseOffset {
-			baseOffset = msg.Offset
-		}
-	}
-	return
-}
-
-func maxOffsetDelta(baseOffset int64, msgs ...Message) (maxDelta int64) {
-	maxDelta = 0
-	for _, msg := range msgs {
-		curDelta := msg.Offset - baseOffset
-		if maxDelta > curDelta {
-			maxDelta = curDelta
-		}
-	}
-	return
-}
-
-func estimatedRecordSize(msg *Message) (size int32) {
-	size += 8 + // length
-		1 + // attributes
-		8 + // timestamp delta
-		8 + // offset delta
-		8 + // key length
-		int32(len(msg.Key)) +
-		8 + // value length
-		int32(len(msg.Value))
-	for _, h := range msg.Headers {
-		size += 8 + // header key length
-			int32(len(h.Key)) +
-			8 + // header value length
-			int32(len(h.Value))
-	}
-	return
-}
+var maxDate = time.Date(5000, time.January, 0, 0, 0, 0, 0, time.UTC)
 
 func recordSize(msg *Message, timestampDelta time.Duration, offsetDelta int64) (size int) {
 	size += 1 + // attributes
@@ -475,10 +514,10 @@ func msgSize(key, value []byte) int32 {
 }
 
 // Messages with magic >2 are called records. This method writes messages using message format 2.
-func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, baseOffset int64, msg Message) {
+func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, offset int64, msg Message) {
 
 	timestampDelta := msg.Time.Sub(baseTime)
-	offsetDelta := int64(msg.Offset - baseOffset)
+	offsetDelta := int64(offset)
 
 	writeVarInt(w, int64(recordSize(&msg, timestampDelta, offsetDelta)))
 

@@ -595,15 +595,16 @@ func (w *writer) withErrorLogger(do func(*log.Logger)) {
 func (w *writer) run() {
 	defer w.join.Done()
 
-	ticker := time.NewTicker(w.batchTimeout / 10)
-	defer ticker.Stop()
+	batchTimer := time.NewTimer(0)
+	<-batchTimer.C
+	batchTimerRunning := false
+	defer batchTimer.Stop()
 
 	var conn *Conn
 	var done bool
 	var batch = make([]Message, 0, w.batchSize)
 	var resch = make([](chan<- error), 0, w.batchSize)
 	var lastMsg writerMessage
-	var lastFlushAt = time.Now()
 	var batchSizeBytes int
 
 	defer func() {
@@ -621,6 +622,10 @@ func (w *writer) run() {
 			resch = append(resch, lastMsg.res)
 			batchSizeBytes += int(lastMsg.msg.message().size())
 			lastMsg = writerMessage{}
+			if !batchTimerRunning {
+				batchTimer.Reset(w.batchTimeout)
+				batchTimerRunning = true
+			}
 		}
 		select {
 		case wm, ok := <-w.msgs:
@@ -639,15 +644,24 @@ func (w *writer) run() {
 				batchSizeBytes += int(wm.msg.message().size())
 				mustFlush = len(batch) >= w.batchSize || batchSizeBytes >= w.maxMessageBytes
 			}
+			if !batchTimerRunning {
+				batchTimer.Reset(w.batchTimeout)
+				batchTimerRunning = true
+			}
 
-		case now := <-ticker.C:
-			mustFlush = now.Sub(lastFlushAt) > w.batchTimeout
+		case <-batchTimer.C:
+			mustFlush = true
+			batchTimerRunning = false
 		}
 
 		if mustFlush {
-			lastFlushAt = time.Now()
 			w.stats.batchSizeBytes.observe(int64(batchSizeBytes))
-
+			if batchTimerRunning {
+				if stopped := batchTimer.Stop(); !stopped {
+					<-batchTimer.C
+				}
+				batchTimerRunning = false
+			}
 			if len(batch) == 0 {
 				continue
 			}
@@ -658,7 +672,6 @@ func (w *writer) run() {
 					conn = nil
 				}
 			}
-
 			for i := range batch {
 				batch[i] = Message{}
 			}

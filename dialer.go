@@ -3,10 +3,13 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
+	"io"
 	"net"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/segmentio/kafka-go/sasl"
 )
 
 // The Dialer type mirrors the net.Dialer API but is designed to open kafka
@@ -61,6 +64,10 @@ type Dialer struct {
 	// TLS enables Dialer to open secure connections.  If nil, standard net.Conn
 	// will be used.
 	TLS *tls.Config
+
+	// SASLMechanism configures the Dialer to use SASL authentication.  If nil,
+	// no authentication will be performed.
+	SASLMechanism sasl.Mechanism
 }
 
 // Dial connects to the address on the named network.
@@ -94,11 +101,7 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 		defer cancel()
 	}
 
-	c, err := d.dialContext(ctx, network, address)
-	if err != nil {
-		return nil, err
-	}
-	return NewConnWith(c, ConnConfig{ClientID: d.ClientID}), nil
+	return d.connect(ctx, network, address, ConnConfig{ClientID: d.ClientID})
 }
 
 // DialLeader opens a connection to the leader of the partition for a given
@@ -121,16 +124,11 @@ func (d *Dialer) DialLeader(ctx context.Context, network string, address string,
 // descriptor. It's strongly advised to use descriptor of the partition that comes out of
 // functions LookupPartition or LookupPartitions.
 func (d *Dialer) DialPartition(ctx context.Context, network string, address string, partition Partition) (*Conn, error) {
-	c, err := d.dialContext(ctx, network, net.JoinHostPort(partition.Leader.Host, strconv.Itoa(partition.Leader.Port)))
-	if err != nil {
-		return nil, err
-	}
-
-	return NewConnWith(c, ConnConfig{
+	return d.connect(ctx, network, net.JoinHostPort(partition.Leader.Host, strconv.Itoa(partition.Leader.Port)), ConnConfig{
 		ClientID:  d.ClientID,
 		Topic:     partition.Topic,
 		Partition: partition.ID,
-	}), nil
+	})
 }
 
 // LookupLeader searches for the kafka broker that is the leader of the
@@ -240,6 +238,66 @@ func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn, config *tls.Conf
 	}
 
 	return
+}
+
+// connect opens a socket connection to the broker, wraps it to create a
+// kafka connection, and performs SASL authentication if configured to do so.
+func (d *Dialer) connect(ctx context.Context, network, address string, connCfg ConnConfig) (*Conn, error) {
+
+	c, err := d.dialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+
+	conn := NewConnWith(c, connCfg)
+
+	if d.SASLMechanism != nil {
+		if err := d.authenticateSASL(ctx, conn); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+	}
+
+	return conn, nil
+}
+
+// authenticateSASL performs all of the required requests to authenticate this
+// connection.  If any step fails, this function returns with an error.  A nil
+// error indicates successful authentication.
+//
+// In case of error, this function *does not* close the connection.  That is the
+// responsibility of the caller.
+func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
+	mech, state, err := d.SASLMechanism.Start(ctx)
+	if err != nil {
+		return err
+	}
+	err = conn.saslHandshake(mech)
+	if err != nil {
+		return err
+	}
+
+	var completed bool
+	for !completed {
+		challenge, err := conn.saslAuthenticate(state)
+		switch err {
+		case nil:
+		case io.EOF:
+			// the broker may communicate a failed exchange by closing the
+			// connection (esp. in the case where we're passing opaque sasl
+			// data over the wire since there's no protocol info).
+			return SASLAuthenticationFailed
+		default:
+			return err
+		}
+
+		completed, state, err = d.SASLMechanism.Next(ctx, challenge)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {

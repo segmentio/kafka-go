@@ -354,7 +354,7 @@ func testWriterSmallBatchBytes(t *testing.T) {
 	w := newTestWriter(WriterConfig{
 		Topic:        topic,
 		BatchBytes:   25,
-		BatchTimeout: 500 * time.Millisecond,
+		BatchTimeout: 50 * time.Millisecond,
 		Balancer:     &RoundRobin{},
 	})
 	defer w.Close()
@@ -366,8 +366,9 @@ func testWriterSmallBatchBytes(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if w.Stats().Writes != 2 {
-		t.Error("didn't batch messages")
+	ws := w.Stats()
+	if ws.Writes != 2 {
+		t.Error("didn't batch messages; Writes: ", ws.Writes)
 		return
 	}
 	msgs, err := readPartition(topic, 0, offset)

@@ -436,7 +436,9 @@ func (r *Reader) syncGroup(conn *Conn, memberAssignments GroupMemberAssignments)
 
 	if len(assignments.Topics) == 0 {
 		generation, memberID := r.membership()
-		return nil, fmt.Errorf("received empty assignments for group, %v as member %s for generation %d", r.config.GroupID, memberID, generation)
+		r.withLogger(func(l *log.Logger) {
+			l.Printf("received empty assignments for group, %v as member %s for generation %d", r.config.GroupID, memberID, generation)
+		})
 	}
 
 	r.withLogger(func(l *log.Logger) {
@@ -447,6 +449,7 @@ func (r *Reader) syncGroup(conn *Conn, memberAssignments GroupMemberAssignments)
 }
 
 func (r *Reader) rebalance(conn *Conn) (map[string][]int32, error) {
+	r.stats.rebalances.observe(1)
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("rebalancing consumer group, %v", r.config.GroupID)
 	})
@@ -715,7 +718,7 @@ func (r *Reader) commitLoopImmediate(conn offsetCommitter, stop <-chan struct{})
 // commitLoopInterval handles each commit asynchronously with a period defined
 // by ReaderConfig.CommitInterval
 func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) {
-	ticker := time.NewTicker(r.config.HeartbeatInterval)
+	ticker := time.NewTicker(r.config.CommitInterval)
 	defer ticker.Stop()
 
 	commit := func() {
@@ -867,6 +870,7 @@ func (r *Reader) run() {
 
 	for {
 		if err := r.handshake(); err != nil {
+			r.stats.errors.observe(1)
 			r.withErrorLogger(func(l *log.Logger) {
 				l.Println(err)
 			})
@@ -1481,6 +1485,38 @@ func (r *Reader) SetOffset(offset int64) error {
 
 	r.mutex.Unlock()
 	return err
+}
+
+// SetOffsetAt changes the offset from which the next batch of messages will be
+// read given the timestamp t.
+//
+// The method fails if the unable to connect partition leader, or unable to read the offset
+// given the ts, or if the reader has been closed.
+func (r *Reader) SetOffsetAt(ctx context.Context, t time.Time) error {
+	r.mutex.Lock()
+	if r.closed {
+		r.mutex.Unlock()
+		return io.ErrClosedPipe
+	}
+	r.mutex.Unlock()
+
+	for _, broker := range r.config.Brokers {
+		conn, err := r.config.Dialer.DialLeader(ctx, "tcp", broker, r.config.Topic, r.config.Partition)
+		if err != nil {
+			continue
+		}
+
+		deadline, _ := ctx.Deadline()
+		conn.SetDeadline(deadline)
+		offset, err := conn.ReadOffset(t)
+		conn.Close()
+		if err != nil {
+			return err
+		}
+
+		return r.SetOffset(offset)
+	}
+	return fmt.Errorf("error setting offset for timestamp %+v", t)
 }
 
 // Stats returns a snapshot of the reader stats since the last time the method

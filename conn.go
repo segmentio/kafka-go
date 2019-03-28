@@ -72,6 +72,7 @@ type Conn struct {
 	// number of replica acks required when publishing to a partition
 	requiredAcks int32
 	apiVersions  map[apiKey]ApiVersion
+	fetchVersion apiVersion
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -80,6 +81,24 @@ type ConnConfig struct {
 	Topic     string
 	Partition int
 }
+
+// ReadBatchConfig is a configuration object used for reading batches of messages.
+type ReadBatchConfig struct {
+	MinBytes int
+	MaxBytes int
+
+	// IsolationLevel controls the visibility of transactional records.
+	// ReadUncommitted makes all records visible. With ReadCommitted only
+	// non-transactional and committed records are visible.
+	IsolationLevel IsolationLevel
+}
+
+type IsolationLevel int8
+
+const (
+	ReadUncommitted IsolationLevel = 0
+	ReadCommitted   IsolationLevel = 1
+)
 
 var (
 	// DefaultClientID is the default value used as ClientID of kafka
@@ -135,7 +154,12 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 			}},
 		}},
 	}).size()
+	c.selectVersions()
 	c.fetchMaxBytes = math.MaxInt32 - c.fetchMinSize
+	return c
+}
+
+func (c *Conn) selectVersions() {
 	var err error
 	apiVersions, err := c.ApiVersions()
 	if err != nil {
@@ -146,7 +170,71 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 			c.apiVersions[apiKey(v.ApiKey)] = v
 		}
 	}
-	return c
+	for _, v := range c.apiVersions {
+		if apiKey(v.ApiKey) == fetchRequest {
+			if v.MaxVersion >= 5 {
+				c.fetchVersion = 5
+			} else {
+				c.fetchVersion = 2
+			}
+		}
+	}
+}
+
+// Controller requests kafka for the current controller and returns its URL
+func (c *Conn) Controller() (broker Broker, err error) {
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV1
+
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+			for _, brokerMeta := range res.Brokers {
+				if brokerMeta.NodeID == res.ControllerID {
+					broker = Broker{ID: int(brokerMeta.NodeID),
+						Port: int(brokerMeta.Port),
+						Host: brokerMeta.Host,
+						Rack: brokerMeta.Rack}
+					break
+				}
+			}
+			return nil
+		},
+	)
+	return broker, err
+}
+
+// Brokers retrieve the broker list from the Kafka metadata
+func (c *Conn) Brokers() ([]Broker, error) {
+	var brokers []Broker
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV1
+
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+
+			brokers = make([]Broker, len(res.Brokers))
+			for i, brokerMeta := range res.Brokers {
+				brokers[i] = Broker{
+					ID:   int(brokerMeta.NodeID),
+					Port: int(brokerMeta.Port),
+					Host: brokerMeta.Host,
+					Rack: brokerMeta.Rack,
+				}
+			}
+			return nil
+		},
+	)
+	return brokers, err
 }
 
 // DeleteTopics deletes the specified topics.
@@ -588,17 +676,27 @@ func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 // gives the minimum and maximum number of bytes that it wants to receive from
 // the kafka server.
 func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
+	return c.ReadBatchWith(ReadBatchConfig{
+		MinBytes: minBytes,
+		MaxBytes: maxBytes,
+	})
+}
+
+// ReadBatchWith in every way is similar to ReadBatch. ReadBatch is configured
+// with the default values in ReadBatchConfig except for minBytes and maxBytes.
+func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
+
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
 
-	if minBytes < 0 || minBytes > maxFetch {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", minBytes, maxFetch)}
+	if cfg.MinBytes < 0 || cfg.MinBytes > maxFetch {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", cfg.MinBytes, maxFetch)}
 	}
-	if maxBytes < 0 || maxBytes > maxFetch {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", maxBytes, maxFetch)}
+	if cfg.MaxBytes < 0 || cfg.MaxBytes > maxFetch {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", cfg.MaxBytes, maxFetch)}
 	}
-	if minBytes > maxBytes {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", minBytes, maxBytes)}
+	if cfg.MinBytes > cfg.MaxBytes {
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", cfg.MinBytes, cfg.MaxBytes)}
 	}
 
 	offset, err := c.Seek(c.Offset())
@@ -610,17 +708,33 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 		adjustedDeadline = deadline
-		return writeFetchRequestV2(
-			&c.wbuf,
-			id,
-			c.clientID,
-			c.topic,
-			c.partition,
-			offset,
-			minBytes,
-			maxBytes+int(c.fetchMinSize),
-			deadlineToTimeout(deadline, now),
-		)
+		switch c.fetchVersion {
+		case v5:
+			return writeFetchRequestV5(
+				&c.wbuf,
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				offset,
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
+				deadlineToTimeout(deadline, now),
+				int8(cfg.IsolationLevel),
+			)
+		default:
+			return writeFetchRequestV2(
+				&c.wbuf,
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				offset,
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
+				deadlineToTimeout(deadline, now),
+			)
+		}
 	})
 	if err != nil {
 		return &Batch{err: dontExpectEOF(err)}
@@ -631,10 +745,30 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 		return &Batch{err: dontExpectEOF(err)}
 	}
 
-	throttle, highWaterMark, remain, err := readFetchResponseHeader(&c.rbuf, size)
+	var throttle int32
+	var highWaterMark int64
+	var remain int
+
+	switch c.fetchVersion {
+	case v5:
+		throttle, highWaterMark, remain, err = readFetchResponseHeaderV5(&c.rbuf, size)
+	default:
+		throttle, highWaterMark, remain, err = readFetchResponseHeaderV2(&c.rbuf, size)
+	}
+	if err == errShortRead {
+		err = checkTimeoutErr(adjustedDeadline)
+	}
+
+	var msgs *messageSetReader
+	if err == nil {
+		msgs, err = newMessageSetReader(&c.rbuf, remain)
+	}
+	if err == errShortRead {
+		err = checkTimeoutErr(adjustedDeadline)
+	}
 	return &Batch{
 		conn:          c,
-		msgs:          newMessageSetReader(&c.rbuf, remain),
+		msgs:          msgs,
 		deadline:      adjustedDeadline,
 		throttle:      duration(throttle),
 		lock:          lock,
@@ -806,7 +940,7 @@ func (c *Conn) WriteCompressedMessages(codec CompressionCodec, msgs ...Message) 
 	return
 }
 
-// WriteCompressedMessages writes a batch of messages to the connection's topic
+// WriteCompressedMessagesAt writes a batch of messages to the connection's topic
 // and partition, returning the number of bytes written, partition and offset numbers
 // and timestamp assigned by the kafka broker to the message set. The write is an atomic
 // operation, it either fully succeeds or fails.
@@ -846,6 +980,19 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+			if c.apiVersions[produceRequest].MaxVersion >= 3 {
+				return writeProduceRequestV3(
+					&c.wbuf,
+					codec,
+					id,
+					c.clientID,
+					c.topic,
+					c.partition,
+					deadlineToTimeout(deadline, now),
+					int16(atomic.LoadInt32(&c.requiredAcks)),
+					msgs...,
+				)
+			}
 			return writeProduceRequestV2(
 				&c.wbuf,
 				codec,
@@ -1185,4 +1332,89 @@ func (d *connDeadline) unsetConnWriteDeadline() {
 	d.mutex.Lock()
 	d.wconn = nil
 	d.mutex.Unlock()
+}
+
+// saslHandshake sends the SASL handshake message.  This will determine whether
+// the Mechanism is supported by the cluster.  If it's not, this function will
+// error out with UnsupportedSASLMechanism.
+//
+// If the mechanism is unsupported, the handshake request will reply with the
+// list of the cluster's configured mechanisms, which could potentially be used
+// to facilitate negotiation.  At the moment, we are not negotiating the
+// mechanism as we believe that brokers are usually known to the client, and
+// therefore the client should already know which mechanisms are supported.
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_SaslHandshake
+func (c *Conn) saslHandshake(mechanism string) error {
+	// The wire format for V0 and V1 is identical, but the version
+	// number will affect how the SASL authentication
+	// challenge/responses are sent
+	var resp saslHandshakeResponseV0
+	version := v0
+	if c.apiVersions[saslHandshakeRequest].MaxVersion >= 1 {
+		version = v1
+	}
+
+	err := c.writeOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(saslHandshakeRequest, version, id, &saslHandshakeRequestV0{Mechanism: mechanism})
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (int, error) {
+				return (&resp).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	if err == nil && resp.ErrorCode != 0 {
+		err = Error(resp.ErrorCode)
+	}
+	return err
+}
+
+// saslAuthenticate sends the SASL authenticate message.  This function must
+// be immediately preceded by a successful saslHandshake.
+//
+// See http://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
+func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
+	// if we sent a v1 handshake, then we must encapsulate the authentication
+	// request in a saslAuthenticateRequest.  otherwise, we read and write raw
+	// bytes.
+	if c.apiVersions[saslHandshakeRequest].MaxVersion >= 1 {
+		var request = saslAuthenticateRequestV0{Data: data}
+		var response saslAuthenticateResponseV0
+
+		err := c.writeOperation(
+			func(deadline time.Time, id int32) error {
+				return c.writeRequest(saslAuthenticateRequest, v0, id, request)
+			},
+			func(deadline time.Time, size int) error {
+				return expectZeroSize(func() (remain int, err error) {
+					return (&response).readFrom(&c.rbuf, size)
+				}())
+			},
+		)
+		if err == nil && response.ErrorCode != 0 {
+			err = Error(response.ErrorCode)
+		}
+		return response.Data, err
+	}
+
+	// fall back to opaque bytes on the wire.  the broker is expecting these if
+	// it just processed a v0 sasl handshake.
+	writeInt32(&c.wbuf, int32(len(data)))
+	if _, err := c.wbuf.Write(data); err != nil {
+		return nil, err
+	}
+	if err := c.wbuf.Flush(); err != nil {
+		return nil, err
+	}
+
+	var respLen int32
+	_, err := readInt32(&c.rbuf, 4, &respLen)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, _, err := readNewBytes(&c.rbuf, int(respLen), int(respLen))
+	return resp, err
 }
