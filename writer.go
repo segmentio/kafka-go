@@ -58,6 +58,7 @@ type WriterConfig struct {
 	Balancer Balancer
 
 	// Limit on how many attempts will be made to deliver a message.
+	// -1 means that we can make unlimited number of attempts.
 	//
 	// The default is to try at most 10 times.
 	MaxAttempts int
@@ -266,7 +267,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 	t0 := time.Now()
 
-	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
+	for attempt := 0; w.config.MaxAttempts == -1 || attempt < w.config.MaxAttempts; attempt++ {
 		w.mutex.RLock()
 
 		if w.closed {
@@ -319,7 +320,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		case <-timer.C:
 			// Only clear the error (so we retry the loop) if we have more retries, otherwise
 			// we risk silencing the error.
-			if attempt < w.config.MaxAttempts-1 {
+			if w.config.MaxAttempts == -1 || attempt < w.config.MaxAttempts-1 {
 				err = nil
 			}
 		case <-ctx.Done():
