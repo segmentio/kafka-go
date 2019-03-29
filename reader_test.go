@@ -973,6 +973,12 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 2,
 			function:   testReaderConsumerGroupRebalanceOnPartitionAdd,
 		},
+
+		{
+			scenario:   "consumer group fetch offsets",
+			partitions: 2,
+			function:   testReaderConsumerGroupFetchOffsets,
+		},
 	}
 
 	for _, test := range tests {
@@ -1174,6 +1180,51 @@ func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx contex
 
 	if v := len(partitions); v != 3 {
 		t.Errorf("expected messages across 3 partitions; got messages across %v partitions", v)
+	}
+}
+
+func testReaderConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, r *Reader) {
+	const N = 12
+
+	writer := NewWriter(WriterConfig{
+		Brokers:   r.config.Brokers,
+		Topic:     r.config.Topic,
+		Dialer:    r.config.Dialer,
+		Balancer:  &RoundRobin{},
+		BatchSize: 1,
+	})
+	if err := writer.WriteMessages(ctx, makeTestSequence(N)...); err != nil {
+		t.Fatalf("bad write messages: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("bad write err: %v", err)
+	}
+
+	partitions := map[int]struct{}{}
+	for i := 0; i < N; i++ {
+		m, err := r.FetchMessage(ctx)
+		if err != nil {
+			t.Errorf("bad error: %s", err)
+		}
+		partitions[m.Partition] = struct{}{}
+		r.CommitMessages(context.Background(), m)
+	}
+
+	if v := len(partitions); v != 2 {
+		t.Errorf("expected messages across 2 partitions; got messages across %v partitions", v)
+	}
+
+	offsets, err := r.ConsumerGroupOffsets()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if offsets[0] != 6 {
+		t.Errorf("expected offset for partition 0 to be 6; got offset of %d", offsets[0])
+	}
+
+	if offsets[1] != 6 {
+		t.Errorf("expected offset for partition 1 to be 6; got offset of %d", offsets[1])
 	}
 }
 
