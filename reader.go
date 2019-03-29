@@ -100,6 +100,8 @@ type Reader struct {
 	// reader stats are all made of atomic values, no need for synchronization.
 	// Use a pointer to ensure 64-bit alignment of the values.
 	stats *readerStats
+	// A cache of our current assignments
+	assignments map[string][]int32
 }
 
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
@@ -463,6 +465,9 @@ func (r *Reader) rebalance(conn *Conn) (map[string][]int32, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.mutex.Lock()
+	r.assignments = assignments
+	r.mutex.Unlock()
 
 	return assignments, nil
 }
@@ -1420,6 +1425,29 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	}
 
 	return
+}
+
+func (r *Reader) ConsumerGroupOffsets() (map[int]int64, error) {
+	if !r.useConsumerGroup() {
+		return nil, fmt.Errorf("only supported for consumer groups")
+	}
+
+	// establish a connection to the coordinator.  this connection will be
+	// shared by all of the consumer group go routines.
+	conn, err := r.coordinator()
+	if err != nil {
+		return nil, err
+	}
+
+	assignmentCopy := map[string][]int32{}
+	r.mutex.Lock()
+	for k, v := range r.assignments {
+		partitions := make([]int32, len(v))
+		copy(partitions, v)
+		assignmentCopy[k] = partitions
+	}
+	r.mutex.Unlock()
+	return r.fetchOffsets(conn, assignmentCopy)
 }
 
 // Offset returns the current absolute offset of the reader, or -1
