@@ -45,7 +45,9 @@ func newTestWriter(config WriterConfig) *Writer {
 	if len(config.Brokers) == 0 {
 		config.Brokers = []string{"localhost:9092"}
 	}
-	return NewWriter(config)
+	w, err := NewWriter(config)
+	panic(err)
+	return w
 }
 
 func testWriterClose(t *testing.T) {
@@ -99,6 +101,26 @@ func testWriterRoundRobin1(t *testing.T) {
 		if string(m.Value) != "Hello World!" {
 			t.Error("bad messages in partition", msgs)
 			break
+		}
+	}
+}
+
+func TestNewWriter(t *testing.T) {
+	tests := []struct {
+		config       WriterConfig
+		errorOccured bool
+	}{
+		{config: WriterConfig{}, errorOccured: true},
+		{config: WriterConfig{Brokers: []string{"broker1", "broker2"}}, errorOccured: true},
+		{config: WriterConfig{Brokers: []string{"broker1"}, Topic: "topic1"}, errorOccured: false},
+	}
+	for _, test := range tests {
+		_, err := NewWriter(test.config)
+		if test.errorOccured && err == nil {
+			t.Fail()
+		}
+		if !test.errorOccured && err != nil {
+			t.Fail()
 		}
 	}
 }

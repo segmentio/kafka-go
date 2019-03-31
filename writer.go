@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -173,13 +174,13 @@ type writerStats struct {
 }
 
 // NewWriter creates and returns a new Writer configured with config.
-func NewWriter(config WriterConfig) *Writer {
+func NewWriter(config WriterConfig) (*Writer, error) {
 	if len(config.Brokers) == 0 {
-		panic("cannot create a kafka writer with an empty list of brokers")
+		return nil, errors.New("cannot create a kafka writer with an empty list of brokers")
 	}
 
 	if len(config.Topic) == 0 {
-		panic("cannot create a kafka writer with an empty topic")
+		return nil, errors.New("cannot create a kafka writer with an empty topic")
 	}
 
 	if config.Dialer == nil {
@@ -238,7 +239,7 @@ func NewWriter(config WriterConfig) *Writer {
 
 	w.join.Add(1)
 	go w.run()
-	return w
+	return w, nil
 }
 
 // WriteMessages writes a batch of messages to the kafka topic configured on this

@@ -72,7 +72,7 @@ func TestReader(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			r := NewReader(ReaderConfig{
+			r, _ := NewReader(ReaderConfig{
 				Brokers:  []string{"localhost:9092"},
 				Topic:    makeTopic(),
 				MinBytes: 1,
@@ -399,7 +399,7 @@ func TestReaderOnNonZeroPartition(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			r := NewReader(ReaderConfig{
+			r, _ := NewReader(ReaderConfig{
 				Brokers:   []string{"localhost:9092"},
 				Topic:     topic,
 				Partition: 1,
@@ -454,7 +454,7 @@ func TestReadTruncatedMessages(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	r := NewReader(ReaderConfig{
+	r, _ := NewReader(ReaderConfig{
 		Brokers:  []string{"localhost:9092"},
 		Topic:    makeTopic(),
 		MinBytes: 1,
@@ -535,7 +535,7 @@ func BenchmarkReader(b *testing.B) {
 		b.ResetTimer()
 	})
 
-	r := NewReader(ReaderConfig{
+	r, _ := NewReader(ReaderConfig{
 		Brokers:   []string{broker},
 		Topic:     benchmarkReaderTopic,
 		Partition: 0,
@@ -563,7 +563,7 @@ func TestCloseLeavesGroup(t *testing.T) {
 	defer cancel()
 	topic := makeTopic()
 	createTopic(t, topic, 1)
-	r := NewReader(ReaderConfig{
+	r, _ := NewReader(ReaderConfig{
 		Brokers:  []string{"localhost:9092"},
 		Topic:    topic,
 		GroupID:  makeGroupID(),
@@ -644,7 +644,7 @@ func TestConsumerGroup(t *testing.T) {
 			topic := makeTopic()
 			createTopic(t, topic, 1)
 
-			r := NewReader(ReaderConfig{
+			r, _ := NewReader(ReaderConfig{
 				Brokers:  []string{"localhost:9092"},
 				Topic:    topic,
 				GroupID:  makeGroupID(),
@@ -662,7 +662,7 @@ func TestConsumerGroup(t *testing.T) {
 	topic := makeTopic()
 	createTopic(t, topic, 1)
 
-	r := NewReader(ReaderConfig{
+	r, _ := NewReader(ReaderConfig{
 		Brokers: []string{broker},
 		Topic:   topic,
 		GroupID: makeGroupID(),
@@ -983,7 +983,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 			createTopic(t, topic, test.partitions)
 
 			groupID := makeGroupID()
-			r := NewReader(ReaderConfig{
+			r, _ := NewReader(ReaderConfig{
 				Brokers:           []string{"localhost:9092"},
 				Topic:             topic,
 				GroupID:           groupID,
@@ -1125,7 +1125,7 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 		t.Errorf("bad Close: %v", err)
 	}
 
-	r2 := NewReader(r.config)
+	r2, _ := NewReader(r.config)
 	defer r2.Close()
 
 	conn, err := r2.coordinator()
@@ -1149,7 +1149,7 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx context.Context, r *Reader) {
 	const N = 12
 
-	writer := NewWriter(WriterConfig{
+	writer, _ := NewWriter(WriterConfig{
 		Brokers:   r.config.Brokers,
 		Topic:     r.config.Topic,
 		Dialer:    r.config.Dialer,
@@ -1231,7 +1231,7 @@ func testReaderConsumerGroupRebalanceOnPartitionAdd(t *testing.T, ctx context.Co
 }
 
 func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Reader) {
-	r2 := NewReader(r.config)
+	r2, _ := NewReader(r.config)
 	defer r.Close()
 
 	const (
@@ -1240,7 +1240,7 @@ func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Read
 	)
 
 	// rebalance should result in 12 message in each of the partitions
-	writer := NewWriter(WriterConfig{
+	writer, _ := NewWriter(WriterConfig{
 		Brokers:   r.config.Brokers,
 		Topic:     r.config.Topic,
 		Dialer:    r.config.Dialer,
@@ -1270,7 +1270,7 @@ func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Cont
 	topic2 := makeTopic()
 	createTopic(t, topic2, 1)
 
-	r2 := NewReader(ReaderConfig{
+	r2, _ := NewReader(ReaderConfig{
 		Brokers:           r.config.Brokers,
 		Topic:             topic2,
 		GroupID:           r.config.GroupID,
@@ -1289,7 +1289,7 @@ func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Cont
 	)
 
 	// write messages across both partitions
-	writer := NewWriter(WriterConfig{
+	writer, _ := NewWriter(WriterConfig{
 		Brokers:   r.config.Brokers,
 		Topic:     r.config.Topic,
 		Dialer:    r.config.Dialer,
@@ -1326,7 +1326,7 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 	var readers []*Reader
 
 	for i := 0; i < N-1; i++ {
-		reader := NewReader(r.config)
+		reader, _ := NewReader(r.config)
 		readers = append(readers, reader)
 	}
 	defer func() {
@@ -1336,7 +1336,7 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 	}()
 
 	// write messages across both partitions
-	writer := NewWriter(WriterConfig{
+	writer, _ := NewWriter(WriterConfig{
 		Brokers:   r.config.Brokers,
 		Topic:     r.config.Topic,
 		Dialer:    r.config.Dialer,
@@ -1451,6 +1451,36 @@ func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offse
 	return offsetCommitResponseV2{}, nil
 }
 
+func TestNewReader(t *testing.T) {
+	tests := []struct {
+		config       ReaderConfig
+		errorOccured bool
+	}{
+		{config: ReaderConfig{}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1"}, errorOccured: false},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: 5, MaxBytes: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: 5, MaxBytes: 6}, errorOccured: false},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: -2}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, CommitInterval: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, CommitInterval: 1, PartitionWatchInterval: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, CommitInterval: 1, PartitionWatchInterval: 1}, errorOccured: false},
+	}
+	for _, test := range tests {
+		_, err := NewReader(test.config)
+		if test.errorOccured && err == nil {
+			t.Fatal(err)
+		}
+		if !test.errorOccured && err != nil {
+			t.Fail()
+		}
+	}
+}
+
 func TestCommitOffsetsWithRetry(t *testing.T) {
 	offsets := offsetStash{"topic": {0: 0}}
 
@@ -1507,14 +1537,14 @@ func TestRebalanceTooManyConsumers(t *testing.T) {
 	}
 
 	// Create the first reader and wait for it to become the leader.
-	r1 := NewReader(conf)
+	r1, _ := NewReader(conf)
 	prepareReader(t, ctx, r1, makeTestSequence(1)...)
 	r1.ReadMessage(ctx)
 	// Clear the stats from the first rebalance.
 	r1.Stats()
 
 	// Second reader should cause one rebalance for each r1 and r2.
-	r2 := NewReader(conf)
+	r2, _ := NewReader(conf)
 
 	// Wait for rebalances.
 	time.Sleep(5 * time.Second)

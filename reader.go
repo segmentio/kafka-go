@@ -1050,29 +1050,29 @@ type readerStats struct {
 
 // NewReader creates and returns a new Reader configured with config.
 // The offset is initialized to FirstOffset.
-func NewReader(config ReaderConfig) *Reader {
+func NewReader(config ReaderConfig) (*Reader, error) {
 	if len(config.Brokers) == 0 {
-		panic("cannot create a new kafka reader with an empty list of broker addresses")
+		return nil, errors.New("cannot create a new kafka reader with an empty list of broker addresses")
 	}
 
 	if len(config.Topic) == 0 {
-		panic("cannot create a new kafka reader with an empty topic")
+		return nil, errors.New("cannot create a new kafka reader with an empty topic")
 	}
 
 	if config.Partition < 0 || config.Partition >= math.MaxInt32 {
-		panic(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
+		return nil, errors.New(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
 	}
 
 	if config.MinBytes < 0 {
-		panic(fmt.Sprintf("invalid negative minimum batch size (min = %d)", config.MinBytes))
+		return nil, errors.New(fmt.Sprintf("invalid negative minimum batch size (min = %d)", config.MinBytes))
 	}
 
 	if config.MaxBytes < 0 {
-		panic(fmt.Sprintf("invalid negative maximum batch size (max = %d)", config.MaxBytes))
+		return nil, errors.New(fmt.Sprintf("invalid negative maximum batch size (max = %d)", config.MaxBytes))
 	}
 
 	if config.GroupID != "" && config.Partition != 0 {
-		panic("either Partition or GroupID may be specified, but not both")
+		return nil, errors.New("either Partition or GroupID may be specified, but not both")
 	}
 
 	if config.GroupID != "" {
@@ -1084,27 +1084,27 @@ func NewReader(config ReaderConfig) *Reader {
 		}
 
 		if config.HeartbeatInterval < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
+			return nil, errors.New(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
 		}
 
 		if config.SessionTimeout < 0 || (config.SessionTimeout/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("SessionTimeout out of bounds: %d", config.SessionTimeout))
+			return nil, errors.New(fmt.Sprintf("SessionTimeout out of bounds: %d", config.SessionTimeout))
 		}
 
 		if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
+			return nil, errors.New(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
 		}
 
 		if config.RetentionTime < 0 {
-			panic(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
+			return nil, errors.New(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
 		}
 
 		if config.CommitInterval < 0 || (config.CommitInterval/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
+			return nil, errors.New(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
 		}
 
 		if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
+			return nil, errors.New(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
 		}
 
 	}
@@ -1122,7 +1122,7 @@ func NewReader(config ReaderConfig) *Reader {
 	}
 
 	if config.MinBytes > config.MaxBytes {
-		panic(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
+		return nil, errors.New(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
 	}
 
 	if config.MaxWait == 0 {
@@ -1196,7 +1196,7 @@ func NewReader(config ReaderConfig) *Reader {
 
 	go r.run()
 
-	return r
+	return r, nil
 }
 
 // Config returns the reader's configuration.
