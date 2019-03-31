@@ -205,7 +205,7 @@ func TestWriteV2RecordBatch(t *testing.T) {
 		value := fmt.Sprintf("Sample message content: %d!", i)
 		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{Header{Key: "hk", Value: []byte("hv")}}}
 	}
-	w, _ := NewWriter(WriterConfig{
+	w := NewWriter(WriterConfig{
 		Brokers:      []string{"localhost:9092"},
 		Topic:        topic,
 		BatchTimeout: 100 * time.Millisecond,
@@ -221,7 +221,7 @@ func TestWriteV2RecordBatch(t *testing.T) {
 	}
 	w.Close()
 
-	r, _ := NewReader(ReaderConfig{
+	r := NewReader(ReaderConfig{
 		Brokers: []string{"localhost:9092"},
 		Topic:   topic,
 		MaxWait: 100 * time.Millisecond,

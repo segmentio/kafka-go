@@ -45,9 +45,7 @@ func newTestWriter(config WriterConfig) *Writer {
 	if len(config.Brokers) == 0 {
 		config.Brokers = []string{"localhost:9092"}
 	}
-	w, err := NewWriter(config)
-	panic(err)
-	return w
+	return NewWriter(config)
 }
 
 func testWriterClose(t *testing.T) {
@@ -115,7 +113,7 @@ func TestNewWriter(t *testing.T) {
 		{config: WriterConfig{Brokers: []string{"broker1"}, Topic: "topic1"}, errorOccured: false},
 	}
 	for _, test := range tests {
-		_, err := NewWriter(test.config)
+		err := test.config.Validate()
 		if test.errorOccured && err == nil {
 			t.Fail()
 		}

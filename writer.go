@@ -173,14 +173,25 @@ type writerStats struct {
 	batchSize  summary
 }
 
-// NewWriter creates and returns a new Writer configured with config.
-func NewWriter(config WriterConfig) (*Writer, error) {
+// Validate method validates WriterConfig properties.
+func (config *WriterConfig) Validate() error {
+
 	if len(config.Brokers) == 0 {
-		return nil, errors.New("cannot create a kafka writer with an empty list of brokers")
+		return errors.New("cannot create a kafka writer with an empty list of brokers")
 	}
 
 	if len(config.Topic) == 0 {
-		return nil, errors.New("cannot create a kafka writer with an empty topic")
+		return errors.New("cannot create a kafka writer with an empty topic")
+	}
+
+	return nil
+}
+
+// NewWriter creates and returns a new Writer configured with config.
+func NewWriter(config WriterConfig) *Writer {
+
+	if err := config.Validate(); err != nil {
+		panic(err)
 	}
 
 	if config.Dialer == nil {
@@ -239,7 +250,7 @@ func NewWriter(config WriterConfig) (*Writer, error) {
 
 	w.join.Add(1)
 	go w.run()
-	return w, nil
+	return w
 }
 
 // WriteMessages writes a batch of messages to the kafka topic configured on this

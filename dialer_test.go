@@ -42,7 +42,7 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 	createTopic(t, topic, 1)
 
 	// Write a message to ensure the partition gets created.
-	w, _ := NewWriter(WriterConfig{
+	w := NewWriter(WriterConfig{
 		Brokers: []string{"localhost:9092"},
 		Topic:   topic,
 	})
@@ -178,7 +178,7 @@ func TestDialerTLS(t *testing.T) {
 	createTopic(t, topic, 1)
 
 	// Write a message to ensure the partition gets created.
-	w, _ := NewWriter(WriterConfig{
+	w := NewWriter(WriterConfig{
 		Brokers: []string{"localhost:9092"},
 		Topic:   topic,
 	})

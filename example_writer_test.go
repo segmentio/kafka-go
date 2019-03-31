@@ -7,7 +7,7 @@ import (
 )
 
 func ExampleWriter() {
-	w, _ := kafka.NewWriter(kafka.WriterConfig{
+	w := kafka.NewWriter(kafka.WriterConfig{
 		Brokers: []string{"localhost:9092"},
 		Topic:   "Topic-1",
 	})
