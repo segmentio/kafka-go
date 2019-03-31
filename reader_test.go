@@ -1473,7 +1473,7 @@ func TestNewReader(t *testing.T) {
 	for _, test := range tests {
 		err := test.config.Validate()
 		if test.errorOccured && err == nil {
-			t.Fatal(err)
+			t.Fail()
 		}
 		if !test.errorOccured && err != nil {
 			t.Fail()
