@@ -1214,7 +1214,7 @@ func testReaderConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, r *R
 		t.Errorf("expected messages across 2 partitions; got messages across %v partitions", v)
 	}
 
-	offsets, err := r.ConsumerGroupOffsets()
+	offsets, err := r.GroupOffsets()
 	if err != nil {
 		t.Fatal(err)
 	}

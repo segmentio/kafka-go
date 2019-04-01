@@ -1427,7 +1427,7 @@ func (r *Reader) ReadLag(ctx context.Context) (lag int64, err error) {
 	return
 }
 
-func (r *Reader) ConsumerGroupOffsets() (map[int]int64, error) {
+func (r *Reader) GroupOffsets() (map[int]int64, error) {
 	if !r.useConsumerGroup() {
 		return nil, fmt.Errorf("only supported for consumer groups")
 	}
