@@ -103,7 +103,7 @@ func testWriterRoundRobin1(t *testing.T) {
 	}
 }
 
-func TestNewWriter(t *testing.T) {
+func TestValidateWriter(t *testing.T) {
 	tests := []struct {
 		config       WriterConfig
 		errorOccured bool
