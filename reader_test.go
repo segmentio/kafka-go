@@ -1451,7 +1451,7 @@ func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offse
 	return offsetCommitResponseV2{}, nil
 }
 
-func TestNewReader(t *testing.T) {
+func TestValidateReader(t *testing.T) {
 	tests := []struct {
 		config       ReaderConfig
 		errorOccured bool
