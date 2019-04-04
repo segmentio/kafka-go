@@ -463,7 +463,6 @@ func (r *messageSetReaderV2) readMessage(min int64,
 				err = errShortRead
 				return
 			}
-			r.reader = bufio.NewReaderSize(r.reader, batchRemain)
 			var b []byte
 			if b, err = r.reader.Peek(batchRemain); err != nil {
 				return
