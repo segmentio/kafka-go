@@ -993,6 +993,66 @@ type ReaderConfig struct {
 	ErrorLogger *log.Logger
 }
 
+// Validate method validates ReaderConfig properties.
+func (config *ReaderConfig) Validate() error {
+
+	if len(config.Brokers) == 0 {
+		return errors.New("cannot create a new kafka reader with an empty list of broker addresses")
+	}
+
+	if len(config.Topic) == 0 {
+		return errors.New("cannot create a new kafka reader with an empty topic")
+	}
+
+	if config.Partition < 0 || config.Partition >= math.MaxInt32 {
+		return errors.New(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
+	}
+
+	if config.MinBytes < 0 {
+		return errors.New(fmt.Sprintf("invalid negative minimum batch size (min = %d)", config.MinBytes))
+	}
+
+	if config.MaxBytes < 0 {
+		return errors.New(fmt.Sprintf("invalid negative maximum batch size (max = %d)", config.MaxBytes))
+	}
+
+	if config.GroupID != "" && config.Partition != 0 {
+		return errors.New("either Partition or GroupID may be specified, but not both")
+	}
+
+	if config.MinBytes > config.MaxBytes {
+		return errors.New(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
+	}
+
+	if config.GroupID != "" {
+		if config.HeartbeatInterval < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
+			return errors.New(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
+		}
+
+		if config.SessionTimeout < 0 || (config.SessionTimeout/time.Millisecond) >= math.MaxInt32 {
+			return errors.New(fmt.Sprintf("SessionTimeout out of bounds: %d", config.SessionTimeout))
+		}
+
+		if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
+			return errors.New(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
+		}
+
+		if config.RetentionTime < 0 {
+			return errors.New(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
+		}
+
+		if config.CommitInterval < 0 || (config.CommitInterval/time.Millisecond) >= math.MaxInt32 {
+			return errors.New(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
+		}
+
+		if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
+			return errors.New(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
+		}
+	}
+
+	return nil
+}
+
 // ReaderStats is a data structure returned by a call to Reader.Stats that exposes
 // details about the behavior of the reader.
 type ReaderStats struct {
@@ -1051,28 +1111,9 @@ type readerStats struct {
 // NewReader creates and returns a new Reader configured with config.
 // The offset is initialized to FirstOffset.
 func NewReader(config ReaderConfig) *Reader {
-	if len(config.Brokers) == 0 {
-		panic("cannot create a new kafka reader with an empty list of broker addresses")
-	}
 
-	if len(config.Topic) == 0 {
-		panic("cannot create a new kafka reader with an empty topic")
-	}
-
-	if config.Partition < 0 || config.Partition >= math.MaxInt32 {
-		panic(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
-	}
-
-	if config.MinBytes < 0 {
-		panic(fmt.Sprintf("invalid negative minimum batch size (min = %d)", config.MinBytes))
-	}
-
-	if config.MaxBytes < 0 {
-		panic(fmt.Sprintf("invalid negative maximum batch size (max = %d)", config.MaxBytes))
-	}
-
-	if config.GroupID != "" && config.Partition != 0 {
-		panic("either Partition or GroupID may be specified, but not both")
+	if err := config.Validate(); err != nil {
+		panic(err)
 	}
 
 	if config.GroupID != "" {
@@ -1082,31 +1123,6 @@ func NewReader(config ReaderConfig) *Reader {
 				RoundRobinGroupBalancer{},
 			}
 		}
-
-		if config.HeartbeatInterval < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
-		}
-
-		if config.SessionTimeout < 0 || (config.SessionTimeout/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("SessionTimeout out of bounds: %d", config.SessionTimeout))
-		}
-
-		if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
-		}
-
-		if config.RetentionTime < 0 {
-			panic(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
-		}
-
-		if config.CommitInterval < 0 || (config.CommitInterval/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
-		}
-
-		if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
-			panic(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
-		}
-
 	}
 
 	if config.Dialer == nil {
@@ -1119,10 +1135,6 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.MinBytes == 0 {
 		config.MinBytes = config.MaxBytes
-	}
-
-	if config.MinBytes > config.MaxBytes {
-		panic(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
 	}
 
 	if config.MaxWait == 0 {

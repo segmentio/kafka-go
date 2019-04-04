@@ -103,6 +103,26 @@ func testWriterRoundRobin1(t *testing.T) {
 	}
 }
 
+func TestValidateWriter(t *testing.T) {
+	tests := []struct {
+		config       WriterConfig
+		errorOccured bool
+	}{
+		{config: WriterConfig{}, errorOccured: true},
+		{config: WriterConfig{Brokers: []string{"broker1", "broker2"}}, errorOccured: true},
+		{config: WriterConfig{Brokers: []string{"broker1"}, Topic: "topic1"}, errorOccured: false},
+	}
+	for _, test := range tests {
+		err := test.config.Validate()
+		if test.errorOccured && err == nil {
+			t.Fail()
+		}
+		if !test.errorOccured && err != nil {
+			t.Fail()
+		}
+	}
+}
+
 type fakeWriter struct{}
 
 func (f *fakeWriter) messages() chan<- writerMessage {

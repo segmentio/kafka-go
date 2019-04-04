@@ -1451,6 +1451,36 @@ func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offse
 	return offsetCommitResponseV2{}, nil
 }
 
+func TestValidateReader(t *testing.T) {
+	tests := []struct {
+		config       ReaderConfig
+		errorOccured bool
+	}{
+		{config: ReaderConfig{}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1"}, errorOccured: false},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: 5, MaxBytes: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: 5, MaxBytes: 6}, errorOccured: false},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: -2}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, CommitInterval: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, CommitInterval: 1, PartitionWatchInterval: -1}, errorOccured: true},
+		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 0, MinBytes: 5, MaxBytes: 6, GroupID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, CommitInterval: 1, PartitionWatchInterval: 1}, errorOccured: false},
+	}
+	for _, test := range tests {
+		err := test.config.Validate()
+		if test.errorOccured && err == nil {
+			t.Fail()
+		}
+		if !test.errorOccured && err != nil {
+			t.Fail()
+		}
+	}
+}
+
 func TestCommitOffsetsWithRetry(t *testing.T) {
 	offsets := offsetStash{"topic": {0: 0}}
 

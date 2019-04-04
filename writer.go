@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -172,14 +173,25 @@ type writerStats struct {
 	batchSize  summary
 }
 
-// NewWriter creates and returns a new Writer configured with config.
-func NewWriter(config WriterConfig) *Writer {
+// Validate method validates WriterConfig properties.
+func (config *WriterConfig) Validate() error {
+
 	if len(config.Brokers) == 0 {
-		panic("cannot create a kafka writer with an empty list of brokers")
+		return errors.New("cannot create a kafka writer with an empty list of brokers")
 	}
 
 	if len(config.Topic) == 0 {
-		panic("cannot create a kafka writer with an empty topic")
+		return errors.New("cannot create a kafka writer with an empty topic")
+	}
+
+	return nil
+}
+
+// NewWriter creates and returns a new Writer configured with config.
+func NewWriter(config WriterConfig) *Writer {
+
+	if err := config.Validate(); err != nil {
+		panic(err)
 	}
 
 	if config.Dialer == nil {
