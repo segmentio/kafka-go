@@ -463,14 +463,12 @@ func (r *messageSetReaderV2) readMessage(min int64,
 				err = errShortRead
 				return
 			}
-			var b []byte
-			if b, err = r.reader.Peek(batchRemain); err != nil {
+			var compressed []byte
+			compressed, r.remain, err = readNewBytes(r.reader, r.remain, batchRemain)
+			if err != nil {
 				return
 			}
-			if decompressed, err = codec.Decode(b); err != nil {
-				return
-			}
-			if r.remain, err = discardN(r.reader, r.remain, batchRemain); err != nil {
+			if decompressed, err = codec.Decode(compressed); err != nil {
 				return
 			}
 
