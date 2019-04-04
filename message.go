@@ -372,15 +372,15 @@ func (h *messageSetHeaderV2) compression() int8 {
 }
 
 func (h *messageSetHeaderV2) timestampType() timestampType {
-	return timestampType(h.batchAttributes & 8)
+	return timestampType((h.batchAttributes & (1 << 3)) >> 3)
 }
 
 func (h *messageSetHeaderV2) transactionType() transactionType {
-	return transactionType(h.batchAttributes & 16)
+	return transactionType((h.batchAttributes & (1 << 4)) >> 4)
 }
 
 func (h *messageSetHeaderV2) controlType() controlType {
-	return controlType(h.batchAttributes & 32)
+	return controlType((h.batchAttributes & (1 << 5)) >> 5)
 }
 
 type messageSetReaderV2 struct {

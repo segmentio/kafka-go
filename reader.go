@@ -991,6 +991,11 @@ type ReaderConfig struct {
 	// ErrorLogger is the logger used to report errors. If nil, the reader falls
 	// back to using Logger instead.
 	ErrorLogger *log.Logger
+
+	// IsolationLevel controls the visibility of transactional records.
+	// ReadUncommitted makes all records visible. With ReadCommitted only
+	// non-transactional and committed records are visible.
+	IsolationLevel IsolationLevel
 }
 
 // Validate method validates ReaderConfig properties.
@@ -1636,18 +1641,19 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 			defer join.Done()
 
 			(&reader{
-				dialer:      r.config.Dialer,
-				logger:      r.config.Logger,
-				errorLogger: r.config.ErrorLogger,
-				brokers:     r.config.Brokers,
-				topic:       r.config.Topic,
-				partition:   partition,
-				minBytes:    r.config.MinBytes,
-				maxBytes:    r.config.MaxBytes,
-				maxWait:     r.config.MaxWait,
-				version:     r.version,
-				msgs:        r.msgs,
-				stats:       r.stats,
+				dialer:         r.config.Dialer,
+				logger:         r.config.Logger,
+				errorLogger:    r.config.ErrorLogger,
+				brokers:        r.config.Brokers,
+				topic:          r.config.Topic,
+				partition:      partition,
+				minBytes:       r.config.MinBytes,
+				maxBytes:       r.config.MaxBytes,
+				maxWait:        r.config.MaxWait,
+				version:        r.version,
+				msgs:           r.msgs,
+				stats:          r.stats,
+				isolationLevel: r.config.IsolationLevel,
 			}).run(ctx, offset)
 		}(ctx, partition, offset, &r.join)
 	}
@@ -1657,18 +1663,19 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 // used as an way to asynchronously fetch messages while the main program reads
 // them using the high level reader API.
 type reader struct {
-	dialer      *Dialer
-	logger      *log.Logger
-	errorLogger *log.Logger
-	brokers     []string
-	topic       string
-	partition   int
-	minBytes    int
-	maxBytes    int
-	maxWait     time.Duration
-	version     int64
-	msgs        chan<- readerMessage
-	stats       *readerStats
+	dialer         *Dialer
+	logger         *log.Logger
+	errorLogger    *log.Logger
+	brokers        []string
+	topic          string
+	partition      int
+	minBytes       int
+	maxBytes       int
+	maxWait        time.Duration
+	version        int64
+	msgs           chan<- readerMessage
+	stats          *readerStats
+	isolationLevel IsolationLevel
 }
 
 type readerMessage struct {
@@ -1888,7 +1895,11 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	t0 := time.Now()
 	conn.SetReadDeadline(t0.Add(r.maxWait))
 
-	batch := conn.ReadBatch(r.minBytes, r.maxBytes)
+	batch := conn.ReadBatchWith(ReadBatchConfig{
+		MinBytes:       r.minBytes,
+		MaxBytes:       r.maxBytes,
+		IsolationLevel: r.isolationLevel,
+	})
 	highWaterMark := batch.HighWaterMark()
 
 	t1 := time.Now()
