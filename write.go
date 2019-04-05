@@ -219,6 +219,58 @@ func writeFetchRequestV5(w *bufio.Writer, correlationID int32, clientID, topic s
 	return w.Flush()
 }
 
+func writeFetchRequestV10(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration, isolationLevel int8) error {
+	h := requestHeader{
+		ApiKey:        int16(fetchRequest),
+		ApiVersion:    int16(v10),
+		CorrelationID: correlationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		4 + // replica ID
+		4 + // max wait time
+		4 + // min bytes
+		4 + // max bytes
+		1 + // isolation level
+		4 + // session ID
+		4 + // session epoch
+		4 + // topic array length
+		sizeofString(topic) +
+		4 + // partition array length
+		4 + // partition
+		4 + // current leader epoch
+		8 + // fetch offset
+		8 + // log start offset
+		4 + // partition max bytes
+		4 // forgotten topics data
+
+	h.writeTo(w)
+	writeInt32(w, -1) // replica ID
+	writeInt32(w, milliseconds(maxWait))
+	writeInt32(w, int32(minBytes))
+	writeInt32(w, int32(maxBytes))
+	writeInt8(w, isolationLevel) // isolation level 0 - read uncommitted
+	writeInt32(w, 0)             //FIXME
+	writeInt32(w, -1)            //FIXME
+
+	// topic array
+	writeArrayLen(w, 1)
+	writeString(w, topic)
+
+	// partition array
+	writeArrayLen(w, 1)
+	writeInt32(w, partition)
+	writeInt32(w, -1) //FIXME
+	writeInt64(w, offset)
+	writeInt64(w, int64(0)) // log start offset only used when is sent by follower
+	writeInt32(w, int32(maxBytes))
+
+	// forgotten topics array
+	writeArrayLen(w, 0) // forgotten topics not supported yet
+
+	return w.Flush()
+}
+
 func writeListOffsetRequestV1(w *bufio.Writer, correlationID int32, clientID, topic string, partition int32, time int64) error {
 	h := requestHeader{
 		ApiKey:        int16(listOffsetRequest),
@@ -295,17 +347,7 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	return w.Flush()
 }
 
-func writeProduceRequestV3(
-	w *bufio.Writer,
-	codec CompressionCodec,
-	correlationID int32,
-	clientID, topic string,
-	partition int32,
-	timeout time.Duration,
-	requiredAcks int16,
-	transactionalId *string,
-	msgs ...Message,
-) (err error) {
+func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, msgs ...Message) (err error) {
 
 	var size int32
 	var compressed []byte
@@ -337,7 +379,7 @@ func writeProduceRequestV3(
 		ClientID:      clientID,
 	}
 	h.Size = (h.size() - 4) +
-		sizeofNullableString(transactionalId) +
+		sizeofNullableString(transactionalID) +
 		2 + // required acks
 		4 + // timeout
 		4 + // topic array length
@@ -348,7 +390,81 @@ func writeProduceRequestV3(
 		size
 
 	h.writeTo(w)
-	writeNullableString(w, transactionalId)
+	writeNullableString(w, transactionalID)
+	writeInt16(w, requiredAcks) // required acks
+	writeInt32(w, milliseconds(timeout))
+
+	// topic array
+	writeArrayLen(w, 1)
+	writeString(w, topic)
+
+	// partition array
+	writeArrayLen(w, 1)
+	writeInt32(w, partition)
+
+	writeInt32(w, size)
+	if codec != nil {
+		err = writeRecordBatch(w, attributes, size, func(w *bufio.Writer) {
+			w.Write(compressed)
+		}, msgs...)
+	} else {
+		err = writeRecordBatch(w, attributes, size, func(w *bufio.Writer) {
+			for i, msg := range msgs {
+				writeRecord(w, 0, msgs[0].Time, int64(i), msg)
+			}
+		}, msgs...)
+	}
+	if err != nil {
+		return
+	}
+
+	return w.Flush()
+}
+
+func writeProduceRequestV7(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, msgs ...Message) (err error) {
+
+	var size int32
+	var compressed []byte
+	var attributes int16
+	if codec != nil {
+		attributes = int16(codec.Code())
+		recordBuf := &bytes.Buffer{}
+		recordBuf.Grow(int(recordBatchSize(msgs...)))
+		compressedWriter := bufio.NewWriter(recordBuf)
+		for i, msg := range msgs {
+			writeRecord(compressedWriter, 0, msgs[0].Time, int64(i), msg)
+		}
+		compressedWriter.Flush()
+
+		compressed, err = codec.Encode(recordBuf.Bytes())
+		if err != nil {
+			return
+		}
+		attributes = int16(codec.Code())
+		size = recordBatchHeaderSize() + int32(len(compressed))
+	} else {
+		size = recordBatchSize(msgs...)
+	}
+
+	h := requestHeader{
+		ApiKey:        int16(produceRequest),
+		ApiVersion:    int16(v7),
+		CorrelationID: correlationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		sizeofNullableString(transactionalID) +
+		2 + // required acks
+		4 + // timeout
+		4 + // topic array length
+		sizeofString(topic) + // topic
+		4 + // partition array length
+		4 + // partition
+		4 + // message set size
+		size
+
+	h.writeTo(w)
+	writeNullableString(w, transactionalID)
 	writeInt16(w, requiredAcks) // required acks
 	writeInt32(w, milliseconds(timeout))
 

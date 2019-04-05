@@ -70,9 +70,10 @@ type Conn struct {
 	correlationID int32
 
 	// number of replica acks required when publishing to a partition
-	requiredAcks int32
-	apiVersions  map[apiKey]ApiVersion
-	fetchVersion apiVersion
+	requiredAcks   int32
+	apiVersions    map[apiKey]ApiVersion
+	fetchVersion   apiVersion
+	produceVersion apiVersion
 
 	transactionalID *string
 }
@@ -188,10 +189,20 @@ func (c *Conn) selectVersions() {
 	}
 	for _, v := range c.apiVersions {
 		if apiKey(v.ApiKey) == fetchRequest {
-			if v.MaxVersion >= 5 {
+			switch version := v.MaxVersion; {
+			case version >= 10:
+				c.fetchVersion = 10
+			case version >= 5:
 				c.fetchVersion = 5
-			} else {
+			default:
 				c.fetchVersion = 2
+			}
+		}
+		if apiKey(v.ApiKey) == produceRequest {
+			if v.MaxVersion >= 7 {
+				c.produceVersion = 7
+			} else {
+				c.produceVersion = 2
 			}
 		}
 	}
@@ -725,6 +736,19 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 		adjustedDeadline = deadline
 		switch c.fetchVersion {
+		case v10:
+			return writeFetchRequestV10(
+				&c.wbuf,
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				offset,
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
+				deadlineToTimeout(deadline, now),
+				int8(cfg.IsolationLevel),
+			)
 		case v5:
 			return writeFetchRequestV5(
 				&c.wbuf,
@@ -766,6 +790,8 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var remain int
 
 	switch c.fetchVersion {
+	case v10:
+		throttle, highWaterMark, remain, err = readFetchResponseHeaderV10(&c.rbuf, size)
 	case v5:
 		throttle, highWaterMark, remain, err = readFetchResponseHeaderV5(&c.rbuf, size)
 	default:
@@ -996,7 +1022,21 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-			if c.apiVersions[produceRequest].MaxVersion >= 3 {
+			switch version := c.apiVersions[produceRequest].MaxVersion; {
+			case version >= 7:
+				return writeProduceRequestV7(
+					&c.wbuf,
+					codec,
+					id,
+					c.clientID,
+					c.topic,
+					c.partition,
+					deadlineToTimeout(deadline, now),
+					int16(atomic.LoadInt32(&c.requiredAcks)),
+					c.transactionalID,
+					msgs...,
+				)
+			case version >= 3:
 				return writeProduceRequestV3(
 					&c.wbuf,
 					codec,
@@ -1009,18 +1049,19 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					c.transactionalID,
 					msgs...,
 				)
+			default:
+				return writeProduceRequestV2(
+					&c.wbuf,
+					codec,
+					id,
+					c.clientID,
+					c.topic,
+					c.partition,
+					deadlineToTimeout(deadline, now),
+					int16(atomic.LoadInt32(&c.requiredAcks)),
+					msgs...,
+				)
 			}
-			return writeProduceRequestV2(
-				&c.wbuf,
-				codec,
-				id,
-				c.clientID,
-				c.topic,
-				c.partition,
-				deadlineToTimeout(deadline, now),
-				int16(atomic.LoadInt32(&c.requiredAcks)),
-				msgs...,
-			)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
@@ -1034,18 +1075,33 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 				// Read the list of partitions, there should be only one since
 				// we've produced a message to a single partition.
 				size, err = readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
-					var p produceResponsePartitionV2
-					size, err := p.readFrom(r, size)
-					if err == nil && p.ErrorCode != 0 {
-						err = Error(p.ErrorCode)
-					}
-					if err == nil {
-						partition = p.Partition
-						offset = p.Offset
-						appendTime = time.Unix(0, p.Timestamp*int64(time.Millisecond))
+					switch c.produceVersion {
+					case v7:
+						var p produceResponsePartitionV7
+						size, err := p.readFrom(r, size)
+						if err == nil && p.ErrorCode != 0 {
+							err = Error(p.ErrorCode)
+						}
+						if err == nil {
+							partition = p.Partition
+							offset = p.Offset
+							appendTime = time.Unix(0, p.Timestamp*int64(time.Millisecond))
+						}
+						return size, err
+					default:
+						var p produceResponsePartitionV2
+						size, err := p.readFrom(r, size)
+						if err == nil && p.ErrorCode != 0 {
+							err = Error(p.ErrorCode)
+						}
+						if err == nil {
+							partition = p.Partition
+							offset = p.Offset
+							appendTime = time.Unix(0, p.Timestamp*int64(time.Millisecond))
+						}
+						return size, err
 					}
 
-					return size, err
 				})
 				if err != nil {
 					return size, err

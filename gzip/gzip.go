@@ -47,10 +47,13 @@ type CompressionCodec struct {
 	CompressionLevel int
 }
 
-const Code = 1
+const (
+	Code                    int8 = 1
+	DefaultCompressionLevel int  = -1
+)
 
 func NewCompressionCodec() CompressionCodec {
-	return NewCompressionCodecWith(kafka.DefaultCompressionLevel)
+	return NewCompressionCodecWith(DefaultCompressionLevel)
 }
 
 func NewCompressionCodecWith(level int) CompressionCodec {
