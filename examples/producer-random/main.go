@@ -22,7 +22,7 @@ func main() {
 	// get kafka writer using environment variables.
 	kafkaURL := os.Getenv("kafkaURL")
 	topic := os.Getenv("topic")
-	writer := getKafkaWriter(kafkaURL, topic)
+	writer := newKafkaWriter(kafkaURL, topic)
 	defer writer.Close()
 	fmt.Println("start producing ... !!")
 	for i := 0; ; i++ {
