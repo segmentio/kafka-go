@@ -1147,3 +1147,17 @@ func benchmarkConnWrite(b *testing.B, conn *Conn, _ []byte) {
 
 	b.SetBytes(int64(n / i))
 }
+
+func TestEmptyToNullableReturnsNil(t *testing.T) {
+	if emptyToNullable("") != nil {
+		t.Error("Empty string is not converted to nil")
+	}
+}
+
+func TestEmptyToNullableLeavesStringsIntact(t *testing.T) {
+	const s = "abc"
+	r := emptyToNullable(s)
+	if *r != s {
+		t.Error("Non empty string is not equal to the original string")
+	}
+}

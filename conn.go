@@ -130,7 +130,7 @@ func NewConn(conn net.Conn, topic string, partition int) *Conn {
 
 func emptyToNullable(transactionalID string) (result *string) {
 	if transactionalID != "" {
-		*result = transactionalID
+		result = &transactionalID
 	}
 	return result
 }
