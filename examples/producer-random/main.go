@@ -10,7 +10,7 @@ import (
 	kafka "github.com/segmentio/kafka-go"
 )
 
-func getKafkaWriter(kafkaURL, topic string) *kafka.Writer {
+func newKafkaWriter(kafkaURL, topic string) *kafka.Writer {
 	return kafka.NewWriter(kafka.WriterConfig{
 		Brokers:  []string{kafkaURL},
 		Topic:    topic,
