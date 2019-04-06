@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"time"
 )
 
@@ -23,13 +24,36 @@ type Message struct {
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
 	Time time.Time
+
+	Type        MessageType
+	ControlData ControlData
 }
 
 type MetaData struct {
 	Offset    int64
 	Timestamp int64
 	Headers   []Header
+	Type      MessageType
 }
+
+type MessageType int
+
+const (
+	DataMessage    MessageType = 0
+	ControlMessage MessageType = 1
+)
+
+type ControlData struct {
+	Version int16
+	Type    ControlType
+}
+
+type ControlType int
+
+const (
+	AbortMessage  ControlType = 0
+	CommitMessage ControlType = 1
+)
 
 func (msg Message) item() messageSetItem {
 	item := messageSetItem{
@@ -531,6 +555,14 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		}
 	}
 
+	if r.header.controlType() == 1 {
+		meta.Type = ControlMessage
+	} else {
+		meta.Type = DataMessage
+	}
+
+	log.Printf("control type - %v", r.header.controlType())
+
 	var length int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &length); err != nil {
 		return
@@ -556,6 +588,7 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	if r.remain, err = key(r.reader, r.remain, int(keyLen)); err != nil {
 		return
 	}
+
 	var valueLen int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &valueLen); err != nil {
 		return
