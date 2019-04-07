@@ -1,0 +1,77 @@
+version: '2.3'
+services:
+
+  zookeeper:
+    hostname: zookeeper
+    image: wurstmeister/zookeeper:3.4.6
+    expose:
+    - "2181"
+    ports:
+    - "2181:2181"
+  
+  kafka:
+    image: wurstmeister/kafka
+    env_file:
+    - kafka/kafka-variables.env
+    depends_on:
+    - zookeeper
+    ports:
+    - '9092:9092'
+    - '8082:8082'
+    - '8083:8083'
+
+  mongo-db:
+    image: mongo:4.0
+    expose:
+    - "27017"
+    ports:
+    - "27017:27017"
+    environment:
+      MONGO_DATA_DIR: /data/db
+      MONGO_LOG_DIR: /dev/null
+
+  consumer-mongo-db:
+    build:
+      context: consumer-mongo-db
+    environment:
+      mongoURL: mongodb://mongo-db:27017
+      dbName: example_db
+      collectionName: example_coll
+      kafkaURL: kafka:9092
+      topic: topic1
+      GroupID: mongo-group
+    depends_on: 
+    - kafka
+    - mongo-db
+
+  consumer-logger:
+    build:
+      context: consumer-logger
+    environment:
+      kafkaURL: kafka:9092
+      topic: topic1
+      GroupID: logger-group
+    depends_on: 
+    - kafka
+
+  producer-random:
+    build:
+      context: producer-random
+    environment:
+      kafkaURL: kafka:9092
+      topic: topic1
+    depends_on: 
+    - kafka
+
+  producer-api:
+    build:
+      context: producer-api
+    environment:
+      kafkaURL: kafka:9092
+      topic: topic1
+    expose:
+    - "8080"
+    ports:
+    - "8080:8080"
+    depends_on: 
+    - kafka

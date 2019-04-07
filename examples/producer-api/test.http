@@ -1,0 +1,13 @@
+### send data text
+POST http://localhost:8080
+Content-Type: text/plain
+
+"Hello-api"
+
+### send data json
+POST http://localhost:8080
+Content-Type: application/json
+
+{
+    "data":"Hello-api"
+}
