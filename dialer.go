@@ -68,6 +68,12 @@ type Dialer struct {
 	// SASLMechanism configures the Dialer to use SASL authentication.  If nil,
 	// no authentication will be performed.
 	SASLMechanism sasl.Mechanism
+
+	// The transactional id to use for transactional delivery. Idempotent
+	// deliver should be enabled if transactional id is configured.
+	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
+	// Empty string means that the connection will be non-transactional.
+	TransactionalID string
 }
 
 // Dial connects to the address on the named network.
@@ -101,7 +107,15 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 		defer cancel()
 	}
 
-	return d.connect(ctx, network, address, ConnConfig{ClientID: d.ClientID})
+	return d.connect(
+		ctx,
+		network,
+		address,
+		ConnConfig{
+			ClientID:        d.ClientID,
+			TransactionalID: d.TransactionalID,
+		},
+	)
 }
 
 // DialLeader opens a connection to the leader of the partition for a given
@@ -125,9 +139,10 @@ func (d *Dialer) DialLeader(ctx context.Context, network string, address string,
 // functions LookupPartition or LookupPartitions.
 func (d *Dialer) DialPartition(ctx context.Context, network string, address string, partition Partition) (*Conn, error) {
 	return d.connect(ctx, network, net.JoinHostPort(partition.Leader.Host, strconv.Itoa(partition.Leader.Port)), ConnConfig{
-		ClientID:  d.ClientID,
-		Topic:     partition.Topic,
-		Partition: partition.ID,
+		ClientID:        d.ClientID,
+		Topic:           partition.Topic,
+		Partition:       partition.ID,
+		TransactionalID: d.TransactionalID,
 	})
 }
 

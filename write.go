@@ -70,6 +70,14 @@ func writeString(w *bufio.Writer, s string) {
 	w.WriteString(s)
 }
 
+func writeNullableString(w *bufio.Writer, s *string) {
+	if s == nil {
+		writeInt16(w, -1)
+	} else {
+		writeString(w, *s)
+	}
+}
+
 func writeBytes(w *bufio.Writer, b []byte) {
 	n := len(b)
 	if b == nil {
@@ -287,7 +295,17 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 	return w.Flush()
 }
 
-func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
+func writeProduceRequestV3(
+	w *bufio.Writer,
+	codec CompressionCodec,
+	correlationID int32,
+	clientID, topic string,
+	partition int32,
+	timeout time.Duration,
+	requiredAcks int16,
+	transactionalId *string,
+	msgs ...Message,
+) (err error) {
 
 	var size int32
 	var compressed []byte
@@ -319,7 +337,7 @@ func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationI
 		ClientID:      clientID,
 	}
 	h.Size = (h.size() - 4) +
-		2 + // transactional_id
+		sizeofNullableString(transactionalId) +
 		2 + // required acks
 		4 + // timeout
 		4 + // topic array length
@@ -330,7 +348,7 @@ func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationI
 		size
 
 	h.writeTo(w)
-	writeInt16(w, -1)           // null transactional_id
+	writeNullableString(w, transactionalId)
 	writeInt16(w, requiredAcks) // required acks
 	writeInt32(w, milliseconds(timeout))
 
