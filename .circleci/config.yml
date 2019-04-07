@@ -27,9 +27,9 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t ./...
-      - run: go vet ./...
-      - run: go test -v -race -cover -timeout 150s ./...
+      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
+      - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
+
   kafka-011:
     working_directory: /go/src/github.com/segmentio/kafka-go
     environment:
@@ -58,9 +58,9 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t ./...
-      - run: go vet ./...
-      - run: go test -v -race -cover -timeout 150s ./...
+      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
+      - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
+
   kafka-111:
     working_directory: /go/src/github.com/segmentio/kafka-go
     environment:
@@ -89,9 +89,9 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t ./...
-      - run: go vet ./...
-      - run: go test -v -race -cover -timeout 150s ./...
+      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
+      - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
+
   kafka-210:
     working_directory: /go/src/github.com/segmentio/kafka-go
     environment:
@@ -120,9 +120,9 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t ./...
-      - run: go vet ./...
-      - run: go test -v -race -cover -timeout 150s ./...
+      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
+      - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
+
 workflows:
   version: 2
   run:
