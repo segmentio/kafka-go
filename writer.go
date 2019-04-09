@@ -260,6 +260,15 @@ func NewWriter(config WriterConfig) *Writer {
 // blocks until all messages have been written, or until the maximum number of
 // attempts was reached.
 //
+// When sending synchronously and the writer's batch size is configured to be
+// greater than 1, this method blocks until either a full batch can be assembled
+// or the batch timeout is reached.  The batch size and timeouts are evaluated
+// per partition, so the choice of Balancer can also influence the flushing
+// behavior.  For example, the Hash balancer will require on average N * batch
+// size messages to trigger a flush where N is the number of partitions.  The
+// best way to achieve good batching behavior is to share one Writer amongst
+// multiple go routines.
+//
 // When the method returns an error, there's no way to know yet which messages
 // have succeeded of failed.
 //
