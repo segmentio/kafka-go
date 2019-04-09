@@ -1822,6 +1822,13 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				conn.Close()
 				return
 
+			case errUnknownCodec:
+				// The compression codec is either unsupported or has not been
+				// imported.  This is a fatal error b/c the reader cannot
+				// proceed.
+				r.sendError(ctx, err)
+				break readLoop
+
 			default:
 				if _, ok := err.(Error); ok {
 					r.sendError(ctx, err)
@@ -1921,7 +1928,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 		}
 
 		if msg, err = batch.ReadMessage(); err != nil {
-			err = batch.Close()
+			batch.Close()
 			break
 		}
 
@@ -1930,7 +1937,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 		r.stats.bytes.observe(n)
 
 		if err = r.sendMessage(ctx, msg, highWaterMark); err != nil {
-			err = batch.Close()
+			batch.Close()
 			break
 		}
 
