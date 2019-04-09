@@ -293,7 +293,7 @@ func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
 		Bytes:         10,
 		Rebalances:    0,
 		Timeouts:      0,
-		Errors:        0,
+		Errors:        1, // because the configured timeout is < defaultRTT, so fetch timeouts get logged as errors
 		DialTime:      stats.DialTime,
 		ReadTime:      stats.ReadTime,
 		WaitTime:      stats.WaitTime,
