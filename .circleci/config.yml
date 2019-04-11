@@ -121,7 +121,7 @@ jobs:
       - checkout
       - setup_remote_docker: { reusable: true, docker_layer_caching: true }
       - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
-      - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
+      - run: go test -v -race -cover -timeout 150s $(go list ./... | grep -v examples)
 
 workflows:
   version: 2
