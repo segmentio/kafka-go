@@ -39,8 +39,9 @@ type MetaData struct {
 type MessageType int
 
 const (
-	DataMessage    MessageType = 0
-	ControlMessage MessageType = 1
+	NonTransactional MessageType = 0
+	Transactional    MessageType = 1
+	ControlMessage   MessageType = 2
 )
 
 type ControlData struct {
@@ -558,7 +559,11 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	if r.header.controlType() == 1 {
 		meta.Type = ControlMessage
 	} else {
-		meta.Type = DataMessage
+		if r.header.transactionType() == nonTransactional {
+			meta.Type = NonTransactional
+		} else {
+			meta.Type = Transactional
+		}
 	}
 
 	log.Printf("control type - %v", r.header.controlType())
