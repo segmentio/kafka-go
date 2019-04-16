@@ -1112,6 +1112,7 @@ type reader struct {
 	backoffDelayMax time.Duration
 	version         int64
 	msgs            chan<- readerMessage
+	pendingMsgs     chan readerMessage
 	stats           *readerStats
 	isolationLevel  IsolationLevel
 	maxAttempts     int
@@ -1406,12 +1407,43 @@ func (r *reader) readOffsets(conn *Conn) (first, last int64, err error) {
 }
 
 func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) error {
-	select {
-	case r.msgs <- readerMessage{version: r.version, message: msg, watermark: watermark}:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	rMsg := readerMessage{version: r.version, message: msg, watermark: watermark}
+	if msg.Type == ControlMessage {
+		if msg.ControlData.Type == CommitMessage {
+			for {
+				select {
+				case pm := <-r.pendingMsgs:
+					select {
+					case r.msgs <- pm:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					break
+				}
+			}
+		} else { // abort message
+			for {
+				select {
+				case pm := <-r.pendingMsgs:
+					if pm.message.Type == NonTransactional {
+						select {
+						case r.msgs <- pm:
+						case <-ctx.Done():
+							return ctx.Err()
+						}
+					} // Else transactional messages are aborted. We are skipping them here.
+				default:
+					break
+				}
+			}
+		}
+	} else {
+		r.pendingMsgs <- rMsg
 	}
+	return nil
 }
 
 func (r *reader) sendError(ctx context.Context, err error) error {

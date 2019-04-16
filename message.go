@@ -39,9 +39,9 @@ type MetaData struct {
 type MessageType int
 
 const (
-	NonTransactional MessageType = 0
-	Transactional    MessageType = 1
-	ControlMessage   MessageType = 2
+	NonTransactional MessageType = 0 // non transactional, data message
+	Transactional    MessageType = 1 // transactional, data message
+	ControlMessage   MessageType = 3 // transactional, control message
 )
 
 type ControlData struct {
