@@ -963,7 +963,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 func (c *Conn) ReadTopics() (topics []Topic, err error) {
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1{})
 		},
 		func(deadling time.Time, size int) error {
 			var res metadataResponseV1

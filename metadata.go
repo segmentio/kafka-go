@@ -9,7 +9,11 @@ func (r topicMetadataRequestV1) size() int32 {
 }
 
 func (r topicMetadataRequestV1) writeTo(w *bufio.Writer) {
-	writeStringArray(w, []string(r))
+	if len([]string(r)) > 0 {
+		writeStringArray(w, []string(r))
+	} else {
+		writeInt32(w, -1)
+	}
 }
 
 type metadataResponseV1 struct {
