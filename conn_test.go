@@ -986,10 +986,12 @@ func testBrokers(t *testing.T, conn *Conn) {
 }
 
 func testReadTopics(t *testing.T, conn *Conn) {
-	topic := makeTopic()
+	time.Sleep(2 * time.Second)
+
+	newTopicName := makeTopic()
 	err := conn.CreateTopics(
 		TopicConfig{
-			Topic:             topic,
+			Topic:             newTopicName,
 			NumPartitions:     1,
 			ReplicationFactor: 1,
 		},
@@ -997,8 +999,6 @@ func testReadTopics(t *testing.T, conn *Conn) {
 	if err != nil {
 		t.Fatalf("bad CreateTopics: %v", err)
 	}
-
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	topics, err := conn.ReadTopics()
 	if err != nil {
@@ -1008,6 +1008,13 @@ func testReadTopics(t *testing.T, conn *Conn) {
 	if len(topics) == 0 {
 		t.Errorf("expected at least 1 topic in %+v", topics)
 	}
+
+	for _, topic := range topics {
+		if topic.Topic == newTopicName {
+			return
+		}
+	}
+	t.Errorf("topic %s not found in %v", newTopicName, topics)
 }
 
 func TestUnsupportedSASLMechanism(t *testing.T) {
