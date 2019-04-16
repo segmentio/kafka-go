@@ -250,6 +250,10 @@ func TestConn(t *testing.T) {
 			scenario: "test list brokers",
 			function: testBrokers,
 		},
+		{
+			scenario: "test read topics",
+			function: testReadTopics,
+		},
 	}
 
 	const (
@@ -978,6 +982,31 @@ func testBrokers(t *testing.T, conn *Conn) {
 
 	if brokers[0].ID != 1 {
 		t.Errorf("expected ID 1 received %d", brokers[0].ID)
+	}
+}
+
+func testReadTopics(t *testing.T, conn *Conn) {
+	topic := makeTopic()
+	err := conn.CreateTopics(
+		TopicConfig{
+			Topic:             topic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+	)
+	if err != nil {
+		t.Fatalf("bad CreateTopics: %v", err)
+	}
+
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	topics, err := conn.ReadTopics()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(topics) == 0 {
+		t.Errorf("expected at least 1 topic in %+v", topics)
 	}
 }
 

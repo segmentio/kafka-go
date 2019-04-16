@@ -27,6 +27,12 @@ type Broker struct {
 	Rack string
 }
 
+// Topic carries the metadata associated with a kafka topic.
+type Topic struct {
+	Topic      string
+	Partitions []Partition
+}
+
 // Partition carries the metadata associated with a kafka partition.
 type Partition struct {
 	Topic    string
@@ -946,6 +952,68 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 						ID:       int(p.PartitionID),
 					})
 				}
+			}
+			return nil
+		},
+	)
+	return
+}
+
+// ReadTopics returns the list of all the topcs in the Kafka cluster.
+func (c *Conn) ReadTopics() (topics []Topic, err error) {
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
+		},
+		func(deadling time.Time, size int) error {
+			var res metadataResponseV1
+
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+
+			brokers := make(map[int32]Broker, len(res.Brokers))
+			for _, b := range res.Brokers {
+				brokers[b.NodeID] = Broker{
+					Host: b.Host,
+					Port: int(b.Port),
+					ID:   int(b.NodeID),
+					Rack: b.Rack,
+				}
+			}
+
+			makeBrokers := func(ids ...int32) []Broker {
+				b := make([]Broker, len(ids))
+				for i, id := range ids {
+					b[i] = brokers[id]
+				}
+				return b
+			}
+
+			topics = make([]Topic, 0, len(res.Topics))
+			for _, t := range res.Topics {
+				if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
+					// We only report errors if they happened for the topic of
+					// the connection, otherwise the topic will simply have no
+					// partitions in the result set.
+					return Error(t.TopicErrorCode)
+				}
+
+				partitions := make([]Partition, 0, len(t.Partitions))
+				for _, p := range t.Partitions {
+					partitions = append(partitions, Partition{
+						Topic:    t.TopicName,
+						Leader:   brokers[p.Leader],
+						Replicas: makeBrokers(p.Replicas...),
+						Isr:      makeBrokers(p.Isr...),
+						ID:       int(p.PartitionID),
+					})
+				}
+
+				topics = append(topics, Topic{
+					Topic:      t.TopicName,
+					Partitions: partitions,
+				})
 			}
 			return nil
 		},
