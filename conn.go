@@ -992,13 +992,6 @@ func (c *Conn) ReadTopics() (topics []Topic, err error) {
 
 			topics = make([]Topic, 0, len(res.Topics))
 			for _, t := range res.Topics {
-				if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
-					// We only report errors if they happened for the topic of
-					// the connection, otherwise the topic will simply have no
-					// partitions in the result set.
-					return Error(t.TopicErrorCode)
-				}
-
 				partitions := make([]Partition, 0, len(t.Partitions))
 				for _, p := range t.Partitions {
 					partitions = append(partitions, Partition{

@@ -986,8 +986,6 @@ func testBrokers(t *testing.T, conn *Conn) {
 }
 
 func testReadTopics(t *testing.T, conn *Conn) {
-	time.Sleep(2 * time.Second)
-
 	newTopicName := makeTopic()
 	err := conn.CreateTopics(
 		TopicConfig{
