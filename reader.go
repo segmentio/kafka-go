@@ -1410,6 +1410,7 @@ func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) 
 	rMsg := readerMessage{version: r.version, message: msg, watermark: watermark}
 	if msg.Type == ControlMessage {
 		if msg.ControlData.Type == CommitMessage {
+		LoopOverCommitted:
 			for {
 				select {
 				case pm := <-r.pendingMsgs:
@@ -1421,10 +1422,11 @@ func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) 
 				case <-ctx.Done():
 					return ctx.Err()
 				default:
-					break
+					break LoopOverCommitted
 				}
 			}
 		} else { // abort message
+		LoopOverAborted:
 			for {
 				select {
 				case pm := <-r.pendingMsgs:
@@ -1436,7 +1438,7 @@ func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) 
 						}
 					} // Else transactional messages are aborted. We are skipping them here.
 				default:
-					break
+					break LoopOverAborted
 				}
 			}
 		}
