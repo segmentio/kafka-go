@@ -1087,6 +1087,7 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 				backoffDelayMax: r.config.ReadBackoffMax,
 				version:         r.version,
 				msgs:            r.msgs,
+				pendingMsgs:     make([]readerMessage, 0),
 				stats:           r.stats,
 				isolationLevel:  r.config.IsolationLevel,
 				maxAttempts:     r.config.MaxAttempts,
@@ -1112,7 +1113,7 @@ type reader struct {
 	backoffDelayMax time.Duration
 	version         int64
 	msgs            chan<- readerMessage
-	pendingMsgs     chan readerMessage
+	pendingMsgs     []readerMessage
 	stats           *readerStats
 	isolationLevel  IsolationLevel
 	maxAttempts     int
@@ -1410,40 +1411,37 @@ func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) 
 	rMsg := readerMessage{version: r.version, message: msg, watermark: watermark}
 	if msg.Type == ControlMessage {
 		if msg.ControlData.Type == CommitMessage {
-		LoopOverCommitted:
-			for {
+			log.Printf("Returning committed messages")
+			for _, pm := range r.pendingMsgs {
 				select {
-				case pm := <-r.pendingMsgs:
-					select {
-					case r.msgs <- pm:
-					case <-ctx.Done():
-						return ctx.Err()
-					}
+				case r.msgs <- pm:
+					log.Printf(">>>>>>>>>>>Sent one message to output: %v", pm)
 				case <-ctx.Done():
 					return ctx.Err()
-				default:
-					break LoopOverCommitted
 				}
 			}
 		} else { // abort message
-		LoopOverAborted:
-			for {
-				select {
-				case pm := <-r.pendingMsgs:
-					if pm.message.Type == NonTransactional {
-						select {
-						case r.msgs <- pm:
-						case <-ctx.Done():
-							return ctx.Err()
-						}
-					} // Else transactional messages are aborted. We are skipping them here.
-				default:
-					break LoopOverAborted
+			//log.Printf("Draining aborted messages")
+			for _, pm := range r.pendingMsgs {
+				if pm.message.Type == NonTransactional {
+					select {
+					case r.msgs <- pm:
+						//log.Printf("Sent transactional message downstream")
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				} else {
+					//log.Printf("Throwing away a transactional message")
+					// Else transactional messages are aborted. We are skipping them here.
 				}
 			}
 		}
+		log.Printf("Cleaning up pending messages")
+		r.pendingMsgs = make([]readerMessage, 0)
 	} else {
-		r.pendingMsgs <- rMsg
+		//log.Printf("Sending message to the list of pending messages")
+		r.pendingMsgs = append(r.pendingMsgs, rMsg)
+		//log.Printf("A message was sent to the list of pending messages")
 	}
 	return nil
 }
