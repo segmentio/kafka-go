@@ -1408,40 +1408,30 @@ func (r *reader) readOffsets(conn *Conn) (first, last int64, err error) {
 }
 
 func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) error {
-	rMsg := readerMessage{version: r.version, message: msg, watermark: watermark}
 	if msg.Type == ControlMessage {
 		if msg.ControlData.Type == CommitMessage {
-			log.Printf("Returning committed messages")
 			for _, pm := range r.pendingMsgs {
 				select {
 				case r.msgs <- pm:
-					log.Printf(">>>>>>>>>>>Sent one message to output: %v", pm)
 				case <-ctx.Done():
 					return ctx.Err()
 				}
 			}
 		} else { // abort message
-			//log.Printf("Draining aborted messages")
 			for _, pm := range r.pendingMsgs {
 				if pm.message.Type == NonTransactional {
 					select {
 					case r.msgs <- pm:
-						//log.Printf("Sent transactional message downstream")
 					case <-ctx.Done():
 						return ctx.Err()
 					}
-				} else {
-					//log.Printf("Throwing away a transactional message")
-					// Else transactional messages are aborted. We are skipping them here.
-				}
+				} // Else transactional messages are aborted. We are skipping them here.
 			}
 		}
-		log.Printf("Cleaning up pending messages")
 		r.pendingMsgs = make([]readerMessage, 0)
 	} else {
-		//log.Printf("Sending message to the list of pending messages")
+		rMsg := readerMessage{version: r.version, message: msg, watermark: watermark}
 		r.pendingMsgs = append(r.pendingMsgs, rMsg)
-		//log.Printf("A message was sent to the list of pending messages")
 	}
 	return nil
 }
