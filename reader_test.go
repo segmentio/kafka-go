@@ -1556,3 +1556,52 @@ func TestRebalanceTooManyConsumers(t *testing.T) {
 		t.Errorf("unexpected rebalances to first reader, got %d", rebalances)
 	}
 }
+
+func TestConsumerGroupWithMissingTopic(t *testing.T) {
+	t.Parallel()
+	t.Skip("this test doesn't work when the cluster is configured to auto-create topics")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conf := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		Topic:                  makeTopic(),
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+	}
+
+	r := NewReader(conf)
+	defer r.Close()
+
+	recvErr := make(chan error, 1)
+	go func() {
+		_, err := r.ReadMessage(ctx)
+		recvErr <- err
+	}()
+
+	time.Sleep(time.Second)
+	createTopic(t, conf.Topic, 1)
+
+	w := NewWriter(WriterConfig{
+		Brokers:      r.config.Brokers,
+		Topic:        r.config.Topic,
+		BatchTimeout: 10 * time.Millisecond,
+		BatchSize:    1,
+	})
+	defer w.Close()
+	if err := w.WriteMessages(ctx, Message{}); err != nil {
+		t.Fatalf("write error: %+v", err)
+	}
+
+	if err := <-recvErr; err != nil {
+		t.Fatalf("read error: %+v", err)
+	}
+
+	nMsgs := r.Stats().Messages
+	if nMsgs != 1 {
+		t.Fatalf("expected to receive one message, but got %d", nMsgs)
+	}
+}

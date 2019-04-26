@@ -253,7 +253,12 @@ func (r *Reader) assignTopicPartitions(conn partitionReader, group joinGroupResp
 
 	topics := extractTopics(members)
 	partitions, err := conn.ReadPartitions(topics...)
-	if err != nil {
+
+	// it's not a failure if the topic doesn't exist yet.  it results in no
+	// assignments for the topic.  this matches the behavior of the official
+	// clients: java, python, and librdkafka.
+	// ana topic watcher can trigger a rebalance when the topic comes into being.
+	if err != nil && err != UnknownTopicOrPartition {
 		return nil, fmt.Errorf("unable to read partitions: %v", err)
 	}
 
