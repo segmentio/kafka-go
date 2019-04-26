@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-	"log"
 	"sync"
 	"time"
 )
@@ -216,7 +215,6 @@ func (batch *Batch) ReadMessage() (Message, error) {
 		keyReader := bufio.NewReader(bytes.NewReader(msg.Key))
 		rem, err = readInt16(keyReader, rem, &ver)
 		rem, err = readInt16(keyReader, rem, &tp)
-		log.Printf("                   ver: %v, type: %v", ver, tp)
 		msg.ControlData.Version = ver
 		msg.ControlData.Type = ControlType(tp)
 	}
