@@ -554,7 +554,7 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		}
 	}
 
-	if r.header.controlType() == 1 {
+	if r.header.controlType() == controlMessage {
 		meta.Type = ControlMessage
 	} else {
 		if r.header.transactionType() == nonTransactional {
