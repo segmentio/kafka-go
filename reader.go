@@ -1409,6 +1409,10 @@ func (r *reader) readOffsets(conn *Conn) (first, last int64, err error) {
 
 func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) error {
 	if msg.Type == ControlMessage {
+		if r.isolationLevel == ReadUncommitted {
+			return nil
+		}
+
 		if msg.ControlData.Type == CommitMessage {
 			for _, pm := range r.pendingMsgs {
 				select {
@@ -1431,7 +1435,15 @@ func (r *reader) sendMessage(ctx context.Context, msg Message, watermark int64) 
 		r.pendingMsgs = make([]readerMessage, 0)
 	} else {
 		rMsg := readerMessage{version: r.version, message: msg, watermark: watermark}
-		r.pendingMsgs = append(r.pendingMsgs, rMsg)
+		if r.isolationLevel == ReadUncommitted {
+			select {
+			case r.msgs <- rMsg:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		} else {
+			r.pendingMsgs = append(r.pendingMsgs, rMsg)
+		}
 	}
 	return nil
 }
