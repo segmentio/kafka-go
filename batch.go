@@ -119,6 +119,11 @@ func (batch *Batch) Read(b []byte) (int, error) {
 			if nbytes < 0 {
 				return size, nil
 			}
+			// make sure there are enough bytes for the message value.  return
+			// errShortRead if the message is truncated.
+			if nbytes > size {
+				return size, errShortRead
+			}
 			n = nbytes // return value
 			if nbytes > cap(b) {
 				nbytes = cap(b)
@@ -126,7 +131,7 @@ func (batch *Batch) Read(b []byte) (int, error) {
 			if nbytes > len(b) {
 				b = b[:nbytes]
 			}
-			nbytes, err := readBytes(r, size, &b)
+			nbytes, err := io.ReadFull(r, b[:nbytes])
 			if err != nil {
 				return size - nbytes, err
 			}
