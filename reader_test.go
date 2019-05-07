@@ -476,7 +476,7 @@ func makeTestSequence(n int) []Message {
 	msgs := make([]Message, n)
 	for i := 0; i != n; i++ {
 		msgs[i] = Message{
-			Time:  base.Add(time.Duration(i) * time.Millisecond),
+			Time:  base.Add(time.Duration(i) * time.Millisecond).Truncate(time.Millisecond),
 			Value: []byte(strconv.Itoa(i)),
 		}
 	}
