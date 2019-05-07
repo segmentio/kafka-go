@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -463,7 +464,9 @@ func testConnWriteReadSequentially(t *testing.T, conn *Conn) {
 }
 
 func testConnWriteBatchReadSequentially(t *testing.T, conn *Conn) {
-	if _, err := conn.WriteMessages(makeTestSequence(10)...); err != nil {
+	msgs := makeTestSequence(10)
+
+	if _, err := conn.WriteMessages(msgs...); err != nil {
 		t.Fatal(err)
 	}
 
@@ -473,11 +476,14 @@ func testConnWriteBatchReadSequentially(t *testing.T, conn *Conn) {
 			t.Error(err)
 			continue
 		}
-		s := string(msg.Value)
-		if v, err := strconv.Atoi(s); err != nil {
-			t.Error(err)
-		} else if v != i {
-			t.Errorf("bad message read at offset %d: %s", i, s)
+		if !bytes.Equal(msg.Key, msgs[i].Key) {
+			t.Errorf("bad message key at offset %d: %q != %q", i, msg.Key, msgs[i].Key)
+		}
+		if !bytes.Equal(msg.Value, msgs[i].Value) {
+			t.Errorf("bad message value at offset %d: %q != %q", i, msg.Value, msgs[i].Value)
+		}
+		if !msg.Time.Equal(msgs[i].Time) {
+			t.Errorf("bad message time at offset %d: %s != %s", i, msg.Time, msgs[i].Time)
 		}
 	}
 }
