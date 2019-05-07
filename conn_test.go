@@ -477,7 +477,7 @@ func testConnWriteBatchReadSequentially(t *testing.T, conn *Conn) {
 			continue
 		}
 		if !bytes.Equal(msg.Key, msgs[i].Key) {
-			t.Error("bad message key at offset %d: %q != %q", i, msg.Key, msgs[i].Key)
+			t.Errorf("bad message key at offset %d: %q != %q", i, msg.Key, msgs[i].Key)
 		}
 		if !bytes.Equal(msg.Value, msgs[i].Value) {
 			t.Errorf("bad message value at offset %d: %q != %q", i, msg.Value, msgs[i].Value)
