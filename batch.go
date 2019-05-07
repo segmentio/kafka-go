@@ -126,7 +126,7 @@ func (batch *Batch) Read(b []byte) (int, error) {
 			if nbytes > len(b) {
 				b = b[:nbytes]
 			}
-			nbytes, err := io.ReadFull(r, b[:nbytes])
+			nbytes, err := readBytes(r, size, &b)
 			if err != nil {
 				return size - nbytes, err
 			}
