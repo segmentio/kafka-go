@@ -132,6 +132,11 @@ func (batch *Batch) Read(b []byte) (int, error) {
 			if nbytes < 0 {
 				return size, nil
 			}
+			// make sure there are enough bytes for the message value.  return
+			// errShortRead if the message is truncated.
+			if nbytes > size {
+				return size, errShortRead
+			}
 			n = nbytes // return value
 			if nbytes > cap(b) {
 				nbytes = cap(b)
