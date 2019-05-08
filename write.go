@@ -348,10 +348,10 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 }
 
 func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, msgs ...Message) (err error) {
-
 	var size int32
 	var compressed []byte
 	var attributes int16
+
 	if codec != nil {
 		attributes = int16(codec.Code())
 		recordBuf := &bytes.Buffer{}
@@ -542,6 +542,7 @@ func recordBatchSize(msgs ...Message) (size int32) {
 func writeRecordBatch(w *bufio.Writer, attributes int16, size int32, write func(*bufio.Writer), msgs ...Message) error {
 
 	baseTime := msgs[0].Time
+	lastTime := msgs[len(msgs)-1].Time
 
 	writeInt64(w, int64(0))
 
@@ -557,8 +558,7 @@ func writeRecordBatch(w *bufio.Writer, attributes int16, size int32, write func(
 	writeInt16(crcWriter, attributes)         // attributes, timestamp type 0 - create time, not part of a transaction, no control messages
 	writeInt32(crcWriter, int32(len(msgs)-1)) // max offset
 	writeInt64(crcWriter, timestamp(baseTime))
-	lastTime := timestamp(msgs[len(msgs)-1].Time)
-	writeInt64(crcWriter, int64(lastTime))
+	writeInt64(crcWriter, timestamp(lastTime))
 	writeInt64(crcWriter, -1)               // default producer id for now
 	writeInt16(crcWriter, -1)               // default producer epoch for now
 	writeInt32(crcWriter, -1)               // default base sequence
@@ -584,7 +584,7 @@ var maxDate = time.Date(5000, time.January, 0, 0, 0, 0, 0, time.UTC)
 
 func recordSize(msg *Message, timestampDelta time.Duration, offsetDelta int64) (size int) {
 	size += 1 + // attributes
-		varIntLen(int64(timestampDelta)) +
+		varIntLen(int64(milliseconds(timestampDelta))) +
 		varIntLen(offsetDelta) +
 		varIntLen(int64(len(msg.Key))) +
 		len(msg.Key) +
@@ -656,7 +656,7 @@ func writeRecord(w *bufio.Writer, attributes int8, baseTime time.Time, offset in
 	writeVarInt(w, int64(recordSize(&msg, timestampDelta, offsetDelta)))
 
 	writeInt8(w, attributes)
-	writeVarInt(w, int64(timestampDelta))
+	writeVarInt(w, int64(milliseconds(timestampDelta)))
 	writeVarInt(w, offsetDelta)
 
 	writeVarInt(w, int64(len(msg.Key)))

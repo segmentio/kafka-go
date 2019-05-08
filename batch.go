@@ -92,6 +92,19 @@ func (batch *Batch) close() (err error) {
 	return
 }
 
+// Err returns a non-nil error if the batch is broken. This is the same error
+// that would be returned by Read, ReadMessage or Close (except in the case of
+// io.EOF which is never returned by Close).
+//
+// This method is useful when building retry mechanisms for (*Conn).ReadBatch,
+// the program can check whether the batch carried a error before attempting to
+// read the first message.
+//
+// Note that checking errors on a batch is optional, calling Read or ReadMessage
+// is always valid and can be used to either read a message or an error in cases
+// where that's convenient.
+func (batch *Batch) Err() error { return batch.err }
+
 // Read reads the value of the next message from the batch into b, returning the
 // number of bytes read, or an error if the next message couldn't be read.
 //
@@ -118,6 +131,11 @@ func (batch *Batch) Read(b []byte) (int, error) {
 		func(r *bufio.Reader, size int, nbytes int) (int, error) {
 			if nbytes < 0 {
 				return size, nil
+			}
+			// make sure there are enough bytes for the message value.  return
+			// errShortRead if the message is truncated.
+			if nbytes > size {
+				return size, errShortRead
 			}
 			n = nbytes // return value
 			if nbytes > cap(b) {
