@@ -13,7 +13,7 @@ func TestClusterClient(t *testing.T) {
 		function func(*testing.T, context.Context, *ClusterClient)
 	}{
 		{
-			scenario: "calling Read with a context that has been canceled returns an error",
+			scenario: "retrieve committed offsets for a consumer group and topic",
 			function: testConsumerGroupFetchOffsets,
 		},
 	}
@@ -27,27 +27,28 @@ func TestClusterClient(t *testing.T) {
 			defer cancel()
 
 			cc := NewClusterClient([]string{"localhost:9092"})
-			//defer cc.Close()
 			testFunc(t, ctx, cc)
 		})
 	}
 }
 
 func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, cc *ClusterClient) {
-	const N = 144
-
+	const totalMessages = 144
+	const partitions = 12
+	const msgPerPartition = totalMessages / partitions
 	topic := makeTopic()
 	groupId := makeGroupID()
-	createTopic(t, topic, 12)
+	createTopic(t, topic, partitions)
+	brokers := []string{"localhost:9092"}
 
 	writer := NewWriter(WriterConfig{
-		Brokers:   []string{"localhost:9092"},
+		Brokers:   brokers,
 		Topic:     topic,
 		Dialer:    DefaultDialer,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
 	})
-	if err := writer.WriteMessages(ctx, makeTestSequence(N)...); err != nil {
+	if err := writer.WriteMessages(ctx, makeTestSequence(totalMessages)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
 	}
 	if err := writer.Close(); err != nil {
@@ -55,7 +56,7 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, cc *Cluste
 	}
 
 	r := NewReader(ReaderConfig{
-		Brokers:  []string{"localhost:9092"},
+		Brokers:  brokers,
 		Topic:    topic,
 		GroupID:  groupId,
 		MinBytes: 1,
@@ -64,17 +65,27 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, cc *Cluste
 	})
 	defer r.Close()
 
-	partitions := map[int]struct{}{}
-	for i := 0; i < N; i++ {
+	for i := 0; i < totalMessages; i++ {
 		m, err := r.FetchMessage(ctx)
 		if err != nil {
-			t.Errorf("bad error: %s", err)
+			t.Errorf("error fetching message: %s", err)
 		}
-		partitions[m.Partition] = struct{}{}
 		r.CommitMessages(context.Background(), m)
 	}
 
-	if v := len(partitions); v != 12 {
-		t.Errorf("expected messages across 12 partitions; got messages across %v partitions", v)
+	offsets, err := cc.ConsumerOffsets(ctx, groupId, topic)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(offsets) != partitions {
+		t.Fatalf("expected %d partitions but only received offsets for %d", partitions, len(offsets))
+	}
+
+	for i := 0; i < partitions; i++ {
+		committedOffset := offsets[i]
+		if committedOffset != msgPerPartition {
+			t.Fatalf("expected committed offset of %d but received %d", msgPerPartition, committedOffset)
+		}
 	}
 }

@@ -5,11 +5,14 @@ import (
 	"fmt"
 )
 
+// ClusterClient provides a high-level API for miscellaneous (i.e. non consume or produce) Kafka cluster operations
 type ClusterClient struct {
 	brokers []string
 	dialer  *Dialer
 }
 
+// NewClusterClient creates and returns a *ClusterClient with a []string of bootstrap
+// brokers for connecting to the cluster and the DefaultDialer
 func NewClusterClient(brokers []string) *ClusterClient {
 	return &ClusterClient{
 		brokers: brokers,
@@ -17,6 +20,8 @@ func NewClusterClient(brokers []string) *ClusterClient {
 	}
 }
 
+// NewClusterClient creates and returns a *ClusterClient with a []string of bootstrap
+// brokers for connecting to the cluster and a user supplied Dialer
 func NewClusterClientWith(brokers []string, d *Dialer) *ClusterClient {
 	return &ClusterClient{
 		brokers: brokers,
@@ -24,7 +29,8 @@ func NewClusterClientWith(brokers []string, d *Dialer) *ClusterClient {
 	}
 }
 
-func (cc *ClusterClient) ConsumerOffset(ctx context.Context, groupId string, topic string) (map[int]int64, error) {
+// ConsumerOffsets returns a map[int]int64 of partition to committed offset for a consumer group id and topic
+func (cc *ClusterClient) ConsumerOffsets(ctx context.Context, groupId string, topic string) (map[int]int64, error) {
 	address, err := cc.lookupCoordinator(groupId)
 	if err != nil {
 		return nil, err
@@ -35,6 +41,7 @@ func (cc *ClusterClient) ConsumerOffset(ctx context.Context, groupId string, top
 		return nil, err
 	}
 
+	defer conn.Close()
 	partitions, err := conn.ReadPartitions(topic)
 	if err != nil {
 		return nil, err
@@ -82,7 +89,7 @@ func (cc *ClusterClient) connect() (conn *Conn, err error) {
 	return // err will be non-nil
 }
 
-// coordinator returns a connection to the coordinator for this group
+// coordinator returns a connection to a coordinator
 func (cc *ClusterClient) coordinator(ctx context.Context, address string) (*Conn, error) {
 	conn, err := cc.dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
@@ -93,9 +100,7 @@ func (cc *ClusterClient) coordinator(ctx context.Context, address string) (*Conn
 }
 
 // lookupCoordinator scans the brokers and looks up the address of the
-// coordinator for the group.
-//
-// Only used when config.GroupID != ""
+// coordinator for the groupId.
 func (cc *ClusterClient) lookupCoordinator(groupId string) (string, error) {
 	conn, err := cc.connect()
 	if err != nil {
