@@ -13,12 +13,29 @@ type findCoordinatorRequestV0 struct {
 	CoordinatorKey string
 }
 
+type findCoordinatorRequestV1 struct {
+	// CoordinatorKey holds id to use for finding the coordinator (for groups, this is
+	// the groupId, for transactional producers, this is the transactional id)
+	CoordinatorKey string
+	// The type of coordinator to find (0 = group, 1 = transaction)
+	CoordinatorType int8
+}
+
 func (t findCoordinatorRequestV0) size() int32 {
 	return sizeofString(t.CoordinatorKey)
 }
 
+func (t findCoordinatorRequestV1) size() int32 {
+	return sizeofString(t.CoordinatorKey) + sizeof(t.CoordinatorType)
+}
+
 func (t findCoordinatorRequestV0) writeTo(w *bufio.Writer) {
 	writeString(w, t.CoordinatorKey)
+}
+
+func (t findCoordinatorRequestV1) writeTo(w *bufio.Writer) {
+	writeString(w, t.CoordinatorKey)
+	writeInt8(w, t.CoordinatorType)
 }
 
 type findCoordinatorResponseCoordinatorV0 struct {
@@ -65,9 +82,26 @@ type findCoordinatorResponseV0 struct {
 	Coordinator findCoordinatorResponseCoordinatorV0
 }
 
+type findCoordinatorResponseV1 struct {
+	// Duration in milliseconds for which the request was throttled due to
+	// quota violation (Zero if the request did not violate any quota)
+	ThrottleTimeMs int32
+	// Response error code
+	ErrorCode int16
+	// Response error message
+	ErrorMessage string
+	// Host and port information for the coordinator
+	Coordinator findCoordinatorResponseCoordinatorV0
+}
+
 func (t findCoordinatorResponseV0) size() int32 {
 	return sizeofInt16(t.ErrorCode) +
 		t.Coordinator.size()
+}
+
+func (t findCoordinatorResponseV1) size() int32 {
+	return sizeof(t.ThrottleTimeMs) + sizeof(t.ErrorCode) +
+		sizeof(t.ErrorMessage) + t.Coordinator.size()
 }
 
 func (t findCoordinatorResponseV0) writeTo(w *bufio.Writer) {
@@ -75,8 +109,31 @@ func (t findCoordinatorResponseV0) writeTo(w *bufio.Writer) {
 	t.Coordinator.writeTo(w)
 }
 
+func (t findCoordinatorResponseV1) writeTo(w *bufio.Writer) {
+	writeInt32(w, t.ThrottleTimeMs)
+	writeInt16(w, t.ErrorCode)
+	writeString(w, t.ErrorMessage)
+	t.Coordinator.writeTo(w)
+}
+
 func (t *findCoordinatorResponseV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readInt16(r, size, &t.ErrorCode); err != nil {
+		return
+	}
+	if remain, err = (&t.Coordinator).readFrom(r, remain); err != nil {
+		return
+	}
+	return
+}
+
+func (t *findCoordinatorResponseV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+	if remain, err = readInt32(r, size, &t.ThrottleTimeMs); err != nil {
+		return
+	}
+	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
+		return
+	}
+	if remain, err = readString(r, remain, &t.ErrorMessage); err != nil {
 		return
 	}
 	if remain, err = (&t.Coordinator).readFrom(r, remain); err != nil {
