@@ -15,7 +15,7 @@ const (
 	metadataRequest         apiKey = 3
 	offsetCommitRequest     apiKey = 8
 	offsetFetchRequest      apiKey = 9
-	groupCoordinatorRequest apiKey = 10
+	coordinatorRequest      apiKey = 10
 	joinGroupRequest        apiKey = 11
 	heartbeatRequest        apiKey = 12
 	leaveGroupRequest       apiKey = 13
