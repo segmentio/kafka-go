@@ -5,11 +5,12 @@ import (
 	"fmt"
 )
 
-// Client is a new and experimental API for kafka-go. It is expected that this API will grow over time
-// and provide a "mid-level" API. Specifically, it expected Client will be higher level than the Conn API,
-// yet provide more control and lower level operations than the Reader/Writer APIs.
+// Client is a new and experimental API for kafka-go. It is expected that this API will grow over time,
+// and offer a new set of "mid-level" capabilities. Specifically, it is expected Client will be a higher level API than Conn,
+// yet provide more control and lower level operations than the Reader and Writer APIs.
 //
-// N.B as Client is currently experimental it is subject to change, including breaking changes between MINOR and PATCH releases.
+// N.B Client is currently experimental! Therefore, it is subject to change, including breaking changes
+// between MINOR and PATCH releases.
 type Client struct {
 	brokers []string
 	dialer  *Dialer
