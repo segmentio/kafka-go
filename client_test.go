@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-func TestClusterClient(t *testing.T) {
+func TestClient(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		scenario string
-		function func(*testing.T, context.Context, *ClusterClient)
+		function func(*testing.T, context.Context, *Client)
 	}{
 		{
 			scenario: "retrieve committed offsets for a consumer group and topic",
@@ -26,13 +26,13 @@ func TestClusterClient(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			cc := NewClusterClient([]string{"localhost:9092"})
-			testFunc(t, ctx, cc)
+			c := NewClient("localhost:9092")
+			testFunc(t, ctx, c)
 		})
 	}
 }
 
-func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, cc *ClusterClient) {
+func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client) {
 	const totalMessages = 144
 	const partitions = 12
 	const msgPerPartition = totalMessages / partitions
@@ -73,7 +73,7 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, cc *Cluste
 		r.CommitMessages(context.Background(), m)
 	}
 
-	offsets, err := cc.ConsumerOffsets(ctx, groupId, topic)
+	offsets, err := c.ConsumerOffsets(ctx, groupId, topic)
 	if err != nil {
 		t.Fatal(err)
 	}
