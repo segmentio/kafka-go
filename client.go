@@ -17,6 +17,9 @@ type Client struct {
 }
 
 // Configuration for Client
+//
+// N.B ClientConfig is currently experimental! Therefore, it is subject to change, including breaking changes
+// between MINOR and PATCH releases.
 type ClientConfig struct {
 	// List of broker strings in the format <host>:<port>
 	// to use for bootstrap connecting to cluster
@@ -28,6 +31,9 @@ type ClientConfig struct {
 // A ConsumerGroup and Topic as these are both strings
 // we define a type for clarity when passing to the Client
 // as a function argument
+//
+// N.B TopicAndGroup is currently experimental! Therefore, it is subject to change, including breaking changes
+// between MINOR and PATCH releases.
 type TopicAndGroup struct {
 	Topic   string
 	GroupId string
