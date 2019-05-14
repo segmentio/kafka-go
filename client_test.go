@@ -73,7 +73,7 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 		r.CommitMessages(context.Background(), m)
 	}
 
-	offsets, err := c.ConsumerOffsets(ctx, groupId, topic)
+	offsets, err := c.ConsumerOffsets(ctx, TopicAndGroup{GroupId: groupId, Topic: topic})
 	if err != nil {
 		t.Fatal(err)
 	}

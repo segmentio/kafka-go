@@ -15,9 +15,21 @@ type Client struct {
 	dialer  *Dialer
 }
 
+// Configuration for Client
 type ClientConfig struct {
+	// List of broker strings in the format <host>:<port>
+	// to use for bootstrap connecting to cluster
 	Brokers []string
-	Dialer  *Dialer
+	// Dialer used for connecting to the Cluster
+	Dialer *Dialer
+}
+
+// A ConsumerGroup and Topic as these are both strings
+// we define a type for clarity when passing to the Client
+// as a function argument
+type TopicAndGroup struct {
+	Topic   string
+	GroupId string
 }
 
 // NewClient creates and returns a *Client taking ...string of bootstrap
@@ -48,8 +60,8 @@ func NewClientWith(config ClientConfig) *Client {
 }
 
 // ConsumerOffsets returns a map[int]int64 of partition to committed offset for a consumer group id and topic
-func (c *Client) ConsumerOffsets(ctx context.Context, groupId string, topic string) (map[int]int64, error) {
-	address, err := c.lookupCoordinator(groupId)
+func (c *Client) ConsumerOffsets(ctx context.Context, tg TopicAndGroup) (map[int]int64, error) {
+	address, err := c.lookupCoordinator(tg.GroupId)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +72,7 @@ func (c *Client) ConsumerOffsets(ctx context.Context, groupId string, topic stri
 	}
 
 	defer conn.Close()
-	partitions, err := conn.ReadPartitions(topic)
+	partitions, err := conn.ReadPartitions(tg.Topic)
 	if err != nil {
 		return nil, err
 	}
@@ -71,10 +83,10 @@ func (c *Client) ConsumerOffsets(ctx context.Context, groupId string, topic stri
 	}
 
 	offsets, err := conn.offsetFetch(offsetFetchRequestV1{
-		GroupID: groupId,
+		GroupID: tg.GroupId,
 		Topics: []offsetFetchRequestV1Topic{
 			{
-				Topic:      topic,
+				Topic:      tg.Topic,
 				Partitions: parts,
 			},
 		},
