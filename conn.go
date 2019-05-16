@@ -327,6 +327,30 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV0) (findCoordinato
 	return response, nil
 }
 
+func (c *Conn) findTransactionCoordinator(transactionId string) (findCoordinatorResponseCoordinatorV0, error) {
+	if c.apiVersions[coordinatorRequest].MaxVersion < int16(v1) ||
+		c.apiVersions[coordinatorRequest].MinVersion > int16(v1) {
+		return findCoordinatorResponseCoordinatorV0{}, fmt.Errorf("Kafka broker doesn't support findCoordinator operation v1")
+	}
+	request := findCoordinatorRequestV1{
+		CoordinatorKey:  transactionId,
+		CoordinatorType: transactionCoordinator,
+	}
+	var response findCoordinatorResponseV1
+
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(coordinatorRequest, v1, id, request)
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	return response.Coordinator, err
+}
+
 // heartbeat sends a heartbeat message required by consumer groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_Heartbeat

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -1165,5 +1166,32 @@ func TestEmptyToNullableLeavesStringsIntact(t *testing.T) {
 	r := emptyToNullable(s)
 	if *r != s {
 		t.Error("Non empty string is not equal to the original string")
+	}
+}
+
+func TestFindTransactionCoordinator(t *testing.T) {
+	topic := makeTopic()
+	transactionalId := "my_transaction"
+
+	conn, err := (&Dialer{
+		Resolver:        &net.Resolver{},
+		TransactionalID: transactionalId,
+	}).DialLeader(context.Background(), "tcp", "localhost:9092", topic, 0)
+	if err != nil {
+		t.Fatal("failed to open a new kafka connection:", err)
+	}
+	defer conn.Close()
+
+	res, err := conn.findTransactionCoordinator(transactionalId)
+	if err != nil {
+		t.Fatal("failed to find transaction coordinator:", err)
+	}
+	expectedCoordinatorResponse := findCoordinatorResponseCoordinatorV0{
+		NodeID: 1,
+		Host:   "localhost",
+		Port:   9092,
+	}
+	if !reflect.DeepEqual(expectedCoordinatorResponse, res) {
+		t.Fatalf("Expected transaction coordinator response is different. Expected: %v, Received: %v.", expectedCoordinatorResponse, res)
 	}
 }

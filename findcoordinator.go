@@ -4,6 +4,11 @@ import (
 	"bufio"
 )
 
+const (
+	groupCoordinator       = 0
+	transactionCoordinator = 1
+)
+
 // FindCoordinatorRequestV0 requests the coordinator for the specified group or transaction
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
