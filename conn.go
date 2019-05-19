@@ -351,6 +351,26 @@ func (c *Conn) findTransactionCoordinator(transactionId string) (findCoordinator
 	return response.Coordinator, err
 }
 
+func (c *Conn) initProducerID(transactionalID string) (initProducerIDResponseV0, error) {
+	request := initProducerIDRequestV0{
+		TransactionalId:      transactionalID,
+		TransactionTimeoutMs: 60000, // This is default value of all clients. It should be made configurable.
+	}
+	var response initProducerIDResponseV0
+
+	err := c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(initProducerIDRequest, v0, id, request)
+		},
+		func(deadline time.Time, size int) error {
+			return expectZeroSize(func() (remain int, err error) {
+				return (&response).readFrom(&c.rbuf, size)
+			}())
+		},
+	)
+	return response, err
+}
+
 // heartbeat sends a heartbeat message required by consumer groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_Heartbeat
@@ -1318,6 +1338,7 @@ var defaultApiVersions map[apiKey]ApiVersion = map[apiKey]ApiVersion{
 	apiVersionsRequest:    ApiVersion{int16(apiVersionsRequest), int16(v0), int16(v0)},
 	createTopicsRequest:   ApiVersion{int16(createTopicsRequest), int16(v0), int16(v0)},
 	deleteTopicsRequest:   ApiVersion{int16(deleteTopicsRequest), int16(v1), int16(v1)},
+	initProducerIDRequest: ApiVersion{int16(initProducerIDRequest), int16(v0), int16(v0)},
 }
 
 func (c *Conn) ApiVersions() ([]ApiVersion, error) {

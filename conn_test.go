@@ -1195,3 +1195,26 @@ func TestFindTransactionCoordinator(t *testing.T) {
 		t.Fatalf("Expected transaction coordinator response is different. Expected: %v, Received: %v.", expectedCoordinatorResponse, res)
 	}
 }
+
+func TestInitProducerID(t *testing.T) {
+	topic := makeTopic()
+	transactionalID := "my_transaction"
+
+	conn, err := (&Dialer{
+		Resolver:        &net.Resolver{},
+		TransactionalID: transactionalID,
+	}).DialLeader(context.Background(), "tcp", "localhost:9092", topic, 0)
+	if err != nil {
+		t.Fatal("failed to open a new kafka connection:", err)
+	}
+	defer conn.Close()
+
+	var res initProducerIDResponseV0
+	res, err = conn.initProducerID(transactionalID)
+	if err != nil {
+		t.Fatalf("Error while getting producer id: %v", err)
+	}
+	if res.ErrorCode != 0 {
+		t.Fatalf("Error in initProducerIDResponse: %v", err)
+	}
+}
