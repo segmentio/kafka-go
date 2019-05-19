@@ -492,10 +492,10 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV1) (offsetFetchResponseV1,
 	return response, nil
 }
 
-// syncGroups completes the handshake to join a consumer group
+// syncGroup completes the nextGeneration to join a consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SyncGroup
-func (c *Conn) syncGroups(request syncGroupRequestV0) (syncGroupResponseV0, error) {
+func (c *Conn) syncGroup(request syncGroupRequestV0) (syncGroupResponseV0, error) {
 	var response syncGroupResponseV0
 
 	err := c.readOperation(
