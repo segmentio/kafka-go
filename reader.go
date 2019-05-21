@@ -62,6 +62,11 @@ const (
 	// defaultPartitionWatchTime contains the amount of time the kafka-go will wait to
 	// query the brokers looking for partition changes.
 	defaultPartitionWatchTime = 5 * time.Second
+
+	// defaultReadBackoffMax/Min sets the boundaries for how long the reader wait before
+	// polling for new messages
+	defaultReadBackoffMin = 100 * time.Millisecond
+	defaultReadBackoffMax = 1 * time.Second
 )
 
 // Reader provides a high-level API for consuming messages from kafka.
@@ -989,6 +994,18 @@ type ReaderConfig struct {
 	// Only used when GroupID is set
 	RetentionTime time.Duration
 
+	// BackoffDelayMin optionally sets the smallest amount of time the reader will wait before
+	// polling for new messages
+	//
+	// Default: 100ms
+	ReadBackoffMin time.Duration
+
+	// BackoffDelayMax optionally sets the maximum amount of time the reader will wait before
+	// polling for new messages
+	//
+	// Default: 1s
+	ReadBackoffMax time.Duration
+
 	// If not nil, specifies a logger used to report internal changes within the
 	// reader.
 	Logger *log.Logger
@@ -1037,6 +1054,13 @@ func (config *ReaderConfig) Validate() error {
 
 	if config.MinBytes > config.MaxBytes {
 		return errors.New(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
+	}
+
+	if config.ReadBackoffMax < 0 {
+		return errors.New(fmt.Sprintf("ReadBackoffMax out of bounds: %d", config.ReadBackoffMax))
+
+	if config.ReadBackoffMin < 0 {
+		return errors.New(fmt.Sprintf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin))
 	}
 
 	if config.GroupID != "" {
@@ -1178,6 +1202,18 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.RetentionTime == 0 {
 		config.RetentionTime = defaultRetentionTime
+	}
+
+	if config.ReadBackoffMin == 0 {
+		config.ReadBackoffMin = defaultReadBackoffMin
+	}
+
+	if config.ReadBackoffMax == 0 {
+		config.ReadBackoffMax = defaultReadBackoffMax
+	}
+
+	if config.ReadBackoffMax < config.ReadBackoffMin {
+		panic(fmt.Errorf("ReadBackoffMax %d smaller than ReadBackoffMin %d", config.ReadBackoffMax, config.ReadBackoffMin))
 	}
 
 	if config.QueueCapacity == 0 {
@@ -1655,20 +1691,22 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 			defer join.Done()
 
 			(&reader{
-				dialer:         r.config.Dialer,
-				logger:         r.config.Logger,
-				errorLogger:    r.config.ErrorLogger,
-				brokers:        r.config.Brokers,
-				topic:          r.config.Topic,
-				partition:      partition,
-				minBytes:       r.config.MinBytes,
-				maxBytes:       r.config.MaxBytes,
-				maxWait:        r.config.MaxWait,
-				version:        r.version,
-				msgs:           r.msgs,
-				stats:          r.stats,
-				isolationLevel: r.config.IsolationLevel,
-				maxAttempts:    r.config.MaxAttempts,
+				dialer:          r.config.Dialer,
+				logger:          r.config.Logger,
+				errorLogger:     r.config.ErrorLogger,
+				brokers:         r.config.Brokers,
+				topic:           r.config.Topic,
+				partition:       partition,
+				minBytes:        r.config.MinBytes,
+				maxBytes:        r.config.MaxBytes,
+				maxWait:         r.config.MaxWait,
+				backoffDelayMin: r.config.ReadBackoffMin,
+				backoffDelayMax: r.config.ReadBackoffMax,
+				version:         r.version,
+				msgs:            r.msgs,
+				stats:           r.stats,
+				isolationLevel:  r.config.IsolationLevel,
+				maxAttempts:     r.config.MaxAttempts,
 			}).run(ctx, offset)
 		}(ctx, partition, offset, &r.join)
 	}
@@ -1678,20 +1716,22 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 // used as an way to asynchronously fetch messages while the main program reads
 // them using the high level reader API.
 type reader struct {
-	dialer         *Dialer
-	logger         *log.Logger
-	errorLogger    *log.Logger
-	brokers        []string
-	topic          string
-	partition      int
-	minBytes       int
-	maxBytes       int
-	maxWait        time.Duration
-	version        int64
-	msgs           chan<- readerMessage
-	stats          *readerStats
-	isolationLevel IsolationLevel
-	maxAttempts    int
+	dialer          *Dialer
+	logger          *log.Logger
+	errorLogger     *log.Logger
+	brokers         []string
+	topic           string
+	partition       int
+	minBytes        int
+	maxBytes        int
+	maxWait         time.Duration
+	backoffDelayMin time.Duration
+	backoffDelayMax time.Duration
+	version         int64
+	msgs            chan<- readerMessage
+	stats           *readerStats
+	isolationLevel  IsolationLevel
+	maxAttempts     int
 }
 
 type readerMessage struct {
@@ -1702,9 +1742,6 @@ type readerMessage struct {
 }
 
 func (r *reader) run(ctx context.Context, offset int64) {
-	const backoffDelayMin = 100 * time.Millisecond
-	const backoffDelayMax = 1 * time.Second
-
 	// This is the reader's main loop, it only ends if the context is canceled
 	// and will keep attempting to reader messages otherwise.
 	//
@@ -1716,7 +1753,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 	// on a Read call after reading the first error.
 	for attempt := 0; true; attempt++ {
 		if attempt != 0 {
-			if !sleep(ctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
+			if !sleep(ctx, backoff(attempt, r.backoffDelayMin, r.backoffDelayMax)) {
 				return
 			}
 		}
@@ -1763,7 +1800,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		errcount := 0
 	readLoop:
 		for {
-			if !sleep(ctx, backoff(errcount, backoffDelayMin, backoffDelayMax)) {
+			if !sleep(ctx, backoff(errcount, r.backoffDelayMin, r.backoffDelayMax)) {
 				conn.Close()
 				return
 			}
