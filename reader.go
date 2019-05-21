@@ -1058,6 +1058,7 @@ func (config *ReaderConfig) Validate() error {
 
 	if config.ReadBackoffMax < 0 {
 		return errors.New(fmt.Sprintf("ReadBackoffMax out of bounds: %d", config.ReadBackoffMax))
+	}
 
 	if config.ReadBackoffMin < 0 {
 		return errors.New(fmt.Sprintf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin))
