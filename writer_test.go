@@ -209,3 +209,19 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 		msgs = append(msgs, msg)
 	}
 }
+
+func TestInitTransactions(t *testing.T) {
+	topic := CreateTopic(t, 1)
+
+	DefaultDialer.TransactionalID = "myTransaction"
+	w := NewWriter(WriterConfig{
+		Brokers:      []string{"localhost:9092"},
+		Topic:        topic,
+		BatchTimeout: 100 * time.Millisecond,
+		BatchSize:    5,
+	})
+	err := w.InitTransactions()
+	if err != nil {
+		t.Errorf("%v", err)
+	}
+}
