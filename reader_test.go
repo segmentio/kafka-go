@@ -810,7 +810,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 		function       func(*testing.T, context.Context, *Reader)
 	}{
 		{
-			scenario:   "basic nextGeneration",
+			scenario:   "basic handshake",
 			partitions: 1,
 			function:   testReaderConsumerGroupHandshake,
 		},
@@ -1157,6 +1157,95 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 	}
 }
 
+func TestOffsetStash(t *testing.T) {
+	const topic = "topic"
+
+	newMessage := func(partition int, offset int64) Message {
+		return Message{
+			Topic:     topic,
+			Partition: partition,
+			Offset:    offset,
+		}
+	}
+
+	tests := map[string]struct {
+		Given    offsetStash
+		Messages []Message
+		Expected offsetStash
+	}{
+		"nil": {},
+		"empty given, single message": {
+			Given:    offsetStash{},
+			Messages: []Message{newMessage(0, 0)},
+			Expected: offsetStash{
+				topic: {0: 1},
+			},
+		},
+		"ignores earlier offsets": {
+			Given: offsetStash{
+				topic: {0: 2},
+			},
+			Messages: []Message{newMessage(0, 0)},
+			Expected: offsetStash{
+				topic: {0: 2},
+			},
+		},
+		"uses latest offset": {
+			Given: offsetStash{},
+			Messages: []Message{
+				newMessage(0, 2),
+				newMessage(0, 3),
+				newMessage(0, 1),
+			},
+			Expected: offsetStash{
+				topic: {0: 4},
+			},
+		},
+		"uses latest offset, across multiple topics": {
+			Given: offsetStash{},
+			Messages: []Message{
+				newMessage(0, 2),
+				newMessage(0, 3),
+				newMessage(0, 1),
+				newMessage(1, 5),
+				newMessage(1, 6),
+			},
+			Expected: offsetStash{
+				topic: {
+					0: 4,
+					1: 7,
+				},
+			},
+		},
+	}
+
+	for label, test := range tests {
+		t.Run(label, func(t *testing.T) {
+			test.Given.merge(makeCommits(test.Messages...))
+			if !reflect.DeepEqual(test.Expected, test.Given) {
+				t.Errorf("expected %v; got %v", test.Expected, test.Given)
+			}
+		})
+	}
+}
+
+type mockOffsetCommitter struct {
+	invocations int
+	failCount   int
+	err         error
+}
+
+func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+	m.invocations++
+
+	if m.failCount > 0 {
+		m.failCount--
+		return offsetCommitResponseV2{}, io.EOF
+	}
+
+	return offsetCommitResponseV2{}, nil
+}
+
 func TestValidateReader(t *testing.T) {
 	tests := []struct {
 		config       ReaderConfig
@@ -1188,6 +1277,7 @@ func TestValidateReader(t *testing.T) {
 }
 
 func TestCommitOffsetsWithRetry(t *testing.T) {
+	offsets := offsetStash{"topic": {0: 0}}
 
 	tests := map[string]struct {
 		Fails       int
@@ -1211,7 +1301,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 	for label, test := range tests {
 		t.Run(label, func(t *testing.T) {
 			count := 0
-			gen := Generation{
+			gen := &Generation{
 				conn: mockCoordinator{
 					offsetCommitFunc: func(offsetCommitRequestV2) (offsetCommitResponseV2, error) {
 						count++
@@ -1221,24 +1311,17 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 						return offsetCommitResponseV2{}, nil
 					},
 				},
-				offsets:  make(map[string]map[int]markedOffset),
-				log:      func(func(*log.Logger)) {}, // todo : default these?
+				log:      func(func(*log.Logger)) {},
 				logError: func(func(*log.Logger)) {},
 			}
 
-			// without a marked offset, the commit call is a no-op
-			gen.MarkOffset("topic", 0, 1)
-
 			r := &Reader{stctx: context.Background()}
-			err := r.commitOffsetsWithRetry(&gen, defaultCommitRetries)
+			err := r.commitOffsetsWithRetry(gen, offsets, defaultCommitRetries)
 			switch {
 			case test.HasError && err == nil:
 				t.Error("bad err: expected not nil; got nil")
 			case !test.HasError && err != nil:
 				t.Errorf("bad err: expected nil; got %v", err)
-			}
-			if test.Invocations != count {
-				t.Errorf("expected %v retries; got %v", test.Invocations, count)
 			}
 		})
 	}
@@ -1272,7 +1355,7 @@ func TestRebalanceTooManyConsumers(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	// Before the fix, r2 would cause continuous rebalances,
-	// as it tried to nextGeneration() repeatedly.
+	// as it tried to handshake() repeatedly.
 	rebalances := r1.Stats().Rebalances + r2.Stats().Rebalances
 	if rebalances > 2 {
 		t.Errorf("unexpected rebalances to first reader, got %d", rebalances)

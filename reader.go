@@ -60,6 +60,10 @@ type Reader struct {
 	lag     int64
 	closed  bool
 
+	// offsetStash should only be managed by the commitLoopInterval.  We store
+	// it here so that it survives rebalances
+	offsetStash offsetStash
+
 	// reader stats are all made of atomic values, no need for synchronization.
 	once  uint32
 	stctx context.Context
@@ -88,7 +92,12 @@ func (r *Reader) unsubscribe() {
 	// another consumer to avoid such a race.
 }
 
-func (r *Reader) subscribe(offsetsByPartition map[int]int64) {
+func (r *Reader) subscribe(assignments []PartitionAssignment) {
+	offsetsByPartition := make(map[int]int64)
+	for _, assignment := range assignments {
+		offsetsByPartition[assignment.ID] = assignment.Offset
+	}
+
 	r.mutex.Lock()
 	r.start(offsetsByPartition)
 	r.mutex.Unlock()
@@ -115,7 +124,7 @@ func (r *Reader) waitThrottleTime(throttleTimeMS int32) {
 
 // commitOffsetsWithRetry attempts to commit the specified offsets and retries
 // up to the specified number of times
-func (r *Reader) commitOffsetsWithRetry(gen *Generation, retries int) (err error) {
+func (r *Reader) commitOffsetsWithRetry(gen *Generation, offsetStash offsetStash, retries int) (err error) {
 	const (
 		backoffDelayMin = 100 * time.Millisecond
 		backoffDelayMax = 5 * time.Second
@@ -128,7 +137,7 @@ func (r *Reader) commitOffsetsWithRetry(gen *Generation, retries int) (err error
 			}
 		}
 
-		if err = gen.Commit(); err == nil {
+		if err = gen.CommitOffsets(offsetStash); err == nil {
 			return
 		}
 	}
@@ -136,18 +145,44 @@ func (r *Reader) commitOffsetsWithRetry(gen *Generation, retries int) (err error
 	return // err will not be nil
 }
 
+// offsetStash holds offsets by topic => partition => offset
+type offsetStash map[string]map[int]int64
+
+// merge updates the offsetStash with the offsets from the provided messages
+func (o offsetStash) merge(commits []commit) {
+	for _, c := range commits {
+		offsetsByPartition, ok := o[c.topic]
+		if !ok {
+			offsetsByPartition = map[int]int64{}
+			o[c.topic] = offsetsByPartition
+		}
+
+		if offset, ok := offsetsByPartition[c.partition]; !ok || c.offset > offset {
+			offsetsByPartition[c.partition] = c.offset
+		}
+	}
+}
+
+// reset clears the contents of the offsetStash
+func (o offsetStash) reset() {
+	for key := range o {
+		delete(o, key)
+	}
+}
+
 // commitLoopImmediate handles each commit synchronously
 func (r *Reader) commitLoopImmediate(gen *Generation) {
+	offsetsByTopicAndPartition := offsetStash{}
+
 	for {
 		select {
 		case <-gen.Done:
 			return
 
 		case req := <-r.commits:
-			for _, c := range req.commits {
-				gen.MarkOffset(c.topic, c.partition, c.offset)
-			}
-			req.errch <- r.commitOffsetsWithRetry(gen, defaultCommitRetries)
+			offsetsByTopicAndPartition.merge(req.commits)
+			req.errch <- r.commitOffsetsWithRetry(gen, offsetsByTopicAndPartition, defaultCommitRetries)
+			offsetsByTopicAndPartition.reset()
 		}
 	}
 }
@@ -158,25 +193,20 @@ func (r *Reader) commitLoopInterval(gen *Generation) {
 	ticker := time.NewTicker(r.config.CommitInterval)
 	defer ticker.Stop()
 
-	commit := func() {
-		if err := r.commitOffsetsWithRetry(gen, defaultCommitRetries); err != nil {
-			r.withErrorLogger(func(l *log.Logger) { l.Print(err) })
-		}
-	}
-
 	for {
 		select {
 		case <-gen.Done:
-			commit()
 			return
 
 		case <-ticker.C:
-			commit()
+			if err := r.commitOffsetsWithRetry(gen, r.offsetStash, defaultCommitRetries); err != nil {
+				r.withErrorLogger(func(l *log.Logger) { l.Print(err) })
+			} else {
+				r.offsetStash.reset()
+			}
 
 		case req := <-r.commits:
-			for _, c := range req.commits {
-				gen.MarkOffset(c.topic, c.partition, c.offset)
-			}
+			r.offsetStash.merge(req.commits)
 		}
 	}
 }
@@ -221,12 +251,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.stats.rebalances.observe(1)
 
-		offsetsByPartition := make(map[int]int64)
-		for _, assignment := range gen.Assignments[r.config.Topic] {
-			offsetsByPartition[assignment.ID] = assignment.Offset
-		}
-
-		r.subscribe(offsetsByPartition)
+		r.subscribe(gen.Assignments[r.config.Topic])
 
 		go r.commitLoop(gen)
 
@@ -240,11 +265,13 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.unsubscribe()
 
-		// make one final commit once all of the readers are done consuming.
-		if err := gen.Commit(); err != nil {
+		// make one final commit attempt once all of the readers are done
+		// consuming.  no retries here.
+		if err := r.commitOffsetsWithRetry(gen, r.offsetStash, 1); err != nil {
 			r.withErrorLogger(func(l *log.Logger) {
 				l.Printf("error with final commit for group %s, generation %d: %v", gen.GroupID, gen.ID, err)
 			})
+			r.offsetStash.reset() // reset no matter what since we're getting new assignments.
 		}
 	}
 }
@@ -624,12 +651,10 @@ func NewReader(config ReaderConfig) *Reader {
 			Topics:                 []string{r.config.Topic},
 			GroupBalancers:         r.config.GroupBalancers,
 			HeartbeatInterval:      r.config.HeartbeatInterval,
-			CommitInterval:         r.config.CommitInterval,
 			PartitionWatchInterval: r.config.PartitionWatchInterval,
 			WatchPartitionChanges:  r.config.WatchPartitionChanges,
 			SessionTimeout:         r.config.SessionTimeout,
 			RebalanceTimeout:       r.config.RebalanceTimeout,
-			RetentionTime:          r.config.RetentionTime,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
 		})

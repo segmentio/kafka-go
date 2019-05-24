@@ -82,14 +82,6 @@ type ConsumerGroupConfig struct {
 	// Default: 3s
 	HeartbeatInterval time.Duration
 
-	// CommitInterval indicates the interval at which offsets are committed to
-	// the broker.  If 0, commits will be handled synchronously.
-	//
-	// Default: 0
-	//
-	// Only used when GroupID is set
-	CommitInterval time.Duration
-
 	// PartitionWatchInterval indicates how often a reader checks for partition changes.
 	// If a reader sees a partition change (such as a partition add) it will rebalance the group
 	// picking up new partitions.
@@ -199,10 +191,6 @@ func (config *ConsumerGroupConfig) Validate() error {
 		return errors.New(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
 	}
 
-	if config.CommitInterval < 0 || (config.CommitInterval/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
-	}
-
 	if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
 		return errors.New(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
 	}
@@ -278,63 +266,16 @@ type Generation struct {
 	retentionMillis int64
 	log             func(func(*log.Logger))
 	logError        func(func(*log.Logger))
-
-	offsetLock sync.Mutex
-	offsets    map[string]map[int]markedOffset
-}
-
-// MarkOffset prepares the offset for the topic+partition for commit if and only
-// if a higher offset has not been previously marked.
-func (g *Generation) MarkOffset(topic string, partition int, offset int64) {
-	g.offsetLock.Lock()
-	partOffsets, ok := g.offsets[topic]
-	if !ok {
-		partOffsets = make(map[int]markedOffset)
-		g.offsets[topic] = partOffsets
-	}
-	curr, ok := partOffsets[partition]
-	if !ok || offset > curr.offset {
-		partOffsets[partition] = markedOffset{
-			offset: offset,
-			marked: true,
-		}
-	}
-	g.offsetLock.Unlock()
-}
-
-// Commit commits all offsets that have been prepared with MarkOffset.
-func (g *Generation) Commit() error {
-
-	// translate the offset stash into a request.  this is effectively a copy
-	// of a point-in-time of the offset stash.
-	g.offsetLock.Lock()
-	if len(g.offsets) == 0 {
-		g.offsetLock.Unlock()
-		return nil
-	}
-	topics := make([]offsetCommitRequestV2Topic, 0, len(g.offsets))
-	for topic, partitions := range g.offsets {
-		t := offsetCommitRequestV2Topic{Topic: topic}
-		for partition, offset := range partitions {
-			if !offset.marked {
-				continue
-			}
-			t.Partitions = append(t.Partitions, offsetCommitRequestV2Partition{
-				Partition: int32(partition),
-				Offset:    offset.offset,
-			})
-		}
-		topics = append(topics, t)
-	}
-	g.offsetLock.Unlock()
-
-	return g.commit(topics)
 }
 
 // CommitOffsets commits the provided topic+partition+offset combos to the
 // consumer group coordinator.  This can be used to reset the consumer to
 // explicit offsets.
 func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
+	if len(offsets) == 0 {
+		return nil
+	}
+
 	topics := make([]offsetCommitRequestV2Topic, 0, len(offsets))
 	for topic, partitions := range offsets {
 		t := offsetCommitRequestV2Topic{Topic: topic}
@@ -347,10 +288,6 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 		topics = append(topics, t)
 	}
 
-	return g.commit(topics)
-}
-
-func (g *Generation) commit(topics []offsetCommitRequestV2Topic) error {
 	request := offsetCommitRequestV2{
 		GroupID:       g.GroupID,
 		GenerationID:  g.ID,
@@ -403,35 +340,6 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 			})
 			if err != nil {
 				return
-			}
-		}
-	}
-}
-
-// heartbeatLoop commits offsets to the consumer group coordinator at the
-// provided interval.  It exits if it ever encounters an error, which would
-// signal the end of the generation.
-func (g *Generation) commitLoop(interval time.Duration) {
-	g.log(func(l *log.Logger) {
-		l.Printf("started commit loop for group, %v [%v]", g.GroupID, interval)
-	})
-	defer g.log(func(l *log.Logger) {
-		l.Println("stopped commit loop for group,", g.GroupID)
-	})
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-g.Done:
-			// todo : doc this.
-			return
-		case <-ticker.C:
-			if err := g.Commit(); err != nil {
-				g.logError(func(l *log.Logger) {
-					l.Printf("Error committing offsets, %v", err)
-				})
 			}
 		}
 	}
@@ -588,23 +496,41 @@ func (cg *ConsumerGroup) run() {
 		memberID, err = cg.nextGeneration(memberID)
 
 		if err != nil {
-			// don't leave the group in case of a RebalanceInProgress, but still
-			// report the error.
-			if err != RebalanceInProgress && memberID != "" {
+			switch err {
+			case nil:
+				// no error...the previous generation finished normally.
+				continue
+			case RebalanceInProgress:
+				// in case of a RebalanceInProgress, don't leave the group or
+				// change the member ID, but report the error.  the next attempt
+				// to join the group will then be subject to the rebalance
+				// timeout, so the broker will be responsible for throttling
+				// this loop.
+				cg.sendError(err)
+				continue
+			default:
 				// leave the group and report the error if we had gotten far
 				// enough so as to have a member ID.  also clear the member id
 				// so we don't attempt to use it again.
+				//
+				// we're not currently sleeping or doing anything to throttle
+				// the loop in case of an error.  this is the behavior of the
+				// original consumer group impl.  this likely could be improved.
 				_ = cg.leaveGroup(memberID)
 				memberID = ""
-			}
-			// ensure that we exit cleanly in case the CG is done and no one is
-			// waiting to receive on the unbuffered error channel.
-			select {
-			case <-cg.done:
-				return
-			case cg.errs <- err:
+				cg.sendError(err)
 			}
 		}
+	}
+}
+
+func (cg *ConsumerGroup) sendError(err error) {
+	// ensure that we exit cleanly in case the CG is done and no one is
+	// waiting to receive on the unbuffered error channel.
+	select {
+	case <-cg.done:
+		return
+	case cg.errs <- err:
 	}
 }
 
@@ -670,7 +596,6 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		Done:            genCtx.Done(),
 		conn:            conn,
 		retentionMillis: int64(cg.config.RetentionTime / time.Millisecond),
-		offsets:         make(map[string]map[int]markedOffset),
 		log:             cg.withLogger,
 		logError:        cg.withErrorLogger,
 	}
@@ -694,11 +619,6 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	spawn(func() {
 		gen.heartbeatLoop(cg.config.HeartbeatInterval)
 	})
-	if cg.config.CommitInterval > 0 {
-		spawn(func() {
-			gen.commitLoop(cg.config.CommitInterval)
-		})
-	}
 	if cg.config.WatchPartitionChanges {
 		for _, topic := range cg.config.Topics {
 			spawn(func() {
