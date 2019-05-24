@@ -501,7 +501,8 @@ func (cg *ConsumerGroup) run() {
 				// no error...the previous generation finished normally.
 				continue
 			case ErrGroupClosed:
-				// the CG has been closed...exit loop.
+				// the CG has been closed...leave the group and exit loop.
+				_ = cg.leaveGroup(memberID)
 				return
 			case RebalanceInProgress:
 				// in case of a RebalanceInProgress, don't leave the group or
