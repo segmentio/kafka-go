@@ -60,10 +60,6 @@ type Reader struct {
 	lag     int64
 	closed  bool
 
-	// offsetStash should only be managed by the commitLoopInterval.  We store
-	// it here so that it survives rebalances
-	offsetStash offsetStash
-
 	// reader stats are all made of atomic values, no need for synchronization.
 	once  uint32
 	stctx context.Context
@@ -172,7 +168,7 @@ func (o offsetStash) reset() {
 
 // commitLoopImmediate handles each commit synchronously
 func (r *Reader) commitLoopImmediate(gen *Generation) {
-	offsetsByTopicAndPartition := offsetStash{}
+	offsets := offsetStash{}
 
 	for {
 		select {
@@ -180,9 +176,9 @@ func (r *Reader) commitLoopImmediate(gen *Generation) {
 			return
 
 		case req := <-r.commits:
-			offsetsByTopicAndPartition.merge(req.commits)
-			req.errch <- r.commitOffsetsWithRetry(gen, offsetsByTopicAndPartition, defaultCommitRetries)
-			offsetsByTopicAndPartition.reset()
+			offsets.merge(req.commits)
+			req.errch <- r.commitOffsetsWithRetry(gen, offsets, defaultCommitRetries)
+			offsets.reset()
 		}
 	}
 }
@@ -193,20 +189,29 @@ func (r *Reader) commitLoopInterval(gen *Generation) {
 	ticker := time.NewTicker(r.config.CommitInterval)
 	defer ticker.Stop()
 
+	// the offset stash should not survive rebalances b/c the consumer may
+	// receive new assignments.
+	offsets := offsetStash{}
+
+	commit := func() {
+		if err := r.commitOffsetsWithRetry(gen, offsets, defaultCommitRetries); err != nil {
+			r.withErrorLogger(func(l *log.Logger) { l.Print(err) })
+		} else {
+			offsets.reset()
+		}
+	}
+
 	for {
 		select {
 		case <-gen.Done:
+			commit() // commit final state when the generation ends.
 			return
 
 		case <-ticker.C:
-			if err := r.commitOffsetsWithRetry(gen, r.offsetStash, defaultCommitRetries); err != nil {
-				r.withErrorLogger(func(l *log.Logger) { l.Print(err) })
-			} else {
-				r.offsetStash.reset()
-			}
+			commit()
 
 		case req := <-r.commits:
-			r.offsetStash.merge(req.commits)
+			offsets.merge(req.commits)
 		}
 	}
 }
@@ -229,14 +234,17 @@ func (r *Reader) commitLoop(gen *Generation) {
 
 // run provides the main consumer group management loop.  Each iteration performs the
 // handshake to join the Reader to the consumer group.
+//
+// This function is responsible for closing the consumer group upon exit.
 func (r *Reader) run(cg *ConsumerGroup) {
 	defer close(r.done)
+	defer cg.Close()
 
 	r.withLogger(func(l *log.Logger) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
-	for {
+	for r.stctx.Err() == nil {
 		gen, err := cg.Next(r.stctx)
 		if err != nil {
 			if err == r.stctx.Err() {
@@ -253,26 +261,29 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.subscribe(gen.Assignments[r.config.Topic])
 
-		go r.commitLoop(gen)
+		var commitWg sync.WaitGroup
+		commitWg.Add(1)
+		go func() {
+			r.commitLoop(gen)
+			commitWg.Done()
+		}()
 
 		select {
 		case <-gen.Done:
 			// continue to next generation
 		case <-r.stctx.Done():
-			// close the consumer group when we're shutting down.
+			// this will be the last loop because the reader is closed.  we
+			// still want to hit the unsubscribe and final commit logic below.
+			// the consumer group must be closed so that the commitLoop tears
+			// itself down.  calling close on it a second time in the defer will
+			// be idempotent.
 			cg.Close()
 		}
 
 		r.unsubscribe()
 
-		// make one final commit attempt once all of the readers are done
-		// consuming.  no retries here.
-		if err := r.commitOffsetsWithRetry(gen, r.offsetStash, 1); err != nil {
-			r.withErrorLogger(func(l *log.Logger) {
-				l.Printf("error with final commit for group %s, generation %d: %v", gen.GroupID, gen.ID, err)
-			})
-			r.offsetStash.reset() // reset no matter what since we're getting new assignments.
-		}
+		// wait for the commit loop to exit so that the commits are up to date.
+		commitWg.Wait()
 	}
 }
 
