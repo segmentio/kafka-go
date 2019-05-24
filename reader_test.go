@@ -247,7 +247,7 @@ func testReaderReadLag(t *testing.T, ctx context.Context, r *Reader) {
 }
 
 func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
-	const N = 10
+	const N = 5
 	prepareReader(t, ctx, r, makeTestSequence(N)...)
 
 	var offset int64
@@ -290,17 +290,17 @@ func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
 	expect := ReaderStats{
 		Dials:         1,
 		Fetches:       1,
-		Messages:      10,
-		Bytes:         10,
+		Messages:      N,
+		Bytes:         N,
 		Rebalances:    0,
 		Timeouts:      0,
 		Errors:        1, // because the configured timeout is < defaultRTT, so fetch timeouts get logged as errors
 		DialTime:      stats.DialTime,
 		ReadTime:      stats.ReadTime,
 		WaitTime:      stats.WaitTime,
-		FetchSize:     SummaryStats{Avg: 10, Min: 10, Max: 10},
-		FetchBytes:    SummaryStats{Avg: 10, Min: 10, Max: 10},
-		Offset:        10,
+		FetchSize:     SummaryStats{Avg: N, Min: N, Max: N},
+		FetchBytes:    SummaryStats{Avg: N, Min: N, Max: N},
+		Offset:        N,
 		Lag:           0,
 		MinBytes:      1,
 		MaxBytes:      10000000,
