@@ -500,14 +500,15 @@ func (cg *ConsumerGroup) run() {
 			case nil:
 				// no error...the previous generation finished normally.
 				continue
+			case ErrGroupClosed:
+				// the CG has been closed...exit loop.
+				return
 			case RebalanceInProgress:
 				// in case of a RebalanceInProgress, don't leave the group or
 				// change the member ID, but report the error.  the next attempt
 				// to join the group will then be subject to the rebalance
 				// timeout, so the broker will be responsible for throttling
 				// this loop.
-				cg.sendError(err)
-				continue
 			default:
 				// leave the group and report the error if we had gotten far
 				// enough so as to have a member ID.  also clear the member id
@@ -518,19 +519,14 @@ func (cg *ConsumerGroup) run() {
 				// original consumer group impl.  this likely could be improved.
 				_ = cg.leaveGroup(memberID)
 				memberID = ""
-				cg.sendError(err)
+			}
+			// ensure that we exit cleanly in case the CG is done and no one is
+			// waiting to receive on the unbuffered error channel.
+			select {
+			case <-cg.done:
+			case cg.errs <- err:
 			}
 		}
-	}
-}
-
-func (cg *ConsumerGroup) sendError(err error) {
-	// ensure that we exit cleanly in case the CG is done and no one is
-	// waiting to receive on the unbuffered error channel.
-	select {
-	case <-cg.done:
-		return
-	case cg.errs <- err:
 	}
 }
 
