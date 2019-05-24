@@ -54,11 +54,6 @@ func TestReader(t *testing.T) {
 			function: testReaderReadLag,
 		},
 
-		{
-			scenario: "calling Stats returns accurate stats about the reader",
-			function: testReaderStats,
-		},
-
 		{ // https://github.com/segmentio/kafka-go/issues/30
 			scenario: "reading from an out-of-range offset waits until the context is cancelled",
 			function: testReaderOutOfRangeGetsCanceled,
@@ -243,82 +238,6 @@ func testReaderReadLag(t *testing.T, ctx context.Context, r *Reader) {
 		} else if lag != expect {
 			t.Errorf("the lag value at offset %d is %d but was expected to be %d", i, lag, expect)
 		}
-	}
-}
-
-func testReaderStats(t *testing.T, ctx context.Context, r *Reader) {
-	const N = 10
-	prepareReader(t, ctx, r, makeTestSequence(N)...)
-
-	var offset int64
-	var bytes int64
-
-	for i := 0; i != N; i++ {
-		m, err := r.ReadMessage(ctx)
-		if err != nil {
-			t.Error("reading message at offset", offset, "failed:", err)
-			return
-		}
-		offset = m.Offset + 1
-		bytes += int64(len(m.Key) + len(m.Value))
-	}
-
-	// there's a possible go routine scheduling order whereby the stats have not
-	// been fully updated yet and the following assertions would fail if we
-	// retrieved stats immediately.  the issue rarely happens locally but
-	// happens with some degree of regularity in CI.  we don't have a way
-	// to ensure stats are updated, so approximating it with a sleep. :|
-	time.Sleep(10 * time.Millisecond)
-
-	stats := r.Stats()
-
-	// First verify that metrics with unpredictable values are not zero.
-	if stats.DialTime == (DurationStats{}) {
-		t.Error("no dial time reported by reader stats")
-	}
-	if stats.ReadTime == (DurationStats{}) {
-		t.Error("no read time reported by reader stats")
-	}
-	if stats.WaitTime == (DurationStats{}) {
-		t.Error("no wait time reported by reader stats")
-	}
-	if len(stats.Topic) == 0 {
-		t.Error("empty topic in reader stats")
-	}
-
-	// Then compare all remaining metrics.
-	expect := ReaderStats{
-		Dials:         1,
-		Fetches:       1,
-		Messages:      10,
-		Bytes:         10,
-		Rebalances:    0,
-		Timeouts:      0,
-		Errors:        1, // because the configured timeout is < defaultRTT, so fetch timeouts get logged as errors
-		DialTime:      stats.DialTime,
-		ReadTime:      stats.ReadTime,
-		WaitTime:      stats.WaitTime,
-		FetchSize:     SummaryStats{Avg: 10, Min: 10, Max: 10},
-		FetchBytes:    SummaryStats{Avg: 10, Min: 10, Max: 10},
-		Offset:        10,
-		Lag:           0,
-		MinBytes:      1,
-		MaxBytes:      10000000,
-		MaxWait:       100 * time.Millisecond,
-		QueueLength:   0,
-		QueueCapacity: 100,
-		ClientID:      "",
-		Topic:         stats.Topic,
-		Partition:     "0",
-
-		// TODO: remove when we get rid of the deprecated field.
-		DeprecatedFetchesWithTypo: 1,
-	}
-
-	if stats != expect {
-		t.Error("bad stats:")
-		t.Log("expected:", expect)
-		t.Log("found:   ", stats)
 	}
 }
 
