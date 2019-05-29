@@ -818,7 +818,8 @@ func testConnFetchAndCommitOffsets(t *testing.T, conn *Conn) {
 }
 
 func testConnWriteReadConcurrently(t *testing.T, conn *Conn) {
-	t.Skip("this test is buggy in CI") // todo : fix and unskip!
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+
 	const N = 1000
 	var msgs = make([]string, N)
 	var done = make(chan struct{})
@@ -879,6 +880,10 @@ func testConnReadShortBuffer(t *testing.T, conn *Conn) {
 
 func testConnReadEmptyWithDeadline(t *testing.T, conn *Conn) {
 	t.Skip("this test is buggy in CI") // todo : fix and unskip!
+	/*
+	   --- FAIL: TestConn/reading_messages_from_an_empty_partition_should_timeout_after_reaching_the_deadline (1.65s)
+	       conn_test.go:894: expected timeout error but got unexpected EOF
+	*/
 	b := make([]byte, 100)
 
 	start := time.Now()
