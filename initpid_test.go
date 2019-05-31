@@ -11,7 +11,7 @@ func TestInitProducerIDResponseV0(t *testing.T) {
 	pidResponse := initProducerIDResponseV0{
 		ThrottleTimeMs: 1,
 		ErrorCode:      2,
-		ProducerId:     3,
+		ProducerID:     3,
 		ProducerEpoch:  4,
 	}
 	buf := bytes.NewBuffer(nil)

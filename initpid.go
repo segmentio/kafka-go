@@ -28,21 +28,21 @@ func (t initProducerIDRequestV0) writeTo(w *bufio.Writer) {
 type initProducerIDResponseV0 struct {
 	ThrottleTimeMs int32
 	ErrorCode      int16
-	ProducerId     int64
+	ProducerID     int64
 	ProducerEpoch  int16
 }
 
 func (t initProducerIDResponseV0) size() int32 {
 	return sizeof(t.ThrottleTimeMs) +
 		sizeof(t.ErrorCode) +
-		sizeof(t.ProducerId) +
+		sizeof(t.ProducerID) +
 		sizeof(t.ProducerEpoch)
 }
 
 func (t initProducerIDResponseV0) writeTo(w *bufio.Writer) {
 	writeInt32(w, t.ThrottleTimeMs)
 	writeInt16(w, t.ErrorCode)
-	writeInt64(w, t.ProducerId)
+	writeInt64(w, t.ProducerID)
 	writeInt16(w, t.ProducerEpoch)
 }
 
@@ -53,7 +53,7 @@ func (t *initProducerIDResponseV0) readFrom(r *bufio.Reader, size int) (remain i
 	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
 		return
 	}
-	if remain, err = readInt64(r, remain, &t.ProducerId); err != nil {
+	if remain, err = readInt64(r, remain, &t.ProducerID); err != nil {
 		return
 	}
 	if remain, err = readInt16(r, remain, &t.ProducerEpoch); err != nil {
