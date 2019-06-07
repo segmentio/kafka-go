@@ -14,15 +14,15 @@ func TestMessageSetReaderEmpty(t *testing.T) {
 		return 0, nil
 	}
 
-	offset, timestamp, headers, err := m.readMessage(0, noop, noop)
-	if offset != 0 {
-		t.Errorf("expected offset of 0, get %d", offset)
+	meta, err := m.readMessage(0, noop, noop)
+	if meta.Offset != 0 {
+		t.Errorf("expected offset of 0, get %d", meta.Offset)
 	}
-	if timestamp != 0 {
-		t.Errorf("expected timestamp of 0, get %d", timestamp)
+	if meta.Timestamp != 0 {
+		t.Errorf("expected timestamp of 0, get %d", meta.Timestamp)
 	}
-	if headers != nil {
-		t.Errorf("expected nil headers, got %v", headers)
+	if meta.Headers != nil {
+		t.Errorf("expected nil headers, got %v", meta.Headers)
 	}
 	if err != RequestTimedOut {
 		t.Errorf("expected RequestTimedOut, got %v", err)
