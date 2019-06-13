@@ -287,11 +287,12 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			return io.ErrClosedPipe
 		}
 
-		for _, msg := range msgs {
+		for i, msg := range msgs {
 			if int(msg.message().size()) > w.config.BatchBytes {
-				err := fmt.Errorf("The message is %d bytes "+
-					"when serialized which is larger than the maximum request size you "+
-					"have configured with the %v configuration.", msg.message().size(), w.config.BatchBytes)
+				err := MessageTooLargeError{
+					Message: msg,
+					Remaining: msgs[i:],
+				}
 				w.mutex.RUnlock()
 				return err
 			}

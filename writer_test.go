@@ -191,12 +191,13 @@ func testWriterMaxBytes(t *testing.T) {
 		t.Error("expected error")
 		return
 	} else if err != nil {
-		if !strings.Contains(err.Error(), "larger than the maximum request") {
+		switch err.(type) {
+		case MessageTooLargeError:
+		default:
 			t.Errorf("unexpected error: %s", err)
 			return
 		}
 	}
-
 }
 
 func readOffset(topic string, partition int) (offset int64, err error) {
