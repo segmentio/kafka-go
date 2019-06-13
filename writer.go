@@ -277,9 +277,9 @@ func NewWriter(config WriterConfig) *Writer {
 // whether messages were written to kafka. The program should assume that the
 // whole batch failed and re-write the messages later (which could then cause
 // duplicates).
-func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
+func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) ([]Message, error) {
 	if len(msgs) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var res = make(chan error, len(msgs))
@@ -292,7 +292,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 		if w.closed {
 			w.mutex.RUnlock()
-			return io.ErrClosedPipe
+			return nil, io.ErrClosedPipe
 		}
 
 		for _, msg := range msgs {
@@ -303,7 +303,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			}:
 			case <-ctx.Done():
 				w.mutex.RUnlock()
-				return ctx.Err()
+				return nil, ctx.Err()
 			}
 		}
 
@@ -327,7 +327,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 					}
 				}
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil, ctx.Err()
 			}
 		}
 
@@ -358,7 +358,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	t1 := time.Now()
 	w.stats.writeTime.observeDuration(t1.Sub(t0))
 
-	return err
+	return msgs, err
 }
 
 // Stats returns a snapshot of the writer stats since the last time the method
