@@ -291,7 +291,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			if int(msg.message().size()) > w.config.BatchBytes {
 				err := MessageTooLargeError{
 					Message: msg,
-					Remaining: msgs[i:],
+					Remaining: msgs[i+1:],
 				}
 				w.mutex.RUnlock()
 				return err
