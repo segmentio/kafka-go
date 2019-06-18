@@ -728,7 +728,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 
 	offset, err := c.Seek(c.Offset())
 	if err != nil {
-		return &Batch{err: dontExpectEOF(err)}
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: seek: %v", dontExpectEOF(err))}
 	}
 
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
@@ -777,12 +777,12 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		}
 	})
 	if err != nil {
-		return &Batch{err: dontExpectEOF(err)}
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: write fetch request: %v", dontExpectEOF(err))}
 	}
 
 	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
 	if err != nil {
-		return &Batch{err: dontExpectEOF(err)}
+		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: wait response: %v", dontExpectEOF(err))}
 	}
 
 	var throttle int32
@@ -822,7 +822,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
 		highWaterMark: highWaterMark,
-		err:           dontExpectEOF(err),
+		err:           fmt.Errorf("kafka.(*Conn).ReadBatch: read response: %v", dontExpectEOF(err)),
 	}
 }
 
