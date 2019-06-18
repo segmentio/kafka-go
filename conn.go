@@ -812,6 +812,9 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	if err == errShortRead {
 		err = checkTimeoutErr(adjustedDeadline)
 	}
+	if err != nil {
+		fmt.Errorf("kafka.(*Conn).ReadBatch: read response: %v", dontExpectEOF(err))
+	}
 	return &Batch{
 		conn:          c,
 		msgs:          msgs,
@@ -822,7 +825,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
 		highWaterMark: highWaterMark,
-		err:           fmt.Errorf("kafka.(*Conn).ReadBatch: read response: %v", dontExpectEOF(err)),
+		err:           err,
 	}
 }
 
