@@ -20,6 +20,11 @@ func (v semver) atLeast(other semver) bool {
 			return true
 		}
 	}
+	for i := len(v); i < len(other); i++ {
+		if other[i] > 0 {
+			return false
+		}
+	}
 	return true
 }
 
