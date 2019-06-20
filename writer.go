@@ -295,13 +295,12 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return nil
 	}
 
+	var err error
 	var res chan error
-	var t0 time.Time
 	if !w.config.Async {
 		res = make(chan error, len(msgs))
-		t0 = time.Now()
 	}
-	var err error
+	t0 := time.Now()
 
 	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
 		w.mutex.RLock()
@@ -314,7 +313,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		for i, msg := range msgs {
 			if int(msg.message().size()) > w.config.BatchBytes {
 				err := MessageTooLargeError{
-					Message: msg,
+					Message:   msg,
 					Remaining: msgs[i+1:],
 				}
 				w.mutex.RUnlock()
@@ -378,10 +377,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			break
 		}
 	}
-	if !w.config.Async {
-		t1 := time.Now()
-		w.stats.writeTime.observeDuration(t1.Sub(t0))
-	}
+	w.stats.writeTime.observeDuration(time.Since(t0))
 	return err
 }
 
