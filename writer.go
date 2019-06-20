@@ -295,9 +295,11 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return nil
 	}
 
-	var res = make(chan error, len(msgs))
 	var err error
-
+	var res chan error
+	if !w.config.Async {
+		res = make(chan error, len(msgs))
+	}
 	t0 := time.Now()
 
 	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
@@ -311,7 +313,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		for i, msg := range msgs {
 			if int(msg.message().size()) > w.config.BatchBytes {
 				err := MessageTooLargeError{
-					Message: msg,
+					Message:   msg,
 					Remaining: msgs[i+1:],
 				}
 				w.mutex.RUnlock()
@@ -375,10 +377,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			break
 		}
 	}
-
-	t1 := time.Now()
-	w.stats.writeTime.observeDuration(t1.Sub(t0))
-
+	w.stats.writeTime.observeDuration(time.Since(t0))
 	return err
 }
 
@@ -485,8 +484,9 @@ func (w *Writer) run() {
 				if err == nil {
 					err = fmt.Errorf("failed to find any partitions for topic %s", w.config.Topic)
 				}
-
-				wm.res <- &writerError{msg: wm.msg, err: err}
+				if wm.res != nil {
+					wm.res <- &writerError{msg: wm.msg, err: err}
+				}
 			}
 
 		case <-ticker.C:
@@ -637,7 +637,9 @@ func (w *writer) run() {
 		// If a lstMsg exists we need to add it to the batch so we don't lose it.
 		if len(lastMsg.msg.Value) != 0 {
 			batch = append(batch, lastMsg.msg)
-			resch = append(resch, lastMsg.res)
+			if lastMsg.res != nil {
+				resch = append(resch, lastMsg.res)
+			}
 			batchSizeBytes += int(lastMsg.msg.message().size())
 			lastMsg = writerMessage{}
 			if !batchTimerRunning {
@@ -658,7 +660,9 @@ func (w *writer) run() {
 					break
 				}
 				batch = append(batch, wm.msg)
-				resch = append(resch, wm.res)
+				if wm.res != nil {
+					resch = append(resch, wm.res)
+				}
 				batchSizeBytes += int(wm.msg.message().size())
 				mustFlush = len(batch) >= w.batchSize || batchSizeBytes >= w.maxMessageBytes
 			}
