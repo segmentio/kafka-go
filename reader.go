@@ -167,12 +167,12 @@ func (o offsetStash) reset() {
 }
 
 // commitLoopImmediate handles each commit synchronously
-func (r *Reader) commitLoopImmediate(gen *Generation) {
+func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 	offsets := offsetStash{}
 
 	for {
 		select {
-		case <-gen.Done:
+		case <-ctx.Done():
 			return
 
 		case req := <-r.commits:
@@ -185,7 +185,7 @@ func (r *Reader) commitLoopImmediate(gen *Generation) {
 
 // commitLoopInterval handles each commit asynchronously with a period defined
 // by ReaderConfig.CommitInterval
-func (r *Reader) commitLoopInterval(gen *Generation) {
+func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 	ticker := time.NewTicker(r.config.CommitInterval)
 	defer ticker.Stop()
 
@@ -203,7 +203,7 @@ func (r *Reader) commitLoopInterval(gen *Generation) {
 
 	for {
 		select {
-		case <-gen.Done:
+		case <-ctx.Done():
 			commit() // commit final state when the generation ends.
 			return
 
@@ -217,7 +217,7 @@ func (r *Reader) commitLoopInterval(gen *Generation) {
 }
 
 // commitLoop processes commits off the commit chan
-func (r *Reader) commitLoop(gen *Generation) {
+func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 	r.withLogger(func(l *log.Logger) {
 		l.Println("started commit for group,", r.config.GroupID)
 	})
@@ -226,9 +226,9 @@ func (r *Reader) commitLoop(gen *Generation) {
 	})
 
 	if r.config.CommitInterval == 0 {
-		r.commitLoopImmediate(gen)
+		r.commitLoopImmediate(ctx, gen)
 	} else {
-		r.commitLoopInterval(gen)
+		r.commitLoopInterval(ctx, gen)
 	}
 }
 
@@ -244,7 +244,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
-	for r.stctx.Err() == nil {
+	for {
 		gen, err := cg.Next(r.stctx)
 		if err != nil {
 			if err == r.stctx.Err() {
@@ -261,29 +261,18 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.subscribe(gen.Assignments[r.config.Topic])
 
-		var commitWg sync.WaitGroup
-		commitWg.Add(1)
-		go func() {
-			r.commitLoop(gen)
-			commitWg.Done()
-		}()
-
-		select {
-		case <-gen.Done:
-			// continue to next generation
-		case <-r.stctx.Done():
-			// this will be the last loop because the reader is closed.  we
-			// still want to hit the unsubscribe and final commit logic below.
-			// the consumer group must be closed so that the commitLoop tears
-			// itself down.  calling close on it a second time in the defer will
-			// be idempotent.
-			cg.Close()
-		}
-
-		r.unsubscribe()
-
-		// wait for the commit loop to exit so that the commits are up to date.
-		commitWg.Wait()
+		gen.Run(func(ctx context.Context) {
+			r.commitLoop(ctx, gen)
+		})
+		gen.Run(func(ctx context.Context) {
+			select {
+			case <-ctx.Done():
+				// continue to next generation
+			case <-r.stctx.Done():
+				// this will be the last loop because the reader is closed.
+			}
+			r.unsubscribe()
+		})
 	}
 }
 
@@ -379,6 +368,12 @@ type ReaderConfig struct {
 	// Only used when GroupID is set
 	RebalanceTimeout time.Duration
 
+	// JoinGroupBackoff optionally sets the length of time to wait between re-joining
+	// the consumer group after an error.
+	//
+	// Default: 5s
+	JoinGroupBackoff time.Duration
+
 	// RetentionTime optionally sets the length of time the consumer group will be saved
 	// by the broker
 	//
@@ -468,6 +463,10 @@ func (config *ReaderConfig) Validate() error {
 
 		if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
 			return errors.New(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
+		}
+
+		if config.JoinGroupBackoff < 0 || (config.JoinGroupBackoff/time.Millisecond) >= math.MaxInt32 {
+			return errors.New(fmt.Sprintf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff))
 		}
 
 		if config.RetentionTime < 0 {

@@ -41,6 +41,10 @@ const (
 	// for consumers to issue a join group once a rebalance has been requested
 	defaultRebalanceTimeout = 30 * time.Second
 
+	// defaultJoinGroupBackoff is the amount of time to wait after a failed
+	// consumer group generation before attempting to re-join.
+	defaultJoinGroupBackoff = 5 * time.Second
+
 	// defaultRetentionTime holds the length of time a the consumer group will be
 	// saved by kafka
 	defaultRetentionTime = time.Hour * 24
@@ -105,6 +109,12 @@ type ConsumerGroupConfig struct {
 	//
 	// Default: 30s
 	RebalanceTimeout time.Duration
+
+	// JoinGroupBackoff optionally sets the length of time to wait before re-joining
+	// the consumer group after an error.
+	//
+	// Default: 5s
+	JoinGroupBackoff time.Duration
 
 	// RetentionTime optionally sets the length of time the consumer group will be saved
 	// by the broker
@@ -171,6 +181,10 @@ func (config *ConsumerGroupConfig) Validate() error {
 		config.RebalanceTimeout = defaultRebalanceTimeout
 	}
 
+	if config.JoinGroupBackoff == 0 {
+		config.JoinGroupBackoff = defaultJoinGroupBackoff
+	}
+
 	if config.RetentionTime == 0 {
 		config.RetentionTime = defaultRetentionTime
 	}
@@ -185,6 +199,10 @@ func (config *ConsumerGroupConfig) Validate() error {
 
 	if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
 		return errors.New(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
+	}
+
+	if config.JoinGroupBackoff < 0 || (config.JoinGroupBackoff/time.Millisecond) >= math.MaxInt32 {
+		return errors.New(fmt.Sprintf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff))
 	}
 
 	if config.RetentionTime < 0 {
@@ -221,24 +239,38 @@ type PartitionAssignment struct {
 	Offset int64
 }
 
-type markedOffset struct {
-	offset int64
-	marked bool
+// genCtx adapts the done channel of the generation to a context.Context.  This
+// is used by Generation.Run so that we can pass a context to go routines
+// instead of passing around channels.
+type genCtx struct {
+	gen *Generation
+}
+
+func (c genCtx) Done() <-chan struct{} {
+	return c.gen.done
+}
+
+func (c genCtx) Err() error {
+	select {
+	case <-c.gen.done:
+		return context.Canceled
+	default:
+		return nil
+	}
+}
+
+func (c genCtx) Deadline() (time.Time, bool) {
+	return time.Time{}, false
+}
+
+func (c genCtx) Value(interface{}) interface{} {
+	return nil
 }
 
 // Generation represents a single consumer group generation.  The generation
-// carries the topic+partition assignments for the given member and also has
-// a channel for communicating when the generation has ended.  When the
-// generation ends, all work related to that generation should be torn down in
-// a timely manner.
-//
-// The Generation also facilitates commits to the consumer group.  The commits
-// will happen periodically if the consumer group configuration has a
-// CommitInterval.  Otherwise, they must be managed by the client by explicitly
-// calling Commit when appropriate.  Even if using periodic commits, the client
-// *must* call Commit() when it has finished processing the current generation
-// in order to persist any offsets that were marked between the time the
-// generation ended and all work was completed.
+// carries the topic+partition assignments for the given.  It also provides
+// facilities for committing offsets and for running functions whose lifecycles
+// are bound to the generation.
 type Generation struct {
 	// ID is the generation ID as assigned by the consumer group coordinator.
 	ID int32
@@ -251,21 +283,48 @@ type Generation struct {
 	MemberID string
 
 	// Assignments is the initial state of this Generation.  The partition
-	// assignments are group by topic.
+	// assignments are grouped by topic.
 	Assignments map[string][]PartitionAssignment
 
-	// Done closes when this generation has ended.  Clients must listen on this
-	// channel and perform relevant cleanup when it has closed such as shutting
-	// down any Readers that have been opened.  When this channel has been
-	// closed, all background processes related to this consumer group will be
-	// stopped, but offsets can still be committed with Commit().
-	Done <-chan struct{}
-
 	conn coordinator
+
+	once sync.Once
+	done chan struct{}
+	wg   sync.WaitGroup
 
 	retentionMillis int64
 	log             func(func(*log.Logger))
 	logError        func(func(*log.Logger))
+}
+
+// close stops the generation and waits for all functions launched via Run to
+// terminate.
+func (g *Generation) close() {
+	g.once.Do(func() {
+		close(g.done)
+	})
+	g.wg.Wait()
+}
+
+// Run launches the provided function in a go routine and adds accounting such
+// that when the function exits, it stops the current generation (if not
+// already in the process of doing so).  The function MUST support cancellation
+// via the ctx argument and exit in a timely manner once the ctx is complete.
+// When closing out a generation, the consumer group will wait for all functions
+// launched by Run to exit before moving on and joining the next generation.  If
+// the function hangs, it will stop forward progress for this consumer and
+// potentially cause consumer group membership churn.
+func (g *Generation) Run(fn func(ctx context.Context)) {
+	g.wg.Add(1)
+	go func() {
+		fn(genCtx{g})
+		// shut down the generation as soon as one function exits.  this is
+		// different from close() in that it doesn't wait on the wg.
+		g.once.Do(func() {
+			close(g.done)
+		})
+		g.wg.Done()
+	}()
 }
 
 // CommitOffsets commits the provided topic+partition+offset combos to the
@@ -318,31 +377,33 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 // interval.  It exits if it ever encounters an error, which would signal the
 // end of the generation.
 func (g *Generation) heartbeatLoop(interval time.Duration) {
-	g.log(func(l *log.Logger) {
-		l.Printf("started heartbeat for group, %v [%v]", g.GroupID, interval)
-	})
-	defer g.log(func(l *log.Logger) {
-		l.Println("stopped heartbeat for group,", g.GroupID)
-	})
+	g.Run(func(ctx context.Context) {
+		g.log(func(l *log.Logger) {
+			l.Printf("started heartbeat for group, %v [%v]", g.GroupID, interval)
+		})
+		defer g.log(func(l *log.Logger) {
+			l.Println("stopped heartbeat for group,", g.GroupID)
+		})
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
 
-	for {
-		select {
-		case <-g.Done:
-			return
-		case <-ticker.C:
-			_, err := g.conn.heartbeat(heartbeatRequestV0{
-				GroupID:      g.GroupID,
-				GenerationID: g.ID,
-				MemberID:     g.MemberID,
-			})
-			if err != nil {
+		for {
+			select {
+			case <-ctx.Done():
 				return
+			case <-ticker.C:
+				_, err := g.conn.heartbeat(heartbeatRequestV0{
+					GroupID:      g.GroupID,
+					GenerationID: g.ID,
+					MemberID:     g.MemberID,
+				})
+				if err != nil {
+					return
+				}
 			}
 		}
-	}
+	})
 }
 
 // partitionWatcher queries kafka and watches for partition changes, triggering
@@ -352,51 +413,53 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 // is a problem with the connection to the coordinator and a rebalance will
 // establish a new connection to the coordinator.
 func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
-	g.log(func(l *log.Logger) {
-		l.Printf("started partition watcher for group, %v, topic %v [%v]", g.GroupID, topic, interval)
-	})
-	defer g.log(func(l *log.Logger) {
-		l.Printf("stopped partition watcher for group, %v, topic %v", g.GroupID, topic)
-	})
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	ops, err := g.conn.ReadPartitions(topic)
-	if err != nil {
-		g.logError(func(l *log.Logger) {
-			l.Printf("Problem getting partitions during startup, %v\n, Returning and setting up nextGeneration", err)
+	g.Run(func(ctx context.Context) {
+		g.log(func(l *log.Logger) {
+			l.Printf("started partition watcher for group, %v, topic %v [%v]", g.GroupID, topic, interval)
 		})
-		return
-	}
-	oParts := len(ops)
-	for {
-		select {
-		case <-g.Done:
+		defer g.log(func(l *log.Logger) {
+			l.Printf("stopped partition watcher for group, %v, topic %v", g.GroupID, topic)
+		})
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		ops, err := g.conn.ReadPartitions(topic)
+		if err != nil {
+			g.logError(func(l *log.Logger) {
+				l.Printf("Problem getting partitions during startup, %v\n, Returning and setting up nextGeneration", err)
+			})
 			return
-		case <-ticker.C:
-			ops, err := g.conn.ReadPartitions(topic)
-			switch err {
-			case nil, UnknownTopicOrPartition:
-				if len(ops) != oParts {
+		}
+		oParts := len(ops)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				ops, err := g.conn.ReadPartitions(topic)
+				switch err {
+				case nil, UnknownTopicOrPartition:
+					if len(ops) != oParts {
+						g.log(func(l *log.Logger) {
+							l.Printf("Partition changes found, reblancing group: %v.", g.GroupID)
+						})
+						return
+					}
+				default:
 					g.logError(func(l *log.Logger) {
-						l.Printf("Partition changes found, reblancing group: %v.", g.GroupID)
+						l.Printf("Problem getting partitions while checking for changes, %v", err)
 					})
+					if _, ok := err.(Error); ok {
+						continue
+					}
+					// other errors imply that we lost the connection to the coordinator, so we
+					// should abort and reconnect.
 					return
 				}
-			default:
-				g.logError(func(l *log.Logger) {
-					l.Printf("Problem getting partitions while checking for changes, %v", err)
-				})
-				if _, ok := err.(Error); ok {
-					continue
-				}
-				// other errors imply that we lost the connection to the coordinator, so we
-				// should abort and reconnect.
-				return
 			}
 		}
-	}
+	})
 }
 
 var _ coordinator = &Conn{}
@@ -458,8 +521,8 @@ type ConsumerGroup struct {
 func (cg *ConsumerGroup) Close() error {
 	cg.closeOnce.Do(func() {
 		close(cg.done)
-		cg.wg.Wait()
 	})
+	cg.wg.Wait()
 	return nil
 }
 
@@ -513,13 +576,12 @@ func (cg *ConsumerGroup) run() {
 			default:
 				// leave the group and report the error if we had gotten far
 				// enough so as to have a member ID.  also clear the member id
-				// so we don't attempt to use it again.
-				//
-				// we're not currently sleeping or doing anything to throttle
-				// the loop in case of an error.  this is the behavior of the
-				// original consumer group impl.  this likely could be improved.
+				// so we don't attempt to use it again.  in order to avoid
+				// a tight error loop, backoff before the next attempt to join
+				// the group.
 				_ = cg.leaveGroup(memberID)
 				memberID = ""
+				time.Sleep(cg.config.JoinGroupBackoff)
 			}
 			// ensure that we exit cleanly in case the CG is done and no one is
 			// waiting to receive on the unbuffered error channel.
@@ -584,43 +646,25 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	}
 
 	// create the generation.
-	genCtx, cancel := context.WithCancel(context.Background())
 	gen := Generation{
 		ID:              generationID,
 		GroupID:         cg.config.ID,
 		MemberID:        memberID,
 		Assignments:     cg.makeAssignments(assignments, offsets),
-		Done:            genCtx.Done(),
 		conn:            conn,
+		done:            make(chan struct{}),
 		retentionMillis: int64(cg.config.RetentionTime / time.Millisecond),
 		log:             cg.withLogger,
 		logError:        cg.withErrorLogger,
 	}
 
-	// spawn is a helper to make sure that each helper go routine is properly
-	// accounted for in the wait group and to ensure that upon exit, it cancels
-	// the current generation.
-	var wg sync.WaitGroup
-	spawn := func(fn func()) {
-		wg.Add(1)
-		go func() {
-			fn()
-			cancel()
-			wg.Done()
-		}()
-	}
-
 	// spawn all of the go routines required to facilitate this generation.  if
 	// any of these functions exit, then the generation is determined to be
 	// complete.
-	spawn(func() {
-		gen.heartbeatLoop(cg.config.HeartbeatInterval)
-	})
+	gen.heartbeatLoop(cg.config.HeartbeatInterval)
 	if cg.config.WatchPartitionChanges {
 		for _, topic := range cg.config.Topics {
-			spawn(func() {
-				gen.partitionWatcher(cg.config.PartitionWatchInterval, topic)
-			})
+			gen.partitionWatcher(cg.config.PartitionWatchInterval, topic)
 		}
 	}
 
@@ -630,8 +674,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// it's own teardown logic has been invoked, this would deadlock otherwise.
 	select {
 	case <-cg.done:
-		cancel()
-		wg.Wait()
+		gen.close()
 		return memberID, ErrGroupClosed // ErrGroupClosed will trigger leave logic.
 	case cg.next <- &gen:
 	}
@@ -640,13 +683,12 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// generation is finished, exit and leave the group.
 	select {
 	case <-cg.done:
-		cancel()
-		wg.Wait()
+		gen.close()
 		return memberID, ErrGroupClosed // ErrGroupClosed will trigger leave logic.
-	case <-genCtx.Done():
+	case <-gen.done:
 		// time for next generation!  make sure all the current go routines exit
 		// before continuing onward.
-		wg.Wait()
+		gen.close()
 		return memberID, nil
 	}
 }

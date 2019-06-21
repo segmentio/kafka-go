@@ -215,6 +215,7 @@ func TestGenerationExitsOnPartitionChange(t *testing.T) {
 
 	gen := Generation{
 		conn:     conn,
+		done:     make(chan struct{}),
 		log:      func(func(*log.Logger)) {},
 		logError: func(func(*log.Logger)) {},
 	}

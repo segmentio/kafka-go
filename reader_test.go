@@ -1235,6 +1235,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 						return offsetCommitResponseV2{}, nil
 					},
 				},
+				done:     make(chan struct{}),
 				log:      func(func(*log.Logger)) {},
 				logError: func(func(*log.Logger)) {},
 			}
