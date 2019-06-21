@@ -610,13 +610,30 @@ const (
 // as in lseek(2) or os.Seek.
 // The method returns the new absolute offset of the connection.
 func (c *Conn) Seek(offset int64, whence int) (int64, error) {
-	checkBounds := !((whence&SeekDontCheck) != 0 && (whence == SeekAbsolute || whence == SeekCurrent))
+	seekDontCheck := (whence & SeekDontCheck) != 0
 	whence &= ^SeekDontCheck
 
 	switch whence {
 	case SeekStart, SeekAbsolute, SeekEnd, SeekCurrent:
 	default:
 		return 0, fmt.Errorf("whence must be one of 0, 1, 2, or 3. (whence = %d)", whence)
+	}
+
+	if seekDontCheck {
+		if whence == SeekAbsolute {
+			c.mutex.Lock()
+			c.offset = offset
+			c.mutex.Unlock()
+			return offset, nil
+		}
+
+		if whence == SeekCurrent {
+			c.mutex.Lock()
+			c.offset += offset
+			offset = c.offset
+			c.mutex.Unlock()
+			return offset, nil
+		}
 	}
 
 	if whence == SeekAbsolute {
@@ -634,22 +651,20 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 		c.mutex.Unlock()
 	}
 
-	if checkBounds {
-		first, last, err := c.ReadOffsets()
-		if err != nil {
-			return 0, err
-		}
+	first, last, err := c.ReadOffsets()
+	if err != nil {
+		return 0, err
+	}
 
-		switch whence {
-		case SeekStart:
-			offset = first + offset
-		case SeekEnd:
-			offset = last - offset
-		}
+	switch whence {
+	case SeekStart:
+		offset = first + offset
+	case SeekEnd:
+		offset = last - offset
+	}
 
-		if offset < first || offset > last {
-			return 0, OffsetOutOfRange
-		}
+	if offset < first || offset > last {
+		return 0, OffsetOutOfRange
 	}
 
 	c.mutex.Lock()
