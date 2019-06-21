@@ -821,6 +821,7 @@ func testConnWriteReadConcurrently(t *testing.T, conn *Conn) {
 	const N = 1000
 	var msgs = make([]string, N)
 	var done = make(chan struct{})
+	var written = make(chan struct{}, N/10)
 
 	for i := 0; i != N; i++ {
 		msgs[i] = strconv.Itoa(i)
@@ -832,12 +833,21 @@ func testConnWriteReadConcurrently(t *testing.T, conn *Conn) {
 			if _, err := conn.Write([]byte(msg)); err != nil {
 				t.Error(err)
 			}
+			written <- struct{}{}
 		}
 	}()
 
 	b := make([]byte, 128)
 
 	for i := 0; i != N; i++ {
+		// wait until at least one message has been written.  the reason for
+		// this synchronization is that we aren't using deadlines.  as such, if
+		// the read happens before a message is available, it will cause a
+		// deadlock because the read request will never hit the one byte minimum
+		// in order to return and release the lock on the conn.  by ensuring
+		// that there's at least one message produced, we don't hit that
+		// condition.
+		<-written
 		n, err := conn.Read(b)
 		if err != nil {
 			t.Error(err)
@@ -880,7 +890,7 @@ func testConnReadEmptyWithDeadline(t *testing.T, conn *Conn) {
 	b := make([]byte, 100)
 
 	start := time.Now()
-	deadline := start.Add(250 * time.Millisecond)
+	deadline := start.Add(time.Second)
 
 	conn.SetReadDeadline(deadline)
 	n, err := conn.Read(b)

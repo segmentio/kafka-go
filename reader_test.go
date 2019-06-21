@@ -991,7 +991,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 				GroupID:           groupID,
 				HeartbeatInterval: 2 * time.Second,
 				CommitInterval:    test.commitInterval,
-				RebalanceTimeout:  8 * time.Second,
+				RebalanceTimeout:  2 * time.Second,
 				RetentionTime:     time.Hour,
 				MinBytes:          1,
 				MaxBytes:          1e6,
@@ -1323,6 +1323,10 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 	// of a minute and that seems too long for unit tests.  Also, setting this
 	// to a larger number seems to make the kafka broker unresponsive.
 	// TODO research if there's a way to reduce rebalance time across many partitions
+	// svls: the described behavior is due to the thundering herd of readers
+	//       hitting the rebalance timeout.  introducing the 100ms sleep in the
+	//       loop below in order to give time for the sync group to finish has
+	//       greatly helped, though we still hit the timeout from time to time.
 	const N = 8
 
 	var readers []*Reader
@@ -1330,10 +1334,12 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 	for i := 0; i < N-1; i++ {
 		reader := NewReader(r.config)
 		readers = append(readers, reader)
+		time.Sleep(100 * time.Millisecond)
 	}
 	defer func() {
 		for _, r := range readers {
 			r.Close()
+			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 
