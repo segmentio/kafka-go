@@ -108,6 +108,7 @@ func (s messageSet) writeTo(w *bufio.Writer) {
 }
 
 type messageSetReader struct {
+	empty   bool
 	version int
 	v1      messageSetReaderV1
 	v2      messageSetReaderV2
@@ -117,6 +118,9 @@ func (r *messageSetReader) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
 ) (offset int64, timestamp int64, headers []Header, err error) {
+	if r.empty {
+		return 0, 0, nil, errShortRead
+	}
 	switch r.version {
 	case 1:
 		return r.v1.readMessage(min, key, val)
@@ -128,6 +132,9 @@ func (r *messageSetReader) readMessage(min int64,
 }
 
 func (r *messageSetReader) remaining() (remain int) {
+	if r.empty {
+		return 0
+	}
 	switch r.version {
 	case 1:
 		return r.v1.remaining()
@@ -139,6 +146,9 @@ func (r *messageSetReader) remaining() (remain int) {
 }
 
 func (r *messageSetReader) discard() (err error) {
+	if r.empty {
+		return nil
+	}
 	switch r.version {
 	case 1:
 		return r.v1.discard()
