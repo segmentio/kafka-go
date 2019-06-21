@@ -18,6 +18,10 @@ import (
 // been closed.
 var ErrGroupClosed = errors.New("consumer group is closed")
 
+// ErrGenerationEnded is returned by the context.Context issued by the
+// Generation's Run function when the context has been closed.
+var ErrGenerationEnded = errors.New("consumer group generation has ended")
+
 const (
 	// defaultProtocolType holds the default protocol type documented in the
 	// kafka protocol
@@ -253,7 +257,7 @@ func (c genCtx) Done() <-chan struct{} {
 func (c genCtx) Err() error {
 	select {
 	case <-c.gen.done:
-		return context.Canceled
+		return ErrGenerationEnded
 	default:
 		return nil
 	}
@@ -308,12 +312,17 @@ func (g *Generation) close() {
 
 // Run launches the provided function in a go routine and adds accounting such
 // that when the function exits, it stops the current generation (if not
-// already in the process of doing so).  The function MUST support cancellation
-// via the ctx argument and exit in a timely manner once the ctx is complete.
+// already in the process of doing so).
+//
+// The provided function MUST support cancellation via the ctx argument and exit
+// in a timely manner once the ctx is complete.  When the context is closed, the
+// context's Error() function will return ErrGenerationEnded.
+//
 // When closing out a generation, the consumer group will wait for all functions
-// launched by Run to exit before moving on and joining the next generation.  If
-// the function hangs, it will stop forward progress for this consumer and
-// potentially cause consumer group membership churn.
+// launched by Run to exit before the group can move on and join the next
+// generation.  If the function does not exit promptly, it will stop forward
+// progress for this consumer and potentially cause consumer group membership
+// churn.
 func (g *Generation) Run(fn func(ctx context.Context)) {
 	g.wg.Add(1)
 	go func() {
@@ -518,6 +527,7 @@ type ConsumerGroup struct {
 
 // Close terminates the current generation by causing this member to leave and
 // releases all local resources used to participate in the consumer group.
+// Close will also end the current generation if it is still active.
 func (cg *ConsumerGroup) Close() error {
 	cg.closeOnce.Do(func() {
 		close(cg.done)
