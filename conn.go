@@ -595,6 +595,12 @@ const (
 	SeekAbsolute = 1 // Seek to an absolute offset.
 	SeekEnd      = 2 // Seek relative to the last offset available in the partition.
 	SeekCurrent  = 3 // Seek relative to the current offset.
+
+	// This flag may be combined to any of the SeekAbsolute and SeekCurrent
+	// constants to skip the bound check that the connection would do otherwise.
+	// Programs can use this flag to avoid making a metadata request to the kafka
+	// broker to read the current first and last offsets of the partition.
+	SeekDontCheck = 1 << 31
 )
 
 // Seek sets the offset for the next read or write operation according to whence, which
@@ -604,6 +610,9 @@ const (
 // as in lseek(2) or os.Seek.
 // The method returns the new absolute offset of the connection.
 func (c *Conn) Seek(offset int64, whence int) (int64, error) {
+	seekDontCheck := (whence & SeekDontCheck) != 0
+	whence &= ^SeekDontCheck
+
 	switch whence {
 	case SeekStart, SeekAbsolute, SeekEnd, SeekCurrent:
 	default:
@@ -614,14 +623,18 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 		c.mutex.Lock()
 		unchanged := offset == c.offset
 		c.mutex.Unlock()
-		if unchanged {
+		if unchanged || seekDontCheck {
 			return offset, nil
 		}
 	}
+
 	if whence == SeekCurrent {
 		c.mutex.Lock()
 		offset = c.offset + offset
 		c.mutex.Unlock()
+		if seekDontCheck {
+			return offset, nil
+		}
 	}
 
 	first, last, err := c.ReadOffsets()
