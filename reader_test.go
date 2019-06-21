@@ -513,10 +513,7 @@ func TestCloseLeavesGroup(t *testing.T) {
 		return resp
 	}
 
-	recvCtx, recvCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer recvCancel()
-
-	_, err = r.ReadMessage(recvCtx)
+	_, err = r.ReadMessage(ctx)
 	if err != nil {
 		t.Fatalf("our reader never joind its group or couldn't read a message: %v", err)
 	}
