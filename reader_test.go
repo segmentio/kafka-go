@@ -485,16 +485,17 @@ func TestCloseLeavesGroup(t *testing.T) {
 	defer cancel()
 	topic := makeTopic()
 	createTopic(t, topic, 1)
+	groupID := makeGroupID()
 	r := NewReader(ReaderConfig{
-		Brokers:  []string{"localhost:9092"},
-		Topic:    topic,
-		GroupID:  makeGroupID(),
-		MinBytes: 1,
-		MaxBytes: 10e6,
-		MaxWait:  100 * time.Millisecond,
+		Brokers:          []string{"localhost:9092"},
+		Topic:            topic,
+		GroupID:          groupID,
+		MinBytes:         1,
+		MaxBytes:         10e6,
+		MaxWait:          100 * time.Millisecond,
+		RebalanceTimeout: time.Second,
 	})
 	prepareReader(t, ctx, r, Message{Value: []byte("test")})
-	groupID := r.Config().GroupID
 
 	conn, err := Dial("tcp", r.config.Brokers[0])
 	if err != nil {
