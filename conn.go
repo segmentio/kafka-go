@@ -595,6 +595,12 @@ const (
 	SeekAbsolute = 1 // Seek to an absolute offset.
 	SeekEnd      = 2 // Seek relative to the last offset available in the partition.
 	SeekCurrent  = 3 // Seek relative to the current offset.
+
+	// This flag may be combined to any of the SeekAbsolute and SeekCurrent
+	// constants to skip the bound check that the connection would do otherwise.
+	// Programs can use this flag to avoid making a metadata request to the kafka
+	// broker to read the current first and last offsets of the partition.
+	SeekDontCheck = 1 << 31
 )
 
 // Seek sets the offset for the next read or write operation according to whence, which
@@ -604,10 +610,30 @@ const (
 // as in lseek(2) or os.Seek.
 // The method returns the new absolute offset of the connection.
 func (c *Conn) Seek(offset int64, whence int) (int64, error) {
+	seekDontCheck := (whence & SeekDontCheck) != 0
+	whence &= ^SeekDontCheck
+
 	switch whence {
 	case SeekStart, SeekAbsolute, SeekEnd, SeekCurrent:
 	default:
 		return 0, fmt.Errorf("whence must be one of 0, 1, 2, or 3. (whence = %d)", whence)
+	}
+
+	if seekDontCheck {
+		if whence == SeekAbsolute {
+			c.mutex.Lock()
+			c.offset = offset
+			c.mutex.Unlock()
+			return offset, nil
+		}
+
+		if whence == SeekCurrent {
+			c.mutex.Lock()
+			c.offset += offset
+			offset = c.offset
+			c.mutex.Unlock()
+			return offset, nil
+		}
 	}
 
 	if whence == SeekAbsolute {
@@ -618,6 +644,7 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 			return offset, nil
 		}
 	}
+
 	if whence == SeekCurrent {
 		c.mutex.Lock()
 		offset = c.offset + offset
@@ -726,7 +753,9 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", cfg.MinBytes, cfg.MaxBytes)}
 	}
 
-	offset, err := c.Seek(c.Offset())
+	offset, whence := c.Offset()
+
+	offset, err := c.Seek(offset, whence|SeekDontCheck)
 	if err != nil {
 		return &Batch{err: dontExpectEOF(err)}
 	}

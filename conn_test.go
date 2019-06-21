@@ -153,6 +153,11 @@ func TestConn(t *testing.T) {
 		},
 
 		{
+			scenario: "unchecked seeks allow the connection to be positionned outside the boundaries of the partition",
+			function: testConnSeekDontCheck,
+		},
+
+		{
 			scenario: "writing and reading messages sequentially should preserve the order",
 			function: testConnWriteReadSequentially,
 		},
@@ -436,6 +441,27 @@ func testConnSeekRandomOffset(t *testing.T, conn *Conn) {
 
 	if offset != 3 {
 		t.Error("bad offset:", offset)
+	}
+}
+
+func testConnSeekDontCheck(t *testing.T, conn *Conn) {
+	for i := 0; i != 10; i++ {
+		if _, err := conn.Write([]byte(strconv.Itoa(i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	offset, err := conn.Seek(42, SeekAbsolute|SeekDontCheck)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if offset != 42 {
+		t.Error("bad offset:", offset)
+	}
+
+	if _, err := conn.ReadMessage(1024); err != OffsetOutOfRange {
+		t.Error("unexpected error:", err)
 	}
 }
 
