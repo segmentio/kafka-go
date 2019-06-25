@@ -1542,9 +1542,10 @@ func (r *Reader) SetOffset(offset int64) error {
 			log.Printf("setting the offset of the kafka reader for partition %d of %s from %d to %d",
 				r.config.Partition, r.config.Topic, r.offset, offset)
 		})
+		prevOffset := r.offset
 		r.offset = offset
 
-		if r.version != 0 {
+		if prevOffset != r.offset {
 			r.start(map[int]int64{r.config.Partition: r.offset})
 		}
 
