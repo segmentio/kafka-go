@@ -1556,7 +1556,14 @@ func (r *Reader) SetOffset(offset int64) error {
 	return err
 }
 
-// todo
+// SetRelativeOffset takes a relative offset (either FirstOffset or LastOffset),
+// resolves it to an absolute offset, and then positions the reader.  The
+// function fails with io.ErrClosedPipe if the reader has already been closed.
+//
+// This function differs from SetOffset in that it only accepts a relative
+// offset value and in when the relative offset is resolved.  When calling
+// SetOffset, the resolution takes place asynchronously.  When calling this
+// function, the resolution takes place synchronously.
 func (r *Reader) SetRelativeOffset(ctx context.Context, offset int64) error {
 	if offset != FirstOffset && offset != LastOffset {
 		return errors.New("invalid relative offset")
