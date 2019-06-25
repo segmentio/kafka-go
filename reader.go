@@ -1556,6 +1556,35 @@ func (r *Reader) SetOffset(offset int64) error {
 	return err
 }
 
+// todo
+func (r *Reader) SetRelativeOffset(ctx context.Context, offset int64) error {
+	if offset != FirstOffset && offset != LastOffset {
+		return errors.New("invalid relative offset")
+	}
+	for _, broker := range r.config.Brokers {
+		conn, err := r.config.Dialer.DialLeader(ctx, "tcp", broker, r.config.Topic, r.config.Partition)
+		if err != nil {
+			continue
+		}
+
+		deadline, _ := ctx.Deadline()
+		conn.SetDeadline(deadline)
+		first, last, err := conn.ReadOffsets()
+		conn.Close()
+		if err != nil {
+			return err
+		}
+
+		switch offset {
+		case FirstOffset:
+			return r.SetOffset(first)
+		case LastOffset:
+			return r.SetOffset(last)
+		}
+	}
+	return fmt.Errorf("error setting offset for relative value %+v", offset)
+}
+
 // SetOffsetAt changes the offset from which the next batch of messages will be
 // read given the timestamp t.
 //
