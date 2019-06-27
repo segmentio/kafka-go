@@ -742,6 +742,15 @@ func (r *Reader) commitLoopInterval(conn offsetCommitter, stop <-chan struct{}) 
 	for {
 		select {
 		case <-stop:
+			// drain the commit channel in order to prepare the final commit.
+			for hasCommits := true; hasCommits; {
+				select {
+				case req := <-r.commits:
+					r.offsetStash.merge(req.commits)
+				default:
+					hasCommits = false
+				}
+			}
 			commit()
 			return
 
