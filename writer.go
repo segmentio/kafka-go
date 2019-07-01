@@ -125,11 +125,11 @@ type WriterConfig struct {
 
 	// If not nil, specifies a logger used to report internal changes within the
 	// writer.
-	Logger *log.Logger
+	Logger Logger
 
 	// ErrorLogger is the logger used to report errors. If nil, the writer falls
 	// back to using Logger instead.
-	ErrorLogger *log.Logger
+	ErrorLogger Logger
 
 	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
 }

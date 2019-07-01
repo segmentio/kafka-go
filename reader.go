@@ -415,11 +415,11 @@ type ReaderConfig struct {
 
 	// If not nil, specifies a logger used to report internal changes within the
 	// reader.
-	Logger *log.Logger
+	Logger Logger
 
 	// ErrorLogger is the logger used to report errors. If nil, the reader falls
 	// back to using Logger instead.
-	ErrorLogger *log.Logger
+	ErrorLogger Logger
 
 	// IsolationLevel controls the visibility of transactional records.
 	// ReadUncommitted makes all records visible. With ReadCommitted only
