@@ -1297,10 +1297,10 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 		// iterations and always draw the same id then we could be facing
 		// corrupted data on the wire, or the goroutine(s) sharing ownership
 		// of this connection may have panicked and therefore will not be able
-		// to participate in consuming bytes from the connection. To prevent
-		// entering an infinite loop which reads the same value over and over
-		// we bail with the uncommon io.ErrNoProgress error which should give
-		// a good enough signal about what is going wrong.
+		// to participate in consuming bytes from the wire. To prevent entering
+		// an infinite loop which reads the same value over and over we bail
+		// with the uncommon io.ErrNoProgress error which should give a good
+		// enough signal about what is going wrong.
 		if rid != lastID {
 			attempt++
 		} else {
