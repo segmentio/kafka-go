@@ -1265,10 +1265,18 @@ func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32) error) (i
 }
 
 func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size int, lock *sync.Mutex, err error) {
-	const limit = 100
+	// I applied exactly zero scientific process to choose this value,
+	// it seemed to worked fine in practice tho.
+	//
+	// My guess is 100 iterations where the goroutine gets descheduled
+	// by calling runtime.Gosched() may end up on a wait of ~10ms to ~1s
+	// (if the programs is heavily CPU bound and has lots of goroutines),
+	// so it should allow for bailing quickly without taking too much risk
+	// to get false positives.
+	const maxAttempts = 100
 	var lastID int32
 
-	for attempt := 0; attempt < limit; {
+	for attempt := 0; attempt < maxAttempts; {
 		var rsz int32
 		var rid int32
 
