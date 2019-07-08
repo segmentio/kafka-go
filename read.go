@@ -51,12 +51,11 @@ func readVarInt(r *bufio.Reader, sz int, v *int64) (remain int, err error) {
 	s := uint(0)
 
 	for {
-		for i, b := range input {
-			if i >= sz {
-				r.Discard(i + 1)
-				return 0, errShortRead
-			}
+		if len(input) > sz {
+			input = input[:sz]
+		}
 
+		for i, b := range input {
 			if b < 0x80 {
 				x |= uint64(b) << s
 				*v = int64(x>>1) ^ -(int64(x) & 1)
@@ -73,6 +72,9 @@ func readVarInt(r *bufio.Reader, sz int, v *int64) (remain int, err error) {
 		// varint decoding can continue on the next loop iteration.
 		n, _ := r.Discard(len(input))
 		sz -= n
+		if sz == 0 {
+			return 0, errShortRead
+		}
 
 		// Fill the buffer: ask for one more byte, but in practice the reader
 		// will load way more from the underlying stream.
