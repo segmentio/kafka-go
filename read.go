@@ -43,29 +43,50 @@ func readInt64(r *bufio.Reader, sz int, v *int64) (int, error) {
 }
 
 func readVarInt(r *bufio.Reader, sz int, v *int64) (remain int, err error) {
-	input, err := r.Peek(10)
+	// Optimistically assume that most of the time, there will be data buffered
+	// in the reader. If this is not the case, the buffer will be refilled after
+	// consuming zero bytes from the input.
+	input, _ := r.Peek(r.Buffered())
 	x := uint64(0)
 	s := uint(0)
 
-	for i, b := range input {
+	for {
+		for i, b := range input {
+			if i >= sz {
+				r.Discard(i + 1)
+				return 0, errShortRead
+			}
 
-		if b < 0x80 {
-			x |= uint64(b) << s
-			*v = int64(x>>1) ^ -(int64(x) & 1)
-			n := i + 1
-			r.Discard(n)
-			return sz - n, nil
+			if b < 0x80 {
+				x |= uint64(b) << s
+				*v = int64(x>>1) ^ -(int64(x) & 1)
+				n, err := r.Discard(i + 1)
+				return sz - n, err
+			}
+
+			x |= uint64(b&0x7f) << s
+			s += 7
 		}
 
-		x |= uint64(b&0x7f) << s
-		s += 7
-	}
+		// Make room in the input buffer to load more data from the underlying
+		// stream. The x and s variables are left untouched, ensuring that the
+		// varint decoding can continue on the next loop iteration.
+		n, _ := r.Discard(len(input))
+		sz -= n
 
-	if err == nil || err == io.EOF {
-		err = errShortRead
-	}
+		// Fill the buffer: ask for one more byte, but in practice the reader
+		// will load way more from the underlying stream.
+		if _, err := r.Peek(1); err != nil {
+			if err == io.EOF {
+				err = errShortRead
+			}
+			return sz, err
+		}
 
-	return sz, errShortRead
+		// Grab as many bytes as possible from the buffer, then go on to the
+		// next loop iteration which is going to consume it.
+		input, _ = r.Peek(r.Buffered())
+	}
 }
 
 func readBool(r *bufio.Reader, sz int, v *bool) (int, error) {
