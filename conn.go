@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"os"
@@ -1264,7 +1265,18 @@ func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32) error) (i
 }
 
 func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size int, lock *sync.Mutex, err error) {
-	for {
+	// I applied exactly zero scientific process to choose this value,
+	// it seemed to worked fine in practice tho.
+	//
+	// My guess is 100 iterations where the goroutine gets descheduled
+	// by calling runtime.Gosched() may end up on a wait of ~10ms to ~1s
+	// (if the programs is heavily CPU bound and has lots of goroutines),
+	// so it should allow for bailing quickly without taking too much risk
+	// to get false positives.
+	const maxAttempts = 100
+	var lastID int32
+
+	for attempt := 0; attempt < maxAttempts; {
 		var rsz int32
 		var rid int32
 
@@ -1288,7 +1300,26 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 		// been received but the current operation is not the target for it.
 		c.rlock.Unlock()
 		runtime.Gosched()
+
+		// This check is a safety mechanism, if we make too many loop
+		// iterations and always draw the same id then we could be facing
+		// corrupted data on the wire, or the goroutine(s) sharing ownership
+		// of this connection may have panicked and therefore will not be able
+		// to participate in consuming bytes from the wire. To prevent entering
+		// an infinite loop which reads the same value over and over we bail
+		// with the uncommon io.ErrNoProgress error which should give a good
+		// enough signal about what is going wrong.
+		if rid != lastID {
+			attempt++
+		} else {
+			attempt = 0
+		}
+
+		lastID = rid
 	}
+
+	err = io.ErrNoProgress
+	return
 }
 
 func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32) requestHeader {
