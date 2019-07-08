@@ -47,12 +47,14 @@ func writeInt64(w *bufio.Writer, i int64) {
 }
 
 func writeVarInt(w *bufio.Writer, i int64) {
-	i = i<<1 ^ i>>63
-	for i&0x7f != i {
-		w.WriteByte(byte(i&0x7f | 0x80))
-		i >>= 7
+	u := uint64((i << 1) ^ (i >> 63))
+
+	for u >= 0x80 {
+		w.WriteByte(byte(u) | 0x80)
+		u >>= 7
 	}
-	w.WriteByte(byte(i))
+
+	w.WriteByte(byte(u))
 }
 
 func varIntLen(i int64) (l int) {
