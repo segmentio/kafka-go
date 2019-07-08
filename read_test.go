@@ -3,6 +3,8 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"io/ioutil"
+	"math"
 	"reflect"
 	"testing"
 )
@@ -166,4 +168,46 @@ func TestReadNewBytes(t *testing.T) {
 			t.Error("not all bytes were consumed")
 		}
 	})
+}
+
+func BenchmarkWriteVarInt(b *testing.B) {
+	wb := bufio.NewWriter(ioutil.Discard)
+
+	for i := 0; i < b.N; i++ {
+		writeVarInt(wb, math.MaxInt64)
+		wb.Flush()
+	}
+}
+
+func BenchmarkReadVarInt(b *testing.B) {
+	b1 := new(bytes.Buffer)
+	wb := bufio.NewWriter(b1)
+
+	const N = math.MaxInt64
+	writeVarInt(wb, N)
+	wb.Flush()
+
+	b2 := bytes.NewReader(b1.Bytes())
+	rb := bufio.NewReader(b2)
+	n := b1.Len()
+
+	for i := 0; i < b.N; i++ {
+		v := int64(0)
+		r, err := readVarInt(rb, n, &v)
+
+		if err != nil {
+			b.Fatalf("unexpected error reading a varint from the input: %v", err)
+		}
+
+		if r != 0 {
+			b.Fatalf("unexpected bytes remaining to be read in the input (%d B)", r)
+		}
+
+		if v != N {
+			b.Fatalf("value mismatch, expected %d but found %d", N, v)
+		}
+
+		b2.Reset(b1.Bytes())
+		rb.Reset(b2)
+	}
 }
