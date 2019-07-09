@@ -3,8 +3,10 @@
 package zstd
 
 import (
+	"io"
+
 	"github.com/DataDog/zstd"
-	"github.com/segmentio/kafka-go"
+	kafka "github.com/segmentio/kafka-go"
 )
 
 func init() {
@@ -47,4 +49,14 @@ func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 // Decode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
 	return zstd.Decompress(nil, src)
+}
+
+// NewReader implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+	return zstd.NewReader(r)
+}
+
+// NewWriter implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+	return zstd.NewWriterLevel(w, c.CompressionLevel)
 }

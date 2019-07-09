@@ -3,12 +3,14 @@ package kafka_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"math/rand"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/segmentio/kafka-go"
+	kafka "github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/gzip"
 	"github.com/segmentio/kafka-go/lz4"
 	"github.com/segmentio/kafka-go/snappy"
@@ -239,6 +241,18 @@ func (noopCodec) Encode(src []byte) ([]byte, error) {
 func (noopCodec) Decode(src []byte) ([]byte, error) {
 	return src, nil
 }
+
+func (noopCodec) NewReader(r io.Reader) io.ReadCloser {
+	return ioutil.NopCloser(r)
+}
+
+func (noopCodec) NewWriter(w io.Writer) io.WriteCloser {
+	return nopWriteCloser{w}
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {

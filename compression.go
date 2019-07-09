@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"errors"
+	"io"
 	"sync"
 )
 
@@ -45,6 +46,12 @@ type CompressionCodec interface {
 
 	// Decode decodes the src data
 	Decode(src []byte) ([]byte, error)
+
+	// Constructs a new reader which decompresses data from r.
+	NewReader(r io.Reader) io.ReadCloser
+
+	// Constructs a new writer which writes compressed data to w.
+	NewWriter(w io.Writer) io.WriteCloser
 }
 
 const compressionCodecMask int8 = 0x07

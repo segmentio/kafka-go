@@ -354,24 +354,25 @@ func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationI
 	var compressed []byte
 	var attributes int16
 
-	if codec != nil {
+	if codec == nil {
+		size = recordBatchSize(msgs...)
+	} else {
 		attributes = int16(codec.Code())
-		recordBuf := &bytes.Buffer{}
-		recordBuf.Grow(int(recordBatchSize(msgs...)))
-		compressedWriter := bufio.NewWriter(recordBuf)
+		recordBuf := new(bytes.Buffer)
+		recordBuf.Grow(int(recordBatchSize(msgs...)) / 2)
+		compressor := codec.NewWriter(recordBuf)
+		compressedWriter := bufio.NewWriterSize(compressor, 512)
+
 		for i, msg := range msgs {
 			writeRecord(compressedWriter, 0, msgs[0].Time, int64(i), msg)
 		}
-		compressedWriter.Flush()
 
-		compressed, err = codec.Encode(recordBuf.Bytes())
-		if err != nil {
-			return
-		}
+		compressedWriter.Flush()
+		compressor.Close()
+
+		compressed = recordBuf.Bytes()
 		attributes = int16(codec.Code())
-		size = recordBatchHeaderSize() + int32(len(compressed))
-	} else {
-		size = recordBatchSize(msgs...)
+		size = recordBatchHeaderSize + int32(len(compressed))
 	}
 
 	h := requestHeader{
@@ -380,6 +381,7 @@ func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationI
 		CorrelationID: correlationID,
 		ClientID:      clientID,
 	}
+
 	h.Size = (h.size() - 4) +
 		sizeofNullableString(transactionalID) +
 		2 + // required acks
@@ -443,7 +445,7 @@ func writeProduceRequestV7(w *bufio.Writer, codec CompressionCodec, correlationI
 			return
 		}
 		attributes = int16(codec.Code())
-		size = recordBatchHeaderSize() + int32(len(compressed))
+		size = recordBatchHeaderSize + int32(len(compressed))
 	} else {
 		size = recordBatchSize(msgs...)
 	}
@@ -511,33 +513,30 @@ func messageSetSize(msgs ...Message) (size int32) {
 	return
 }
 
-func recordBatchHeaderSize() int32 {
-	return 8 + // base offset
-		4 + // batch length
-		4 + // partition leader epoch
-		1 + // magic
-		4 + // crc
-		2 + // attributes
-		4 + // last offset delta
-		8 + // first timestamp
-		8 + // max timestamp
-		8 + // producer id
-		2 + // producer epoch
-		4 + // base sequence
-		4 // msg count
-}
+const recordBatchHeaderSize int32 = 0 +
+	8 + // base offset
+	4 + // batch length
+	4 + // partition leader epoch
+	1 + // magic
+	4 + // crc
+	2 + // attributes
+	4 + // last offset delta
+	8 + // first timestamp
+	8 + // max timestamp
+	8 + // producer id
+	2 + // producer epoch
+	4 + // base sequence
+	4 // msg count
 
 func recordBatchSize(msgs ...Message) (size int32) {
-	size = recordBatchHeaderSize()
-
+	size = recordBatchHeaderSize
 	baseTime := msgs[0].Time
 
 	for i, msg := range msgs {
-
 		sz := recordSize(&msg, msg.Time.Sub(baseTime), int64(i))
-
 		size += int32(sz + varIntLen(int64(sz)))
 	}
+
 	return
 }
 

@@ -3,40 +3,43 @@ package gzip
 import (
 	"bytes"
 	"compress/gzip"
+	"io"
 	"io/ioutil"
 	"sync"
 
-	"github.com/segmentio/kafka-go"
+	kafka "github.com/segmentio/kafka-go"
 )
 
 var (
-	readerPool sync.Pool
-	writerPool sync.Pool
-
 	// emptyGzipBytes is the binary value for an empty file that has been
 	// gzipped.  It is used to initialize gzip.Reader before adding it to the
 	// readerPool.
-	emptyGzipBytes = []byte{
+	emptyGzipBytes = [...]byte{
 		0x1f, 0x8b, 0x08, 0x08, 0x0d, 0x0c, 0x67, 0x5c, 0x00, 0x03, 0x66, 0x6f,
 		0x6f, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
-)
 
-func init() {
 	readerPool = sync.Pool{
 		New: func() interface{} {
 			// if the reader doesn't get valid gzip at initialization time,
 			// it will not be valid and will fail on Reset.
-			reader, _ := gzip.NewReader(bytes.NewBuffer(emptyGzipBytes))
+			reader, _ := gzip.NewReader(newEmptyGzipFile())
 			return reader
 		},
 	}
+
 	writerPool = sync.Pool{
 		New: func() interface{} {
 			return gzip.NewWriter(bytes.NewBuffer(nil))
 		},
 	}
+)
 
+func newEmptyGzipFile() io.Reader {
+	return bytes.NewReader(emptyGzipBytes[:])
+}
+
+func init() {
 	kafka.RegisterCompressionCodec(func() kafka.CompressionCodec {
 		return NewCompressionCodec()
 	})
@@ -73,10 +76,11 @@ func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 	buf.Grow(len(src)) // guess a size to avoid repeat allocations.
 	writer := writerPool.Get().(*gzip.Writer)
 	writer.Reset(&buf)
+	defer writerPool.Put(writer)
+	defer writer.Reset(nil)
 
 	_, err := writer.Write(src)
 	if err != nil {
-		// don't return writer to pool on error.
 		return nil, err
 	}
 
@@ -85,26 +89,57 @@ func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
 	// the writer even after it's closed by Resetting it.
 	err = writer.Close()
 	if err != nil {
-		// don't return writer to pool on error.
 		return nil, err
 	}
-
-	writerPool.Put(writer)
-
 	return buf.Bytes(), err
 }
 
 // Decode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
 	reader := readerPool.Get().(*gzip.Reader)
+	defer readerPool.Put(reader)
+	defer reader.Reset(newEmptyGzipFile())
 	err := reader.Reset(bytes.NewReader(src))
 	if err != nil {
 		return nil, err
 	}
-	res, err := ioutil.ReadAll(reader)
-	// only return the reader to pool if the read was a success.
-	if err == nil {
-		readerPool.Put(reader)
+	return ioutil.ReadAll(reader)
+}
+
+// NewReader implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+	z := readerPool.Get().(*gzip.Reader)
+	z.Reset(r)
+	return &reader{z}
+}
+
+// NewWriter implements the kafka.CompressionCodec interface.
+func (c CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+	z := writerPool.Get().(*gzip.Writer)
+	z.Reset(w)
+	return &writer{z}
+}
+
+type reader struct{ *gzip.Reader }
+
+func (r *reader) Close() (err error) {
+	if z := r.Reader; z != nil {
+		r.Reader = nil
+		err = z.Close()
+		z.Reset(newEmptyGzipFile())
+		readerPool.Put(z)
 	}
-	return res, err
+	return
+}
+
+type writer struct{ *gzip.Writer }
+
+func (w *writer) Close() (err error) {
+	if z := w.Writer; z != nil {
+		w.Writer = nil
+		err = z.Close()
+		z.Reset(nil)
+		writerPool.Put(z)
+	}
+	return
 }
