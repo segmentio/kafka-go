@@ -241,7 +241,7 @@ func (noopCodec) Code() int8 {
 }
 
 func (noopCodec) Name() string {
-	return ""
+	return "none"
 }
 
 func (noopCodec) NewReader(r io.Reader) io.ReadCloser {
@@ -258,32 +258,26 @@ func (nopWriteCloser) Close() error { return nil }
 
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
-		scenario string
 		codec    kafka.CompressionCodec
 		function func(*testing.B, kafka.CompressionCodec, int, map[int][]byte)
 	}{
 		{
-			scenario: "None",
 			codec:    &noopCodec{},
 			function: benchmarkCompression,
 		},
 		{
-			scenario: "GZIP",
 			codec:    gzip.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 		{
-			scenario: "Snappy",
 			codec:    snappy.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 		{
-			scenario: "LZ4",
 			codec:    lz4.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 		{
-			scenario: "zstd",
 			codec:    zstd.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
@@ -297,16 +291,16 @@ func BenchmarkCompression(b *testing.B) {
 	}
 
 	for _, benchmark := range benchmarks {
-		b.Run(benchmark.scenario+"1024", func(b *testing.B) {
+		b.Run(benchmark.codec.Name()+"1024", func(b *testing.B) {
 			benchmark.function(b, benchmark.codec, 1024, payload)
 		})
-		b.Run(benchmark.scenario+"4096", func(b *testing.B) {
+		b.Run(benchmark.codec.Name()+"4096", func(b *testing.B) {
 			benchmark.function(b, benchmark.codec, 4096, payload)
 		})
-		b.Run(benchmark.scenario+"8192", func(b *testing.B) {
+		b.Run(benchmark.codec.Name()+"8192", func(b *testing.B) {
 			benchmark.function(b, benchmark.codec, 8192, payload)
 		})
-		b.Run(benchmark.scenario+"16384", func(b *testing.B) {
+		b.Run(benchmark.codec.Name()+"16384", func(b *testing.B) {
 			benchmark.function(b, benchmark.codec, 16384, payload)
 		})
 	}

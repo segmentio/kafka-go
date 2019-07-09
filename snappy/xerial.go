@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+
+	"github.com/golang/snappy"
 )
 
 // An implementation of io.Reader which consumes a stream of xerial-framed
@@ -33,8 +35,12 @@ func (x *xerialReader) Read(b []byte) (int, error) {
 			return n, nil
 		}
 
-		if err := x.readChunk(); err != nil {
+		n, err := x.readChunk(b)
+		if err != nil {
 			return 0, err
+		}
+		if n > 0 {
+			return n, nil
 		}
 	}
 }
@@ -52,7 +58,7 @@ func (x *xerialReader) WriteTo(w io.Writer) (int64, error) {
 			}
 		}
 
-		if err := x.readChunk(); err != nil {
+		if _, err := x.readChunk(nil); err != nil {
 			if err == io.EOF {
 				err = nil
 			}
@@ -61,12 +67,12 @@ func (x *xerialReader) WriteTo(w io.Writer) (int64, error) {
 	}
 }
 
-func (x *xerialReader) readChunk() error {
+func (x *xerialReader) readChunk(dst []byte) (int, error) {
 	x.offset = 0
 
 	n, err := io.ReadFull(x.reader, x.header[:])
 	if err != nil && n == 0 {
-		return err
+		return 0, err
 	}
 
 	if n == len(x.header) && isXerialHeader(x.header[:]) {
@@ -80,7 +86,7 @@ func (x *xerialReader) readChunk() error {
 
 		_, err := io.ReadFull(x.reader, x.input)
 		if err != nil {
-			return err
+			return 0, err
 		}
 	} else {
 		x.input = append(x.input[:0], x.header[:n]...)
@@ -98,22 +104,28 @@ func (x *xerialReader) readChunk() error {
 				if err == io.EOF {
 					break
 				}
-				return err
+				return 0, err
 			}
 		}
 	}
 
 	if x.decode == nil {
-		x.output, x.input = x.input, x.output
+		x.output, x.input, err = x.input, x.output, nil
+	} else if n, err = snappy.DecodedLen(x.input); n <= len(dst) && err == nil {
+		// If the output buffer is large enough to hold the decode value,
+		// write it there directly instead of using the intermediary output
+		// buffer.
+		_, err = x.decode(dst, x.input)
 	} else {
-		b, err := x.decode(x.output[:cap(x.output)], x.input)
-		if err != nil {
-			return err
+		var b []byte
+		n = 0
+		b, err = x.decode(x.output[:cap(x.output)], x.input)
+		if err == nil {
+			x.output = b
 		}
-		x.output = b
 	}
 
-	return nil
+	return n, err
 }
 
 // An implementation of a xerial-framed snappy-encoded output stream.
