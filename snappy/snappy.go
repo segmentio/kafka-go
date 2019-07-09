@@ -1,7 +1,6 @@
 package snappy
 
 import (
-	"encoding/binary"
 	"io"
 	"sync"
 
@@ -80,33 +79,4 @@ var writerPool = sync.Pool{
 	New: func() interface{} {
 		return &xerialWriter{encode: snappy.Encode}
 	},
-}
-
-// From github.com/eapache/go-xerial-snappy
-func decode(src []byte) ([]byte, error) {
-	if !isXerialHeader(src) {
-		return snappy.Decode(nil, src)
-	}
-
-	var (
-		pos   = uint32(16)
-		max   = uint32(len(src))
-		dst   = make([]byte, 0, len(src))
-		chunk []byte
-		err   error
-	)
-
-	for pos < max {
-		size := binary.BigEndian.Uint32(src[pos : pos+4])
-		pos += 4
-
-		chunk, err = snappy.Decode(chunk, src[pos:pos+size])
-		if err != nil {
-			return nil, err
-		}
-		pos += size
-		dst = append(dst, chunk...)
-	}
-
-	return dst, nil
 }
