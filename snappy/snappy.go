@@ -28,17 +28,6 @@ func (CompressionCodec) Code() int8 {
 	return Code
 }
 
-// Encode implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Encode(src []byte) ([]byte, error) {
-	// NOTE : passing a nil dst means snappy will allocate it.
-	return snappy.Encode(nil, src), nil
-}
-
-// Decode implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Decode(src []byte) ([]byte, error) {
-	return decode(src)
-}
-
 // NewReader implements the kafka.CompressionCodec interface.
 func (CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 	x := readerPool.Get().(*xerialReader)

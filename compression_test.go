@@ -32,6 +32,33 @@ func TestCompression(t *testing.T) {
 	}
 }
 
+func compress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
+	b := new(bytes.Buffer)
+	r := bytes.NewReader(src)
+	w := codec.NewWriter(b)
+	if _, err := io.Copy(w, r); err != nil {
+		w.Close()
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+func decompress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
+	b := new(bytes.Buffer)
+	r := codec.NewReader(bytes.NewReader(src))
+	if _, err := io.Copy(b, r); err != nil {
+		r.Close()
+		return nil, err
+	}
+	if err := r.Close(); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
 func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCodec) {
 	var r1, r2 []byte
 	var err error
@@ -42,14 +69,14 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCode
 	}
 
 	t.Run("encode with "+codecToStr(code), func(t *testing.T) {
-		r1, err = codec.Encode(m.Value)
+		r1, err = compress(codec, m.Value)
 		if err != nil {
 			t.Error(err)
 		}
 	})
 
 	t.Run("decode with "+codecToStr(code), func(t *testing.T) {
-		r2, err = codec.Decode(r1)
+		r2, err = decompress(codec, r1)
 		if err != nil {
 			t.Error(err)
 		}
@@ -233,14 +260,6 @@ type noopCodec struct{}
 
 func (noopCodec) Code() int8 {
 	return 0
-}
-
-func (noopCodec) Encode(src []byte) ([]byte, error) {
-	return src, nil
-}
-
-func (noopCodec) Decode(src []byte) ([]byte, error) {
-	return src, nil
 }
 
 func (noopCodec) NewReader(r io.Reader) io.ReadCloser {

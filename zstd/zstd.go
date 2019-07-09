@@ -42,16 +42,6 @@ func (c CompressionCodec) Code() int8 {
 	return Code
 }
 
-// Encode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
-	return zstd.CompressLevel(nil, src, c.CompressionLevel)
-}
-
-// Decode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
-	return zstd.Decompress(nil, src)
-}
-
 // NewReader implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 	return &reader{
@@ -68,6 +58,17 @@ func (c CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
 		level:  c.CompressionLevel,
 	}
 }
+
+// =============================================================================
+// The DataDog/zstd package exposes io.Writer and io.Reader implementations that
+// encode and decode streams, however there are no APIs to reuse the values like
+// other compression format have (through a Reset method usually).
+//
+// I first tried using these abstractions but the amount of state that gets
+// recreated and destroyed was so large that it was slower than using the
+// zstd.Compress and zstd.Decompress functions directly. Knowing that, I changed
+// the implementation to be more of a buffer management on top of these instead.
+// =============================================================================
 
 type reader struct {
 	reader io.Reader

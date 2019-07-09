@@ -6,10 +6,18 @@ import (
 	"sync"
 )
 
-var errUnknownCodec = errors.New("the compression code is invalid or its codec has not been imported")
+const (
+	CompressionNoneCode = 0
 
-var codecs = make(map[int8]CompressionCodec)
-var codecsMutex sync.RWMutex
+	compressionCodecMask = 0x07
+)
+
+var (
+	errUnknownCodec = errors.New("the compression code is invalid or its codec has not been imported")
+
+	codecs      = make(map[int8]CompressionCodec)
+	codecsMutex sync.RWMutex
+)
 
 // RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
 func RegisterCompressionCodec(codec func() CompressionCodec) {
@@ -41,18 +49,9 @@ type CompressionCodec interface {
 	// Code returns the compression codec code
 	Code() int8
 
-	// Encode encodes the src data
-	Encode(src []byte) ([]byte, error)
-
-	// Decode decodes the src data
-	Decode(src []byte) ([]byte, error)
-
 	// Constructs a new reader which decompresses data from r.
 	NewReader(r io.Reader) io.ReadCloser
 
 	// Constructs a new writer which writes compressed data to w.
 	NewWriter(w io.Writer) io.WriteCloser
 }
-
-const compressionCodecMask int8 = 0x07
-const CompressionNoneCode = 0

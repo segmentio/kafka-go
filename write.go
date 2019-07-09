@@ -307,7 +307,7 @@ func writeProduceRequestV2(w *bufio.Writer, codec CompressionCodec, correlationI
 
 	attributes := int8(CompressionNoneCode)
 	if codec != nil {
-		if msgs, err = compress(codec, msgs...); err != nil {
+		if msgs, err = compressMessageSet(codec, msgs...); err != nil {
 			return err
 		}
 		attributes = codec.Code()
@@ -357,22 +357,10 @@ func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationI
 	if codec == nil {
 		size = recordBatchSize(msgs...)
 	} else {
-		attributes = int16(codec.Code())
-		recordBuf := new(bytes.Buffer)
-		recordBuf.Grow(int(recordBatchSize(msgs...)) / 2)
-		compressor := codec.NewWriter(recordBuf)
-		compressedWriter := bufio.NewWriterSize(compressor, 512)
-
-		for i, msg := range msgs {
-			writeRecord(compressedWriter, 0, msgs[0].Time, int64(i), msg)
+		compressed, attributes, size, err = compressRecordBatch(codec, msgs...)
+		if err != nil {
+			return
 		}
-
-		compressedWriter.Flush()
-		compressor.Close()
-
-		compressed = recordBuf.Bytes()
-		attributes = int16(codec.Code())
-		size = recordBatchHeaderSize + int32(len(compressed))
 	}
 
 	h := requestHeader{
@@ -426,28 +414,17 @@ func writeProduceRequestV3(w *bufio.Writer, codec CompressionCodec, correlationI
 }
 
 func writeProduceRequestV7(w *bufio.Writer, codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, msgs ...Message) (err error) {
-
 	var size int32
 	var compressed []byte
 	var attributes int16
-	if codec != nil {
-		attributes = int16(codec.Code())
-		recordBuf := &bytes.Buffer{}
-		recordBuf.Grow(int(recordBatchSize(msgs...)))
-		compressedWriter := bufio.NewWriter(recordBuf)
-		for i, msg := range msgs {
-			writeRecord(compressedWriter, 0, msgs[0].Time, int64(i), msg)
-		}
-		compressedWriter.Flush()
 
-		compressed, err = codec.Encode(recordBuf.Bytes())
+	if codec == nil {
+		size = recordBatchSize(msgs...)
+	} else {
+		compressed, attributes, size, err = compressRecordBatch(codec, msgs...)
 		if err != nil {
 			return
 		}
-		attributes = int16(codec.Code())
-		size = recordBatchHeaderSize + int32(len(compressed))
-	} else {
-		size = recordBatchSize(msgs...)
 	}
 
 	h := requestHeader{
@@ -601,25 +578,57 @@ func recordSize(msg *Message, timestampDelta time.Duration, offsetDelta int64) (
 	return
 }
 
-func compress(codec CompressionCodec, msgs ...Message) ([]Message, error) {
+func compressMessageSet(codec CompressionCodec, msgs ...Message) ([]Message, error) {
 	estimatedLen := 0
+
 	for _, msg := range msgs {
 		estimatedLen += int(msgSize(msg.Key, msg.Value))
 	}
-	buf := &bytes.Buffer{}
-	buf.Grow(estimatedLen)
-	bufWriter := bufio.NewWriter(buf)
-	for offset, msg := range msgs {
-		writeMessage(bufWriter, int64(offset), CompressionNoneCode, msg.Time, msg.Key, msg.Value)
-	}
-	bufWriter.Flush()
 
-	compressed, err := codec.Encode(buf.Bytes())
-	if err != nil {
+	buffer := &bytes.Buffer{}
+	buffer.Grow(estimatedLen / 2)
+	compressor := codec.NewWriter(buffer)
+	compressedWriter := bufio.NewWriterSize(compressor, 512)
+
+	for offset, msg := range msgs {
+		writeMessage(compressedWriter, int64(offset), CompressionNoneCode, msg.Time, msg.Key, msg.Value)
+	}
+
+	if err := compressedWriter.Flush(); err != nil {
+		compressor.Close()
 		return nil, err
 	}
 
-	return []Message{{Value: compressed}}, nil
+	if err := compressor.Close(); err != nil {
+		return nil, err
+	}
+
+	return []Message{{Value: buffer.Bytes()}}, nil
+}
+
+func compressRecordBatch(codec CompressionCodec, msgs ...Message) (compressed []byte, attributes int16, size int32, err error) {
+	recordBuf := new(bytes.Buffer)
+	recordBuf.Grow(int(recordBatchSize(msgs...)) / 2)
+	compressor := codec.NewWriter(recordBuf)
+	compressedWriter := bufio.NewWriterSize(compressor, 512)
+
+	for i, msg := range msgs {
+		writeRecord(compressedWriter, 0, msgs[0].Time, int64(i), msg)
+	}
+
+	if err = compressedWriter.Flush(); err != nil {
+		compressor.Close()
+		return
+	}
+
+	if err = compressor.Close(); err != nil {
+		return
+	}
+
+	compressed = recordBuf.Bytes()
+	attributes = int16(codec.Code())
+	size = recordBatchHeaderSize + int32(len(compressed))
+	return
 }
 
 const magicByte = 1 // compatible with kafka 0.10.0.0+

@@ -1,9 +1,7 @@
 package lz4
 
 import (
-	"bytes"
 	"io"
-	"io/ioutil"
 	"sync"
 
 	"github.com/pierrec/lz4"
@@ -37,36 +35,6 @@ func NewCompressionCodec() CompressionCodec {
 // Code implements the kafka.CompressionCodec interface.
 func (CompressionCodec) Code() int8 {
 	return Code
-}
-
-// Encode implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Encode(src []byte) ([]byte, error) {
-	buf := bytes.Buffer{}
-	buf.Grow(len(src)) // guess a size to avoid repeat allocations.
-	writer := writerPool.Get().(*lz4.Writer)
-	writer.Reset(&buf)
-	defer writerPool.Put(writer)
-	defer writer.Reset(nil)
-
-	_, err := writer.Write(src)
-	if err != nil {
-		return nil, err
-	}
-
-	err = writer.Close()
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), err
-}
-
-// Decode implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Decode(src []byte) ([]byte, error) {
-	reader := readerPool.Get().(*lz4.Reader)
-	defer readerPool.Put(reader)
-	defer reader.Reset(nil)
-	reader.Reset(bytes.NewReader(src))
-	return ioutil.ReadAll(reader)
 }
 
 // NewReader implements the kafka.CompressionCodec interface.

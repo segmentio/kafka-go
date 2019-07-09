@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
-	"io/ioutil"
 	"sync"
 
 	kafka "github.com/segmentio/kafka-go"
@@ -68,42 +67,6 @@ func NewCompressionCodecWith(level int) CompressionCodec {
 // Code implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Code() int8 {
 	return Code
-}
-
-// Encode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
-	buf := bytes.Buffer{}
-	buf.Grow(len(src)) // guess a size to avoid repeat allocations.
-	writer := writerPool.Get().(*gzip.Writer)
-	writer.Reset(&buf)
-	defer writerPool.Put(writer)
-	defer writer.Reset(nil)
-
-	_, err := writer.Write(src)
-	if err != nil {
-		return nil, err
-	}
-
-	// note that the gzip reader must be closed in order for it to write
-	// out trailing contents.  Flush is insufficient.  it is okay to re-use
-	// the writer even after it's closed by Resetting it.
-	err = writer.Close()
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), err
-}
-
-// Decode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
-	reader := readerPool.Get().(*gzip.Reader)
-	defer readerPool.Put(reader)
-	defer reader.Reset(newEmptyGzipFile())
-	err := reader.Reset(bytes.NewReader(src))
-	if err != nil {
-		return nil, err
-	}
-	return ioutil.ReadAll(reader)
 }
 
 // NewReader implements the kafka.CompressionCodec interface.
