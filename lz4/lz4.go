@@ -37,6 +37,11 @@ func (CompressionCodec) Code() int8 {
 	return Code
 }
 
+// Name implements the kafka.CompressionCodec interface.
+func (CompressionCodec) Name() string {
+	return "lz4"
+}
+
 // NewReader implements the kafka.CompressionCodec interface.
 func (CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 	z := readerPool.Get().(*lz4.Reader)

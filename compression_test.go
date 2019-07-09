@@ -62,20 +62,15 @@ func decompress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
 func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCodec) {
 	var r1, r2 []byte
 	var err error
-	var code int8
 
-	if codec != nil {
-		code = codec.Code()
-	}
-
-	t.Run("encode with "+codecToStr(code), func(t *testing.T) {
+	t.Run("encode with "+codec.Name(), func(t *testing.T) {
 		r1, err = compress(codec, m.Value)
 		if err != nil {
 			t.Error(err)
 		}
 	})
 
-	t.Run("decode with "+codecToStr(code), func(t *testing.T) {
+	t.Run("decode with "+codec.Name(), func(t *testing.T) {
 		r2, err = decompress(codec, r1)
 		if err != nil {
 			t.Error(err)
@@ -86,23 +81,6 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCode
 			t.Log("expected: ", string(m.Value))
 		}
 	})
-}
-
-func codecToStr(codec int8) string {
-	switch codec {
-	case kafka.CompressionNoneCode:
-		return "none"
-	case gzip.Code:
-		return "gzip"
-	case snappy.Code:
-		return "snappy"
-	case lz4.Code:
-		return "lz4"
-	case zstd.Code:
-		return "zstd"
-	default:
-		return "unknown"
-	}
 }
 
 func TestCompressedMessages(t *testing.T) {
@@ -116,7 +94,7 @@ func TestCompressedMessages(t *testing.T) {
 }
 
 func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
-	t.Run("produce/consume with"+codecToStr(codec.Code()), func(t *testing.T) {
+	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
 		t.Parallel()
 
 		topic := kafka.CreateTopic(t, 1)
@@ -260,6 +238,10 @@ type noopCodec struct{}
 
 func (noopCodec) Code() int8 {
 	return 0
+}
+
+func (noopCodec) Name() string {
+	return ""
 }
 
 func (noopCodec) NewReader(r io.Reader) io.ReadCloser {

@@ -49,6 +49,9 @@ type CompressionCodec interface {
 	// Code returns the compression codec code
 	Code() int8
 
+	// Human-readable name for the codec.
+	Name() string
+
 	// Constructs a new reader which decompresses data from r.
 	NewReader(r io.Reader) io.ReadCloser
 
