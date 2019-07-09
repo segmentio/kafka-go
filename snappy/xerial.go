@@ -8,15 +8,18 @@ import (
 	"github.com/golang/snappy"
 )
 
+const defaultBufferSize = 32 * 1024
+
 // An implementation of io.Reader which consumes a stream of xerial-framed
 // snappy-encoeded data. The framing is optional, if no framing is detected
 // the reader will simply forward the bytes from its underlying stream.
 type xerialReader struct {
 	reader io.Reader
-	header [20]byte
+	header [16]byte
 	input  []byte
 	output []byte
-	offset int
+	offset int64
+	nbytes int64
 	decode func([]byte, []byte) ([]byte, error)
 }
 
@@ -25,13 +28,14 @@ func (x *xerialReader) Reset(r io.Reader) {
 	x.input = x.input[:0]
 	x.output = x.output[:0]
 	x.offset = 0
+	x.nbytes = 0
 }
 
 func (x *xerialReader) Read(b []byte) (int, error) {
 	for {
-		if x.offset < len(x.output) {
+		if x.offset < int64(len(x.output)) {
 			n := copy(b, x.output[x.offset:])
-			x.offset += n
+			x.offset += int64(n)
 			return n, nil
 		}
 
@@ -49,10 +53,10 @@ func (x *xerialReader) WriteTo(w io.Writer) (int64, error) {
 	wn := int64(0)
 
 	for {
-		for x.offset < len(x.output) {
+		for x.offset < int64(len(x.output)) {
 			n, err := w.Write(x.output[x.offset:])
 			wn += int64(n)
-			x.offset += n
+			x.offset += int64(n)
 			if err != nil {
 				return wn, err
 			}
@@ -69,27 +73,48 @@ func (x *xerialReader) WriteTo(w io.Writer) (int64, error) {
 
 func (x *xerialReader) readChunk(dst []byte) (int, error) {
 	x.offset = 0
+	prefix := 0
 
-	n, err := io.ReadFull(x.reader, x.header[:])
-	if err != nil && n == 0 {
-		return 0, err
+	if x.nbytes == 0 {
+		n, err := x.readFull(x.header[:])
+		if err != nil && n == 0 {
+			return 0, err
+		}
+		prefix = n
 	}
 
-	if n == len(x.header) && isXerialHeader(x.header[:]) {
-		n := int(binary.BigEndian.Uint32(x.header[16:]))
-
-		if cap(x.input) < n {
-			x.input = make([]byte, n, align(n, 1024))
+	if isXerialHeader(x.header[:]) {
+		if cap(x.input) < 4 {
+			x.input = make([]byte, 4, defaultBufferSize)
 		} else {
-			x.input = x.input[:n]
+			x.input = x.input[:4]
 		}
 
-		_, err := io.ReadFull(x.reader, x.input)
+		_, err := x.readFull(x.input)
 		if err != nil {
 			return 0, err
 		}
+
+		frame := int(binary.BigEndian.Uint32(x.input))
+		if cap(x.input) < frame {
+			x.input = make([]byte, frame, align(frame, defaultBufferSize))
+		} else {
+			x.input = x.input[:frame]
+		}
+
+		if _, err := x.readFull(x.input); err != nil {
+			return 0, err
+		}
 	} else {
-		x.input = append(x.input[:0], x.header[:n]...)
+		if cap(x.input) == 0 {
+			x.input = make([]byte, 0, defaultBufferSize)
+		} else {
+			x.input = x.input[:0]
+		}
+
+		if prefix > 0 {
+			x.input = append(x.input, x.header[:prefix]...)
+		}
 
 		for {
 			if len(x.input) == cap(x.input) {
@@ -98,16 +123,19 @@ func (x *xerialReader) readChunk(dst []byte) (int, error) {
 				x.input = b
 			}
 
-			n, err := x.reader.Read(x.input[len(x.input):cap(x.input)])
+			n, err := x.read(x.input[len(x.input):cap(x.input)])
 			x.input = x.input[:len(x.input)+n]
 			if err != nil {
-				if err == io.EOF {
+				if err == io.EOF && len(x.input) > 0 {
 					break
 				}
 				return 0, err
 			}
 		}
 	}
+
+	var n int
+	var err error
 
 	if x.decode == nil {
 		x.output, x.input, err = x.input, x.output, nil
@@ -128,13 +156,26 @@ func (x *xerialReader) readChunk(dst []byte) (int, error) {
 	return n, err
 }
 
+func (x *xerialReader) read(b []byte) (int, error) {
+	n, err := x.reader.Read(b)
+	x.nbytes += int64(n)
+	return n, err
+}
+
+func (x *xerialReader) readFull(b []byte) (int, error) {
+	n, err := io.ReadFull(x.reader, b)
+	x.nbytes += int64(n)
+	return n, err
+}
+
 // An implementation of a xerial-framed snappy-encoded output stream.
 // Each Write made to the writer is framed with a xerial header.
 type xerialWriter struct {
 	writer io.Writer
-	header [20]byte
+	header [16]byte
 	input  []byte
 	output []byte
+	nbytes int64
 	encode func([]byte, []byte) []byte
 }
 
@@ -142,13 +183,14 @@ func (x *xerialWriter) Reset(w io.Writer) {
 	x.writer = w
 	x.input = x.input[:0]
 	x.output = x.output[:0]
+	x.nbytes = 0
 }
 
 func (x *xerialWriter) ReadFrom(r io.Reader) (int64, error) {
 	wn := int64(0)
 
 	if cap(x.input) == 0 {
-		x.input = make([]byte, 0, 32*1024)
+		x.input = make([]byte, 0, defaultBufferSize)
 	}
 
 	for {
@@ -175,7 +217,7 @@ func (x *xerialWriter) Write(b []byte) (int, error) {
 	wn := 0
 
 	if cap(x.input) == 0 {
-		x.input = make([]byte, 0, 32*1024)
+		x.input = make([]byte, 0, defaultBufferSize)
 	}
 
 	for len(b) > 0 {
@@ -209,14 +251,29 @@ func (x *xerialWriter) Flush() error {
 
 	x.input = x.input[:0]
 	x.output = x.output[:0]
-	writeXerialHeader(x.header[:], len(b))
 
-	if _, err := x.writer.Write(x.header[:]); err != nil {
+	if x.nbytes == 0 {
+		writeXerialHeader(x.header[:])
+		_, err := x.write(x.header[:])
+		if err != nil {
+			return err
+		}
+	}
+
+	writeXerialFrame(x.header[:4], len(b))
+	_, err := x.write(x.header[:4])
+	if err != nil {
 		return err
 	}
 
-	_, err := x.writer.Write(b)
+	_, err = x.write(b)
 	return err
+}
+
+func (x *xerialWriter) write(b []byte) (int, error) {
+	n, err := x.writer.Write(b)
+	x.nbytes += int64(n)
+	return n, err
 }
 
 func (x *xerialWriter) fullEnough() bool {
@@ -231,16 +288,19 @@ func align(n, a int) int {
 }
 
 var (
-	xerialVersionInfo = [...]byte{0, 0, 0, 1, 0, 0, 0, 1}
 	xerialHeader      = [...]byte{130, 83, 78, 65, 80, 80, 89, 0}
+	xerialVersionInfo = [...]byte{0, 0, 0, 1, 0, 0, 0, 1}
 )
 
 func isXerialHeader(src []byte) bool {
-	return len(src) >= 20 && bytes.Equal(src[:8], xerialHeader[:])
+	return len(src) >= 16 && bytes.Equal(src[:8], xerialHeader[:])
 }
 
-func writeXerialHeader(b []byte, n int) {
+func writeXerialHeader(b []byte) {
 	copy(b[:8], xerialHeader[:])
 	copy(b[8:], xerialVersionInfo[:])
-	binary.BigEndian.PutUint32(b[16:], uint32(n))
+}
+
+func writeXerialFrame(b []byte, n int) {
+	binary.BigEndian.PutUint32(b, uint32(n))
 }

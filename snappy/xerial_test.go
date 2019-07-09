@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	goxerialsnappy "github.com/eapache/go-xerial-snappy"
 	"github.com/golang/snappy"
 )
 
@@ -103,6 +104,60 @@ func TestXerialFramedCompressionOptimized(t *testing.T) {
 
 	b0 := rawData.Bytes()
 	b1 := unframedAndDecompressedData.Bytes()
+
+	if !bytes.Equal(b0, b1) {
+		t.Error("data mismatch")
+	}
+}
+
+func TestXerialReaderAgainstGoXerialSnappy(t *testing.T) {
+	rawData := new(bytes.Buffer)
+	rawData.Grow(1024 * 1024)
+	io.CopyN(rawData, rand.Reader, 1024*1024)
+	rawBytes := rawData.Bytes()
+
+	framedAndCompressedData := []byte{}
+	const chunkSize = 999
+	for i := 0; i < len(rawBytes); i += chunkSize {
+		j := i + chunkSize
+		if j > len(rawBytes) {
+			j = len(rawBytes)
+		}
+		framedAndCompressedData = goxerialsnappy.EncodeStream(framedAndCompressedData, rawBytes[i:j])
+	}
+
+	unframedAndDecompressedData := new(bytes.Buffer)
+	unframedAndDecompressedData.Grow(rawData.Len())
+	io.Copy(unframedAndDecompressedData,
+		&xerialReader{reader: bytes.NewReader(framedAndCompressedData), decode: snappy.Decode})
+
+	b0 := rawBytes
+	b1 := unframedAndDecompressedData.Bytes()
+
+	if !bytes.Equal(b0, b1) {
+		t.Error("data mismatch")
+	}
+}
+
+func TestXerialWriterAgainstGoXerialSnappy(t *testing.T) {
+	rawData := new(bytes.Buffer)
+	rawData.Grow(1024 * 1024)
+	io.CopyN(rawData, rand.Reader, 1024*1024)
+
+	framedAndCompressedData := new(bytes.Buffer)
+	framedAndCompressedData.Grow(rawData.Len())
+	w := &xerialWriter{writer: framedAndCompressedData, encode: snappy.Encode}
+	r := simpleReader{bytes.NewReader(rawData.Bytes())}
+	io.Copy(w, r)
+	w.Flush()
+
+	unframedAndDecompressedData, err := goxerialsnappy.Decode(framedAndCompressedData.Bytes())
+	if err != nil {
+		t.Error(err)
+	}
+
+	b0 := rawData.Bytes()
+	b1 := unframedAndDecompressedData
 
 	if !bytes.Equal(b0, b1) {
 		t.Error("data mismatch")
