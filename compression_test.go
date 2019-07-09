@@ -1,6 +1,7 @@
 package kafka_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -316,19 +317,32 @@ func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, payloadSiz
 		Value: payload[payloadSize],
 	}
 
+	buf := new(bytes.Buffer)
+	buf.Grow(payloadSize)
+
 	for i := 0; i < b.N; i++ {
-		m1, err := codec.Encode(msg.Value)
-		if err != nil {
+		buf.Reset()
+
+		r := codec.NewReader(buf)
+		w := codec.NewWriter(buf)
+
+		if _, err := w.Write(msg.Value); err != nil {
 			b.Fatal(err)
 		}
 
-		b.SetBytes(int64(len(m1)))
-
-		_, err = codec.Decode(m1)
-		if err != nil {
+		if err := w.Close(); err != nil {
 			b.Fatal(err)
 		}
 
+		b.SetBytes(int64(buf.Len()))
+
+		if _, err := io.Copy(ioutil.Discard, r); err != nil {
+			b.Fatal(err)
+		}
+
+		if err := r.Close(); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
