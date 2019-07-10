@@ -3,8 +3,10 @@ module github.com/segmentio/kafka-go
 go 1.11
 
 require (
-	github.com/DataDog/zstd v1.4.0
 	github.com/golang/snappy v0.0.1
+	github.com/google/go-cmp v0.3.0 // indirect
+	github.com/klauspost/compress v1.7.2
+	github.com/klauspost/cpuid v1.2.1 // indirect
 	github.com/pierrec/lz4 v2.0.5+incompatible
 	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c
 	github.com/xdg/stringprep v1.0.0 // indirect

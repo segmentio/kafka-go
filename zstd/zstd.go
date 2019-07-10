@@ -3,7 +3,7 @@
 package zstd
 
 import (
-	"github.com/DataDog/zstd"
+	"github.com/klauspost/compress/zstd"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -15,13 +15,15 @@ func init() {
 
 type CompressionCodec struct {
 	// CompressionLevel is the level of compression to use on messages.
-	CompressionLevel int
+	CompressionLevel zstd.EncoderLevel
+	encoder          *zstd.Encoder
+	decoder          *zstd.Decoder
 }
 
 const (
 	Code int8 = 4
-	// https://github.com/DataDog/zstd/blob/1e382f59b41eebd6f592c5db4fd1958ec38a0eba/zstd.go#L33
-	DefaultCompressionLevel int = 5
+	// https://github.com/klauspost/compress/blob/315059c39568ee89ae0c118bc6dc7306041543c3/zstd/encoder_options.go#L95
+	DefaultCompressionLevel int = 3
 )
 
 func NewCompressionCodec() CompressionCodec {
@@ -29,8 +31,14 @@ func NewCompressionCodec() CompressionCodec {
 }
 
 func NewCompressionCodecWith(level int) CompressionCodec {
+	zStdLevel := zstd.EncoderLevelFromZstd(level)
+	enc, _ := zstd.NewWriter(nil, zstd.WithEncoderLevel(zStdLevel))
+	dec, _ := zstd.NewReader(nil)
+
 	return CompressionCodec{
-		CompressionLevel: level,
+		CompressionLevel: zStdLevel,
+		encoder:          enc,
+		decoder:          dec,
 	}
 }
 
@@ -41,10 +49,10 @@ func (c CompressionCodec) Code() int8 {
 
 // Encode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
-	return zstd.CompressLevel(nil, src, c.CompressionLevel)
+	return c.encoder.EncodeAll(src, make([]byte, 0, len(src))), nil
 }
 
 // Decode implements the kafka.CompressionCodec interface.
 func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
-	return zstd.Decompress(nil, src)
+	return c.decoder.DecodeAll(src, make([]byte, 0, len(src)))
 }
