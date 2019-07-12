@@ -241,6 +241,7 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			var decompressed bytes.Buffer
 
 			if r.remain, err = readBytesWith(r.reader, r.remain, func(r *bufio.Reader, sz, n int) (remain int, err error) {
+				// x4 as a guess that the average compression ratio is near 75%
 				decompressed.Grow(4 * n)
 
 				l := io.LimitedReader{R: r, N: int64(n)}
