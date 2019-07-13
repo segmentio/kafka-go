@@ -11,44 +11,33 @@ import (
 )
 
 func init() {
-	kafka.RegisterCompressionCodec(func() kafka.CompressionCodec {
-		return NewCompressionCodec()
-	})
-}
-
-type CompressionCodec struct {
-	// CompressionLevel is the level of compression to use on messages.
-	CompressionLevel int
+	kafka.RegisterCompressionCodec(NewCompressionCodec())
 }
 
 const (
 	Code = 4
-	// https://github.com/DataDog/zstd/blob/1e382f59b41eebd6f592c5db4fd1958ec38a0eba/zstd.go#L33
-	DefaultCompressionLevel = 5
+
+	DefaultCompressionLevel = zstd.DefaultCompression
 )
 
-func NewCompressionCodec() CompressionCodec {
+type CompressionCodec struct{ level int }
+
+func NewCompressionCodec() *CompressionCodec {
 	return NewCompressionCodecWith(DefaultCompressionLevel)
 }
 
-func NewCompressionCodecWith(level int) CompressionCodec {
-	return CompressionCodec{
-		CompressionLevel: level,
-	}
+func NewCompressionCodecWith(level int) *CompressionCodec {
+	return &CompressionCodec{level}
 }
 
 // Code implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Code() int8 {
-	return Code
-}
+func (c *CompressionCodec) Code() int8 { return Code }
 
 // Name implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Name() string {
-	return "zstd"
-}
+func (c *CompressionCodec) Name() string { return "zstd" }
 
 // NewReader implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 	return &reader{
 		reader: r,
 		buffer: bufferPool.Get().(*buffer),
@@ -56,11 +45,11 @@ func (c CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 }
 
 // NewWriter implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+func (c *CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
 	return &writer{
 		writer: w,
 		buffer: bufferPool.Get().(*buffer),
-		level:  c.CompressionLevel,
+		level:  c.level,
 	}
 }
 
@@ -152,7 +141,7 @@ func (w *writer) Close() (err error) {
 	if b := w.buffer; b != nil {
 		w.buffer = nil
 
-		b.output, err = zstd.Compress(b.output[:cap(b.output)], b.input)
+		b.output, err = zstd.CompressLevel(b.output[:cap(b.output)], b.input, w.level)
 		if err == nil {
 			_, err = w.writer.Write(b.output)
 		}

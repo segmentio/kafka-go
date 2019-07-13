@@ -9,40 +9,50 @@ import (
 )
 
 func init() {
-	kafka.RegisterCompressionCodec(func() kafka.CompressionCodec {
-		return NewCompressionCodec()
-	})
+	kafka.RegisterCompressionCodec(NewCompressionCodec())
 }
 
-type CompressionCodec struct{}
+// Framing is an enumeration type used to enable or disable xerial framing of
+// snappy messages.
+type Framing int
 
-const Code = 2
+const (
+	Framed Framing = iota
+	Unframed
+)
 
-func NewCompressionCodec() CompressionCodec {
-	return CompressionCodec{}
+const (
+	Code = 2
+)
+
+type CompressionCodec struct{ framing Framing }
+
+func NewCompressionCodec() *CompressionCodec {
+	return NewCompressionCodecFraming(Framed)
+}
+
+func NewCompressionCodecFraming(framing Framing) *CompressionCodec {
+	return &CompressionCodec{framing}
 }
 
 // Code implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Code() int8 {
-	return Code
-}
+func (c *CompressionCodec) Code() int8 { return Code }
 
 // Name implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Name() string {
-	return "snappy"
-}
+func (c *CompressionCodec) Name() string { return "snappy" }
 
 // NewReader implements the kafka.CompressionCodec interface.
-func (CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 	x := readerPool.Get().(*xerialReader)
 	x.Reset(r)
 	return &reader{x}
 }
 
 // NewWriter implements the kafka.CompressionCodec interface.
-func (CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+func (c *CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
 	x := writerPool.Get().(*xerialWriter)
 	x.Reset(w)
+	x.framed = c.framing == Framed
 	return &writer{x}
 }
 

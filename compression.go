@@ -20,10 +20,10 @@ var (
 )
 
 // RegisterCompressionCodec registers a compression codec so it can be used by a Writer.
-func RegisterCompressionCodec(codec func() CompressionCodec) {
-	c := codec()
+func RegisterCompressionCodec(codec CompressionCodec) {
+	code := codec.Code()
 	codecsMutex.Lock()
-	codecs[c.Code()] = c
+	codecs[code] = codec
 	codecsMutex.Unlock()
 }
 

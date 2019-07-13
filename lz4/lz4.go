@@ -8,39 +8,25 @@ import (
 	kafka "github.com/segmentio/kafka-go"
 )
 
-var (
-	readerPool = sync.Pool{
-		New: func() interface{} { return lz4.NewReader(nil) },
-	}
-
-	writerPool = sync.Pool{
-		New: func() interface{} { return lz4.NewWriter(nil) },
-	}
-)
-
 func init() {
-	kafka.RegisterCompressionCodec(func() kafka.CompressionCodec {
-		return NewCompressionCodec()
-	})
+	kafka.RegisterCompressionCodec(NewCompressionCodec())
 }
+
+const (
+	Code = 3
+)
 
 type CompressionCodec struct{}
 
-const Code = 3
-
-func NewCompressionCodec() CompressionCodec {
-	return CompressionCodec{}
+func NewCompressionCodec() *CompressionCodec {
+	return &CompressionCodec{}
 }
 
 // Code implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Code() int8 {
-	return Code
-}
+func (CompressionCodec) Code() int8 { return Code }
 
 // Name implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Name() string {
-	return "lz4"
-}
+func (CompressionCodec) Name() string { return "lz4" }
 
 // NewReader implements the kafka.CompressionCodec interface.
 func (CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
@@ -77,4 +63,12 @@ func (w *writer) Close() (err error) {
 		writerPool.Put(z)
 	}
 	return
+}
+
+var readerPool = sync.Pool{
+	New: func() interface{} { return lz4.NewReader(nil) },
+}
+
+var writerPool = sync.Pool{
+	New: func() interface{} { return lz4.NewWriter(nil) },
 }

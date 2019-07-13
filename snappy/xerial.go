@@ -176,6 +176,7 @@ type xerialWriter struct {
 	input  []byte
 	output []byte
 	nbytes int64
+	framed bool
 	encode func([]byte, []byte) []byte
 }
 
@@ -252,7 +253,7 @@ func (x *xerialWriter) Flush() error {
 	x.input = x.input[:0]
 	x.output = x.output[:0]
 
-	if x.nbytes == 0 {
+	if x.framed && x.nbytes == 0 {
 		writeXerialHeader(x.header[:])
 		_, err := x.write(x.header[:])
 		if err != nil {
@@ -260,13 +261,15 @@ func (x *xerialWriter) Flush() error {
 		}
 	}
 
-	writeXerialFrame(x.header[:4], len(b))
-	_, err := x.write(x.header[:4])
-	if err != nil {
-		return err
+	if x.framed {
+		writeXerialFrame(x.header[:4], len(b))
+		_, err := x.write(x.header[:4])
+		if err != nil {
+			return err
+		}
 	}
 
-	_, err = x.write(b)
+	_, err := x.write(b)
 	return err
 }
 
@@ -277,7 +280,7 @@ func (x *xerialWriter) write(b []byte) (int, error) {
 }
 
 func (x *xerialWriter) fullEnough() bool {
-	return (cap(x.input) - len(x.input)) < 1024
+	return x.framed && (cap(x.input)-len(x.input)) < 1024
 }
 
 func align(n, a int) int {
