@@ -67,7 +67,7 @@ func TestXerialFramedCompression(t *testing.T) {
 
 	framedAndCompressedData := new(bytes.Buffer)
 	framedAndCompressedData.Grow(rawData.Len())
-	w := simpleWriter{&xerialWriter{writer: framedAndCompressedData, encode: snappy.Encode}}
+	w := simpleWriter{&xerialWriter{writer: framedAndCompressedData, framed: true, encode: snappy.Encode}}
 	r := simpleReader{bytes.NewReader(rawData.Bytes())}
 	io.Copy(w, r)
 	w.Writer.(*xerialWriter).Flush()
@@ -92,7 +92,7 @@ func TestXerialFramedCompressionOptimized(t *testing.T) {
 
 	framedAndCompressedData := new(bytes.Buffer)
 	framedAndCompressedData.Grow(rawData.Len())
-	w := &xerialWriter{writer: framedAndCompressedData, encode: snappy.Encode}
+	w := &xerialWriter{writer: framedAndCompressedData, framed: true, encode: snappy.Encode}
 	r := simpleReader{bytes.NewReader(rawData.Bytes())}
 	io.Copy(w, r)
 	w.Flush()
@@ -146,7 +146,7 @@ func TestXerialWriterAgainstGoXerialSnappy(t *testing.T) {
 
 	framedAndCompressedData := new(bytes.Buffer)
 	framedAndCompressedData.Grow(rawData.Len())
-	w := &xerialWriter{writer: framedAndCompressedData, encode: snappy.Encode}
+	w := &xerialWriter{writer: framedAndCompressedData, framed: true, encode: snappy.Encode}
 	r := simpleReader{bytes.NewReader(rawData.Bytes())}
 	io.Copy(w, r)
 	w.Flush()

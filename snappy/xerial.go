@@ -195,6 +195,10 @@ func (x *xerialWriter) ReadFrom(r io.Reader) (int64, error) {
 	}
 
 	for {
+		if x.full() {
+			x.grow()
+		}
+
 		n, err := r.Read(x.input[len(x.input):cap(x.input)])
 		wn += int64(n)
 		x.input = x.input[:len(x.input)+n]
@@ -222,6 +226,10 @@ func (x *xerialWriter) Write(b []byte) (int, error) {
 	}
 
 	for len(b) > 0 {
+		if x.full() {
+			x.grow()
+		}
+
 		n := copy(x.input[len(x.input):cap(x.input)], b)
 		b = b[n:]
 		wn += n
@@ -279,8 +287,18 @@ func (x *xerialWriter) write(b []byte) (int, error) {
 	return n, err
 }
 
+func (x *xerialWriter) full() bool {
+	return len(x.input) == cap(x.input)
+}
+
 func (x *xerialWriter) fullEnough() bool {
 	return x.framed && (cap(x.input)-len(x.input)) < 1024
+}
+
+func (x *xerialWriter) grow() {
+	tmp := make([]byte, len(x.input), 2*cap(x.input))
+	copy(tmp, x.input)
+	x.input = tmp
 }
 
 func align(n, a int) int {
