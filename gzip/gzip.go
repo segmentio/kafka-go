@@ -23,14 +23,24 @@ var (
 		New: func() interface{} {
 			// if the reader doesn't get valid gzip at initialization time,
 			// it will not be valid and will fail on Reset.
-			reader, _ := gzip.NewReader(newEmptyGzipFile())
+			reader := &gzipReader{}
+			reader.Reset(nil)
 			return reader
 		},
 	}
 )
 
-func newEmptyGzipFile() io.Reader {
-	return bytes.NewReader(emptyGzipBytes[:])
+type gzipReader struct {
+	gzip.Reader
+	emptyGzipFile bytes.Reader
+}
+
+func (z *gzipReader) Reset(r io.Reader) {
+	if r == nil {
+		z.emptyGzipFile.Reset(emptyGzipBytes[:])
+		r = &z.emptyGzipFile
+	}
+	z.Reader.Reset(r)
 }
 
 func init() {
@@ -71,7 +81,7 @@ func (c *CompressionCodec) Name() string { return "gzip" }
 
 // NewReader implements the kafka.CompressionCodec interface.
 func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
-	z := readerPool.Get().(*gzip.Reader)
+	z := readerPool.Get().(*gzipReader)
 	z.Reset(r)
 	return &reader{z}
 }
@@ -87,13 +97,13 @@ func (c *CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
 	return &writer{c, z}
 }
 
-type reader struct{ *gzip.Reader }
+type reader struct{ *gzipReader }
 
 func (r *reader) Close() (err error) {
-	if z := r.Reader; z != nil {
-		r.Reader = nil
+	if z := r.gzipReader; z != nil {
+		r.gzipReader = nil
 		err = z.Close()
-		z.Reset(newEmptyGzipFile())
+		z.Reset(nil)
 		readerPool.Put(z)
 	}
 	return
