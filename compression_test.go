@@ -328,7 +328,13 @@ func BenchmarkCompression(b *testing.B) {
 }
 
 func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, buf *bytes.Buffer, payload []byte) float64 {
+	// In case only the decompression benchmark are run, we use this flags to
+	// detect whether we have to compress the payload before the decompression
+	// benchmarks.
+	compressed := false
+
 	b.Run("compress", func(b *testing.B) {
+		compressed = true
 		r := bytes.NewReader(payload)
 
 		for i := 0; i < b.N; i++ {
@@ -347,6 +353,19 @@ func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, buf *bytes
 
 		b.SetBytes(int64(buf.Len()))
 	})
+
+	if !compressed {
+		r := bytes.NewReader(payload)
+		w := codec.NewWriter(buf)
+
+		_, err := io.Copy(w, r)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			b.Fatal(err)
+		}
+	}
 
 	b.Run("decompress", func(b *testing.B) {
 		c := bytes.NewReader(buf.Bytes())
