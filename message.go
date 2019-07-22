@@ -121,7 +121,7 @@ func (r *messageSetReader) readMessage(min int64,
 	val func(*bufio.Reader, int, int) (int, error),
 ) (offset int64, timestamp int64, headers []Header, err error) {
 	if r.empty {
-		return 0, 0, nil, errShortRead
+		return 0, 0, nil, RequestTimedOut
 	}
 	switch r.version {
 	case 1:

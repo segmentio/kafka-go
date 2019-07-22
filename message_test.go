@@ -22,8 +22,8 @@ func TestMessageSetReaderEmpty(t *testing.T) {
 	if headers != nil {
 		t.Errorf("expected nil headers, got %v", headers)
 	}
-	if err != errShortRead {
-		t.Errorf("expected errShortRead, got %v", err)
+	if err != RequestTimedOut {
+		t.Errorf("expected RequestTimedOut, got %v", err)
 	}
 
 	if m.remaining() != 0 {
