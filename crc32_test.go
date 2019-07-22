@@ -20,11 +20,11 @@ func TestMessageCRC32(t *testing.T) {
 	w := &writeBuffer{w: b}
 	w.write(m)
 
-	h := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	h := crc32.New(crc32.IEEETable)
 	h.Write(b.Bytes()[4:])
 
 	sum1 := h.Sum32()
-	sum2 := uint32(m.crc32())
+	sum2 := uint32(m.crc32(&crc32Writer{table: crc32.IEEETable}))
 
 	if sum1 != sum2 {
 		t.Error("bad CRC32:")

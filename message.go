@@ -25,23 +25,16 @@ type Message struct {
 	Time time.Time
 }
 
-func (msg Message) item() messageSetItem {
-	item := messageSetItem{
-		Offset:  msg.Offset,
-		Message: msg.message(),
-	}
-	item.MessageSize = item.Message.size()
-	return item
-}
-
-func (msg Message) message() message {
+func (msg Message) message(cw *crc32Writer) message {
 	m := message{
 		MagicByte: 1,
 		Key:       msg.Key,
 		Value:     msg.Value,
 		Timestamp: timestamp(msg.Time),
 	}
-	m.CRC = m.crc32()
+	if cw != nil {
+		m.CRC = m.crc32(cw)
+	}
 	return m
 }
 
@@ -54,8 +47,16 @@ type message struct {
 	Value      []byte
 }
 
-func (m message) crc32() int32 {
-	return int32(crc32OfMessage(m.MagicByte, m.Attributes, m.Timestamp, m.Key, m.Value))
+func (m message) crc32(cw *crc32Writer) int32 {
+	cw.crc32 = 0
+	cw.writeInt8(m.MagicByte)
+	cw.writeInt8(m.Attributes)
+	if m.MagicByte != 0 {
+		cw.writeInt64(m.Timestamp)
+	}
+	cw.writeBytes(m.Key)
+	cw.writeBytes(m.Value)
+	return int32(cw.crc32)
 }
 
 func (m message) size() int32 {

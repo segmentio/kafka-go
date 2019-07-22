@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"time"
 )
@@ -358,9 +359,12 @@ func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlation
 	wb.writeInt32(partition)
 
 	wb.writeInt32(size)
+	cw := &crc32Writer{table: crc32.IEEETable}
+
 	for _, msg := range msgs {
-		wb.writeMessage(msg.Offset, attributes, msg.Time, msg.Key, msg.Value)
+		wb.writeMessage(msg.Offset, attributes, msg.Time, msg.Key, msg.Value, cw)
 	}
+
 	return wb.Flush()
 }
 
@@ -492,23 +496,47 @@ func (wb *writeBuffer) writeProduceRequestV7(codec CompressionCodec, correlation
 }
 
 func (wb *writeBuffer) writeRecordBatch(attributes int16, size int32, count int, baseTime, lastTime time.Time, write func(*writeBuffer)) {
+	var (
+		baseTimestamp   = timestamp(baseTime)
+		lastTimestamp   = timestamp(lastTime)
+		lastOffsetDelta = int32(count - 1)
+		producerID      = int64(-1)    // default producer id for now
+		producerEpoch   = int16(-1)    // default producer epoch for now
+		baseSequence    = int32(-1)    // default base sequence
+		recordCount     = int32(count) // record count
+		writerBackup    = wb.w
+	)
+
+	// dry run to compute the checksum
+	cw := &crc32Writer{table: crc32.MakeTable(crc32.Castagnoli)}
+	wb.w = cw
+	cw.writeInt16(attributes) // attributes, timestamp type 0 - create time, not part of a transaction, no control messages
+	cw.writeInt32(lastOffsetDelta)
+	cw.writeInt64(baseTimestamp)
+	cw.writeInt64(lastTimestamp)
+	cw.writeInt64(producerID)
+	cw.writeInt16(producerEpoch)
+	cw.writeInt32(baseSequence)
+	cw.writeInt32(recordCount)
+	write(wb)
+	wb.w = writerBackup
+
+	// actual write to the output buffer
 	wb.writeInt64(int64(0))
 	wb.writeInt32(int32(size - 12)) // 12 = batch length + base offset sizes
 	wb.writeInt32(-1)               // partition leader epoch
 	wb.writeInt8(2)                 // magic byte
-
-	cw := &crc32Writer{writer: wb}
-	cw.writeInt16(attributes)       // attributes, timestamp type 0 - create time, not part of a transaction, no control messages
-	cw.writeInt32(int32(count - 1)) // last offset delta
-	cw.writeInt64(timestamp(baseTime))
-	cw.writeInt64(timestamp(lastTime))
-	cw.writeInt64(-1)           // default producer id for now
-	cw.writeInt16(-1)           // default producer epoch for now
-	cw.writeInt32(-1)           // default base sequence
-	cw.writeInt32(int32(count)) // record count
-
-	write(&writeBuffer{w: cw})
 	wb.writeInt32(int32(cw.crc32))
+
+	wb.writeInt16(attributes)
+	wb.writeInt32(lastOffsetDelta)
+	wb.writeInt64(baseTimestamp)
+	wb.writeInt64(lastTimestamp)
+	wb.writeInt64(producerID)
+	wb.writeInt16(producerEpoch)
+	wb.writeInt32(baseSequence)
+	wb.writeInt32(recordCount)
+	write(wb)
 }
 
 var maxDate = time.Date(5000, time.January, 0, 0, 0, 0, 0, time.UTC)
@@ -524,9 +552,10 @@ func compressMessageSet(codec CompressionCodec, msgs ...Message) ([]Message, err
 	buffer.Grow(estimatedLen / 2)
 	compressor := codec.NewWriter(buffer)
 	wb := &writeBuffer{w: compressor}
+	cw := &crc32Writer{table: crc32.IEEETable}
 
 	for offset, msg := range msgs {
-		wb.writeMessage(int64(offset), CompressionNoneCode, msg.Time, msg.Key, msg.Value)
+		wb.writeMessage(int64(offset), CompressionNoneCode, msg.Time, msg.Key, msg.Value, cw)
 	}
 
 	if err := compressor.Close(); err != nil {
@@ -556,16 +585,24 @@ func compressRecordBatch(codec CompressionCodec, msgs ...Message) (compressed []
 	return
 }
 
-func (wb *writeBuffer) writeMessage(offset int64, attributes int8, time time.Time, key, value []byte) {
+func (wb *writeBuffer) writeMessage(offset int64, attributes int8, time time.Time, key, value []byte, cw *crc32Writer) {
 	const magicByte = 1 // compatible with kafka 0.10.0.0+
 
 	timestamp := timestamp(time)
-	crc32 := crc32OfMessage(magicByte, attributes, timestamp, key, value)
 	size := messageSize(key, value)
 
+	// dry run to compute the checksum
+	cw.crc32 = 0
+	cw.writeInt8(magicByte)
+	cw.writeInt8(attributes)
+	cw.writeInt64(timestamp)
+	cw.writeBytes(key)
+	cw.writeBytes(value)
+
+	// actual write to the output buffer
 	wb.writeInt64(offset)
 	wb.writeInt32(size)
-	wb.writeInt32(int32(crc32))
+	wb.writeInt32(int32(cw.crc32))
 	wb.writeInt8(magicByte)
 	wb.writeInt8(attributes)
 	wb.writeInt64(timestamp)

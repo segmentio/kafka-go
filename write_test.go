@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"hash/crc32"
 	"testing"
 	"time"
 
@@ -122,7 +123,9 @@ func testWriteProduceRequestV2(t *testing.T) {
 		},
 	}
 	msg.MessageSize = msg.Message.size()
-	msg.Message.CRC = msg.Message.crc32()
+	msg.Message.CRC = msg.Message.crc32(&crc32Writer{
+		table: crc32.IEEETable,
+	})
 
 	const timeout = 100
 	testWriteOptimization(t,

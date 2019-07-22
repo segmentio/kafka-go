@@ -151,6 +151,8 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 
 	c := &Conn{
 		conn:            conn,
+		rbuf:            *bufio.NewReader(conn),
+		wbuf:            *bufio.NewWriter(conn),
 		clientID:        config.ClientID,
 		topic:           config.Topic,
 		partition:       int32(config.Partition),
@@ -159,8 +161,6 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		transactionalID: emptyToNullable(config.TransactionalID),
 	}
 
-	c.rbuf.Reset(conn)
-	c.wbuf.Reset(conn)
 	c.wb.w = &c.wbuf
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
