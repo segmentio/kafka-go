@@ -66,15 +66,15 @@ func (m message) size() int32 {
 	return size
 }
 
-func (m message) writeTo(w *bufio.Writer) {
-	writeInt32(w, m.CRC)
-	writeInt8(w, m.MagicByte)
-	writeInt8(w, m.Attributes)
+func (m message) writeTo(wb *writeBuffer) {
+	wb.writeInt32(m.CRC)
+	wb.writeInt8(m.MagicByte)
+	wb.writeInt8(m.Attributes)
 	if m.MagicByte != 0 {
-		writeInt64(w, m.Timestamp)
+		wb.writeInt64(m.Timestamp)
 	}
-	writeBytes(w, m.Key)
-	writeBytes(w, m.Value)
+	wb.writeBytes(m.Key)
+	wb.writeBytes(m.Value)
 }
 
 type messageSetItem struct {
@@ -87,10 +87,10 @@ func (m messageSetItem) size() int32 {
 	return 8 + 4 + m.Message.size()
 }
 
-func (m messageSetItem) writeTo(w *bufio.Writer) {
-	writeInt64(w, m.Offset)
-	writeInt32(w, m.MessageSize)
-	m.Message.writeTo(w)
+func (m messageSetItem) writeTo(wb *writeBuffer) {
+	wb.writeInt64(m.Offset)
+	wb.writeInt32(m.MessageSize)
+	m.Message.writeTo(wb)
 }
 
 type messageSet []messageSetItem
@@ -102,9 +102,9 @@ func (s messageSet) size() (size int32) {
 	return
 }
 
-func (s messageSet) writeTo(w *bufio.Writer) {
+func (s messageSet) writeTo(wb *writeBuffer) {
 	for _, m := range s {
-		m.writeTo(w)
+		m.writeTo(wb)
 	}
 }
 

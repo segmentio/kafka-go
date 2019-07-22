@@ -4,7 +4,45 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash/crc32"
+	"io"
 	"sync"
+)
+
+type crc32Writer struct {
+	crc32  uint32
+	writer *writeBuffer
+}
+
+func (w *crc32Writer) writeInt16(i int16) {
+	w.writer.writeInt16(i)
+	w.crc32 = crc32Update(w.crc32, w.writer.b[:2])
+}
+
+func (w *crc32Writer) writeInt32(i int32) {
+	w.writer.writeInt32(i)
+	w.crc32 = crc32Update(w.crc32, w.writer.b[:4])
+}
+
+func (w *crc32Writer) writeInt64(i int64) {
+	w.writer.writeInt64(i)
+	w.crc32 = crc32Update(w.crc32, w.writer.b[:8])
+}
+
+func (w *crc32Writer) Write(b []byte) (int, error) {
+	n, err := w.writer.Write(b)
+	w.crc32 = crc32Update(w.crc32, b[:n])
+	return n, err
+}
+
+func (w *crc32Writer) WriteString(s string) (int, error) {
+	n, err := w.writer.WriteString(s)
+	w.crc32 = crc32Update(w.crc32, []byte(s[:n]))
+	return n, err
+}
+
+var (
+	_ io.Writer       = (*crc32Writer)(nil)
+	_ io.StringWriter = (*crc32Writer)(nil)
 )
 
 func crc32OfMessage(magicByte int8, attributes int8, timestamp int64, key []byte, value []byte) uint32 {
@@ -62,7 +100,7 @@ func (c *crc32Buffer) update() {
 }
 
 func crc32Update(sum uint32, b []byte) uint32 {
-	return crc32.Update(sum, crc32.IEEETable, b)
+	return crc32.Update(sum, crc32.MakeTable(crc32.Castagnoli), b)
 }
 
 var crc32BufferPool = sync.Pool{

@@ -68,14 +68,12 @@ func TestReadStringArray(t *testing.T) {
 
 	for label, test := range testCases {
 		t.Run(label, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
-
-			w := bufio.NewWriter(buf)
-			writeStringArray(w, test.Value)
-			w.Flush()
+			b := bytes.NewBuffer(nil)
+			w := &writeBuffer{w: b}
+			w.writeStringArray(test.Value)
 
 			var actual []string
-			readStringArray(bufio.NewReader(buf), buf.Len(), &actual)
+			readStringArray(bufio.NewReader(b), b.Len(), &actual)
 			if !reflect.DeepEqual(test.Value, actual) {
 				t.Errorf("expected %v; got %v", test.Value, actual)
 			}
@@ -99,18 +97,17 @@ func TestReadMapStringInt32(t *testing.T) {
 
 	for label, test := range testCases {
 		t.Run(label, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
+			b := bytes.NewBuffer(nil)
+			w := &writeBuffer{w: b}
+			w.writeInt32(int32(len(test.Data)))
 
-			w := bufio.NewWriter(buf)
-			writeInt32(w, int32(len(test.Data)))
 			for key, values := range test.Data {
-				writeString(w, key)
-				writeInt32Array(w, values)
+				w.writeString(key)
+				w.writeInt32Array(values)
 			}
-			w.Flush()
 
 			var actual map[string][]int32
-			readMapStringInt32(bufio.NewReader(buf), buf.Len(), &actual)
+			readMapStringInt32(bufio.NewReader(b), b.Len(), &actual)
 			if !reflect.DeepEqual(test.Data, actual) {
 				t.Errorf("expected %#v; got %#v", test.Data, actual)
 			}
@@ -171,21 +168,19 @@ func TestReadNewBytes(t *testing.T) {
 }
 
 func BenchmarkWriteVarInt(b *testing.B) {
-	wb := bufio.NewWriter(ioutil.Discard)
+	wb := &writeBuffer{w: ioutil.Discard}
 
 	for i := 0; i < b.N; i++ {
-		writeVarInt(wb, math.MaxInt64)
-		wb.Flush()
+		wb.writeVarInt(math.MaxInt64)
 	}
 }
 
 func BenchmarkReadVarInt(b *testing.B) {
 	b1 := new(bytes.Buffer)
-	wb := bufio.NewWriter(b1)
+	wb := &writeBuffer{w: b1}
 
 	const N = math.MaxInt64
-	writeVarInt(wb, N)
-	wb.Flush()
+	wb.writeVarInt(N)
 
 	b2 := bytes.NewReader(b1.Bytes())
 	rb := bufio.NewReader(b2)

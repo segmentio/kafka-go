@@ -22,13 +22,12 @@ func TestOffsetCommitResponseV2(t *testing.T) {
 		},
 	}
 
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
 	item.writeTo(w)
-	w.Flush()
 
 	var found offsetCommitResponseV2
-	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
+	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
