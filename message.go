@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"time"
 )
 
@@ -237,13 +238,19 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			}
 
 			// read and decompress the contained message set.
-			var decompressed []byte
+			var decompressed bytes.Buffer
+
 			if r.remain, err = readBytesWith(r.reader, r.remain, func(r *bufio.Reader, sz, n int) (remain int, err error) {
-				var value []byte
-				if value, remain, err = readNewBytes(r, sz, n); err != nil {
-					return
-				}
-				decompressed, err = codec.Decode(value)
+				// x4 as a guess that the average compression ratio is near 75%
+				decompressed.Grow(4 * n)
+
+				l := io.LimitedReader{R: r, N: int64(n)}
+				d := codec.NewReader(&l)
+
+				_, err = decompressed.ReadFrom(d)
+				remain = sz - (n - int(l.N))
+
+				d.Close()
 				return
 			}); err != nil {
 				return
@@ -256,13 +263,16 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			// messages at offsets 10-13, then the container message will have
 			// offset 13 and the contained messages will be 0,1,2,3.  the base
 			// offset for the container, then is 13-3=10.
-			if offset, err = extractOffset(offset, decompressed); err != nil {
+			if offset, err = extractOffset(offset, decompressed.Bytes()); err != nil {
 				return
 			}
 
 			r.readerStack = &readerStack{
-				reader: bufio.NewReader(bytes.NewReader(decompressed)),
-				remain: len(decompressed),
+				// Allocate a buffer of size 0, which gets capped at 16 bytes
+				// by the bufio package. We are already reading buffered data
+				// here, no need to reserve another 4KB buffer.
+				reader: bufio.NewReaderSize(&decompressed, 0),
+				remain: decompressed.Len(),
 				base:   offset,
 				parent: r.readerStack,
 			}
@@ -458,33 +468,40 @@ func (r *messageSetReaderV2) readMessage(min int64,
 				r.readerStack = r.parent
 			}
 		}
+
 		if err = r.readHeader(); err != nil {
 			return
 		}
-		code := r.header.compression()
-		var decompressed []byte
-		if code != 0 {
+
+		if code := r.header.compression(); code != 0 {
 			var codec CompressionCodec
 			if codec, err = resolveCodec(code); err != nil {
 				return
 			}
-			batchRemain := int(r.header.length - 49)
+
+			var batchRemain = int(r.header.length - 49)
 			if batchRemain > r.remain {
 				err = errShortRead
 				return
 			}
-			var compressed []byte
-			compressed, r.remain, err = readNewBytes(r.reader, r.remain, batchRemain)
+
+			var decompressed bytes.Buffer
+			decompressed.Grow(4 * batchRemain)
+
+			l := io.LimitedReader{R: r.reader, N: int64(batchRemain)}
+			d := codec.NewReader(&l)
+
+			_, err = decompressed.ReadFrom(d)
+			r.remain = r.remain - (batchRemain - int(l.N))
+			d.Close()
+
 			if err != nil {
-				return
-			}
-			if decompressed, err = codec.Decode(compressed); err != nil {
 				return
 			}
 
 			r.readerStack = &readerStack{
-				reader: bufio.NewReader(bytes.NewReader(decompressed)),
-				remain: len(decompressed),
+				reader: bufio.NewReaderSize(&decompressed, 0),
+				remain: decompressed.Len(),
 				base:   -1, // base is unused here
 				parent: r.readerStack,
 			}
