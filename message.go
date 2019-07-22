@@ -25,23 +25,16 @@ type Message struct {
 	Time time.Time
 }
 
-func (msg Message) item() messageSetItem {
-	item := messageSetItem{
-		Offset:  msg.Offset,
-		Message: msg.message(),
-	}
-	item.MessageSize = item.Message.size()
-	return item
-}
-
-func (msg Message) message() message {
+func (msg Message) message(cw *crc32Writer) message {
 	m := message{
 		MagicByte: 1,
 		Key:       msg.Key,
 		Value:     msg.Value,
 		Timestamp: timestamp(msg.Time),
 	}
-	m.CRC = m.crc32()
+	if cw != nil {
+		m.CRC = m.crc32(cw)
+	}
 	return m
 }
 
@@ -54,8 +47,16 @@ type message struct {
 	Value      []byte
 }
 
-func (m message) crc32() int32 {
-	return int32(crc32OfMessage(m.MagicByte, m.Attributes, m.Timestamp, m.Key, m.Value))
+func (m message) crc32(cw *crc32Writer) int32 {
+	cw.crc32 = 0
+	cw.writeInt8(m.MagicByte)
+	cw.writeInt8(m.Attributes)
+	if m.MagicByte != 0 {
+		cw.writeInt64(m.Timestamp)
+	}
+	cw.writeBytes(m.Key)
+	cw.writeBytes(m.Value)
+	return int32(cw.crc32)
 }
 
 func (m message) size() int32 {
@@ -66,15 +67,15 @@ func (m message) size() int32 {
 	return size
 }
 
-func (m message) writeTo(w *bufio.Writer) {
-	writeInt32(w, m.CRC)
-	writeInt8(w, m.MagicByte)
-	writeInt8(w, m.Attributes)
+func (m message) writeTo(wb *writeBuffer) {
+	wb.writeInt32(m.CRC)
+	wb.writeInt8(m.MagicByte)
+	wb.writeInt8(m.Attributes)
 	if m.MagicByte != 0 {
-		writeInt64(w, m.Timestamp)
+		wb.writeInt64(m.Timestamp)
 	}
-	writeBytes(w, m.Key)
-	writeBytes(w, m.Value)
+	wb.writeBytes(m.Key)
+	wb.writeBytes(m.Value)
 }
 
 type messageSetItem struct {
@@ -87,10 +88,10 @@ func (m messageSetItem) size() int32 {
 	return 8 + 4 + m.Message.size()
 }
 
-func (m messageSetItem) writeTo(w *bufio.Writer) {
-	writeInt64(w, m.Offset)
-	writeInt32(w, m.MessageSize)
-	m.Message.writeTo(w)
+func (m messageSetItem) writeTo(wb *writeBuffer) {
+	wb.writeInt64(m.Offset)
+	wb.writeInt32(m.MessageSize)
+	m.Message.writeTo(wb)
 }
 
 type messageSet []messageSetItem
@@ -102,9 +103,9 @@ func (s messageSet) size() (size int32) {
 	return
 }
 
-func (s messageSet) writeTo(w *bufio.Writer) {
+func (s messageSet) writeTo(wb *writeBuffer) {
 	for _, m := range s {
-		m.writeTo(w)
+		m.writeTo(wb)
 	}
 }
 

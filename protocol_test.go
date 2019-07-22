@@ -87,13 +87,8 @@ func TestProtocol(t *testing.T) {
 		t.Run(fmt.Sprintf("%T", test), func(t *testing.T) {
 			b := &bytes.Buffer{}
 			r := bufio.NewReader(b)
-			w := bufio.NewWriter(b)
-
-			write(w, test)
-
-			if err := w.Flush(); err != nil {
-				t.Fatal(err)
-			}
+			w := &writeBuffer{w: b}
+			w.write(test)
 
 			if size := int(sizeof(test)); size != b.Len() {
 				t.Error("invalid size:", size, "!=", b.Len())

@@ -55,6 +55,7 @@ type Conn struct {
 	// write buffer (synchronized on wlock)
 	wlock sync.Mutex
 	wbuf  bufio.Writer
+	wb    writeBuffer
 
 	// deadline management
 	wdeadline connDeadline
@@ -159,6 +160,8 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		requiredAcks:    -1,
 		transactionalID: emptyToNullable(config.TransactionalID),
 	}
+
+	c.wb.w = &c.wbuf
 
 	// The fetch request needs to ask for a MaxBytes value that is at least
 	// enough to load the control data of the response. To avoid having to
@@ -767,8 +770,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		adjustedDeadline = deadline
 		switch c.fetchVersion {
 		case v10:
-			return writeFetchRequestV10(
-				&c.wbuf,
+			return c.wb.writeFetchRequestV10(
 				id,
 				c.clientID,
 				c.topic,
@@ -780,8 +782,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 				int8(cfg.IsolationLevel),
 			)
 		case v5:
-			return writeFetchRequestV5(
-				&c.wbuf,
+			return c.wb.writeFetchRequestV5(
 				id,
 				c.clientID,
 				c.topic,
@@ -793,8 +794,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 				int8(cfg.IsolationLevel),
 			)
 		default:
-			return writeFetchRequestV2(
-				&c.wbuf,
+			return c.wb.writeFetchRequestV2(
 				id,
 				c.clientID,
 				c.topic,
@@ -891,7 +891,7 @@ func (c *Conn) ReadOffsets() (first, last int64, err error) {
 func (c *Conn) readOffset(t int64) (offset int64, err error) {
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return writeListOffsetRequestV1(&c.wbuf, id, c.clientID, c.topic, c.partition, t)
+			return c.wb.writeListOffsetRequestV1(id, c.clientID, c.topic, c.partition, t)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(readArrayWith(&c.rbuf, size, func(r *bufio.Reader, size int) (int, error) {
@@ -1058,8 +1058,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 			switch version := c.apiVersions[produceRequest].MaxVersion; {
 			case version >= 7:
-				return writeProduceRequestV7(
-					&c.wbuf,
+				return c.wb.writeProduceRequestV7(
 					codec,
 					id,
 					c.clientID,
@@ -1071,8 +1070,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					msgs...,
 				)
 			case version >= 3:
-				return writeProduceRequestV3(
-					&c.wbuf,
+				return c.wb.writeProduceRequestV3(
 					codec,
 					id,
 					c.clientID,
@@ -1084,8 +1082,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					msgs...,
 				)
 			default:
-				return writeProduceRequestV2(
-					&c.wbuf,
+				return c.wb.writeProduceRequestV2(
 					codec,
 					id,
 					c.clientID,
@@ -1170,14 +1167,14 @@ func (c *Conn) SetRequiredAcks(n int) error {
 func (c *Conn) writeRequestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32, size int32) {
 	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
 	hdr.Size = (hdr.size() + size) - 4
-	hdr.writeTo(&c.wbuf)
+	hdr.writeTo(&c.wb)
 }
 
 func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req request) error {
 	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
 	hdr.Size = (hdr.size() + req.size()) - 4
-	hdr.writeTo(&c.wbuf)
-	req.writeTo(&c.wbuf)
+	hdr.writeTo(&c.wb)
+	req.writeTo(&c.wb)
 	return c.wbuf.Flush()
 }
 
@@ -1369,7 +1366,7 @@ func (c *Conn) ApiVersions() ([]ApiVersion, error) {
 		}
 		h.Size = (h.size() - 4)
 
-		h.writeTo(&c.wbuf)
+		h.writeTo(&c.wb)
 		return c.wbuf.Flush()
 	})
 	if err != nil {
@@ -1538,11 +1535,11 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 
 	// fall back to opaque bytes on the wire.  the broker is expecting these if
 	// it just processed a v0 sasl handshake.
-	writeInt32(&c.wbuf, int32(len(data)))
-	if _, err := c.wbuf.Write(data); err != nil {
+	c.wb.writeInt32(int32(len(data)))
+	if _, err := c.wb.Write(data); err != nil {
 		return nil, err
 	}
-	if err := c.wbuf.Flush(); err != nil {
+	if err := c.wb.Flush(); err != nil {
 		return nil, err
 	}
 
