@@ -51,6 +51,7 @@ type Conn struct {
 	// read buffer (synchronized on rlock)
 	rlock sync.Mutex
 	rbuf  bufio.Reader
+	rb    readBuffer
 
 	// write buffer (synchronized on wlock)
 	wlock sync.Mutex
@@ -161,6 +162,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		transactionalID: emptyToNullable(config.TransactionalID),
 	}
 
+	c.rb.r = &c.rbuf
 	c.wb.w = &c.wbuf
 
 	// The fetch request needs to ask for a MaxBytes value that is at least

@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"bufio"
 	"io"
 	"sync"
 	"time"
@@ -122,33 +121,18 @@ func (batch *Batch) Read(b []byte) (int, error) {
 	offset := batch.offset
 
 	_, _, _, err := batch.readMessage(
-		func(r *bufio.Reader, size int, nbytes int) (int, error) {
-			if nbytes < 0 {
-				return size, nil
-			}
-			return discardN(r, size, nbytes)
-		},
-		func(r *bufio.Reader, size int, nbytes int) (int, error) {
-			if nbytes < 0 {
-				return size, nil
-			}
+		func(rb *readBuffer) { rb.discardBytes() },
+		func(rb *readBuffer) {
 			// make sure there are enough bytes for the message value.  return
 			// errShortRead if the message is truncated.
-			if nbytes > size {
-				return size, errShortRead
+			n = int(rb.readInt32())
+			if n < len(b) {
+				b = b[:n]
+			} else {
+				rb.err = errShortRead
 			}
-			n = nbytes // return value
-			if nbytes > cap(b) {
-				nbytes = cap(b)
-			}
-			if nbytes > len(b) {
-				b = b[:nbytes]
-			}
-			nbytes, err := io.ReadFull(r, b[:nbytes])
-			if err != nil {
-				return size - nbytes, err
-			}
-			return discardN(r, size-nbytes, n-nbytes)
+			c, _ := rb.Read(b)
+			rb.discard(n - c)
 		},
 	)
 
@@ -175,30 +159,17 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	var headers []Header
 	var err error
 
-	offset, timestamp, headers, err = batch.readMessage(
-		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
-			msg.Key, remain, err = readNewBytes(r, size, nbytes)
-			return
-		},
-		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
-			msg.Value, remain, err = readNewBytes(r, size, nbytes)
-			return
-		},
-	)
-	for batch.conn != nil && offset < batch.conn.offset {
+	for batch.conn != nil {
+		offset, timestamp, headers, err = batch.readMessage(
+			func(rb *readBuffer) { msg.Key = rb.readBytes() },
+			func(rb *readBuffer) { msg.Value = rb.readBytes() },
+		)
 		if err != nil {
 			break
 		}
-		offset, timestamp, headers, err = batch.readMessage(
-			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
-				msg.Key, remain, err = readNewBytes(r, size, nbytes)
-				return
-			},
-			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
-				msg.Value, remain, err = readNewBytes(r, size, nbytes)
-				return
-			},
-		)
+		if offset >= batch.conn.offset {
+			break
+		}
 	}
 
 	batch.mutex.Unlock()
@@ -212,8 +183,8 @@ func (batch *Batch) ReadMessage() (Message, error) {
 }
 
 func (batch *Batch) readMessage(
-	key func(*bufio.Reader, int, int) (int, error),
-	val func(*bufio.Reader, int, int) (int, error),
+	key func(*readBuffer),
+	val func(*readBuffer),
 ) (offset int64, timestamp int64, headers []Header, err error) {
 	if err = batch.err; err != nil {
 		return
