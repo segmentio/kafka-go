@@ -27,6 +27,7 @@ func (x *xerialReader) Reset(r io.Reader) {
 	x.reader = r
 	x.input = x.input[:0]
 	x.output = x.output[:0]
+	x.header = [16]byte{}
 	x.offset = 0
 	x.nbytes = 0
 }
@@ -72,6 +73,7 @@ func (x *xerialReader) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (x *xerialReader) readChunk(dst []byte) (int, error) {
+	x.output = x.output[:0]
 	x.offset = 0
 	prefix := 0
 
