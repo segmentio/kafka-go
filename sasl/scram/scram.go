@@ -48,7 +48,10 @@ var (
 type mechanism struct {
 	algo   Algorithm
 	client *scram.Client
-	convo  *scram.ClientConversation
+}
+
+type session struct {
+	convo *scram.ClientConversation
 }
 
 // Mechanism returns a new sasl.Mechanism that will use SCRAM with the provided
@@ -69,13 +72,20 @@ func Mechanism(algo Algorithm, username, password string) (sasl.Mechanism, error
 	}, nil
 }
 
-func (m *mechanism) Start(ctx context.Context) (string, []byte, error) {
-	m.convo = m.client.NewConversation()
-	str, err := m.convo.Step("")
-	return m.algo.Name(), []byte(str), err
+func (m *mechanism) Name() string {
+	return m.algo.Name()
 }
 
-func (m *mechanism) Next(ctx context.Context, challenge []byte) (bool, []byte, error) {
-	str, err := m.convo.Step(string(challenge))
-	return m.convo.Done(), []byte(str), err
+func (m *mechanism) Start(ctx context.Context) (sasl.StateMachine, []byte, error) {
+	convo := m.client.NewConversation()
+	str, err := convo.Step("")
+	if err != nil {
+		return nil, nil, err
+	}
+	return &session{convo: convo}, []byte(str), nil
+}
+
+func (s *session) Next(ctx context.Context, challenge []byte) (bool, []byte, error) {
+	str, err := s.convo.Step(string(challenge))
+	return s.convo.Done(), []byte(str), err
 }
