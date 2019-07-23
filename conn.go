@@ -1040,8 +1040,14 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 			err = errInvalidWriteTopic
 			return
 		}
+
 		if msg.Partition != 0 {
 			err = errInvalidWritePartition
+			return
+		}
+
+		if len(msg.Headers) > headerCountLimit {
+			err = fmt.Errorf("header count beyond the supported limit: %d > %d", len(msg.Headers), headerCountLimit)
 			return
 		}
 

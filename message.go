@@ -411,6 +411,10 @@ type messageSetReaderV2 struct {
 	header messageSetHeaderV2
 }
 
+const (
+	headerCountLimit = 1024
+)
+
 func (r *messageSetReaderV2) readHeader() (err error) {
 	h := &r.header
 	if r.remain, err = readInt64(r.reader, r.remain, &h.firstOffset); err != nil {
@@ -547,7 +551,14 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	if r.remain, err = readVarInt(r.reader, r.remain, &headerCount); err != nil {
 		return
 	}
-
+	if headerCount < 0 {
+		err = fmt.Errorf("impossible negative header count: %d", headerCount)
+		return
+	}
+	if headerCount > headerCountLimit {
+		err = fmt.Errorf("header count beyond supported limit: %d > %d", headerCount, headerCountLimit)
+		return
+	}
 	headers = make([]Header, headerCount)
 
 	for i := 0; i < int(headerCount); i++ {
