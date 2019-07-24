@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"reflect"
@@ -86,7 +85,6 @@ func TestProtocol(t *testing.T) {
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("%T", test), func(t *testing.T) {
 			b := &bytes.Buffer{}
-			r := bufio.NewReader(b)
 			w := &writeBuffer{w: b}
 			w.write(test)
 
@@ -94,22 +92,46 @@ func TestProtocol(t *testing.T) {
 				t.Error("invalid size:", size, "!=", b.Len())
 			}
 
+			r := &readBuffer{r: b, n: b.Len()}
 			v := reflect.New(reflect.TypeOf(test))
-			n := b.Len()
 
-			n, err := read(r, n, v.Interface())
-			if err != nil {
-				t.Fatal(err)
+			r.readValue(v.Interface())
+			if r.err != nil {
+				t.Fatal(r.err)
 			}
-			if n != 0 {
-				t.Errorf("%d unread bytes", n)
+			if r.n != 0 {
+				t.Errorf("%d unread bytes", r.n)
 			}
-
 			if !reflect.DeepEqual(test, v.Elem().Interface()) {
 				t.Error("values don't match:")
 				t.Logf("expected: %#v", test)
 				t.Logf("found:    %#v", v.Elem().Interface())
 			}
 		})
+	}
+}
+
+func testProtocolType(t *testing.T, x writable, y readable) {
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
+	x.writeTo(w)
+
+	r := &readBuffer{r: b, n: b.Len()}
+	y.readFrom(r)
+
+	if w.err != nil {
+		t.Fatalf("unexpected error writing %T: %s", x, w.err)
+	}
+
+	if r.err != nil {
+		t.Fatalf("unexpected error reading %T: %s", y, r.err)
+	}
+
+	if r.n != 0 {
+		t.Fatalf("expected 0 remaining bytes reading %T, got %v", y, r.n)
+	}
+
+	if !reflect.DeepEqual(x, y) {
+		t.Errorf("expected %T and %T values to be the same", x, y)
 	}
 }

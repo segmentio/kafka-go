@@ -115,35 +115,34 @@ func (batch *Batch) Err() error { return batch.err }
 // The method fails with io.ErrShortBuffer if the buffer passed as argument is
 // too small to hold the message value.
 func (batch *Batch) Read(b []byte) (int, error) {
-	n := 0
+	rn := 0
+	short := false
 
 	batch.mutex.Lock()
 	offset := batch.offset
 
 	_, _, _, err := batch.readMessage(
-		func(rb *readBuffer) { rb.discardBytes() },
-		func(rb *readBuffer) {
+		func(rb *readBuffer, n int) { rb.discard(n) },
+		func(rb *readBuffer, n int) {
 			// make sure there are enough bytes for the message value.  return
 			// errShortRead if the message is truncated.
-			n = int(rb.readInt32())
-			if n < len(b) {
+			if n <= len(b) {
 				b = b[:n]
 			} else {
-				rb.err = errShortRead
+				short = true
 			}
-			c, _ := rb.Read(b)
-			rb.discard(n - c)
+			rn = rb.readFull(b)
 		},
 	)
 
-	if err == nil && n > len(b) {
-		n, err = len(b), io.ErrShortBuffer
+	if short && err == nil {
+		err = io.ErrShortBuffer
 		batch.err = io.ErrShortBuffer
 		batch.offset = offset // rollback
 	}
 
 	batch.mutex.Unlock()
-	return n, err
+	return rn, err
 }
 
 // ReadMessage reads and return the next message from the batch.
@@ -159,10 +158,10 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	var headers []Header
 	var err error
 
-	for batch.conn != nil {
+	for batch.conn != nil && batch.err == nil {
 		offset, timestamp, headers, err = batch.readMessage(
-			func(rb *readBuffer) { msg.Key = rb.readBytes() },
-			func(rb *readBuffer) { msg.Value = rb.readBytes() },
+			func(rb *readBuffer, n int) { msg.Key = rb.read(n) },
+			func(rb *readBuffer, n int) { msg.Value = rb.read(n) },
 		)
 		if err != nil {
 			break
@@ -170,6 +169,10 @@ func (batch *Batch) ReadMessage() (Message, error) {
 		if offset >= batch.conn.offset {
 			break
 		}
+	}
+
+	if err == nil {
+		err = batch.err
 	}
 
 	batch.mutex.Unlock()
@@ -183,8 +186,8 @@ func (batch *Batch) ReadMessage() (Message, error) {
 }
 
 func (batch *Batch) readMessage(
-	key func(*readBuffer),
-	val func(*readBuffer),
+	key func(*readBuffer, int),
+	val func(*readBuffer, int),
 ) (offset int64, timestamp int64, headers []Header, err error) {
 	if err = batch.err; err != nil {
 		return

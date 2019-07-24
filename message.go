@@ -116,8 +116,8 @@ type messageSetReader struct {
 }
 
 func (r *messageSetReader) readMessage(min int64,
-	key func(*readBuffer),
-	val func(*readBuffer),
+	key func(*readBuffer, int),
+	val func(*readBuffer, int),
 ) (offset int64, timestamp int64, headers []Header, err error) {
 	switch r.version {
 	case 0: // empty
@@ -203,8 +203,8 @@ func newMessageSetReader(rb *readBuffer, remain int) (*messageSetReader, error) 
 }
 
 func (r *messageSetReaderV1) readMessage(min int64,
-	key func(*readBuffer),
-	val func(*readBuffer),
+	key func(*readBuffer, int),
+	val func(*readBuffer, int),
 ) (offset int64, timestamp int64, headers []Header, err error) {
 	for r.readerStack != nil {
 		if r.reader.n == 0 {
@@ -266,6 +266,7 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			continue
 		}
 
+		rb := r.reader
 		// adjust the offset in case we're reading compressed messages.  the
 		// base will be zero otherwise.
 		offset += r.base
@@ -274,13 +275,13 @@ func (r *messageSetReaderV1) readMessage(min int64,
 		// earlier offset than the one that was requested, it's the client's
 		// responsibility to ignore those.
 		if offset < min {
-			r.reader.discardBytes()
-			r.reader.discardBytes()
+			rb.discardBytes()
+			rb.discardBytes()
 			continue
 		}
 
-		key(r.reader)
-		val(r.reader)
+		key(rb, int(rb.readInt32()))
+		val(rb, int(rb.readInt32()))
 		return
 	}
 
@@ -417,8 +418,8 @@ func (r *messageSetReaderV2) readHeader() error {
 }
 
 func (r *messageSetReaderV2) readMessage(min int64,
-	key func(*readBuffer),
-	val func(*readBuffer),
+	key func(*readBuffer, int),
+	val func(*readBuffer, int),
 ) (offset int64, timestamp int64, headers []Header, err error) {
 	if r.messageCount == 0 {
 		if r.reader.n == 0 {
@@ -472,16 +473,16 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	timestampDelta := rb.readVarInt()
 	offsetDelta := rb.readVarInt()
 
-	key(rb)
-	val(rb)
+	key(rb, int(rb.readVarInt()))
+	val(rb, int(rb.readVarInt()))
 
 	headerCount := rb.readVarInt()
 	headers = make([]Header, headerCount)
 
 	for i := 0; i < int(headerCount); i++ {
 		headers[i] = Header{
-			Key:   rb.readString(),
-			Value: rb.readBytes(),
+			Key:   rb.readVarString(),
+			Value: rb.readVarBytes(),
 		}
 	}
 

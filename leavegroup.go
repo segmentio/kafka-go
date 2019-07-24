@@ -18,6 +18,11 @@ func (t leaveGroupRequestV0) writeTo(wb *writeBuffer) {
 	wb.writeString(t.MemberID)
 }
 
+func (t *leaveGroupRequestV0) readFrom(rb *readBuffer) {
+	t.GroupID = rb.readString()
+	t.MemberID = rb.readString()
+}
+
 type leaveGroupResponseV0 struct {
 	// ErrorCode holds response error code
 	ErrorCode int16

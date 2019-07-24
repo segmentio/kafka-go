@@ -17,6 +17,10 @@ func (t findCoordinatorRequestV0) writeTo(wb *writeBuffer) {
 	wb.writeString(t.CoordinatorKey)
 }
 
+func (t *findCoordinatorRequestV0) readFrom(rb *readBuffer) {
+	t.CoordinatorKey = rb.readString()
+}
+
 type findCoordinatorResponseCoordinatorV0 struct {
 	// NodeID holds the broker id.
 	NodeID int32

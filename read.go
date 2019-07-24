@@ -24,7 +24,10 @@ func (rb *readBuffer) readFull(b []byte) int {
 		return 0
 	}
 	if rb.n < len(b) {
-		rb.err = errShortRead
+		rb.discardAll()
+		if rb.err == nil {
+			rb.err = errShortRead
+		}
 		return 0
 	}
 	n, err := io.ReadAtLeast(rb.r, b, len(b))
@@ -98,7 +101,19 @@ func (rb *readBuffer) readBool() bool {
 }
 
 func (rb *readBuffer) readString() string {
-	return string(rb.read(int(rb.readInt16())))
+	n := rb.readInt16()
+	if n < 0 {
+		return ""
+	}
+	return string(rb.read(int(n)))
+}
+
+func (rb *readBuffer) readVarString() string {
+	n := rb.readVarInt()
+	if n < 0 {
+		return ""
+	}
+	return string(rb.read(int(n)))
 }
 
 func (rb *readBuffer) readBytes() []byte {
@@ -109,9 +124,21 @@ func (rb *readBuffer) readBytes() []byte {
 	return rb.read(int(n))
 }
 
+func (rb *readBuffer) readVarBytes() []byte {
+	n := rb.readVarInt()
+	if n < 0 {
+		return nil
+	}
+	return rb.read(int(n))
+}
+
 func (rb *readBuffer) readStringArray() []string {
 	n := int(rb.readInt32())
-	a := make([]string, n)
+	a := ([]string)(nil)
+
+	if n > 0 {
+		a = make([]string, n)
+	}
 
 	for i := 0; i < n; i++ {
 		a[i] = rb.readString()
@@ -231,12 +258,13 @@ func (rb *readBuffer) discard(n int) int {
 		return 0
 	}
 	if rb.n < n {
-		rb.err = errShortRead
-		return 0
+		n, rb.err = rb.n, errShortRead
 	}
 	n, err := discard(rb.r, n)
 	rb.n -= n
-	rb.err = err
+	if err != nil {
+		rb.err = err
+	}
 	return n
 }
 

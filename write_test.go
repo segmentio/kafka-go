@@ -235,11 +235,11 @@ func TestWriteV2RecordBatch(t *testing.T) {
 	}
 
 	if string(msg.Key) != "Key" {
-		t.Error("Received message's key doesn't match")
+		t.Errorf("Received message's key doesn't match, expected %q but got %q", "Key", msg.Key)
 		return
 	}
 	if msg.Headers[0].Key != "hk" {
-		t.Error("Received message header's key doesn't match")
+		t.Errorf("Received message header's key doesn't match, expected %q but got %q", "hk", msg.Headers[0].Key)
 		return
 	}
 }

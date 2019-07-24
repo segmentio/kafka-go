@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"bufio"
 	"bytes"
 	"reflect"
 	"testing"
@@ -31,13 +30,19 @@ func TestSaramaCompatibility(t *testing.T) {
 	)
 
 	t.Run("verify metadata", func(t *testing.T) {
-		var item groupMetadata
-		remain, err := (&item).readFrom(bufio.NewReader(bytes.NewReader(groupMemberMetadata)), len(groupMemberMetadata))
-		if err != nil {
-			t.Fatalf("bad err: %v", err)
+		rb := &readBuffer{
+			r: bytes.NewReader(groupMemberMetadata),
+			n: len(groupMemberMetadata),
 		}
-		if remain != 0 {
-			t.Fatalf("expected 0; got %v", remain)
+
+		item := groupMetadata{}
+		item.readFrom(rb)
+
+		if rb.err != nil {
+			t.Fatalf("bad err: %v", rb.err)
+		}
+		if rb.n != 0 {
+			t.Fatalf("expected 0; got %v", rb.err)
 		}
 
 		if v := item.Version; v != 1 {
@@ -52,13 +57,19 @@ func TestSaramaCompatibility(t *testing.T) {
 	})
 
 	t.Run("verify assignments", func(t *testing.T) {
-		var item groupAssignment
-		remain, err := (&item).readFrom(bufio.NewReader(bytes.NewReader(groupMemberAssignment)), len(groupMemberAssignment))
-		if err != nil {
-			t.Fatalf("bad err: %v", err)
+		rb := &readBuffer{
+			r: bytes.NewReader(groupMemberAssignment),
+			n: len(groupMemberAssignment),
 		}
-		if remain != 0 {
-			t.Fatalf("expected 0; got %v", remain)
+
+		item := groupAssignment{}
+		item.readFrom(rb)
+
+		if rb.err != nil {
+			t.Fatalf("bad err: %v", rb.err)
+		}
+		if rb.n != 0 {
+			t.Fatalf("expected 0; got %v", rb.n)
 		}
 
 		if v := item.Version; v != 1 {
@@ -74,63 +85,31 @@ func TestSaramaCompatibility(t *testing.T) {
 }
 
 func TestMemberMetadata(t *testing.T) {
-	item := groupMetadata{
-		Version:  1,
-		Topics:   []string{"a", "b"},
-		UserData: []byte(`blah`),
-	}
-
-	b := bytes.NewBuffer(nil)
-	w := &writeBuffer{w: b}
-	item.writeTo(w)
-
-	var found groupMetadata
-	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	if remain != 0 {
-		t.Errorf("expected 0 remain, got %v", remain)
-		t.FailNow()
-	}
-	if !reflect.DeepEqual(item, found) {
-		t.Error("expected item and found to be the same")
-		t.FailNow()
-	}
+	testProtocolType(t,
+		&groupMetadata{
+			Version:  1,
+			Topics:   []string{"a", "b"},
+			UserData: []byte(`blah`),
+		},
+		&groupMetadata{},
+	)
 }
 
 func TestJoinGroupResponseV1(t *testing.T) {
-	item := joinGroupResponseV1{
-		ErrorCode:     2,
-		GenerationID:  3,
-		GroupProtocol: "a",
-		LeaderID:      "b",
-		MemberID:      "c",
-		Members: []joinGroupResponseMemberV1{
-			{
-				MemberID:       "d",
-				MemberMetadata: []byte("blah"),
+	testProtocolType(t,
+		&joinGroupResponseV1{
+			ErrorCode:     2,
+			GenerationID:  3,
+			GroupProtocol: "a",
+			LeaderID:      "b",
+			MemberID:      "c",
+			Members: []joinGroupResponseMemberV1{
+				{
+					MemberID:       "d",
+					MemberMetadata: []byte("blah"),
+				},
 			},
 		},
-	}
-
-	b := bytes.NewBuffer(nil)
-	w := &writeBuffer{w: b}
-	item.writeTo(w)
-
-	var found joinGroupResponseV1
-	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	if remain != 0 {
-		t.Errorf("expected 0 remain, got %v", remain)
-		t.FailNow()
-	}
-	if !reflect.DeepEqual(item, found) {
-		t.Error("expected item and found to be the same")
-		t.FailNow()
-	}
+		&joinGroupResponseV1{},
+	)
 }

@@ -840,9 +840,11 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 			msgs, err = newMessageSetReader(&c.rb, remain)
 		}
 	}
+
 	if err == errShortRead {
 		err = checkTimeoutErr(adjustedDeadline)
 	}
+
 	return &Batch{
 		conn:          c,
 		msgs:          msgs,
