@@ -7,7 +7,6 @@ import (
 )
 
 func TestClient(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *Client)
@@ -21,8 +20,6 @@ func TestClient(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 

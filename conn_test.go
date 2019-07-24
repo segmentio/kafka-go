@@ -105,8 +105,6 @@ func makeGroupID() string {
 }
 
 func TestConn(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario   string
 		function   func(*testing.T, *Conn)
@@ -290,8 +288,6 @@ func TestConn(t *testing.T) {
 	}
 
 	t.Run("nettest", func(t *testing.T) {
-		t.Parallel()
-
 		nettest.TestConn(t, func() (c1 net.Conn, c2 net.Conn, stop func(), err error) {
 			var topic1 = makeTopic()
 			var topic2 = makeTopic()

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"time"
 )
 
@@ -243,6 +244,7 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			if err != nil {
 				return
 			}
+			io.Copy(ioutil.Discard, &l)
 
 			// the compressed message's offset will be equal to the offset of
 			// the last message in the set.  within the compressed set, the
@@ -282,6 +284,7 @@ func (r *messageSetReaderV1) readMessage(min int64,
 
 		key(rb, int(rb.readInt32()))
 		val(rb, int(rb.readInt32()))
+		err = rb.err
 		return
 	}
 
@@ -307,7 +310,10 @@ func (r *messageSetReaderV1) discard() error {
 		r.readerStack = r.parent
 	}
 	r.reader.discardAll()
-	return r.reader.err
+	if err := r.reader.err; err != errShortRead {
+		return err
+	}
+	return nil
 }
 
 func extractOffset(base int64, msgSet []byte) (offset int64, err error) {
@@ -455,6 +461,7 @@ func (r *messageSetReaderV2) readMessage(min int64,
 			if err != nil {
 				return
 			}
+			io.Copy(ioutil.Discard, &l)
 
 			r.readerStack = &readerStack{
 				parent: r.readerStack,
@@ -487,7 +494,7 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	}
 
 	r.messageCount--
-	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, nil
+	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, rb.err
 }
 
 func (r *messageSetReaderV2) remaining() int {
@@ -502,5 +509,8 @@ func (r *messageSetReaderV2) discard() error {
 		return nil
 	}
 	r.reader.discardAll()
-	return r.reader.err
+	if err := r.reader.err; err != errShortRead {
+		return err
+	}
+	return nil
 }

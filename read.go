@@ -81,6 +81,9 @@ func (rb *readBuffer) readVarInt() int64 {
 		b := rb.readByte()
 
 		if b < 0x80 {
+			if rb.err != nil {
+				return 0
+			}
 			x |= uint64(b) << s
 			return int64(x>>1) ^ -(int64(x) & 1)
 		}

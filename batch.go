@@ -128,10 +128,10 @@ func (batch *Batch) Read(b []byte) (int, error) {
 			// errShortRead if the message is truncated.
 			if n <= len(b) {
 				b = b[:n]
-			} else {
-				short = true
 			}
 			rn = rb.readFull(b)
+			rb.discard(n - rn)
+			short = rn < n
 		},
 	)
 
@@ -156,9 +156,9 @@ func (batch *Batch) ReadMessage() (Message, error) {
 
 	var offset, timestamp int64
 	var headers []Header
-	var err error
+	var err = batch.err
 
-	for batch.conn != nil && batch.err == nil {
+	for batch.conn != nil && err == nil {
 		offset, timestamp, headers, err = batch.readMessage(
 			func(rb *readBuffer, n int) { msg.Key = rb.read(n) },
 			func(rb *readBuffer, n int) { msg.Value = rb.read(n) },
@@ -169,10 +169,6 @@ func (batch *Batch) ReadMessage() (Message, error) {
 		if offset >= batch.conn.offset {
 			break
 		}
-	}
-
-	if err == nil {
-		err = batch.err
 	}
 
 	batch.mutex.Unlock()
@@ -217,6 +213,7 @@ func (batch *Batch) readMessage(
 			batch.err = err
 		}
 	default:
+		batch.msgs.discard()
 		batch.err = err
 	}
 

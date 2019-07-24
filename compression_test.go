@@ -98,8 +98,6 @@ func TestCompressedMessages(t *testing.T) {
 
 func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
-		t.Parallel()
-
 		topic := kafka.CreateTopic(t, 1)
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
@@ -166,8 +164,6 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 }
 
 func TestMixedCompressedMessages(t *testing.T) {
-	t.Parallel()
-
 	topic := kafka.CreateTopic(t, 1)
 
 	offset := 0
@@ -222,16 +218,28 @@ func TestMixedCompressedMessages(t *testing.T) {
 	// offsets that we know to be in the middle of compressed message sets.
 	for base := range values {
 		r.SetOffset(int64(base))
+		fail := false
+
 		for i := base; i < len(values); i++ {
 			msg, err := r.ReadMessage(ctx)
 			if err != nil {
 				t.Errorf("error receiving message at loop %d, offset %d, reason: %+v", base, i, err)
+				fail = true
 			}
+
 			if msg.Offset != int64(i) {
 				t.Errorf("wrong offset at loop %d...expected %d but got %d", base, i, msg.Offset)
+				fail = true
 			}
+
 			if values[i] != string(msg.Value) {
 				t.Errorf("wrong message value at loop %d...expected %s but got %s", base, values[i], string(msg.Value))
+				fail = true
+			}
+
+			if fail {
+				t.Log("aborting test early because errors were detected")
+				return
 			}
 		}
 	}

@@ -26,8 +26,6 @@ func TestDialer(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
@@ -170,8 +168,6 @@ wE3YmpC3Q0g9r44nEbz4Bw==
 }
 
 func TestDialerTLS(t *testing.T) {
-	t.Parallel()
-
 	const topic = "test-dialer-LookupPartitions"
 
 	createTopic(t, topic, 1)
