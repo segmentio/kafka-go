@@ -12,8 +12,6 @@ import (
 )
 
 func TestReader(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *Reader)
@@ -376,8 +374,6 @@ func createTopic(t *testing.T, topic string, partitions int) {
 }
 
 func TestReaderOnNonZeroPartition(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *Reader)
@@ -391,8 +387,6 @@ func TestReaderOnNonZeroPartition(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
 			topic := makeTopic()
 			createTopic(t, topic, 2)
 
@@ -451,7 +445,6 @@ func TestReadTruncatedMessages(t *testing.T) {
 	//        include it in CI unit tests.
 	t.Skip()
 
-	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	r := NewReader(ReaderConfig{
@@ -618,8 +611,6 @@ func TestCloseLeavesGroup(t *testing.T) {
 }
 
 func TestConsumerGroup(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *Reader)
@@ -638,8 +629,6 @@ func TestConsumerGroup(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
@@ -913,8 +902,6 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 }
 
 func TestReaderConsumerGroup(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario       string
 		partitions     int
@@ -1091,7 +1078,7 @@ func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx cont
 
 	conn, err := r.coordinator()
 	if err != nil {
-		t.Errorf("unable to connect to coordinator: %v", err)
+		t.Fatalf("unable to connect to coordinator: %v", err)
 	}
 	defer conn.Close()
 
@@ -1130,9 +1117,13 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 	r2 := NewReader(r.config)
 	defer r2.Close()
 
+	if err := r2.refreshCoordinator(); err != nil {
+		t.Fatalf("unable to refresh coordinator: %v", err)
+	}
+
 	conn, err := r2.coordinator()
 	if err != nil {
-		t.Errorf("unable to connect to coordinator: %v", err)
+		t.Fatalf("unable to connect to coordinator: %v", err)
 	}
 	defer conn.Close()
 
@@ -1534,8 +1525,6 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 // than partitions in a group.
 // https://github.com/segmentio/kafka-go/issues/200
 func TestRebalanceTooManyConsumers(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
 	conf := ReaderConfig{
 		Brokers: []string{"localhost:9092"},
@@ -1566,7 +1555,6 @@ func TestRebalanceTooManyConsumers(t *testing.T) {
 }
 
 func TestConsumerGroupWithMissingTopic(t *testing.T) {
-	t.Parallel()
 	t.Skip("this test doesn't work when the cluster is configured to auto-create topics")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

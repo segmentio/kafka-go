@@ -1,7 +1,5 @@
 package kafka
 
-import "bufio"
-
 type leaveGroupRequestV0 struct {
 	// GroupID holds the unique group identifier
 	GroupID string
@@ -20,6 +18,11 @@ func (t leaveGroupRequestV0) writeTo(wb *writeBuffer) {
 	wb.writeString(t.MemberID)
 }
 
+func (t *leaveGroupRequestV0) readFrom(rb *readBuffer) {
+	t.GroupID = rb.readString()
+	t.MemberID = rb.readString()
+}
+
 type leaveGroupResponseV0 struct {
 	// ErrorCode holds response error code
 	ErrorCode int16
@@ -33,7 +36,6 @@ func (t leaveGroupResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.ErrorCode)
 }
 
-func (t *leaveGroupResponseV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	remain, err = readInt16(r, size, &t.ErrorCode)
-	return
+func (t *leaveGroupResponseV0) readFrom(rb *readBuffer) {
+	t.ErrorCode = rb.readInt16()
 }

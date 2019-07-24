@@ -1,7 +1,5 @@
 package kafka
 
-import "bufio"
-
 type listOffsetRequestV1 struct {
 	ReplicaID int32
 	Topics    []listOffsetRequestTopicV1
@@ -88,18 +86,9 @@ func (p partitionOffsetV1) writeTo(wb *writeBuffer) {
 	wb.writeInt64(p.Offset)
 }
 
-func (p *partitionOffsetV1) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	if remain, err = readInt32(r, sz, &p.Partition); err != nil {
-		return
-	}
-	if remain, err = readInt16(r, remain, &p.ErrorCode); err != nil {
-		return
-	}
-	if remain, err = readInt64(r, remain, &p.Timestamp); err != nil {
-		return
-	}
-	if remain, err = readInt64(r, remain, &p.Offset); err != nil {
-		return
-	}
-	return
+func (p *partitionOffsetV1) readFrom(r *readBuffer) {
+	p.Partition = r.readInt32()
+	p.ErrorCode = r.readInt16()
+	p.Timestamp = r.readInt64()
+	p.Offset = r.readInt64()
 }

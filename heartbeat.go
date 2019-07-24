@@ -1,7 +1,5 @@
 package kafka
 
-import "bufio"
-
 type heartbeatRequestV0 struct {
 	// GroupID holds the unique group identifier
 	GroupID string
@@ -38,9 +36,6 @@ func (t heartbeatResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.ErrorCode)
 }
 
-func (t *heartbeatResponseV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	if remain, err = readInt16(r, sz, &t.ErrorCode); err != nil {
-		return
-	}
-	return
+func (t *heartbeatResponseV0) readFrom(rb *readBuffer) {
+	t.ErrorCode = rb.readInt16()
 }

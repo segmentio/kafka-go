@@ -1,9 +1,5 @@
 package kafka
 
-import (
-	"bufio"
-)
-
 type listGroupsRequestV1 struct {
 }
 
@@ -29,14 +25,9 @@ func (t ListGroupsResponseGroupV1) writeTo(wb *writeBuffer) {
 	wb.writeString(t.ProtocolType)
 }
 
-func (t *ListGroupsResponseGroupV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readString(r, size, &t.GroupID); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.ProtocolType); err != nil {
-		return
-	}
-	return
+func (t *ListGroupsResponseGroupV1) readFrom(rb *readBuffer) {
+	t.GroupID = rb.readString()
+	t.ProtocolType = rb.readString()
 }
 
 type listGroupsResponseV1 struct {
@@ -62,25 +53,13 @@ func (t listGroupsResponseV1) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.Groups), func(i int) { t.Groups[i].writeTo(wb) })
 }
 
-func (t *listGroupsResponseV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt32(r, size, &t.ThrottleTimeMS); err != nil {
-		return
-	}
-	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
-		return
-	}
+func (t *listGroupsResponseV1) readFrom(rb *readBuffer) {
+	t.ThrottleTimeMS = rb.readInt32()
+	t.ErrorCode = rb.readInt16()
 
-	fn := func(withReader *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
-		var item ListGroupsResponseGroupV1
-		if fnRemain, fnErr = (&item).readFrom(withReader, withSize); err != nil {
-			return
-		}
-		t.Groups = append(t.Groups, item)
-		return
-	}
-	if remain, err = readArrayWith(r, remain, fn); err != nil {
-		return
-	}
-
-	return
+	rb.readArray(func() {
+		group := ListGroupsResponseGroupV1{}
+		group.readFrom(rb)
+		t.Groups = append(t.Groups, group)
+	})
 }

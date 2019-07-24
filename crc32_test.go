@@ -7,8 +7,6 @@ import (
 )
 
 func TestMessageCRC32(t *testing.T) {
-	t.Parallel()
-
 	m := message{
 		MagicByte: 1,
 		Timestamp: 42,

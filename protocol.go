@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"encoding/binary"
-	"fmt"
 )
 
 type apiKey int16
@@ -79,11 +78,4 @@ func makeInt32(b []byte) int32 {
 
 func makeInt64(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
-}
-
-func expectZeroSize(sz int, err error) error {
-	if err == nil && sz != 0 {
-		err = fmt.Errorf("reading a response left %d unread bytes", sz)
-	}
-	return err
 }

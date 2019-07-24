@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"bufio"
 	"bytes"
 )
 
@@ -33,26 +32,17 @@ func (t groupAssignment) writeTo(wb *writeBuffer) {
 	wb.writeBytes(t.UserData)
 }
 
-func (t *groupAssignment) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+func (t *groupAssignment) readFrom(rb *readBuffer) {
 	// I came across this case when testing for compatibility with bsm/sarama-cluster. It
 	// appears in some cases, sarama-cluster can send a nil array entry. Admittedly, I
 	// didn't look too closely at it.
-	if size == 0 {
+	if rb.n == 0 {
 		t.Topics = map[string][]int32{}
-		return 0, nil
+	} else {
+		t.Version = rb.readInt16()
+		t.Topics = rb.readMapStringInt32Array()
+		t.UserData = rb.readBytes()
 	}
-
-	if remain, err = readInt16(r, size, &t.Version); err != nil {
-		return
-	}
-	if remain, err = readMapStringInt32(r, remain, &t.Topics); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.UserData); err != nil {
-		return
-	}
-
-	return
 }
 
 func (t groupAssignment) bytes() []byte {
@@ -128,12 +118,7 @@ func (t syncGroupResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeBytes(t.MemberAssignments)
 }
 
-func (t *syncGroupResponseV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	if remain, err = readInt16(r, sz, &t.ErrorCode); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.MemberAssignments); err != nil {
-		return
-	}
-	return
+func (t *syncGroupResponseV0) readFrom(rb *readBuffer) {
+	t.ErrorCode = rb.readInt16()
+	t.MemberAssignments = rb.readBytes()
 }

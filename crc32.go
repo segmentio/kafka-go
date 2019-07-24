@@ -3,7 +3,6 @@ package kafka
 import (
 	"encoding/binary"
 	"hash/crc32"
-	"io"
 )
 
 type crc32Writer struct {
@@ -54,8 +53,3 @@ func (w *crc32Writer) WriteString(s string) (int, error) {
 	w.update([]byte(s))
 	return len(s), nil
 }
-
-var (
-	_ io.Writer       = (*crc32Writer)(nil)
-	_ io.StringWriter = (*crc32Writer)(nil)
-)

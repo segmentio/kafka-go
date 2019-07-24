@@ -138,9 +138,8 @@ func (c *Client) connect() (conn *Conn, err error) {
 func (c *Client) coordinator(ctx context.Context, address string) (*Conn, error) {
 	conn, err := c.dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to coordinator, %v", address)
+		return nil, fmt.Errorf("unable to connect to coordinator at %q (%v)", address, err)
 	}
-
 	return conn, nil
 }
 

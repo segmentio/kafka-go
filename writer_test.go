@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"strings"
@@ -11,8 +12,6 @@ import (
 )
 
 func TestWriter(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T)
@@ -52,7 +51,6 @@ func TestWriter(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
 			testFunc(t)
 		})
 	}
@@ -103,18 +101,18 @@ func testWriterRoundRobin1(t *testing.T) {
 	msgs, err := readPartition(topic, 0, offset)
 
 	if err != nil {
-		t.Error("error reading partition", err)
+		t.Error("error reading partition:", err)
 		return
 	}
 
 	if len(msgs) != 1 {
-		t.Error("bad messages in partition", msgs)
+		t.Error("bad messages in partition:", msgs)
 		return
 	}
 
 	for _, m := range msgs {
 		if string(m.Value) != "Hello World!" {
-			t.Error("bad messages in partition", msgs)
+			t.Error("bad messages in partition:", msgs)
 			break
 		}
 	}
@@ -205,33 +203,32 @@ func testWriterMaxBytes(t *testing.T) {
 		return
 	}
 
-	firstMsg :=[]byte("Hello World!")
+	firstMsg := []byte("Hello World!")
 	secondMsg := []byte("LeftOver!")
 	msgs := []Message{
-			{
-				Value: firstMsg,
-			},
-			{
-				Value: secondMsg,
-			},
-
+		{
+			Value: firstMsg,
+		},
+		{
+			Value: secondMsg,
+		},
 	}
-	if err := w.WriteMessages(context.Background(),msgs...) ; err == nil {
+	if err := w.WriteMessages(context.Background(), msgs...); err == nil {
 		t.Error("expected error")
 		return
 	} else if err != nil {
 		switch e := err.(type) {
 		case MessageTooLargeError:
 			if string(e.Message.Value) != string(firstMsg) {
-				t.Errorf("unxpected returned message. Expected: %s, Got %s",firstMsg, e.Message.Value)
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", firstMsg, e.Message.Value)
 				return
 			}
 			if len(e.Remaining) != 1 {
 				t.Error("expected remaining errors; found none")
 				return
 			}
-			if string(e.Remaining[0].Value) != string(secondMsg){
-				t.Errorf("unxpected returned message. Expected: %s, Got %s",secondMsg, e.Message.Value)
+			if string(e.Remaining[0].Value) != string(secondMsg) {
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", secondMsg, e.Message.Value)
 				return
 			}
 		default:
@@ -257,6 +254,7 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 	var conn *Conn
 
 	if conn, err = DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition); err != nil {
+		err = fmt.Errorf("dialing leader: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -272,6 +270,8 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 		if msg, err = batch.ReadMessage(); err != nil {
 			if err == io.EOF {
 				err = nil
+			} else {
+				err = fmt.Errorf("reading message: %v", err)
 			}
 			return
 		}
