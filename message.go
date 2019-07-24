@@ -282,8 +282,14 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			continue
 		}
 
-		key(rb, int(rb.readInt32()))
-		val(rb, int(rb.readInt32()))
+		if n := int(rb.readInt32()); n >= 0 {
+			key(rb, n)
+		}
+
+		if n := int(rb.readInt32()); n >= 0 {
+			val(rb, n)
+		}
+
 		err = rb.err
 		return
 	}
@@ -480,8 +486,13 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	timestampDelta := rb.readVarInt()
 	offsetDelta := rb.readVarInt()
 
-	key(rb, int(rb.readVarInt()))
-	val(rb, int(rb.readVarInt()))
+	if n := int(rb.readVarInt()); n >= 0 {
+		key(rb, n)
+	}
+
+	if n := int(rb.readVarInt()); n >= 0 {
+		val(rb, n)
+	}
 
 	headerCount := rb.readVarInt()
 	headers = make([]Header, headerCount)
