@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"bufio"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -30,7 +29,12 @@ func (rb *readBuffer) readFull(b []byte) int {
 	}
 	n, err := io.ReadAtLeast(rb.r, b, len(b))
 	rb.n -= n
-	rb.err = err
+	if err != nil {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+		rb.err = err
+	}
 	return n
 }
 
@@ -47,21 +51,21 @@ func (rb *readBuffer) readInt8() int8 {
 
 func (rb *readBuffer) readInt16() int16 {
 	if rb.readFull(rb.b[:2]) == 2 {
-		return int16(binary.BigEndian.Uint16(rb.b[:2]))
+		return makeInt16(rb.b[:2])
 	}
 	return 0
 }
 
 func (rb *readBuffer) readInt32() int32 {
 	if rb.readFull(rb.b[:4]) == 4 {
-		return int32(binary.BigEndian.Uint32(rb.b[:4]))
+		return makeInt32(rb.b[:4])
 	}
 	return 0
 }
 
 func (rb *readBuffer) readInt64() int64 {
 	if rb.readFull(rb.b[:8]) == 8 {
-		return int64(binary.BigEndian.Uint64(rb.b[:8]))
+		return makeInt64(rb.b[:8])
 	}
 	return 0
 }
@@ -131,6 +135,8 @@ func (rb *readBuffer) readMapStringInt32Array() map[string][]int32 {
 
 		m[k] = a
 	}
+
+	return m
 }
 
 func (rb *readBuffer) readValue(a interface{}) {
@@ -170,7 +176,7 @@ func (rb *readBuffer) readStruct(v reflect.Value) {
 }
 
 func (rb *readBuffer) readSlice(v reflect.Value) {
-	n := rb.readArrayLen()
+	n := int(rb.readInt32())
 
 	if n < 0 {
 		v.Set(reflect.Zero(v.Type()))
@@ -180,6 +186,14 @@ func (rb *readBuffer) readSlice(v reflect.Value) {
 		for i := 0; i < n; i++ {
 			rb.readValue(v.Index(i).Addr().Interface())
 		}
+	}
+}
+
+func (rb *readBuffer) readArray(f func()) {
+	n := int(rb.readInt32())
+
+	for i := 0; i < n; i++ {
+		f()
 	}
 }
 
@@ -208,6 +222,10 @@ func (rb *readBuffer) discardString() {
 	rb.discard(int(rb.readInt16()))
 }
 
+func (rb *readBuffer) discardAll() {
+	rb.discard(rb.n)
+}
+
 func (rb *readBuffer) discard(n int) int {
 	if rb.err != nil {
 		return 0
@@ -226,7 +244,7 @@ func discard(r io.Reader, n int) (d int, err error) {
 	if n > 0 {
 		switch x := r.(type) {
 		case *readBuffer:
-			d = x.discard(n), nil
+			d = x.discard(n)
 		case *bufio.Reader:
 			d, err = x.Discard(n)
 		default:
@@ -294,7 +312,7 @@ func (rb *readBuffer) readFetchResponseHeaderV2() (throttle int32, watermark int
 		return
 	}
 
-	watermark = p.HighwaterMarkOffset
+	watermark, err = p.HighwaterMarkOffset, rb.err
 	return
 }
 
@@ -350,7 +368,7 @@ func (rb *readBuffer) readFetchResponseHeaderV5() (throttle int32, watermark int
 		abortedTransactions = make([]abortedTransaction, abortedTransactionCount)
 
 		for i := 0; i < abortedTransactionCount; i++ {
-			rb.readValue(&abortedTransactionCount[i])
+			rb.readValue(&abortedTransactions[i])
 		}
 	}
 
@@ -362,7 +380,7 @@ func (rb *readBuffer) readFetchResponseHeaderV5() (throttle int32, watermark int
 		return
 	}
 
-	watermark = p.HighwaterMarkOffset
+	watermark, err = p.HighwaterMarkOffset, rb.err
 	return
 
 }
@@ -421,7 +439,7 @@ func (rb *readBuffer) readFetchResponseHeaderV10() (throttle int32, watermark in
 		abortedTransactions = make([]abortedTransaction, abortedTransactionCount)
 
 		for i := 0; i < abortedTransactionCount; i++ {
-			rb.readValue(&abortedTransaction[i])
+			rb.readValue(&abortedTransactions[i])
 		}
 	}
 
@@ -433,7 +451,7 @@ func (rb *readBuffer) readFetchResponseHeaderV10() (throttle int32, watermark in
 		return
 	}
 
-	watermark = p.HighwaterMarkOffset
+	watermark, err = p.HighwaterMarkOffset, rb.err
 	return
 
 }

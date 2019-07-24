@@ -110,20 +110,18 @@ func (s messageSet) writeTo(wb *writeBuffer) {
 }
 
 type messageSetReader struct {
-	empty   bool
 	version int
 	v1      messageSetReaderV1
 	v2      messageSetReaderV2
 }
 
 func (r *messageSetReader) readMessage(min int64,
-	key func(*bufio.Reader, int, int) (int, error),
-	val func(*bufio.Reader, int, int) (int, error),
+	key func(*readBuffer),
+	val func(*readBuffer),
 ) (offset int64, timestamp int64, headers []Header, err error) {
-	if r.empty {
-		return 0, 0, nil, RequestTimedOut
-	}
 	switch r.version {
+	case 0: // empty
+		return 0, 0, nil, RequestTimedOut
 	case 1:
 		return r.v1.readMessage(min, key, val)
 	case 2:
@@ -134,10 +132,9 @@ func (r *messageSetReader) readMessage(min int64,
 }
 
 func (r *messageSetReader) remaining() (remain int) {
-	if r.empty {
-		return 0
-	}
 	switch r.version {
+	case 0: // empty
+		return 0
 	case 1:
 		return r.v1.remaining()
 	case 2:
@@ -148,10 +145,9 @@ func (r *messageSetReader) remaining() (remain int) {
 }
 
 func (r *messageSetReader) discard() (err error) {
-	if r.empty {
-		return nil
-	}
 	switch r.version {
+	case 0: // empty
+		return
 	case 1:
 		return r.v1.discard()
 	case 2:
@@ -166,43 +162,40 @@ type messageSetReaderV1 struct {
 }
 
 type readerStack struct {
-	reader *bufio.Reader
-	remain int
-	base   int64
 	parent *readerStack
+	reader *readBuffer
+	base   int64
 }
 
-func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, error) {
-	headerLength := 8 + 4 + 4 + 1 // offset + messageSize + crc + magicByte
+func newMessageSetReader(rb *readBuffer, remain int) (*messageSetReader, error) {
+	const headerLength = 8 + 4 + 4 + 1 // offset + messageSize + crc + magicByte
 
-	if headerLength > remain {
+	if headerLength > rb.n {
 		return nil, errShortRead
 	}
 
-	b, err := reader.Peek(headerLength)
+	b, err := rb.r.(*bufio.Reader).Peek(headerLength)
 	if err != nil {
 		return nil, err
 	}
-	var version int8 = int8(b[headerLength-1])
 
+	version := b[headerLength-1]
 	switch version {
 	case 0, 1:
-		return &messageSetReader{
+		mr := &messageSetReader{
 			version: 1,
-			v1: messageSetReaderV1{&readerStack{
-				reader: reader,
-				remain: remain,
-			}}}, nil
+			v1: messageSetReaderV1{
+				readerStack: &readerStack{reader: rb},
+			},
+		}
+		return mr, nil
 	case 2:
 		mr := &messageSetReader{
 			version: 2,
 			v2: messageSetReaderV2{
-				readerStack: &readerStack{
-					reader: reader,
-					remain: remain,
-				},
-				messageCount: 0,
-			}}
+				readerStack: &readerStack{reader: rb},
+			},
+		}
 		return mr, nil
 	default:
 		return nil, fmt.Errorf("unsupported message version %d found in fetch response", version)
@@ -210,17 +203,17 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, e
 }
 
 func (r *messageSetReaderV1) readMessage(min int64,
-	key func(*bufio.Reader, int, int) (int, error),
-	val func(*bufio.Reader, int, int) (int, error),
+	key func(*readBuffer),
+	val func(*readBuffer),
 ) (offset int64, timestamp int64, headers []Header, err error) {
 	for r.readerStack != nil {
-		if r.remain == 0 {
+		if r.reader.n == 0 {
 			r.readerStack = r.parent
 			continue
 		}
 
 		var attributes int8
-		if offset, attributes, timestamp, r.remain, err = readMessageHeader(r.reader, r.remain); err != nil {
+		if offset, attributes, timestamp, err = r.reader.readMessageHeader(); err != nil {
 			return
 		}
 
@@ -234,26 +227,20 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			}
 
 			// discard next four bytes...will be -1 to indicate null key
-			if r.remain, err = discardN(r.reader, r.remain, 4); err != nil {
-				return
-			}
+			r.reader.discard(4)
 
 			// read and decompress the contained message set.
 			var decompressed bytes.Buffer
+			var nbytes = r.reader.readInt32()
+			// 4x as a guess that the average compression ratio is near 75%
+			decompressed.Grow(4 * int(nbytes))
 
-			if r.remain, err = readBytesWith(r.reader, r.remain, func(r *bufio.Reader, sz, n int) (remain int, err error) {
-				// x4 as a guess that the average compression ratio is near 75%
-				decompressed.Grow(4 * n)
+			l := io.LimitedReader{R: r.reader, N: int64(nbytes)}
+			d := codec.NewReader(&l)
 
-				l := io.LimitedReader{R: r, N: int64(n)}
-				d := codec.NewReader(&l)
-
-				_, err = decompressed.ReadFrom(d)
-				remain = sz - (n - int(l.N))
-
-				d.Close()
-				return
-			}); err != nil {
+			_, err = decompressed.ReadFrom(d)
+			d.Close()
+			if err != nil {
 				return
 			}
 
@@ -269,13 +256,12 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			}
 
 			r.readerStack = &readerStack{
-				// Allocate a buffer of size 0, which gets capped at 16 bytes
-				// by the bufio package. We are already reading buffered data
-				// here, no need to reserve another 4KB buffer.
-				reader: bufio.NewReaderSize(&decompressed, 0),
-				remain: decompressed.Len(),
-				base:   offset,
 				parent: r.readerStack,
+				reader: &readBuffer{
+					r: &decompressed,
+					n: decompressed.Len(),
+				},
+				base: offset,
 			}
 			continue
 		}
@@ -288,19 +274,13 @@ func (r *messageSetReaderV1) readMessage(min int64,
 		// earlier offset than the one that was requested, it's the client's
 		// responsibility to ignore those.
 		if offset < min {
-			if r.remain, err = discardBytes(r.reader, r.remain); err != nil {
-				return
-			}
-			if r.remain, err = discardBytes(r.reader, r.remain); err != nil {
-				return
-			}
+			r.reader.discardBytes()
+			r.reader.discardBytes()
 			continue
 		}
 
-		if r.remain, err = readBytesWith(r.reader, r.remain, key); err != nil {
-			return
-		}
-		r.remain, err = readBytesWith(r.reader, r.remain, val)
+		key(r.reader)
+		val(r.reader)
 		return
 	}
 
@@ -310,14 +290,14 @@ func (r *messageSetReaderV1) readMessage(min int64,
 
 func (r *messageSetReaderV1) remaining() (remain int) {
 	for s := r.readerStack; s != nil; s = s.parent {
-		remain += s.remain
+		remain += s.reader.n
 	}
 	return
 }
 
-func (r *messageSetReaderV1) discard() (err error) {
+func (r *messageSetReaderV1) discard() error {
 	if r.readerStack == nil {
-		return
+		return nil
 	}
 	// rewind up to the top-most reader b/c it's the only one that's doing
 	// actual i/o.  the rest are byte buffers that have been pushed on the stack
@@ -325,23 +305,26 @@ func (r *messageSetReaderV1) discard() (err error) {
 	for r.parent != nil {
 		r.readerStack = r.parent
 	}
-	r.remain, err = discardN(r.reader, r.remain, r.remain)
-	return
+	r.reader.discardAll()
+	return r.reader.err
 }
 
 func extractOffset(base int64, msgSet []byte) (offset int64, err error) {
-	r, remain := bufio.NewReader(bytes.NewReader(msgSet)), len(msgSet)
-	for remain > 0 {
-		if remain, err = readInt64(r, remain, &offset); err != nil {
+	for b := msgSet; len(b) > 0; {
+		if len(b) < 12 {
+			err = errShortRead
 			return
 		}
-		var sz int32
-		if remain, err = readInt32(r, remain, &sz); err != nil {
+
+		offset = makeInt64(b[:8])
+		size := makeInt32(b[8:12])
+
+		if len(b) < int(12+size) {
+			err = errShortRead
 			return
 		}
-		if remain, err = discardN(r, remain, int(sz)); err != nil {
-			return
-		}
+
+		b = b[12+size:]
 	}
 	offset = base - offset
 	return
@@ -411,60 +394,34 @@ type messageSetReaderV2 struct {
 	header messageSetHeaderV2
 }
 
-func (r *messageSetReaderV2) readHeader() (err error) {
-	h := &r.header
-	if r.remain, err = readInt64(r.reader, r.remain, &h.firstOffset); err != nil {
-		return
-	}
-	if r.remain, err = readInt32(r.reader, r.remain, &h.length); err != nil {
-		return
-	}
-	if r.remain, err = readInt32(r.reader, r.remain, &h.partitionLeaderEpoch); err != nil {
-		return
-	}
-	if r.remain, err = readInt8(r.reader, r.remain, &h.magic); err != nil {
-		return
-	}
-	if r.remain, err = readInt32(r.reader, r.remain, &h.crc); err != nil {
-		return
-	}
-	if r.remain, err = readInt16(r.reader, r.remain, &h.batchAttributes); err != nil {
-		return
-	}
-	if r.remain, err = readInt32(r.reader, r.remain, &h.lastOffsetDelta); err != nil {
-		return
-	}
-	if r.remain, err = readInt64(r.reader, r.remain, &h.firstTimestamp); err != nil {
-		return
-	}
-	if r.remain, err = readInt64(r.reader, r.remain, &h.maxTimestamp); err != nil {
-		return
-	}
-	if r.remain, err = readInt64(r.reader, r.remain, &h.producerId); err != nil {
-		return
-	}
-	if r.remain, err = readInt16(r.reader, r.remain, &h.producerEpoch); err != nil {
-		return
-	}
-	if r.remain, err = readInt32(r.reader, r.remain, &h.firstSequence); err != nil {
-		return
-	}
-	var messageCount int32
-	if r.remain, err = readInt32(r.reader, r.remain, &messageCount); err != nil {
-		return
-	}
-	r.messageCount = int(messageCount)
+func (r *messageSetReaderV2) readHeader() error {
+	rb := r.reader
 
-	return nil
+	r.header = messageSetHeaderV2{
+		firstOffset:          rb.readInt64(),
+		length:               rb.readInt32(),
+		partitionLeaderEpoch: rb.readInt32(),
+		magic:                rb.readInt8(),
+		crc:                  rb.readInt32(),
+		batchAttributes:      rb.readInt16(),
+		lastOffsetDelta:      rb.readInt32(),
+		firstTimestamp:       rb.readInt64(),
+		maxTimestamp:         rb.readInt64(),
+		producerId:           rb.readInt64(),
+		producerEpoch:        rb.readInt16(),
+		firstSequence:        rb.readInt32(),
+	}
+
+	r.messageCount = int(rb.readInt32())
+	return rb.err
 }
 
 func (r *messageSetReaderV2) readMessage(min int64,
-	key func(*bufio.Reader, int, int) (int, error),
-	val func(*bufio.Reader, int, int) (int, error),
+	key func(*readBuffer),
+	val func(*readBuffer),
 ) (offset int64, timestamp int64, headers []Header, err error) {
-
 	if r.messageCount == 0 {
-		if r.remain == 0 {
+		if r.reader.n == 0 {
 			if r.parent != nil {
 				r.readerStack = r.parent
 			}
@@ -481,7 +438,7 @@ func (r *messageSetReaderV2) readMessage(min int64,
 			}
 
 			var batchRemain = int(r.header.length - 49)
-			if batchRemain > r.remain {
+			if batchRemain > r.reader.n {
 				err = errShortRead
 				return
 			}
@@ -493,95 +450,56 @@ func (r *messageSetReaderV2) readMessage(min int64,
 			d := codec.NewReader(&l)
 
 			_, err = decompressed.ReadFrom(d)
-			r.remain = r.remain - (batchRemain - int(l.N))
 			d.Close()
-
 			if err != nil {
 				return
 			}
 
 			r.readerStack = &readerStack{
-				reader: bufio.NewReaderSize(&decompressed, 0),
-				remain: decompressed.Len(),
-				base:   -1, // base is unused here
 				parent: r.readerStack,
+				reader: &readBuffer{
+					r: &decompressed,
+					n: decompressed.Len(),
+				},
+				base: -1, // base is unused here
 			}
 		}
 	}
 
-	var length int64
-	if r.remain, err = readVarInt(r.reader, r.remain, &length); err != nil {
-		return
-	}
+	rb := r.reader
+	_ = rb.readVarInt() // length
+	_ = rb.readInt8()   // attributes
+	timestampDelta := rb.readVarInt()
+	offsetDelta := rb.readVarInt()
 
-	var attrs int8
-	if r.remain, err = readInt8(r.reader, r.remain, &attrs); err != nil {
-		return
-	}
-	var timestampDelta int64
-	if r.remain, err = readVarInt(r.reader, r.remain, &timestampDelta); err != nil {
-		return
-	}
-	var offsetDelta int64
-	if r.remain, err = readVarInt(r.reader, r.remain, &offsetDelta); err != nil {
-		return
-	}
-	var keyLen int64
-	if r.remain, err = readVarInt(r.reader, r.remain, &keyLen); err != nil {
-		return
-	}
+	key(rb)
+	val(rb)
 
-	if r.remain, err = key(r.reader, r.remain, int(keyLen)); err != nil {
-		return
-	}
-	var valueLen int64
-	if r.remain, err = readVarInt(r.reader, r.remain, &valueLen); err != nil {
-		return
-	}
-
-	if r.remain, err = val(r.reader, r.remain, int(valueLen)); err != nil {
-		return
-	}
-
-	var headerCount int64
-	if r.remain, err = readVarInt(r.reader, r.remain, &headerCount); err != nil {
-		return
-	}
-
+	headerCount := rb.readVarInt()
 	headers = make([]Header, headerCount)
 
 	for i := 0; i < int(headerCount); i++ {
-		if err = r.readMessageHeader(&headers[i]); err != nil {
-			return
+		headers[i] = Header{
+			Key:   rb.readString(),
+			Value: rb.readBytes(),
 		}
 	}
+
 	r.messageCount--
 	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, nil
 }
 
-func (r *messageSetReaderV2) readMessageHeader(header *Header) (err error) {
-	var keyLen int64
-	if r.remain, err = readVarInt(r.reader, r.remain, &keyLen); err != nil {
-		return
+func (r *messageSetReaderV2) remaining() int {
+	if r.readerStack == nil {
+		return 0
 	}
-	if header.Key, r.remain, err = readNewString(r.reader, r.remain, int(keyLen)); err != nil {
-		return
-	}
-	var valLen int64
-	if r.remain, err = readVarInt(r.reader, r.remain, &valLen); err != nil {
-		return
-	}
-	if header.Value, r.remain, err = readNewBytes(r.reader, r.remain, int(valLen)); err != nil {
-		return
-	}
-	return nil
+	return r.reader.n
 }
 
-func (r *messageSetReaderV2) remaining() (remain int) {
-	return r.remain
-}
-
-func (r *messageSetReaderV2) discard() (err error) {
-	r.remain, err = discardN(r.reader, r.remain, r.remain)
-	return
+func (r *messageSetReaderV2) discard() error {
+	if r.readerStack == nil {
+		return nil
+	}
+	r.reader.discardAll()
+	return r.reader.err
 }

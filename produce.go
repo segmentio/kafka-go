@@ -1,7 +1,5 @@
 package kafka
 
-import "bufio"
-
 type produceRequestV2 struct {
 	RequiredAcks int16
 	Timeout      int32
@@ -96,20 +94,11 @@ func (p produceResponsePartitionV2) writeTo(wb *writeBuffer) {
 	wb.writeInt64(p.Timestamp)
 }
 
-func (p *produceResponsePartitionV2) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	if remain, err = readInt32(r, sz, &p.Partition); err != nil {
-		return
-	}
-	if remain, err = readInt16(r, remain, &p.ErrorCode); err != nil {
-		return
-	}
-	if remain, err = readInt64(r, remain, &p.Offset); err != nil {
-		return
-	}
-	if remain, err = readInt64(r, remain, &p.Timestamp); err != nil {
-		return
-	}
-	return
+func (p *produceResponsePartitionV2) readFrom(rb *readBuffer) {
+	p.Partition = rb.readInt32()
+	p.ErrorCode = rb.readInt16()
+	p.Offset = rb.readInt64()
+	p.Timestamp = rb.readInt64()
 }
 
 type produceResponsePartitionV7 struct {
@@ -132,21 +121,10 @@ func (p produceResponsePartitionV7) writeTo(wb *writeBuffer) {
 	wb.writeInt64(p.StartOffset)
 }
 
-func (p *produceResponsePartitionV7) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	if remain, err = readInt32(r, sz, &p.Partition); err != nil {
-		return
-	}
-	if remain, err = readInt16(r, remain, &p.ErrorCode); err != nil {
-		return
-	}
-	if remain, err = readInt64(r, remain, &p.Offset); err != nil {
-		return
-	}
-	if remain, err = readInt64(r, remain, &p.Timestamp); err != nil {
-		return
-	}
-	if remain, err = readInt64(r, remain, &p.StartOffset); err != nil {
-		return
-	}
-	return
+func (p *produceResponsePartitionV7) readFrom(rb *readBuffer) {
+	p.Partition = rb.readInt32()
+	p.ErrorCode = rb.readInt16()
+	p.Offset = rb.readInt64()
+	p.Timestamp = rb.readInt64()
+	p.StartOffset = rb.readInt64()
 }

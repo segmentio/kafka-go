@@ -1,7 +1,5 @@
 package kafka
 
-import "bufio"
-
 type offsetCommitRequestV2Partition struct {
 	// Partition ID
 	Partition int32
@@ -93,14 +91,9 @@ func (t offsetCommitResponseV2PartitionResponse) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.ErrorCode)
 }
 
-func (t *offsetCommitResponseV2PartitionResponse) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt32(r, size, &t.Partition); err != nil {
-		return
-	}
-	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
-		return
-	}
-	return
+func (t *offsetCommitResponseV2PartitionResponse) readFrom(rb *readBuffer) {
+	t.Partition = rb.readInt32()
+	t.ErrorCode = rb.readInt16()
 }
 
 type offsetCommitResponseV2Response struct {
@@ -118,24 +111,14 @@ func (t offsetCommitResponseV2Response) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.PartitionResponses), func(i int) { t.PartitionResponses[i].writeTo(wb) })
 }
 
-func (t *offsetCommitResponseV2Response) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readString(r, size, &t.Topic); err != nil {
-		return
-	}
+func (t *offsetCommitResponseV2Response) readFrom(rb *readBuffer) {
+	t.Topic = rb.readString()
 
-	fn := func(r *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
-		item := offsetCommitResponseV2PartitionResponse{}
-		if fnRemain, fnErr = (&item).readFrom(r, withSize); fnErr != nil {
-			return
-		}
-		t.PartitionResponses = append(t.PartitionResponses, item)
-		return
-	}
-	if remain, err = readArrayWith(r, remain, fn); err != nil {
-		return
-	}
-
-	return
+	rb.readArray(func() {
+		res := offsetCommitResponseV2PartitionResponse{}
+		res.readFrom(rb)
+		t.PartitionResponses = append(t.PartitionResponses, res)
+	})
 }
 
 type offsetCommitResponseV2 struct {
@@ -150,18 +133,10 @@ func (t offsetCommitResponseV2) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.Responses), func(i int) { t.Responses[i].writeTo(wb) })
 }
 
-func (t *offsetCommitResponseV2) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	fn := func(r *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
-		item := offsetCommitResponseV2Response{}
-		if fnRemain, fnErr = (&item).readFrom(r, withSize); fnErr != nil {
-			return
-		}
-		t.Responses = append(t.Responses, item)
-		return
-	}
-	if remain, err = readArrayWith(r, size, fn); err != nil {
-		return
-	}
-
-	return
+func (t *offsetCommitResponseV2) readFrom(rb *readBuffer) {
+	rb.readArray(func() {
+		res := offsetCommitResponseV2Response{}
+		res.readFrom(rb)
+		t.Responses = append(t.Responses, res)
+	})
 }

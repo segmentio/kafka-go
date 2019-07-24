@@ -1,9 +1,5 @@
 package kafka
 
-import (
-	"bufio"
-)
-
 type offsetFetchRequestV1Topic struct {
 	// Topic name
 	Topic string
@@ -68,20 +64,11 @@ func (t offsetFetchResponseV1PartitionResponse) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.ErrorCode)
 }
 
-func (t *offsetFetchResponseV1PartitionResponse) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt32(r, size, &t.Partition); err != nil {
-		return
-	}
-	if remain, err = readInt64(r, remain, &t.Offset); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.Metadata); err != nil {
-		return
-	}
-	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
-		return
-	}
-	return
+func (t *offsetFetchResponseV1PartitionResponse) readFrom(rb *readBuffer) {
+	t.Partition = rb.readInt32()
+	t.Offset = rb.readInt64()
+	t.Metadata = rb.readString()
+	t.ErrorCode = rb.readInt16()
 }
 
 type offsetFetchResponseV1Response struct {
@@ -102,24 +89,14 @@ func (t offsetFetchResponseV1Response) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.PartitionResponses), func(i int) { t.PartitionResponses[i].writeTo(wb) })
 }
 
-func (t *offsetFetchResponseV1Response) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readString(r, size, &t.Topic); err != nil {
-		return
-	}
+func (t *offsetFetchResponseV1Response) readFrom(rb *readBuffer) {
+	t.Topic = rb.readString()
 
-	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		item := offsetFetchResponseV1PartitionResponse{}
-		if fnRemain, fnErr = (&item).readFrom(r, size); err != nil {
-			return
-		}
-		t.PartitionResponses = append(t.PartitionResponses, item)
-		return
-	}
-	if remain, err = readArrayWith(r, remain, fn); err != nil {
-		return
-	}
-
-	return
+	rb.readArray(func() {
+		res := offsetFetchResponseV1PartitionResponse{}
+		res.readFrom(rb)
+		t.PartitionResponses = append(t.PartitionResponses, res)
+	})
 }
 
 type offsetFetchResponseV1 struct {
@@ -135,20 +112,12 @@ func (t offsetFetchResponseV1) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.Responses), func(i int) { t.Responses[i].writeTo(wb) })
 }
 
-func (t *offsetFetchResponseV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	fn := func(r *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
-		item := offsetFetchResponseV1Response{}
-		if fnRemain, fnErr = (&item).readFrom(r, withSize); fnErr != nil {
-			return
-		}
-		t.Responses = append(t.Responses, item)
-		return
-	}
-	if remain, err = readArrayWith(r, size, fn); err != nil {
-		return
-	}
-
-	return
+func (t *offsetFetchResponseV1) readFrom(rb *readBuffer) {
+	rb.readArray(func() {
+		res := offsetFetchResponseV1Response{}
+		res.readFrom(rb)
+		t.Responses = append(t.Responses, res)
+	})
 }
 
 func findOffset(topic string, partition int32, response offsetFetchResponseV1) (int64, bool) {

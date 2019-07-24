@@ -1,9 +1,5 @@
 package kafka
 
-import (
-	"bufio"
-)
-
 // saslHandshakeRequestV0 implements the format for V0 and V1 SASL
 // requests (they are identical)
 type saslHandshakeRequestV0 struct {
@@ -15,8 +11,8 @@ func (t saslHandshakeRequestV0) size() int32 {
 	return sizeofString(t.Mechanism)
 }
 
-func (t *saslHandshakeRequestV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	return readString(r, sz, &t.Mechanism)
+func (t *saslHandshakeRequestV0) readFrom(rb *readBuffer) {
+	t.Mechanism = rb.readString()
 }
 
 func (t saslHandshakeRequestV0) writeTo(wb *writeBuffer) {
@@ -42,12 +38,7 @@ func (t saslHandshakeResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeStringArray(t.EnabledMechanisms)
 }
 
-func (t *saslHandshakeResponseV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	if remain, err = readInt16(r, sz, &t.ErrorCode); err != nil {
-		return
-	}
-	if remain, err = readStringArray(r, remain, &t.EnabledMechanisms); err != nil {
-		return
-	}
-	return
+func (t *saslHandshakeResponseV0) readFrom(rb *readBuffer) {
+	t.ErrorCode = rb.readInt16()
+	t.EnabledMechanisms = rb.readStringArray()
 }

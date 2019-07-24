@@ -1,9 +1,5 @@
 package kafka
 
-import (
-	"bufio"
-)
-
 // FindCoordinatorRequestV0 requests the coordinator for the specified group or transaction
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
@@ -44,17 +40,10 @@ func (t findCoordinatorResponseCoordinatorV0) writeTo(wb *writeBuffer) {
 	wb.writeInt32(t.Port)
 }
 
-func (t *findCoordinatorResponseCoordinatorV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt32(r, size, &t.NodeID); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.Host); err != nil {
-		return
-	}
-	if remain, err = readInt32(r, remain, &t.Port); err != nil {
-		return
-	}
-	return
+func (t *findCoordinatorResponseCoordinatorV0) readFrom(rb *readBuffer) {
+	t.NodeID = rb.readInt32()
+	t.Host = rb.readString()
+	t.Port = rb.readInt32()
 }
 
 type findCoordinatorResponseV0 struct {
@@ -75,12 +64,7 @@ func (t findCoordinatorResponseV0) writeTo(wb *writeBuffer) {
 	t.Coordinator.writeTo(wb)
 }
 
-func (t *findCoordinatorResponseV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt16(r, size, &t.ErrorCode); err != nil {
-		return
-	}
-	if remain, err = (&t.Coordinator).readFrom(r, remain); err != nil {
-		return
-	}
-	return
+func (t *findCoordinatorResponseV0) readFrom(rb *readBuffer) {
+	t.ErrorCode = rb.readInt16()
+	t.Coordinator.readFrom(rb)
 }

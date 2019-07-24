@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"bufio"
 	"bytes"
 )
 
@@ -36,17 +35,10 @@ func (t groupMetadata) bytes() []byte {
 	return buf.Bytes()
 }
 
-func (t *groupMetadata) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt16(r, size, &t.Version); err != nil {
-		return
-	}
-	if remain, err = readStringArray(r, remain, &t.Topics); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.UserData); err != nil {
-		return
-	}
-	return
+func (t *groupMetadata) readFrom(rb *readBuffer) {
+	t.Version = rb.readInt16()
+	t.Topics = rb.readStringArray()
+	t.UserData = rb.readBytes()
 }
 
 type joinGroupRequestGroupProtocolV1 struct {
@@ -121,14 +113,9 @@ func (t joinGroupResponseMemberV1) writeTo(wb *writeBuffer) {
 	wb.writeBytes(t.MemberMetadata)
 }
 
-func (t *joinGroupResponseMemberV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readString(r, size, &t.MemberID); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.MemberMetadata); err != nil {
-		return
-	}
-	return
+func (t *joinGroupResponseMemberV1) readFrom(rb *readBuffer) {
+	t.MemberID = rb.readString()
+	t.MemberMetadata = rb.readBytes()
 }
 
 type joinGroupResponseV1 struct {
@@ -167,34 +154,16 @@ func (t joinGroupResponseV1) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.Members), func(i int) { t.Members[i].writeTo(wb) })
 }
 
-func (t *joinGroupResponseV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt16(r, size, &t.ErrorCode); err != nil {
-		return
-	}
-	if remain, err = readInt32(r, remain, &t.GenerationID); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.GroupProtocol); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.LeaderID); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.MemberID); err != nil {
-		return
-	}
+func (t *joinGroupResponseV1) readFrom(rb *readBuffer) {
+	t.ErrorCode = rb.readInt16()
+	t.GenerationID = rb.readInt32()
+	t.GroupProtocol = rb.readString()
+	t.LeaderID = rb.readString()
+	t.MemberID = rb.readString()
 
-	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		var item joinGroupResponseMemberV1
-		if fnRemain, fnErr = (&item).readFrom(r, size); fnErr != nil {
-			return
-		}
-		t.Members = append(t.Members, item)
-		return
-	}
-	if remain, err = readArrayWith(r, remain, fn); err != nil {
-		return
-	}
-
-	return
+	rb.readArray(func() {
+		member := joinGroupResponseMemberV1{}
+		member.readFrom(rb)
+		t.Members = append(t.Members, member)
+	})
 }

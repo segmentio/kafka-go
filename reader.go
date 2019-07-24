@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -217,11 +216,18 @@ func (r *Reader) makejoinGroupRequestV1() (joinGroupRequestV1, error) {
 // makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember
 func (r *Reader) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]GroupMember, error) {
 	members := make([]GroupMember, 0, len(in))
+
 	for _, item := range in {
+		rb := &readBuffer{
+			r: bytes.NewReader(item.MemberMetadata),
+			n: len(item.MemberMetadata),
+		}
+
 		metadata := groupMetadata{}
-		reader := bufio.NewReader(bytes.NewReader(item.MemberMetadata))
-		if remain, err := (&metadata).readFrom(reader, len(item.MemberMetadata)); err != nil || remain != 0 {
-			return nil, fmt.Errorf("unable to read metadata for member, %v: %v\n", item.MemberID, err)
+		metadata.readFrom(rb)
+
+		if rb.err != nil {
+			return nil, fmt.Errorf("unable to read metadata for member, %v: %v\n", item.MemberID, rb.err)
 		}
 
 		members = append(members, GroupMember{
@@ -437,11 +443,17 @@ func (r *Reader) syncGroup(conn *Conn, memberAssignments GroupMemberAssignments)
 		}
 	}
 
+	rb := &readBuffer{
+		r: bytes.NewReader(response.MemberAssignments),
+		n: len(response.MemberAssignments),
+	}
+
 	assignments := groupAssignment{}
-	reader := bufio.NewReader(bytes.NewReader(response.MemberAssignments))
-	if _, err := (&assignments).readFrom(reader, len(response.MemberAssignments)); err != nil {
+	assignments.readFrom(rb)
+
+	if rb.err != nil {
 		_ = r.leaveGroup(conn)
-		return nil, fmt.Errorf("unable to read SyncGroup response for group, %v: %v\n", r.config.GroupID, err)
+		return nil, fmt.Errorf("unable to read SyncGroup response for group, %v: %v\n", r.config.GroupID, rb.err)
 	}
 
 	if len(assignments.Topics) == 0 {

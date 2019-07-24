@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"bufio"
 	"time"
 )
 
@@ -173,14 +172,9 @@ func (t createTopicsResponseV0TopicError) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.ErrorCode)
 }
 
-func (t *createTopicsResponseV0TopicError) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readString(r, size, &t.Topic); err != nil {
-		return
-	}
-	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
-		return
-	}
-	return
+func (t *createTopicsResponseV0TopicError) readFrom(rb *readBuffer) {
+	t.Topic = rb.readString()
+	t.ErrorCode = rb.readInt16()
 }
 
 // See http://kafka.apache.org/protocol.html#The_Messages_CreateTopics
@@ -196,50 +190,42 @@ func (t createTopicsResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.TopicErrors), func(i int) { t.TopicErrors[i].writeTo(wb) })
 }
 
-func (t *createTopicsResponseV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		var topic createTopicsResponseV0TopicError
-		if fnRemain, fnErr = (&topic).readFrom(r, size); err != nil {
-			return
-		}
-		t.TopicErrors = append(t.TopicErrors, topic)
-		return
-	}
-	if remain, err = readArrayWith(r, size, fn); err != nil {
-		return
-	}
-
-	return
+func (t *createTopicsResponseV0) readFrom(rb *readBuffer) {
+	rb.readArray(func() {
+		topicError := createTopicsResponseV0TopicError{}
+		topicError.readFrom(rb)
+		t.TopicErrors = append(t.TopicErrors, topicError)
+	})
 }
 
-func (c *Conn) createTopics(request createTopicsRequestV0) (createTopicsResponseV0, error) {
-	var response createTopicsResponseV0
+func (c *Conn) createTopics(req createTopicsRequestV0) (createTopicsResponseV0, error) {
+	var res createTopicsResponseV0
 
 	err := c.writeOperation(
-		func(deadline time.Time, id int32) error {
-			if request.Timeout == 0 {
+		func(deadline time.Time, id int32) {
+			if req.Timeout == 0 {
 				now := time.Now()
 				deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-				request.Timeout = milliseconds(deadlineToTimeout(deadline, now))
+				req.Timeout = milliseconds(deadlineToTimeout(deadline, now))
 			}
-			return c.writeRequest(createTopicsRequest, v0, id, request)
+			c.writeRequest(createTopicsRequest, v0, id, req)
 		},
-		func(deadline time.Time, size int) error {
-			return expectZeroSize(func() (remain int, err error) {
-				return (&response).readFrom(&c.rbuf, size)
-			}())
+		func(deadline time.Time) {
+			res.readFrom(&c.rb)
 		},
 	)
+
 	if err != nil {
-		return response, err
+		return res, err
 	}
-	for _, tr := range response.TopicErrors {
+
+	for _, tr := range res.TopicErrors {
 		if tr.ErrorCode != 0 {
-			return response, Error(tr.ErrorCode)
+			return res, Error(tr.ErrorCode)
 		}
 	}
 
-	return response, nil
+	return res, nil
 }
 
 // CreateTopics creates one topic per provided configuration with idempotent
@@ -247,10 +233,9 @@ func (c *Conn) createTopics(request createTopicsRequestV0) (createTopicsResponse
 // configuration for an existing topic, it will have no effect.
 func (c *Conn) CreateTopics(topics ...TopicConfig) error {
 	var requestV0Topics []createTopicsRequestV0Topic
+
 	for _, t := range topics {
-		requestV0Topics = append(
-			requestV0Topics,
-			t.toCreateTopicsRequestV0Topic())
+		requestV0Topics = append(requestV0Topics, t.toCreateTopicsRequestV0Topic())
 	}
 
 	_, err := c.createTopics(createTopicsRequestV0{
@@ -259,7 +244,6 @@ func (c *Conn) CreateTopics(topics ...TopicConfig) error {
 
 	switch err {
 	case TopicAlreadyExists:
-		// ok
 		return nil
 	default:
 		return err

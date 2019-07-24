@@ -1,7 +1,5 @@
 package kafka
 
-import "bufio"
-
 // See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
 type describeGroupsRequestV0 struct {
 	// List of groupIds to request metadata for (an empty groupId array
@@ -55,23 +53,12 @@ func (t describeGroupsResponseMemberV0) writeTo(wb *writeBuffer) {
 	wb.writeBytes(t.MemberAssignments)
 }
 
-func (t *describeGroupsResponseMemberV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readString(r, size, &t.MemberID); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.ClientID); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.ClientHost); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.MemberMetadata); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.MemberAssignments); err != nil {
-		return
-	}
-	return
+func (t *describeGroupsResponseMemberV0) readFrom(rb *readBuffer) {
+	t.MemberID = rb.readString()
+	t.ClientID = rb.readString()
+	t.ClientHost = rb.readString()
+	t.MemberMetadata = rb.readBytes()
+	t.MemberAssignments = rb.readBytes()
 }
 
 type describeGroupsResponseGroupV0 struct {
@@ -114,36 +101,18 @@ func (t describeGroupsResponseGroupV0) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.Members), func(i int) { t.Members[i].writeTo(wb) })
 }
 
-func (t *describeGroupsResponseGroupV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt16(r, size, &t.ErrorCode); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.GroupID); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.State); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.ProtocolType); err != nil {
-		return
-	}
-	if remain, err = readString(r, remain, &t.Protocol); err != nil {
-		return
-	}
+func (t *describeGroupsResponseGroupV0) readFrom(rb *readBuffer) {
+	t.ErrorCode = rb.readInt16()
+	t.GroupID = rb.readString()
+	t.State = rb.readString()
+	t.ProtocolType = rb.readString()
+	t.Protocol = rb.readString()
 
-	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		item := describeGroupsResponseMemberV0{}
-		if fnRemain, fnErr = (&item).readFrom(r, size); err != nil {
-			return
-		}
-		t.Members = append(t.Members, item)
-		return
-	}
-	if remain, err = readArrayWith(r, remain, fn); err != nil {
-		return
-	}
-
-	return
+	rb.readArray(func() {
+		member := describeGroupsResponseMemberV0{}
+		member.readFrom(rb)
+		t.Members = append(t.Members, member)
+	})
 }
 
 type describeGroupsResponseV0 struct {
@@ -159,18 +128,10 @@ func (t describeGroupsResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.Groups), func(i int) { t.Groups[i].writeTo(wb) })
 }
 
-func (t *describeGroupsResponseV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		item := describeGroupsResponseGroupV0{}
-		if fnRemain, fnErr = (&item).readFrom(r, size); fnErr != nil {
-			return
-		}
-		t.Groups = append(t.Groups, item)
-		return
-	}
-	if remain, err = readArrayWith(r, sz, fn); err != nil {
-		return
-	}
-
-	return
+func (t *describeGroupsResponseV0) readFrom(rb *readBuffer) {
+	rb.readArray(func() {
+		group := describeGroupsResponseGroupV0{}
+		group.readFrom(rb)
+		t.Groups = append(t.Groups, group)
+	})
 }
