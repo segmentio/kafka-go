@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"io"
 	"io/ioutil"
+	"math"
 )
 
 type Reader struct {
@@ -36,44 +37,64 @@ func (r *Reader) Limit(n int) {
 	r.n = n
 }
 
-func (r *Reader) ReadByte() byte {
-	if r.readFull(r.b[:1]) == 1 {
-		return r.b[0]
+func (r *Reader) ReadUint8() uint8 {
+	if r.readFull(r.b[:1]) {
+		return uint8(r.b[0])
+	}
+	return 0
+}
+
+func (r *Reader) ReadUint16() uint16 {
+	if r.readFull(r.b[:2]) {
+		return makeUint16(r.b[:2])
+	}
+	return 0
+}
+
+func (r *Reader) ReadUint32() uint32 {
+	if r.readFull(r.b[:4]) {
+		return makeUint32(r.b[:4])
+	}
+	return 0
+}
+
+func (r *Reader) ReadUint64() uint32 {
+	if r.readFull(r.b[:8]) {
+		return makeUint32(r.b[:8])
 	}
 	return 0
 }
 
 func (r *Reader) ReadInt8() int8 {
-	return int8(r.ReadByte())
+	return int8(r.ReadUint8())
 }
 
 func (r *Reader) ReadInt16() int16 {
-	if r.readFull(r.b[:2]) == 2 {
-		return makeInt16(r.b[:2])
-	}
-	return 0
+	return int16(r.ReadUint16())
 }
 
 func (r *Reader) ReadInt32() int32 {
-	if r.readFull(r.b[:4]) == 4 {
-		return makeInt32(r.b[:4])
-	}
-	return 0
+	return int32(r.ReadUint32())
 }
 
 func (r *Reader) ReadInt64() int64 {
-	if r.readFull(r.b[:8]) == 8 {
-		return makeInt64(r.b[:8])
+	return int64(r.ReadUint64())
+}
+
+func (r *Reader) ReadVarInt() int32 {
+	if v := r.ReadVarLong(); v <= math.MaxInt32 {
+		return int32(v)
 	}
+	r.err = ErrVarIntRange
 	return 0
 }
 
-func (r *Reader) ReadVarInt() int64 {
+func (r *Reader) ReadVarLong() int64 {
 	x := uint64(0)
 	s := uint(0)
 
 	for {
-		b := r.ReadByte()
+		b := r.ReadUint8()
 
 		if b < 0x80 {
 			if r.err != nil {
@@ -89,13 +110,14 @@ func (r *Reader) ReadVarInt() int64 {
 }
 
 func (r *Reader) ReadSlice(n int) []byte {
-	b := make([]byte, n)
-	i := r.readFull(b)
-	return b[:i]
+	if b := make([]byte, n); r.readFull(b) {
+		return b
+	}
+	return nil
 }
 
 func (r *Reader) ReadBool() bool {
-	return r.ReadByte() != 0
+	return r.ReadUint8() != 0
 }
 
 func (r *Reader) ReadFixString() string {
@@ -130,19 +152,23 @@ func (r *Reader) ReadVarBytes() []byte {
 	return r.ReadSlice(int(n))
 }
 
-func (r *Reader) readFull(b []byte) int {
+func (r *Reader) ReadArrayLength() int {
+	return int(r.ReadInt32())
+}
+
+func (r *Reader) readFull(b []byte) bool {
 	if r.err != nil {
 		if r.err == io.EOF {
 			r.err = io.ErrUnexpectedEOF
 		}
-		return 0
+		return false
 	}
 	if r.n < len(b) {
 		r.DiscardAll()
 		if r.err == nil {
 			r.err = ErrShortRead
 		}
-		return 0
+		return false
 	}
 	n, err := io.ReadAtLeast(r.r, b, len(b))
 	r.n -= n
@@ -151,8 +177,9 @@ func (r *Reader) readFull(b []byte) int {
 			err = io.ErrUnexpectedEOF
 		}
 		r.err = err
+		return false
 	}
-	return n
+	return true
 }
 
 func (r *Reader) Read(b []byte) (int, error) {

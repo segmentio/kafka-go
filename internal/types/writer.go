@@ -37,27 +37,47 @@ func (w *Writer) Reset(x io.Writer) {
 	w.err = nil
 }
 
-func (w *Writer) WriteInt8(i int8) {
+func (w *Writer) WriteUint8(i uint8) {
 	w.b[0] = byte(i)
 	w.Write(w.b[:1])
 }
 
-func (w *Writer) WriteInt16(i int16) {
-	putInt16(w.b[:2], i)
+func (w *Writer) WriteUint16(i uint16) {
+	putUint16(w.b[:2], i)
 	w.Write(w.b[:2])
 }
 
-func (w *Writer) WriteInt32(i int32) {
-	putInt32(w.b[:4], i)
+func (w *Writer) WriteUint32(i uint32) {
+	putUint32(w.b[:4], i)
 	w.Write(w.b[:4])
 }
 
-func (w *Writer) WriteInt64(i int64) {
-	putInt64(w.b[:8], i)
+func (w *Writer) WriteUint64(i uint64) {
+	putUint64(w.b[:8], i)
 	w.Write(w.b[:8])
 }
 
-func (w *Writer) WriteVarInt(i int64) {
+func (w *Writer) WriteInt8(i int8) {
+	w.WriteUint8(uint8(i))
+}
+
+func (w *Writer) WriteInt16(i int16) {
+	w.WriteUint16(uint16(i))
+}
+
+func (w *Writer) WriteInt32(i int32) {
+	w.WriteUint32(uint32(i))
+}
+
+func (w *Writer) WriteInt64(i int64) {
+	w.WriteUint64(uint64(i))
+}
+
+func (w *Writer) WriteVarInt(i int32) {
+	w.WriteVarLong(int64(i))
+}
+
+func (w *Writer) WriteVarLong(i int64) {
 	u := uint64((i << 1) ^ (i >> 63))
 	n := 0
 
@@ -81,38 +101,46 @@ func (w *Writer) WriteFixString(s string) {
 }
 
 func (w *Writer) WriteVarString(s string) {
-	w.WriteVarInt(int64(len(s)))
+	w.WriteVarInt(int32(len(s)))
 	w.WriteString(s)
 }
 
-func (w *Writer) WriteNullableString(s *string) {
-	if s == nil {
+func (w *Writer) WriteNullableString(s string) {
+	if s == "" {
 		w.WriteInt16(-1)
 	} else {
-		w.WriteString(*s)
+		w.WriteFixString(s)
 	}
 }
 
 func (w *Writer) WriteFixBytes(b []byte) {
-	n := len(b)
-	if b == nil {
-		n = -1
-	}
-	w.WriteInt32(int32(n))
+	w.WriteInt32(int32(len(b)))
 	w.Write(b)
 }
 
 func (w *Writer) WriteVarBytes(b []byte) {
-	w.WriteVarInt(int64(len(b)))
+	w.WriteVarInt(int32(len(b)))
 	w.Write(b)
 }
 
+func (w *Writer) WriteNullableBytes(b []byte) {
+	if b == nil {
+		w.WriteInt32(-1)
+	} else {
+		w.WriteFixBytes(b)
+	}
+}
+
 func (w *Writer) WriteBool(b bool) {
-	v := int8(0)
+	v := uint8(0)
 	if b {
 		v = 1
 	}
-	w.WriteInt8(v)
+	w.WriteUint8(v)
+}
+
+func (w *Writer) WriteArrayLength(n int) {
+	w.WriteInt32(int32(n))
 }
 
 func (w *Writer) Write(b []byte) (int, error) {
@@ -124,6 +152,12 @@ func (w *Writer) Write(b []byte) (int, error) {
 		w.err = err
 	}
 	return n, err
+}
+
+func (w *Writer) WriteByte(b byte) error {
+	w.b[0] = b
+	_, err := w.Write(w.b[:1])
+	return err
 }
 
 func (w *Writer) WriteString(s string) (int, error) {

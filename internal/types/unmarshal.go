@@ -20,6 +20,14 @@ func unmarshal(r *Reader, v reflect.Value) {
 	switch v.Kind() {
 	case reflect.Bool:
 		unmarshalBool(r, v)
+	case reflect.Uint8:
+		unmarshalUint8(r, v)
+	case reflect.Uint16:
+		unmarshalUint16(r, v)
+	case reflect.Uint32:
+		unmarshalUint32(r, v)
+	case reflect.Uint64:
+		unmarshalUint64(r, v)
 	case reflect.Int8:
 		unmarshalInt8(r, v)
 	case reflect.Int16:
@@ -45,6 +53,22 @@ func unmarshalBool(r *Reader, v reflect.Value) {
 	v.SetBool(r.ReadBool())
 }
 
+func unmarshalUint8(r *Reader, v reflect.Value) {
+	v.SetUint(uint64(r.ReadUint8()))
+}
+
+func unmarshalUint16(r *Reader, v reflect.Value) {
+	v.SetUint(uint64(r.ReadUint16()))
+}
+
+func unmarshalUint32(r *Reader, v reflect.Value) {
+	v.SetUint(uint64(r.ReadUint32()))
+}
+
+func unmarshalUint64(r *Reader, v reflect.Value) {
+	v.SetUint(uint64(r.ReadUint64()))
+}
+
 func unmarshalInt8(r *Reader, v reflect.Value) {
 	v.SetInt(int64(r.ReadInt8()))
 }
@@ -54,37 +78,39 @@ func unmarshalInt16(r *Reader, v reflect.Value) {
 }
 
 func unmarshalInt32(r *Reader, v reflect.Value) {
-	v.SetInt(int64(r.ReadInt32()))
+	switch v.Type() {
+	case varIntType:
+		v.SetInt(int64(r.ReadVarInt()))
+	default:
+		v.SetInt(int64(r.ReadInt32()))
+	}
 }
 
 func unmarshalInt64(r *Reader, v reflect.Value) {
-	var i int64
-	if v.Type() == varIntType {
-		i = r.ReadVarInt()
-	} else {
-		i = r.ReadInt64()
+	switch v.Type() {
+	case varLongType:
+		v.SetInt(int64(r.ReadVarLong()))
+	default:
+		v.SetInt(int64(r.ReadInt64()))
 	}
-	v.SetInt(i)
 }
 
 func unmarshalString(r *Reader, v reflect.Value) {
-	var s string
-	if v.Type() == varStringType {
-		s = r.ReadVarString()
-	} else {
-		s = r.ReadFixString()
+	switch v.Type() {
+	case varStringType:
+		v.SetString(r.ReadVarString())
+	default:
+		v.SetString(r.ReadFixString())
 	}
-	v.SetString(s)
 }
 
 func unmarshalBytes(r *Reader, v reflect.Value) {
-	var b []byte
-	if v.Type() == varBytesType {
-		b = r.ReadVarBytes()
-	} else {
-		b = r.ReadFixBytes()
+	switch v.Type() {
+	case varBytesType:
+		v.SetBytes(r.ReadVarBytes())
+	default:
+		v.SetBytes(r.ReadFixBytes())
 	}
-	v.SetBytes(b)
 }
 
 func unmarshalStruct(r *Reader, v reflect.Value) {
@@ -101,9 +127,9 @@ func unmarshalSlice(r *Reader, v reflect.Value) {
 	case reflect.Uint8: // []byte
 		unmarshalBytes(r, v)
 	default:
-		n := int(r.ReadInt32())
+		n := r.ReadArrayLength()
 
-		if n < 0 {
+		if n <= 0 {
 			v.Set(reflect.Zero(t))
 		} else {
 			v.Set(reflect.MakeSlice(t, n, n))

@@ -19,6 +19,14 @@ func marshal(w *Writer, v reflect.Value) {
 	switch v.Kind() {
 	case reflect.Bool:
 		marshalBool(w, v)
+	case reflect.Uint8:
+		marshalUint8(w, v)
+	case reflect.Uint16:
+		marshalUint16(w, v)
+	case reflect.Uint32:
+		marshalUint32(w, v)
+	case reflect.Uint64:
+		marshalUint64(w, v)
 	case reflect.Int8:
 		marshalInt8(w, v)
 	case reflect.Int16:
@@ -44,6 +52,22 @@ func marshalBool(w *Writer, v reflect.Value) {
 	w.WriteBool(v.Bool())
 }
 
+func marshalUint8(w *Writer, v reflect.Value) {
+	w.WriteUint8(uint8(v.Uint()))
+}
+
+func marshalUint16(w *Writer, v reflect.Value) {
+	w.WriteUint16(uint16(v.Uint()))
+}
+
+func marshalUint32(w *Writer, v reflect.Value) {
+	w.WriteUint32(uint32(v.Uint()))
+}
+
+func marshalUint64(w *Writer, v reflect.Value) {
+	w.WriteUint64(v.Uint())
+}
+
 func marshalInt8(w *Writer, v reflect.Value) {
 	w.WriteInt8(int8(v.Int()))
 }
@@ -53,29 +77,41 @@ func marshalInt16(w *Writer, v reflect.Value) {
 }
 
 func marshalInt32(w *Writer, v reflect.Value) {
-	w.WriteInt32(int32(v.Int()))
+	switch v.Type() {
+	case varIntType:
+		w.WriteVarInt(int32(v.Int()))
+	default:
+		w.WriteInt32(int32(v.Int()))
+	}
 }
 
 func marshalInt64(w *Writer, v reflect.Value) {
-	if v.Type() == varIntType {
-		w.WriteVarInt(v.Int())
-	} else {
+	switch v.Type() {
+	case varLongType:
+		w.WriteVarLong(v.Int())
+	default:
 		w.WriteInt64(v.Int())
 	}
 }
 
 func marshalString(w *Writer, v reflect.Value) {
-	if v.Type() == varStringType {
+	switch v.Type() {
+	case varStringType:
 		w.WriteVarString(v.String())
-	} else {
+	case nullStringType:
+		w.WriteNullableString(v.String())
+	default:
 		w.WriteFixString(v.String())
 	}
 }
 
 func marshalBytes(w *Writer, v reflect.Value) {
-	if v.Type() == varBytesType {
+	switch v.Type() {
+	case varBytesType:
 		w.WriteVarBytes(v.Bytes())
-	} else {
+	case nullBytesType:
+		w.WriteNullableBytes(v.Bytes())
+	default:
 		w.WriteFixBytes(v.Bytes())
 	}
 }
@@ -95,7 +131,7 @@ func marshalSlice(w *Writer, v reflect.Value) {
 		marshalBytes(w, v)
 	default:
 		n := v.Len()
-		w.WriteInt32(int32(n))
+		w.WriteArrayLength(n)
 
 		for i := 0; i < n; i++ {
 			marshal(w, v.Index(i))
