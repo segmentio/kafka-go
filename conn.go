@@ -1516,7 +1516,10 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	// Pretend there are no limits to how many bytes we may be reading next.
+	c.rb.n = math.MaxInt64
 	data = c.rb.readBytes()
+	c.rb.n = 0
 
 	if err := c.rb.err; err != nil {
 		c.conn.Close()

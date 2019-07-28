@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/segmentio/kafka-go"
+	kafka "github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/plain"
 	"github.com/segmentio/kafka-go/sasl/scram"
@@ -18,9 +18,6 @@ const (
 )
 
 func TestSASL(t *testing.T) {
-
-	t.Parallel()
-
 	tests := []struct {
 		valid    func() sasl.Mechanism
 		invalid  func() sasl.Mechanism
