@@ -3,6 +3,8 @@ package plain
 import (
 	"context"
 	"fmt"
+
+	"github.com/segmentio/kafka-go/sasl"
 )
 
 // Mechanism implements the PLAIN mechanism and passes the credentials in clear
@@ -12,8 +14,13 @@ type Mechanism struct {
 	Password string
 }
 
-func (m Mechanism) Start(ctx context.Context) (string, []byte, error) {
-	return "PLAIN", []byte(fmt.Sprintf("\x00%s\x00%s", m.Username, m.Password)), nil
+func (Mechanism) Name() string {
+	return "PLAIN"
+}
+
+func (m Mechanism) Start(ctx context.Context) (sasl.StateMachine, []byte, error) {
+	// Mechanism is stateless, so it can also implement sasl.Session
+	return m, []byte(fmt.Sprintf("\x00%s\x00%s", m.Username, m.Password)), nil
 }
 
 func (m Mechanism) Next(ctx context.Context, challenge []byte) (bool, []byte, error) {
