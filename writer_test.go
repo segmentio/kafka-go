@@ -431,24 +431,3 @@ func testWriterSmallBatchBytes(t *testing.T) {
 		t.Error("bad messages in partition", msgs)
 	}
 }
-
-var gerr error
-
-func BenchmarkWriterAsync(b *testing.B) {
-	const topic = "bench-writer-0"
-
-	w := newTestWriter(WriterConfig{
-		Topic: topic,
-		Async: true,
-	})
-	ctx := context.Background()
-	msg := Message{Key: make([]byte, 30), Value: make([]byte, 400)}
-	var err error
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			err = w.WriteMessages(ctx, msg, msg)
-		}
-		gerr = err
-	})
-}
