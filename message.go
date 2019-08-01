@@ -37,10 +37,11 @@ func (msg Message) message(cw *crc32Writer) message {
 	}
 	return m
 }
+
+const timestampSize = 8
+
 func (msg Message) size() int32 {
-	size := 4 + 1 + 1 + sizeofBytes(msg.Key) + sizeofBytes(msg.Value)
-	size += 8 // Timestamp
-	return size
+	return 4 + 1 + 1 + sizeofBytes(msg.Key) + sizeofBytes(msg.Value) + timestampSize
 }
 
 type message struct {
@@ -67,7 +68,7 @@ func (m message) crc32(cw *crc32Writer) int32 {
 func (m message) size() int32 {
 	size := 4 + 1 + 1 + sizeofBytes(m.Key) + sizeofBytes(m.Value)
 	if m.MagicByte != 0 {
-		size += 8 // Timestamp
+		size += timestampSize
 	}
 	return size
 }
