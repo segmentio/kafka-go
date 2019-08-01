@@ -205,33 +205,32 @@ func testWriterMaxBytes(t *testing.T) {
 		return
 	}
 
-	firstMsg :=[]byte("Hello World!")
+	firstMsg := []byte("Hello World!")
 	secondMsg := []byte("LeftOver!")
 	msgs := []Message{
-			{
-				Value: firstMsg,
-			},
-			{
-				Value: secondMsg,
-			},
-
+		{
+			Value: firstMsg,
+		},
+		{
+			Value: secondMsg,
+		},
 	}
-	if err := w.WriteMessages(context.Background(),msgs...) ; err == nil {
+	if err := w.WriteMessages(context.Background(), msgs...); err == nil {
 		t.Error("expected error")
 		return
 	} else if err != nil {
 		switch e := err.(type) {
 		case MessageTooLargeError:
 			if string(e.Message.Value) != string(firstMsg) {
-				t.Errorf("unxpected returned message. Expected: %s, Got %s",firstMsg, e.Message.Value)
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", firstMsg, e.Message.Value)
 				return
 			}
 			if len(e.Remaining) != 1 {
 				t.Error("expected remaining errors; found none")
 				return
 			}
-			if string(e.Remaining[0].Value) != string(secondMsg){
-				t.Errorf("unxpected returned message. Expected: %s, Got %s",secondMsg, e.Message.Value)
+			if string(e.Remaining[0].Value) != string(secondMsg) {
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", secondMsg, e.Message.Value)
 				return
 			}
 		default:
@@ -431,4 +430,25 @@ func testWriterSmallBatchBytes(t *testing.T) {
 		}
 		t.Error("bad messages in partition", msgs)
 	}
+}
+
+var gerr error
+
+func BenchmarkWriterAsync(b *testing.B) {
+	const topic = "bench-writer-0"
+
+	w := newTestWriter(WriterConfig{
+		Topic: topic,
+		Async: true,
+	})
+	ctx := context.Background()
+	msg := Message{Key: make([]byte, 30), Value: make([]byte, 400)}
+	var err error
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			err = w.WriteMessages(ctx, msg, msg)
+		}
+		gerr = err
+	})
 }

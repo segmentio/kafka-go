@@ -37,6 +37,11 @@ func (msg Message) message(cw *crc32Writer) message {
 	}
 	return m
 }
+func (msg Message) size() int32 {
+	size := 4 + 1 + 1 + sizeofBytes(msg.Key) + sizeofBytes(msg.Value)
+	size += 8 // Timestamp
+	return size
+}
 
 type message struct {
 	CRC        int32
