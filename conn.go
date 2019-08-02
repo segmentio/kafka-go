@@ -576,7 +576,7 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 // to interpret it.
 //
 // See Seek for more details about the offset and whence values.
-func (c *Conn) Offset() (offset int64, whence int) {
+func (c *Conn) Offset() (offset int64, whence uint32) {
 	c.mutex.Lock()
 	offset = c.offset
 	c.mutex.Unlock()
@@ -604,7 +604,7 @@ const (
 	// constants to skip the bound check that the connection would do otherwise.
 	// Programs can use this flag to avoid making a metadata request to the kafka
 	// broker to read the current first and last offsets of the partition.
-	SeekDontCheck = 1 << 31
+	SeekDontCheck uint32 = 1 << 31
 )
 
 // Seek sets the offset for the next read or write operation according to whence, which
@@ -613,7 +613,7 @@ const (
 // Note that for historical reasons, these do not align with the usual whence constants
 // as in lseek(2) or os.Seek.
 // The method returns the new absolute offset of the connection.
-func (c *Conn) Seek(offset int64, whence int) (int64, error) {
+func (c *Conn) Seek(offset int64, whence uint32) (int64, error) {
 	seekDontCheck := (whence & SeekDontCheck) != 0
 	whence &= ^SeekDontCheck
 
