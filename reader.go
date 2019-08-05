@@ -392,6 +392,15 @@ type ReaderConfig struct {
 	// Only used when GroupID is set
 	RetentionTime time.Duration
 
+	// StartOffset determines from whence the consumer group should begin
+	// consuming when it finds a partition without a committed offset.  If
+	// non-zero, it must be set to one of FirstOffset or LastOffset.
+	//
+	// Default: FirstOffset
+	//
+	// Only used when GroupID is set
+	StartOffset int64
+
 	// BackoffDelayMin optionally sets the smallest amount of time the reader will wait before
 	// polling for new messages
 	//
@@ -460,36 +469,6 @@ func (config *ReaderConfig) Validate() error {
 
 	if config.ReadBackoffMin < 0 {
 		return errors.New(fmt.Sprintf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin))
-	}
-
-	if config.GroupID != "" {
-		if config.HeartbeatInterval < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
-			return errors.New(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
-		}
-
-		if config.SessionTimeout < 0 || (config.SessionTimeout/time.Millisecond) >= math.MaxInt32 {
-			return errors.New(fmt.Sprintf("SessionTimeout out of bounds: %d", config.SessionTimeout))
-		}
-
-		if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
-			return errors.New(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
-		}
-
-		if config.JoinGroupBackoff < 0 || (config.JoinGroupBackoff/time.Millisecond) >= math.MaxInt32 {
-			return errors.New(fmt.Sprintf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff))
-		}
-
-		if config.RetentionTime < 0 {
-			return errors.New(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
-		}
-
-		if config.CommitInterval < 0 || (config.CommitInterval/time.Millisecond) >= math.MaxInt32 {
-			return errors.New(fmt.Sprintf("CommitInterval out of bounds: %d", config.CommitInterval))
-		}
-
-		if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
-			return errors.New(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
-		}
 	}
 
 	return nil
@@ -587,26 +566,6 @@ func NewReader(config ReaderConfig) *Reader {
 		config.ReadLagInterval = 1 * time.Minute
 	}
 
-	if config.HeartbeatInterval == 0 {
-		config.HeartbeatInterval = defaultHeartbeatInterval
-	}
-
-	if config.SessionTimeout == 0 {
-		config.SessionTimeout = defaultSessionTimeout
-	}
-
-	if config.PartitionWatchInterval == 0 {
-		config.PartitionWatchInterval = defaultPartitionWatchTime
-	}
-
-	if config.RebalanceTimeout == 0 {
-		config.RebalanceTimeout = defaultRebalanceTimeout
-	}
-
-	if config.RetentionTime == 0 {
-		config.RetentionTime = defaultRetentionTime
-	}
-
 	if config.ReadBackoffMin == 0 {
 		config.ReadBackoffMin = defaultReadBackoffMin
 	}
@@ -675,6 +634,8 @@ func NewReader(config ReaderConfig) *Reader {
 			WatchPartitionChanges:  r.config.WatchPartitionChanges,
 			SessionTimeout:         r.config.SessionTimeout,
 			RebalanceTimeout:       r.config.RebalanceTimeout,
+			JoinGroupBackoff:       r.config.JoinGroupBackoff,
+			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
 		})
