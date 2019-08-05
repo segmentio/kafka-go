@@ -1,13 +1,15 @@
-package kafka
+package kafka_test
 
 import (
 	"context"
 	"fmt"
 	"os"
+
+	"github.com/segmentio/kafka-go"
 )
 
 func ExampleConsumerGroupParallelReaders() {
-	group, err := NewConsumerGroup(ConsumerGroupConfig{
+	group, err := kafka.NewConsumerGroup(kafka.ConsumerGroupConfig{
 		ID:      "my-group",
 		Brokers: []string{"kafka:9092"},
 		Topics:  []string{"my-topic"},
@@ -29,7 +31,7 @@ func ExampleConsumerGroupParallelReaders() {
 			partition, offset := assignment.ID, assignment.Offset
 			gen.Run(func(ctx context.Context) {
 				// create reader for this partition.
-				reader := NewReader(ReaderConfig{
+				reader := kafka.NewReader(kafka.ReaderConfig{
 					Brokers:   []string{"127.0.0.1:9092"},
 					Topic:     "my-topic",
 					Partition: partition,
@@ -41,7 +43,7 @@ func ExampleConsumerGroupParallelReaders() {
 				for {
 					msg, err := reader.ReadMessage(ctx)
 					switch err {
-					case ErrGenerationEnded:
+					case kafka.ErrGenerationEnded:
 						// generation has ended.  commit offsets.  in a real app,
 						// offsets would be committed periodically.
 						gen.CommitOffsets(map[string]map[int]int64{"my-topic": {partition: offset}})
@@ -59,7 +61,7 @@ func ExampleConsumerGroupParallelReaders() {
 }
 
 func ExampleConsumerGroupOverwriteOffsets() {
-	group, err := NewConsumerGroup(ConsumerGroupConfig{
+	group, err := kafka.NewConsumerGroup(kafka.ConsumerGroupConfig{
 		ID:      "my-group",
 		Brokers: []string{"kafka:9092"},
 		Topics:  []string{"my-topic"},
