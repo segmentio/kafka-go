@@ -35,6 +35,10 @@ software.
 `kafka-go` is currently compatible with Kafka versions from 0.10.1.0 to 2.1.0. While latest versions will be working,
 some features available from the Kafka API may not be implemented yet.
 
+## Golang version
+
+`kafka-go` is currently compatible with golang version from 1.12+. To use with older versions of golang use release [v0.2.5](https://github.com/segmentio/kafka-go/releases/tag/v0.2.5).
+
 ## Connection [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Conn)
 
 The `Conn` type is the core of the `kafka-go` package. It wraps around a raw

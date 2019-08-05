@@ -65,18 +65,18 @@ func TestSASL(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		name, _, _ := tt.valid().Start(context.Background())
+		mech := tt.valid()
 		if !ktesting.KafkaIsAtLeast(tt.minKafka) {
 			t.Skip("requires min kafka version " + tt.minKafka)
 		}
 
-		t.Run(name+" success", func(t *testing.T) {
+		t.Run(mech.Name()+" success", func(t *testing.T) {
 			testConnect(t, tt.valid(), true)
 		})
-		t.Run(name+" failure", func(t *testing.T) {
+		t.Run(mech.Name()+" failure", func(t *testing.T) {
 			testConnect(t, tt.invalid(), false)
 		})
-		t.Run(name+" is reusable", func(t *testing.T) {
+		t.Run(mech.Name()+" is reusable", func(t *testing.T) {
 			mech := tt.valid()
 			testConnect(t, mech, true)
 			testConnect(t, mech, true)

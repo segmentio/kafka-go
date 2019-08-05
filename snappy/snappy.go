@@ -1,68 +1,92 @@
 package snappy
 
 import (
-	"bytes"
-	"encoding/binary"
+	"io"
+	"sync"
 
 	"github.com/golang/snappy"
-	"github.com/segmentio/kafka-go"
+	kafka "github.com/segmentio/kafka-go"
 )
 
 func init() {
-	kafka.RegisterCompressionCodec(func() kafka.CompressionCodec {
-		return NewCompressionCodec()
-	})
+	kafka.RegisterCompressionCodec(NewCompressionCodec())
 }
 
-type CompressionCodec struct{}
+// Framing is an enumeration type used to enable or disable xerial framing of
+// snappy messages.
+type Framing int
 
-const Code = 2
+const (
+	Framed Framing = iota
+	Unframed
+)
 
-func NewCompressionCodec() CompressionCodec {
-	return CompressionCodec{}
+const (
+	Code = 2
+)
+
+type CompressionCodec struct{ framing Framing }
+
+func NewCompressionCodec() *CompressionCodec {
+	return NewCompressionCodecFraming(Framed)
+}
+
+func NewCompressionCodecFraming(framing Framing) *CompressionCodec {
+	return &CompressionCodec{framing}
 }
 
 // Code implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Code() int8 {
-	return Code
+func (c *CompressionCodec) Code() int8 { return Code }
+
+// Name implements the kafka.CompressionCodec interface.
+func (c *CompressionCodec) Name() string { return "snappy" }
+
+// NewReader implements the kafka.CompressionCodec interface.
+func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+	x := readerPool.Get().(*xerialReader)
+	x.Reset(r)
+	return &reader{x}
 }
 
-// Encode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Encode(src []byte) ([]byte, error) {
-	// NOTE : passing a nil dst means snappy will allocate it.
-	return snappy.Encode(nil, src), nil
+// NewWriter implements the kafka.CompressionCodec interface.
+func (c *CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+	x := writerPool.Get().(*xerialWriter)
+	x.Reset(w)
+	x.framed = c.framing == Framed
+	return &writer{x}
 }
 
-// Decode implements the kafka.CompressionCodec interface.
-func (c CompressionCodec) Decode(src []byte) ([]byte, error) {
-	return decode(src)
-}
+type reader struct{ *xerialReader }
 
-var xerialHeader = []byte{130, 83, 78, 65, 80, 80, 89, 0}
-
-// From github.com/eapache/go-xerial-snappy
-func decode(src []byte) ([]byte, error) {
-	if !bytes.Equal(src[:8], xerialHeader) {
-		return snappy.Decode(nil, src)
+func (r *reader) Close() (err error) {
+	if x := r.xerialReader; x != nil {
+		r.xerialReader = nil
+		x.Reset(nil)
+		readerPool.Put(x)
 	}
+	return
+}
 
-	var (
-		pos   = uint32(16)
-		max   = uint32(len(src))
-		dst   = make([]byte, 0, len(src))
-		chunk []byte
-		err   error
-	)
-	for pos < max {
-		size := binary.BigEndian.Uint32(src[pos : pos+4])
-		pos += 4
+type writer struct{ *xerialWriter }
 
-		chunk, err = snappy.Decode(chunk, src[pos:pos+size])
-		if err != nil {
-			return nil, err
-		}
-		pos += size
-		dst = append(dst, chunk...)
+func (w *writer) Close() (err error) {
+	if x := w.xerialWriter; x != nil {
+		w.xerialWriter = nil
+		err = x.Flush()
+		x.Reset(nil)
+		writerPool.Put(x)
 	}
-	return dst, nil
+	return
+}
+
+var readerPool = sync.Pool{
+	New: func() interface{} {
+		return &xerialReader{decode: snappy.Decode}
+	},
+}
+
+var writerPool = sync.Pool{
+	New: func() interface{} {
+		return &xerialWriter{encode: snappy.Encode}
+	},
 }

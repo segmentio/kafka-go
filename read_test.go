@@ -3,6 +3,8 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"io/ioutil"
+	"math"
 	"reflect"
 	"testing"
 )
@@ -66,14 +68,12 @@ func TestReadStringArray(t *testing.T) {
 
 	for label, test := range testCases {
 		t.Run(label, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
-
-			w := bufio.NewWriter(buf)
-			writeStringArray(w, test.Value)
-			w.Flush()
+			b := bytes.NewBuffer(nil)
+			w := &writeBuffer{w: b}
+			w.writeStringArray(test.Value)
 
 			var actual []string
-			readStringArray(bufio.NewReader(buf), buf.Len(), &actual)
+			readStringArray(bufio.NewReader(b), b.Len(), &actual)
 			if !reflect.DeepEqual(test.Value, actual) {
 				t.Errorf("expected %v; got %v", test.Value, actual)
 			}
@@ -97,18 +97,17 @@ func TestReadMapStringInt32(t *testing.T) {
 
 	for label, test := range testCases {
 		t.Run(label, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
+			b := bytes.NewBuffer(nil)
+			w := &writeBuffer{w: b}
+			w.writeInt32(int32(len(test.Data)))
 
-			w := bufio.NewWriter(buf)
-			writeInt32(w, int32(len(test.Data)))
 			for key, values := range test.Data {
-				writeString(w, key)
-				writeInt32Array(w, values)
+				w.writeString(key)
+				w.writeInt32Array(values)
 			}
-			w.Flush()
 
 			var actual map[string][]int32
-			readMapStringInt32(bufio.NewReader(buf), buf.Len(), &actual)
+			readMapStringInt32(bufio.NewReader(b), b.Len(), &actual)
 			if !reflect.DeepEqual(test.Data, actual) {
 				t.Errorf("expected %#v; got %#v", test.Data, actual)
 			}
@@ -166,4 +165,44 @@ func TestReadNewBytes(t *testing.T) {
 			t.Error("not all bytes were consumed")
 		}
 	})
+}
+
+func BenchmarkWriteVarInt(b *testing.B) {
+	wb := &writeBuffer{w: ioutil.Discard}
+
+	for i := 0; i < b.N; i++ {
+		wb.writeVarInt(math.MaxInt64)
+	}
+}
+
+func BenchmarkReadVarInt(b *testing.B) {
+	b1 := new(bytes.Buffer)
+	wb := &writeBuffer{w: b1}
+
+	const N = math.MaxInt64
+	wb.writeVarInt(N)
+
+	b2 := bytes.NewReader(b1.Bytes())
+	rb := bufio.NewReader(b2)
+	n := b1.Len()
+
+	for i := 0; i < b.N; i++ {
+		v := int64(0)
+		r, err := readVarInt(rb, n, &v)
+
+		if err != nil {
+			b.Fatalf("unexpected error reading a varint from the input: %v", err)
+		}
+
+		if r != 0 {
+			b.Fatalf("unexpected bytes remaining to be read in the input (%d B)", r)
+		}
+
+		if v != N {
+			b.Fatalf("value mismatch, expected %d but found %d", N, v)
+		}
+
+		b2.Reset(b1.Bytes())
+		rb.Reset(b2)
+	}
 }

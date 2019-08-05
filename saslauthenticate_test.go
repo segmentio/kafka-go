@@ -12,13 +12,12 @@ func TestSASLAuthenticateRequestV0(t *testing.T) {
 		Data: []byte("\x00user\x00pass"),
 	}
 
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
 	item.writeTo(w)
-	w.Flush()
 
 	var found saslAuthenticateRequestV0
-	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
+	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -40,13 +39,12 @@ func TestSASLAuthenticateResponseV0(t *testing.T) {
 		Data:         []byte("bytes"),
 	}
 
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
 	item.writeTo(w)
-	w.Flush()
 
 	var found saslAuthenticateResponseV0
-	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
+	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()

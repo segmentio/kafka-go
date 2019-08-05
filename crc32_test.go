@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"bufio"
 	"bytes"
 	"hash/crc32"
 	"testing"
@@ -18,15 +17,14 @@ func TestMessageCRC32(t *testing.T) {
 	}
 
 	b := &bytes.Buffer{}
-	w := bufio.NewWriter(b)
-	write(w, m)
-	w.Flush()
+	w := &writeBuffer{w: b}
+	w.write(m)
 
-	h := crc32.NewIEEE()
+	h := crc32.New(crc32.IEEETable)
 	h.Write(b.Bytes()[4:])
 
 	sum1 := h.Sum32()
-	sum2 := uint32(m.crc32())
+	sum2 := uint32(m.crc32(&crc32Writer{table: crc32.IEEETable}))
 
 	if sum1 != sum2 {
 		t.Error("bad CRC32:")

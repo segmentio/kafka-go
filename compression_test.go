@@ -1,14 +1,20 @@
 package kafka_test
 
 import (
+	"bytes"
+	compressGzip "compress/gzip"
 	"context"
 	"fmt"
-	"math/rand"
+	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
+	"text/tabwriter"
 	"time"
 
-	"github.com/segmentio/kafka-go"
+	kafka "github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/gzip"
 	"github.com/segmentio/kafka-go/lz4"
 	"github.com/segmentio/kafka-go/snappy"
@@ -29,24 +35,46 @@ func TestCompression(t *testing.T) {
 	}
 }
 
+func compress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
+	b := new(bytes.Buffer)
+	r := bytes.NewReader(src)
+	w := codec.NewWriter(b)
+	if _, err := io.Copy(w, r); err != nil {
+		w.Close()
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+func decompress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
+	b := new(bytes.Buffer)
+	r := codec.NewReader(bytes.NewReader(src))
+	if _, err := io.Copy(b, r); err != nil {
+		r.Close()
+		return nil, err
+	}
+	if err := r.Close(); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
 func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCodec) {
 	var r1, r2 []byte
 	var err error
-	var code int8
 
-	if codec != nil {
-		code = codec.Code()
-	}
-
-	t.Run("encode with "+codecToStr(code), func(t *testing.T) {
-		r1, err = codec.Encode(m.Value)
+	t.Run("encode with "+codec.Name(), func(t *testing.T) {
+		r1, err = compress(codec, m.Value)
 		if err != nil {
 			t.Error(err)
 		}
 	})
 
-	t.Run("decode with "+codecToStr(code), func(t *testing.T) {
-		r2, err = codec.Decode(r1)
+	t.Run("decode with "+codec.Name(), func(t *testing.T) {
+		r2, err = decompress(codec, r1)
 		if err != nil {
 			t.Error(err)
 		}
@@ -56,23 +84,6 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCode
 			t.Log("expected: ", string(m.Value))
 		}
 	})
-}
-
-func codecToStr(codec int8) string {
-	switch codec {
-	case kafka.CompressionNoneCode:
-		return "none"
-	case gzip.Code:
-		return "gzip"
-	case snappy.Code:
-		return "snappy"
-	case lz4.Code:
-		return "lz4"
-	case zstd.Code:
-		return "zstd"
-	default:
-		return "unknown"
-	}
 }
 
 func TestCompressedMessages(t *testing.T) {
@@ -86,7 +97,7 @@ func TestCompressedMessages(t *testing.T) {
 }
 
 func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
-	t.Run("produce/consume with"+codecToStr(codec.Code()), func(t *testing.T) {
+	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
 		t.Parallel()
 
 		topic := kafka.CreateTopic(t, 1)
@@ -232,98 +243,148 @@ func (noopCodec) Code() int8 {
 	return 0
 }
 
-func (noopCodec) Encode(src []byte) ([]byte, error) {
-	return src, nil
+func (noopCodec) Name() string {
+	return "none"
 }
 
-func (noopCodec) Decode(src []byte) ([]byte, error) {
-	return src, nil
+func (noopCodec) NewReader(r io.Reader) io.ReadCloser {
+	return ioutil.NopCloser(r)
 }
+
+func (noopCodec) NewWriter(w io.Writer) io.WriteCloser {
+	return nopWriteCloser{w}
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
-		scenario string
 		codec    kafka.CompressionCodec
-		function func(*testing.B, kafka.CompressionCodec, int, map[int][]byte)
+		function func(*testing.B, kafka.CompressionCodec, *bytes.Buffer, []byte) float64
 	}{
 		{
-			scenario: "None",
 			codec:    &noopCodec{},
 			function: benchmarkCompression,
 		},
 		{
-			scenario: "GZIP",
 			codec:    gzip.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 		{
-			scenario: "Snappy",
 			codec:    snappy.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 		{
-			scenario: "LZ4",
 			codec:    lz4.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 		{
-			scenario: "zstd",
 			codec:    zstd.NewCompressionCodec(),
 			function: benchmarkCompression,
 		},
 	}
 
-	payload := map[int][]byte{
-		1024:  randomPayload(1024),
-		4096:  randomPayload(4096),
-		8192:  randomPayload(8192),
-		16384: randomPayload(16384),
+	f, err := os.Open(filepath.Join(os.Getenv("GOROOT"), "src/encoding/json/testdata/code.json.gz"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer f.Close()
+
+	z, err := compressGzip.NewReader(f)
+	if err != nil {
+		b.Fatal(err)
 	}
 
-	for _, benchmark := range benchmarks {
-		b.Run(benchmark.scenario+"1024", func(b *testing.B) {
-			benchmark.function(b, benchmark.codec, 1024, payload)
-		})
-		b.Run(benchmark.scenario+"4096", func(b *testing.B) {
-			benchmark.function(b, benchmark.codec, 4096, payload)
-		})
-		b.Run(benchmark.scenario+"8192", func(b *testing.B) {
-			benchmark.function(b, benchmark.codec, 8192, payload)
-		})
-		b.Run(benchmark.scenario+"16384", func(b *testing.B) {
-			benchmark.function(b, benchmark.codec, 16384, payload)
-		})
+	payload, err := ioutil.ReadAll(z)
+	if err != nil {
+		b.Fatal(err)
 	}
 
-}
+	buffer := bytes.Buffer{}
+	buffer.Grow(len(payload))
 
-func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, payloadSize int, payload map[int][]byte) {
-	msg := kafka.Message{
-		Value: payload[payloadSize],
-	}
+	ts := &bytes.Buffer{}
+	tw := tabwriter.NewWriter(ts, 0, 8, 0, '\t', 0)
+	defer func() {
+		tw.Flush()
+		fmt.Printf("input => %.2f MB\n", float64(len(payload))/(1024*1024))
+		fmt.Println(ts)
+	}()
 
-	for i := 0; i < b.N; i++ {
-		m1, err := codec.Encode(msg.Value)
-		if err != nil {
-			b.Fatal(err)
-		}
+	b.ResetTimer()
 
-		b.SetBytes(int64(len(m1)))
+	for i := range benchmarks {
+		benchmark := &benchmarks[i]
+		ratio := 0.0
 
-		_, err = codec.Decode(m1)
-		if err != nil {
-			b.Fatal(err)
-		}
+		b.Run(fmt.Sprintf("%s", benchmark.codec.Name()), func(b *testing.B) {
+			ratio = benchmark.function(b, benchmark.codec, &buffer, payload)
+		})
 
+		fmt.Fprintf(tw, "  %s:\t%.2f%%\n", benchmark.codec.Name(), 100*ratio)
 	}
 }
 
-const dataset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, buf *bytes.Buffer, payload []byte) float64 {
+	// In case only the decompression benchmark are run, we use this flags to
+	// detect whether we have to compress the payload before the decompression
+	// benchmarks.
+	compressed := false
 
-func randomPayload(n int) []byte {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = dataset[rand.Intn(len(dataset))]
+	b.Run("compress", func(b *testing.B) {
+		compressed = true
+		r := bytes.NewReader(payload)
+
+		for i := 0; i < b.N; i++ {
+			buf.Reset()
+			r.Reset(payload)
+			w := codec.NewWriter(buf)
+
+			_, err := io.Copy(w, r)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				b.Fatal(err)
+			}
+		}
+
+		b.SetBytes(int64(buf.Len()))
+	})
+
+	if !compressed {
+		r := bytes.NewReader(payload)
+		w := codec.NewWriter(buf)
+
+		_, err := io.Copy(w, r)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			b.Fatal(err)
+		}
 	}
-	return b
+
+	b.Run("decompress", func(b *testing.B) {
+		c := bytes.NewReader(buf.Bytes())
+
+		for i := 0; i < b.N; i++ {
+			c.Reset(buf.Bytes())
+			r := codec.NewReader(c)
+
+			n, err := io.Copy(ioutil.Discard, r)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := r.Close(); err != nil {
+				b.Fatal(err)
+			}
+
+			b.SetBytes(n)
+		}
+	})
+
+	return 1 - (float64(buf.Len()) / float64(len(payload)))
 }

@@ -204,7 +204,16 @@ func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 	for {
 		select {
 		case <-ctx.Done():
-			commit() // commit final state when the generation ends.
+			// drain the commit channel in order to prepare the final commit.
+			for hasCommits := true; hasCommits; {
+				select {
+				case req := <-r.commits:
+					offsets.merge(req.commits)
+				default:
+					hasCommits = false
+				}
+			}
+			commit()
 			return
 
 		case <-ticker.C:

@@ -12,13 +12,12 @@ func TestHeartbeatRequestV0(t *testing.T) {
 		ErrorCode: 2,
 	}
 
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
 	item.writeTo(w)
-	w.Flush()
 
 	var found heartbeatResponseV0
-	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
+	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()

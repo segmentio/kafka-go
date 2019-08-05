@@ -1,10 +1,10 @@
 package kafka
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"hash/crc32"
 	"testing"
 	"time"
 
@@ -36,12 +36,12 @@ func TestWriteVarInt(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		buf := &bytes.Buffer{}
-		bufWriter := bufio.NewWriter(buf)
-		writeVarInt(bufWriter, tc.tc)
-		bufWriter.Flush()
-		if !bytes.Equal(buf.Bytes(), tc.v) {
-			t.Errorf("Expected %v; got %v", tc.v, buf.Bytes())
+		b := &bytes.Buffer{}
+		w := &writeBuffer{w: b}
+		w.writeVarInt(tc.tc)
+
+		if !bytes.Equal(b.Bytes(), tc.v) {
+			t.Errorf("Expected %v; got %v", tc.v, b.Bytes())
 		}
 	}
 }
@@ -78,8 +78,8 @@ func testWriteFetchRequestV2(t *testing.T) {
 				}},
 			}},
 		},
-		func(w *bufio.Writer) {
-			writeFetchRequestV2(w, testCorrelationID, testClientID, testTopic, testPartition, offset, minBytes, maxBytes, maxWait)
+		func(w *writeBuffer) {
+			w.writeFetchRequestV2(testCorrelationID, testClientID, testTopic, testPartition, offset, minBytes, maxBytes, maxWait)
 		},
 	)
 }
@@ -103,8 +103,8 @@ func testWriteListOffsetRequestV1(t *testing.T) {
 				}},
 			}},
 		},
-		func(w *bufio.Writer) {
-			writeListOffsetRequestV1(w, testCorrelationID, testClientID, testTopic, testPartition, time)
+		func(w *writeBuffer) {
+			w.writeListOffsetRequestV1(testCorrelationID, testClientID, testTopic, testPartition, time)
 		},
 	)
 }
@@ -123,7 +123,9 @@ func testWriteProduceRequestV2(t *testing.T) {
 		},
 	}
 	msg.MessageSize = msg.Message.size()
-	msg.Message.CRC = msg.Message.crc32()
+	msg.Message.CRC = msg.Message.crc32(&crc32Writer{
+		table: crc32.IEEETable,
+	})
 
 	const timeout = 100
 	testWriteOptimization(t,
@@ -144,8 +146,8 @@ func testWriteProduceRequestV2(t *testing.T) {
 				}},
 			}},
 		},
-		func(w *bufio.Writer) {
-			writeProduceRequestV2(w, nil, testCorrelationID, testClientID, testTopic, testPartition, timeout*time.Millisecond, -1, Message{
+		func(w *writeBuffer) {
+			w.writeProduceRequestV2(nil, testCorrelationID, testClientID, testTopic, testPartition, timeout*time.Millisecond, -1, Message{
 				Offset: 10,
 				Key:    key,
 				Value:  val,
@@ -154,20 +156,18 @@ func testWriteProduceRequestV2(t *testing.T) {
 	)
 }
 
-func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*bufio.Writer)) {
+func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*writeBuffer)) {
 	b1 := &bytes.Buffer{}
-	w1 := bufio.NewWriter(b1)
+	w1 := &writeBuffer{w: b1}
 
 	b2 := &bytes.Buffer{}
-	w2 := bufio.NewWriter(b2)
+	w2 := &writeBuffer{w: b2}
 
 	h.Size = (h.size() + r.size()) - 4
 	h.writeTo(w1)
 	r.writeTo(w1)
-	w1.Flush()
 
 	f(w2)
-	w2.Flush()
 
 	c1 := b1.Bytes()
 	c2 := b2.Bytes()

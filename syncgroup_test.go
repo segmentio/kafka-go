@@ -18,13 +18,12 @@ func TestGroupAssignment(t *testing.T) {
 		UserData: []byte(`blah`),
 	}
 
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
 	item.writeTo(w)
-	w.Flush()
 
 	var found groupAssignment
-	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
+	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -61,13 +60,12 @@ func TestSyncGroupResponseV0(t *testing.T) {
 		MemberAssignments: []byte(`blah`),
 	}
 
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
 	item.writeTo(w)
-	w.Flush()
 
 	var found syncGroupResponseV0
-	remain, err := (&found).readFrom(bufio.NewReader(buf), buf.Len())
+	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -88,14 +86,13 @@ func BenchmarkSyncGroupResponseV0(t *testing.B) {
 		MemberAssignments: []byte(`blah`),
 	}
 
-	buf := bytes.NewBuffer(nil)
-	w := bufio.NewWriter(buf)
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
 	item.writeTo(w)
-	w.Flush()
 
-	r := bytes.NewReader(buf.Bytes())
+	r := bytes.NewReader(b.Bytes())
 	reader := bufio.NewReader(r)
-	size := buf.Len()
+	size := b.Len()
 
 	for i := 0; i < t.N; i++ {
 		r.Seek(0, io.SeekStart)
