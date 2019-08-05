@@ -97,19 +97,38 @@ func TestCRC32Balancer(t *testing.T) {
 		},
 	}
 
-	for label, test := range testCases {
-		t.Run(label, func(t *testing.T) {
-			b := CRC32Balancer{
-				rb: randomBalancer{mock: -1},
-			}
+	t.Run("default", func(t *testing.T) {
+		for label, test := range testCases {
+			t.Run(label, func(t *testing.T) {
+				b := CRC32Balancer{}
+				b.random.mock = -1
 
-			msg := Message{Key: test.Key}
-			partition := b.Balance(msg, test.Partitions...)
-			if partition != test.Partition {
-				t.Errorf("expected %v; got %v", test.Partition, partition)
+				msg := Message{Key: test.Key}
+				partition := b.Balance(msg, test.Partitions...)
+				if partition != test.Partition {
+					t.Errorf("expected %v; got %v", test.Partition, partition)
+				}
+			})
+		}
+	})
+
+	t.Run("consistent", func(t *testing.T) {
+		b := CRC32Balancer{Consistent: true}
+		b.random.mock = -1
+
+		p := b.Balance(Message{}, partitions...)
+		if p < 0 {
+			t.Fatal("should not have gotten a random partition")
+		}
+		for i := 0; i < 10; i++ {
+			if p != b.Balance(Message{}, partitions...) {
+				t.Fatal("nil key should always hash consistently")
 			}
-		})
-	}
+			if p != b.Balance(Message{Key: []byte{}}, partitions...) {
+				t.Fatal("empty key should always hash consistently and have same result as nil key")
+			}
+		}
+	})
 }
 
 func TestMurmur2(t *testing.T) {
@@ -167,7 +186,7 @@ func TestMurmur2Balancer(t *testing.T) {
 		"librdkafka-nil": {
 			Key:        nil,
 			Partitions: librdkafkaPartitions,
-			Partition:  0,
+			Partition:  123,
 		},
 		"librdkafka-empty": {
 			Key:        []byte{},
@@ -221,15 +240,33 @@ func TestMurmur2Balancer(t *testing.T) {
 		},
 	}
 
-	for label, test := range testCases {
-		t.Run(label, func(t *testing.T) {
-			b := Murmur2Balancer{}
+	t.Run("default", func(t *testing.T) {
+		for label, test := range testCases {
+			t.Run(label, func(t *testing.T) {
+				b := Murmur2Balancer{}
+				b.random.mock = 123
 
-			msg := Message{Key: test.Key}
-			partition := b.Balance(msg, test.Partitions...)
-			if partition != test.Partition {
-				t.Errorf("expected %v; got %v", test.Partition, partition)
+				msg := Message{Key: test.Key}
+				partition := b.Balance(msg, test.Partitions...)
+				if partition != test.Partition {
+					t.Errorf("expected %v; got %v", test.Partition, partition)
+				}
+			})
+		}
+	})
+
+	t.Run("consistent", func(t *testing.T) {
+		b := Murmur2Balancer{Consistent: true}
+		b.random.mock = -1
+
+		p := b.Balance(Message{}, librdkafkaPartitions...)
+		if p < 0 {
+			t.Fatal("should not have gotten a random partition")
+		}
+		for i := 0; i < 10; i++ {
+			if p != b.Balance(Message{}, librdkafkaPartitions...) {
+				t.Fatal("nil key should always hash consistently")
 			}
-		})
-	}
+		}
+	})
 }

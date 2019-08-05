@@ -256,7 +256,7 @@ default ```consistent_random``` partition strategy.
 w := kafka.NewWriter(kafka.WriterConfig{
 	Brokers:  []string{"localhost:9092"},
 	Topic:    "topic-A",
-	Balancer: &kafka.CRC32Balancer{},
+	Balancer: kafka.CRC32Balancer{},
 })
 ```
 
@@ -270,7 +270,7 @@ the partition which is not permitted.
 w := kafka.NewWriter(kafka.WriterConfig{
 	Brokers:  []string{"localhost:9092"},
 	Topic:    "topic-A",
-	Balancer: &kafka.Murmur2Balancer{},
+	Balancer: kafka.Murmur2Balancer{},
 })
 ```
 
