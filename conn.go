@@ -763,7 +763,6 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-		adjustedDeadline = deadline
 		switch c.fetchVersion {
 		case v10:
 			return writeFetchRequestV10(

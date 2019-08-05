@@ -538,61 +538,6 @@ func TestCloseLeavesGroup(t *testing.T) {
 	}
 }
 
-func TestConsumerGroup(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		scenario string
-		function func(*testing.T, context.Context, *Reader)
-	}{
-		{
-			scenario: "Close immediately after NewReader",
-			function: testConsumerGroupImmediateClose,
-		},
-
-		{
-			scenario: "Close immediately after NewReader",
-			function: testConsumerGroupSimple,
-		},
-	}
-
-	for _, test := range tests {
-		testFunc := test.function
-		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			topic := makeTopic()
-			createTopic(t, topic, 1)
-
-			r := NewReader(ReaderConfig{
-				Brokers:  []string{"localhost:9092"},
-				Topic:    topic,
-				GroupID:  makeGroupID(),
-				MinBytes: 1,
-				MaxBytes: 10e6,
-				MaxWait:  100 * time.Millisecond,
-			})
-			defer r.Close()
-			testFunc(t, ctx, r)
-		})
-	}
-
-	const broker = "localhost:9092"
-
-	topic := makeTopic()
-	createTopic(t, topic, 1)
-
-	r := NewReader(ReaderConfig{
-		Brokers: []string{broker},
-		Topic:   topic,
-		GroupID: makeGroupID(),
-	})
-	r.Close()
-}
-
 func testConsumerGroupImmediateClose(t *testing.T, ctx context.Context, r *Reader) {
 	if err := r.Close(); err != nil {
 		t.Fatalf("bad err: %v", err)
@@ -772,6 +717,18 @@ func TestReaderConsumerGroup(t *testing.T) {
 			scenario:   "consumer group reads content across partitions",
 			partitions: 3,
 			function:   testReaderConsumerGroupReadContentAcrossPartitions,
+		},
+
+		{
+			scenario:   "Close immediately after NewReader",
+			partitions: 1,
+			function:   testConsumerGroupImmediateClose,
+		},
+
+		{
+			scenario:   "Close immediately after NewReader",
+			partitions: 1,
+			function:   testConsumerGroupSimple,
 		},
 	}
 

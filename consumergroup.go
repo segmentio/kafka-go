@@ -140,6 +140,10 @@ type ConsumerGroupConfig struct {
 	// ErrorLogger is the logger used to report errors. If nil, the reader falls
 	// back to using Logger instead.
 	ErrorLogger *log.Logger
+
+	// connect is a function for dialing the coordinator.  This is provided for
+	// unit testing to mock broker connections.
+	connect func(dialer *Dialer, brokers ...string) (coordinator, error)
 }
 
 // Validate method validates ConsumerGroupConfig properties and sets relevant
@@ -223,7 +227,10 @@ func (config *ConsumerGroupConfig) Validate() error {
 
 	if config.StartOffset != FirstOffset && config.StartOffset != LastOffset {
 		return errors.New(fmt.Sprintf("StartOffset is not valid %d", config.StartOffset))
+	}
 
+	if config.connect == nil {
+		config.connect = connect
 	}
 
 	return nil
@@ -478,6 +485,7 @@ var _ coordinator = &Conn{}
 // difficult to instigate with a live broker running in docker.
 type coordinator interface {
 	io.Closer
+	findCoordinator(findCoordinatorRequestV0) (findCoordinatorResponseV0, error)
 	joinGroup(joinGroupRequestV1) (joinGroupResponseV1, error)
 	syncGroup(syncGroupRequestV0) (syncGroupResponseV0, error)
 	leaveGroup(leaveGroupRequestV0) (leaveGroupResponseV0, error)
@@ -568,37 +576,41 @@ func (cg *ConsumerGroup) run() {
 	for {
 		memberID, err = cg.nextGeneration(memberID)
 
-		if err != nil {
-			switch err {
-			case nil:
-				// no error...the previous generation finished normally.
-				continue
-			case ErrGroupClosed:
-				// the CG has been closed...leave the group and exit loop.
-				_ = cg.leaveGroup(memberID)
-				return
-			case RebalanceInProgress:
-				// in case of a RebalanceInProgress, don't leave the group or
-				// change the member ID, but report the error.  the next attempt
-				// to join the group will then be subject to the rebalance
-				// timeout, so the broker will be responsible for throttling
-				// this loop.
-			default:
-				// leave the group and report the error if we had gotten far
-				// enough so as to have a member ID.  also clear the member id
-				// so we don't attempt to use it again.  in order to avoid
-				// a tight error loop, backoff before the next attempt to join
-				// the group.
-				_ = cg.leaveGroup(memberID)
-				memberID = ""
-				time.Sleep(cg.config.JoinGroupBackoff)
-			}
-			// ensure that we exit cleanly in case the CG is done and no one is
-			// waiting to receive on the unbuffered error channel.
+		switch err {
+		case nil:
+			// no error...the previous generation finished normally.
+			continue
+		case ErrGroupClosed:
+			// the CG has been closed...leave the group and exit loop.
+			_ = cg.leaveGroup(memberID)
+			return
+		case RebalanceInProgress:
+			// in case of a RebalanceInProgress, don't leave the group or
+			// change the member ID, but report the error.  the next attempt
+			// to join the group will then be subject to the rebalance
+			// timeout, so the broker will be responsible for throttling
+			// this loop.
+		default:
+			// leave the group and report the error if we had gotten far
+			// enough so as to have a member ID.  also clear the member id
+			// so we don't attempt to use it again.  in order to avoid
+			// a tight error loop, backoff before the next attempt to join
+			// the group.
+			_ = cg.leaveGroup(memberID)
+			memberID = ""
 			select {
 			case <-cg.done:
-			case cg.errs <- err:
+				// exit cleanly if the group is closed.
+				return
+			case <-time.After(cg.config.JoinGroupBackoff):
 			}
+		}
+		// ensure that we exit cleanly in case the CG is done and no one is
+		// waiting to receive on the unbuffered error channel.
+		select {
+		case <-cg.done:
+			return
+		case cg.errs <- err:
 		}
 	}
 }
@@ -704,7 +716,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 }
 
 // connect returns a connection to ANY broker
-func connect(dialer *Dialer, brokers ...string) (conn *Conn, err error) {
+func connect(dialer *Dialer, brokers ...string) (conn coordinator, err error) {
 	for _, broker := range brokers {
 		if conn, err = dialer.Dial("tcp", broker); err == nil {
 			return
@@ -716,21 +728,28 @@ func connect(dialer *Dialer, brokers ...string) (conn *Conn, err error) {
 // coordinator establishes a connection to the coordinator for this consumer
 // group.
 func (cg *ConsumerGroup) coordinator() (coordinator, error) {
-	conn, err := connect(cg.config.Dialer, cg.config.Brokers...)
+	// NOTE : could try to cache the coordinator to avoid the double connect
+	//        here.  since consumer group balances happen infrequently and are
+	//        an expensive operation, we're not currently optimizing that case
+	//        in order to keep the code simpler.
+	conn, err := cg.config.connect(cg.config.Dialer, cg.config.Brokers...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to any broker for group, %v: %v", cg.config.ID, err)
+		return nil, err
 	}
 	defer conn.Close()
 
 	out, err := conn.findCoordinator(findCoordinatorRequestV0{
 		CoordinatorKey: cg.config.ID,
 	})
+	if err == nil && out.ErrorCode != 0 {
+		err = Error(out.ErrorCode)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("unable to find coordinator for group, %v: %v", cg.config.ID, err)
+		return nil, err
 	}
 
 	address := fmt.Sprintf("%v:%v", out.Coordinator.Host, out.Coordinator.Port)
-	return connect(cg.config.Dialer, address)
+	return cg.config.connect(cg.config.Dialer, address)
 }
 
 // joinGroup attempts to join the reader to the consumer group.
@@ -751,8 +770,11 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	}
 
 	response, err := conn.joinGroup(request)
+	if err == nil && response.ErrorCode != 0 {
+		err = Error(response.ErrorCode)
+	}
 	if err != nil {
-		return "", 0, nil, fmt.Errorf("joinGroup failed: %v", err)
+		return "", 0, nil, err
 	}
 
 	memberID = response.MemberID
@@ -824,12 +846,15 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 
 	balancer, ok := findGroupBalancer(group.GroupProtocol, cg.config.GroupBalancers)
 	if !ok {
+		// NOTE : this shouldn't happen in practice...the broker should not
+		//        return successfully from joinGroup unless all members support
+		//        at least one common protocol.
 		return nil, fmt.Errorf("unable to find selected balancer, %v, for group, %v", group.GroupProtocol, cg.config.ID)
 	}
 
 	members, err := cg.makeMemberProtocolMetadata(group.Members)
 	if err != nil {
-		return nil, fmt.Errorf("unable to construct MemberProtocolMetadata: %v", err)
+		return nil, err
 	}
 
 	topics := extractTopics(members)
@@ -840,7 +865,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	// clients: java, python, and librdkafka.
 	// a topic watcher can trigger a rebalance when the topic comes into being.
 	if err != nil && err != UnknownTopicOrPartition {
-		return nil, fmt.Errorf("unable to read partitions: %v", err)
+		return nil, err
 	}
 
 	cg.withLogger(func(l *log.Logger) {
@@ -888,6 +913,9 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
 	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments)
 	response, err := conn.syncGroup(request)
+	if err == nil && response.ErrorCode != 0 {
+		err = Error(response.ErrorCode)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -895,7 +923,7 @@ func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generation
 	assignments := groupAssignment{}
 	reader := bufio.NewReader(bytes.NewReader(response.MemberAssignments))
 	if _, err := (&assignments).readFrom(reader, len(response.MemberAssignments)); err != nil {
-		return nil, fmt.Errorf("unable to read SyncGroup response for group, %v: %v", cg.config.ID, err)
+		return nil, err
 	}
 
 	if len(assignments.Topics) == 0 {
