@@ -604,7 +604,7 @@ const (
 	// constants to skip the bound check that the connection would do otherwise.
 	// Programs can use this flag to avoid making a metadata request to the kafka
 	// broker to read the current first and last offsets of the partition.
-	SeekDontCheck = 1 << 31
+	SeekDontCheck = 1 << 30
 )
 
 // Seek sets the offset for the next read or write operation according to whence, which
