@@ -19,7 +19,7 @@ import (
 var ErrGroupClosed = errors.New("consumer group is closed")
 
 // ErrGenerationEnded is returned by the context.Context issued by the
-// Generation's Run function when the context has been closed.
+// Generation's Start function when the context has been closed.
 var ErrGenerationEnded = errors.New("consumer group generation has ended")
 
 const (
@@ -251,7 +251,7 @@ type PartitionAssignment struct {
 }
 
 // genCtx adapts the done channel of the generation to a context.Context.  This
-// is used by Generation.Run so that we can pass a context to go routines
+// is used by Generation.Start so that we can pass a context to go routines
 // instead of passing around channels.
 type genCtx struct {
 	gen *Generation
@@ -308,7 +308,7 @@ type Generation struct {
 	logError        func(func(*log.Logger))
 }
 
-// close stops the generation and waits for all functions launched via Run to
+// close stops the generation and waits for all functions launched via Start to
 // terminate.
 func (g *Generation) close() {
 	g.once.Do(func() {
@@ -317,7 +317,7 @@ func (g *Generation) close() {
 	g.wg.Wait()
 }
 
-// Run launches the provided function in a go routine and adds accounting such
+// Start launches the provided function in a go routine and adds accounting such
 // that when the function exits, it stops the current generation (if not
 // already in the process of doing so).
 //
@@ -326,11 +326,11 @@ func (g *Generation) close() {
 // context's Error() function will return ErrGenerationEnded.
 //
 // When closing out a generation, the consumer group will wait for all functions
-// launched by Run to exit before the group can move on and join the next
+// launched by Start to exit before the group can move on and join the next
 // generation.  If the function does not exit promptly, it will stop forward
 // progress for this consumer and potentially cause consumer group membership
 // churn.
-func (g *Generation) Run(fn func(ctx context.Context)) {
+func (g *Generation) Start(fn func(ctx context.Context)) {
 	g.wg.Add(1)
 	go func() {
 		fn(genCtx{g})
@@ -393,7 +393,7 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 // interval.  It exits if it ever encounters an error, which would signal the
 // end of the generation.
 func (g *Generation) heartbeatLoop(interval time.Duration) {
-	g.Run(func(ctx context.Context) {
+	g.Start(func(ctx context.Context) {
 		g.log(func(l *log.Logger) {
 			l.Printf("started heartbeat for group, %v [%v]", g.GroupID, interval)
 		})
@@ -429,7 +429,7 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 // is a problem with the connection to the coordinator and a rebalance will
 // establish a new connection to the coordinator.
 func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
-	g.Run(func(ctx context.Context) {
+	g.Start(func(ctx context.Context) {
 		g.log(func(l *log.Logger) {
 			l.Printf("started partition watcher for group, %v, topic %v [%v]", g.GroupID, topic, interval)
 		})

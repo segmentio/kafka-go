@@ -270,10 +270,10 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.subscribe(gen.Assignments[r.config.Topic])
 
-		gen.Run(func(ctx context.Context) {
+		gen.Start(func(ctx context.Context) {
 			r.commitLoop(ctx, gen)
 		})
-		gen.Run(func(ctx context.Context) {
+		gen.Start(func(ctx context.Context) {
 			// wait for the generation to end and then unsubscribe.
 			select {
 			case <-ctx.Done():

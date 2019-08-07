@@ -29,7 +29,7 @@ func ExampleConsumerGroupParallelReaders() {
 		assignments := gen.Assignments["my-topic"]
 		for _, assignment := range assignments {
 			partition, offset := assignment.ID, assignment.Offset
-			gen.Run(func(ctx context.Context) {
+			gen.Start(func(ctx context.Context) {
 				// create reader for this partition.
 				reader := kafka.NewReader(kafka.ReaderConfig{
 					Brokers:   []string{"127.0.0.1:9092"},

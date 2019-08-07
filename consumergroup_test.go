@@ -255,7 +255,7 @@ func TestConsumerGroup(t *testing.T) {
 				}
 				// returning from this function should cause the generation to
 				// exit.
-				gen1.Run(func(context.Context) {})
+				gen1.Start(func(context.Context) {})
 
 				// if this fails due to context timeout, it would indicate that
 				// the
