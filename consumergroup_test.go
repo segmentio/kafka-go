@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
-
-// todo : test more things...especially error cases.
 
 var _ coordinator = mockCoordinator{}
 
@@ -327,6 +326,7 @@ func TestConsumerGroup(t *testing.T) {
 				HeartbeatInterval: 2 * time.Second,
 				RebalanceTimeout:  2 * time.Second,
 				RetentionTime:     time.Hour,
+				Logger:            log.New(os.Stdout, "cg-test: ", 0),
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -353,6 +353,14 @@ func TestConsumerGroupErrors(t *testing.T) {
 			lock.Unlock()
 			return leaveGroupResponseV0{}, nil
 		},
+	}
+	assertLeftGroup := func(t *testing.T, memberID string) {
+		lock.Lock()
+		if !reflect.DeepEqual(left, []string{memberID}) {
+			t.Errorf("expected abc to have left group once, members left: %v", left)
+		}
+		left = left[0:0]
+		lock.Unlock()
 	}
 
 	// NOTE : the mocked behavior is accumulated across the tests, so they are
@@ -437,6 +445,38 @@ func TestConsumerGroupErrors(t *testing.T) {
 		},
 
 		{
+			scenario: "fails to join group (error code)",
+			prepare: func(mc *mockCoordinator) {
+				mc.findCoordinatorFunc = func(findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
+					return findCoordinatorResponseV0{
+						Coordinator: findCoordinatorResponseCoordinatorV0{
+							NodeID: 1,
+							Host:   "foo.bar.com",
+							Port:   12345,
+						},
+					}, nil
+				}
+				mc.joinGroupFunc = func(joinGroupRequestV1) (joinGroupResponseV1, error) {
+					return joinGroupResponseV1{
+						ErrorCode: int16(InvalidTopic),
+					}, nil
+				}
+				// NOTE : no stub for leaving the group b/c the member never joined.
+			},
+			function: func(t *testing.T, ctx context.Context, group *ConsumerGroup) {
+				gen, err := group.Next(ctx)
+				if err == nil {
+					t.Errorf("expected an error")
+				} else if err != InvalidTopic {
+					t.Errorf("got wrong error: %+v", err)
+				}
+				if gen != nil {
+					t.Error("expected a nil consumer group generation")
+				}
+			},
+		},
+
+		{
 			scenario: "fails to join group (leader, unsupported protocol)",
 			prepare: func(mc *mockCoordinator) {
 				mc.joinGroupFunc = func(joinGroupRequestV1) (joinGroupResponseV1, error) {
@@ -458,26 +498,70 @@ func TestConsumerGroupErrors(t *testing.T) {
 				if gen != nil {
 					t.Error("expected a nil consumer group generation")
 				}
-				lock.Lock()
-				if !reflect.DeepEqual(left, []string{"abc"}) {
-					t.Errorf("expected abc to have left group once, members left: %v", left)
-				}
-				left = left[0:0]
-				lock.Unlock()
+				assertLeftGroup(t, "abc")
 			},
+		},
 
-			// todo : join group as leader (ensure leave is called)
+		{
+			scenario: "fails to sync group (general error)",
+			prepare: func(mc *mockCoordinator) {
+				mc.joinGroupFunc = func(joinGroupRequestV1) (joinGroupResponseV1, error) {
+					return joinGroupResponseV1{
+						GenerationID:  12345,
+						GroupProtocol: "range",
+						LeaderID:      "abc",
+						MemberID:      "abc",
+					}, nil
+				}
+				mc.readPartitionsFunc = func(...string) ([]Partition, error) {
+					return []Partition{}, nil
+				}
+				mc.syncGroupFunc = func(syncGroupRequestV0) (syncGroupResponseV0, error) {
+					return syncGroupResponseV0{}, errors.New("sync group failed")
+				}
+			},
+			function: func(t *testing.T, ctx context.Context, group *ConsumerGroup) {
+				gen, err := group.Next(ctx)
+				if err == nil {
+					t.Errorf("expected an error")
+				} else if err.Error() != "sync group failed" {
+					t.Errorf("got wrong error: %+v", err)
+				}
+				if gen != nil {
+					t.Error("expected a nil consumer group generation")
+				}
+				assertLeftGroup(t, "abc")
+			},
+		},
 
-			// todo : sync group failure as leader (ensure leave is called)
-			// todo : sync group failure as follower (ensure leave is called)
+		{
+			scenario: "fails to sync group (error code)",
+			prepare: func(mc *mockCoordinator) {
+				mc.syncGroupFunc = func(syncGroupRequestV0) (syncGroupResponseV0, error) {
+					return syncGroupResponseV0{
+						ErrorCode: int16(InvalidTopic),
+					}, nil
+				}
+			},
+			function: func(t *testing.T, ctx context.Context, group *ConsumerGroup) {
+				gen, err := group.Next(ctx)
+				if err == nil {
+					t.Errorf("expected an error")
+				} else if err != InvalidTopic {
+					t.Errorf("got wrong error: %+v", err)
+				}
+				if gen != nil {
+					t.Error("expected a nil consumer group generation")
+				}
+				assertLeftGroup(t, "abc")
+			},
 		},
 	}
 
 	for _, tt := range tests {
-		test := tt
-		t.Run(test.scenario, func(t *testing.T) {
+		t.Run(tt.scenario, func(t *testing.T) {
 
-			test.prepare(&mc)
+			tt.prepare(&mc)
 
 			group, err := NewConsumerGroup(ConsumerGroupConfig{
 				ID:                makeGroupID(),
@@ -490,6 +574,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 				connect: func(*Dialer, ...string) (coordinator, error) {
 					return mc, nil
 				},
+				Logger: log.New(os.Stdout, "cg-errors-test: ", 0),
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -500,7 +585,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			test.function(t, ctx, group)
+			tt.function(t, ctx, group)
 
 			if err := group.Close(); err != nil {
 				t.Errorf("error on close: %+v", err)

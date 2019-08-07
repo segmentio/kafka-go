@@ -576,6 +576,10 @@ func (cg *ConsumerGroup) run() {
 	for {
 		memberID, err = cg.nextGeneration(memberID)
 
+		// backoff will be set if this go routine should sleep before continuing
+		// to the next generation.  it will be non-nil in the case of an error
+		// joining or syncing the group.
+		var backoff <-chan time.Time
 		switch err {
 		case nil:
 			// no error...the previous generation finished normally.
@@ -598,12 +602,7 @@ func (cg *ConsumerGroup) run() {
 			// the group.
 			_ = cg.leaveGroup(memberID)
 			memberID = ""
-			select {
-			case <-cg.done:
-				// exit cleanly if the group is closed.
-				return
-			case <-time.After(cg.config.JoinGroupBackoff):
-			}
+			backoff = time.After(cg.config.JoinGroupBackoff)
 		}
 		// ensure that we exit cleanly in case the CG is done and no one is
 		// waiting to receive on the unbuffered error channel.
@@ -611,6 +610,15 @@ func (cg *ConsumerGroup) run() {
 		case <-cg.done:
 			return
 		case cg.errs <- err:
+		}
+		// backoff if needed, being sure to exit cleanly if the CG is done.
+		if backoff != nil {
+			select {
+			case <-cg.done:
+				// exit cleanly if the group is closed.
+				return
+			case <-backoff:
+			}
 		}
 	}
 }
@@ -645,7 +653,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err
 	}
 	cg.withLogger(func(log *log.Logger) {
-		log.Printf("Joined group group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
+		log.Printf("Joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
 	})
 
 	// sync group
@@ -1040,6 +1048,10 @@ func (cg *ConsumerGroup) leaveGroup(memberID string) error {
 		return nil
 	}
 
+	cg.withLogger(func(log *log.Logger) {
+		log.Printf("Leaving group %s, member %s", cg.config.ID, memberID)
+	})
+
 	// IMPORTANT : leaveGroup establishes its own connection to the coordinator
 	//             because it is often called after some other operation failed.
 	//             said failure could be the result of connection-level issues,
@@ -1055,10 +1067,14 @@ func (cg *ConsumerGroup) leaveGroup(memberID string) error {
 		MemberID: memberID,
 	})
 	if err != nil {
-		return fmt.Errorf("leave group failed for group, %v, and member, %v: %v", cg.config.ID, memberID, err)
+		cg.withErrorLogger(func(log *log.Logger) {
+			log.Printf("leave group failed for group, %v, and member, %v: %v", cg.config.ID, memberID, err)
+		})
 	}
 
-	return nil
+	_ = coordinator.Close()
+
+	return err
 }
 
 func (cg *ConsumerGroup) withLogger(do func(*log.Logger)) {
