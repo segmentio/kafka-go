@@ -141,7 +141,7 @@ type Hash struct {
 	lock sync.Mutex
 }
 
-func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
+func (h *Hash) Balance(msg Message, partitions ...int) int {
 	if msg.Key == nil {
 		return h.rr.Balance(msg, partitions...)
 	}
@@ -161,12 +161,14 @@ func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
 	}
 
 	// uses same algorithm that Sarama's hashPartitioner uses
-	partition = int(hasher.Sum32()) % len(partitions)
+	// note the type conversions here.  if the uint32 hash code is not cast to
+	// an int32, we do not get the same result as sarama.
+	partition := int32(hasher.Sum32()) % int32(len(partitions))
 	if partition < 0 {
 		partition = -partition
 	}
 
-	return
+	return int(partition)
 }
 
 type randomBalancer struct {
