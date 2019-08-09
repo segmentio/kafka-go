@@ -134,6 +134,11 @@ var (
 type Hash struct {
 	rr     RoundRobin
 	Hasher hash.Hash32
+
+	// lock protects Hasher while calculating the hash code.  It is assumed that
+	// the Hasher field is read-only once the Balancer is created, so as a
+	// performance optimization, reads of the field are not protected.
+	lock sync.Mutex
 }
 
 func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
@@ -142,18 +147,31 @@ func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
 	}
 
 	hasher := h.Hasher
-	if hasher == nil {
+	shared := hasher != nil
+
+	if shared {
+		h.lock.Lock()
+	} else {
 		hasher = fnv1aPool.Get().(hash.Hash32)
-		defer fnv1aPool.Put(hasher)
 	}
 
 	hasher.Reset()
 	if _, err := hasher.Write(msg.Key); err != nil {
+		if shared {
+			h.lock.Unlock()
+		}
 		panic(err)
+	}
+	code := hasher.Sum32()
+
+	if shared {
+		h.lock.Unlock()
+	} else {
+		fnv1aPool.Put(hasher)
 	}
 
 	// uses same algorithm that Sarama's hashPartitioner uses
-	partition = int(hasher.Sum32()) % len(partitions)
+	partition = int(code) % len(partitions)
 	if partition < 0 {
 		partition = -partition
 	}
