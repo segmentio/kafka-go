@@ -147,31 +147,21 @@ func (h *Hash) Balance(msg Message, partitions ...int) (partition int) {
 	}
 
 	hasher := h.Hasher
-	shared := hasher != nil
-
-	if shared {
+	if hasher != nil {
 		h.lock.Lock()
+		defer h.lock.Unlock()
 	} else {
 		hasher = fnv1aPool.Get().(hash.Hash32)
+		defer fnv1aPool.Put(hasher)
 	}
 
 	hasher.Reset()
 	if _, err := hasher.Write(msg.Key); err != nil {
-		if shared {
-			h.lock.Unlock()
-		}
 		panic(err)
-	}
-	code := hasher.Sum32()
-
-	if shared {
-		h.lock.Unlock()
-	} else {
-		fnv1aPool.Put(hasher)
 	}
 
 	// uses same algorithm that Sarama's hashPartitioner uses
-	partition = int(code) % len(partitions)
+	partition = int(hasher.Sum32()) % len(partitions)
 	if partition < 0 {
 		partition = -partition
 	}
