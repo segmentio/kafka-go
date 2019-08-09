@@ -7,8 +7,6 @@ import (
 )
 
 const (
-	CompressionNoneCode = 0
-
 	compressionCodecMask = 0x07
 )
 
