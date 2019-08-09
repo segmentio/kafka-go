@@ -40,6 +40,13 @@ func TestHashBalancer(t *testing.T) {
 			Partitions: []int{0, 1, 2},
 			Partition:  1,
 		},
+		// in a previous version, this test would select a different partition
+		// than sarama's hash partitioner.
+		"hash code with MSB set": {
+			Key:        []byte("20"),
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+			Partition:  1,
+		},
 	}
 
 	for label, test := range testCases {
