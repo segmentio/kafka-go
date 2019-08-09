@@ -597,7 +597,7 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 	joinGroup := join()
 
 	// sync the group
-	_, err := conn.syncGroups(syncGroupRequestV0{
+	_, err := conn.syncGroup(syncGroupRequestV0{
 		GroupID:      groupID,
 		GenerationID: joinGroup.GenerationID,
 		MemberID:     joinGroup.MemberID,
@@ -609,7 +609,7 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 		},
 	})
 	if err != nil {
-		t.Fatalf("bad syncGroups: %s", err)
+		t.Fatalf("bad syncGroup: %s", err)
 	}
 
 	generationID = joinGroup.GenerationID
@@ -710,7 +710,7 @@ func testConnHeartbeatErr(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	createGroup(t, conn, groupID)
 
-	_, err := conn.syncGroups(syncGroupRequestV0{
+	_, err := conn.syncGroup(syncGroupRequestV0{
 		GroupID: groupID,
 	})
 	if err != UnknownMemberId && err != NotCoordinatorForGroup {
@@ -734,7 +734,7 @@ func testConnSyncGroupErr(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.syncGroups(syncGroupRequestV0{
+	_, err := conn.syncGroup(syncGroupRequestV0{
 		GroupID: groupID,
 	})
 	if err != UnknownMemberId && err != NotCoordinatorForGroup {
@@ -844,6 +844,7 @@ func testConnFetchAndCommitOffsets(t *testing.T, conn *Conn) {
 }
 
 func testConnWriteReadConcurrently(t *testing.T, conn *Conn) {
+
 	const N = 1000
 	var msgs = make([]string, N)
 	var done = make(chan struct{})

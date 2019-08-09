@@ -496,10 +496,10 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV1) (offsetFetchResponseV1,
 	return response, nil
 }
 
-// syncGroups completes the handshake to join a consumer group
+// syncGroup completes the handshake to join a consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SyncGroup
-func (c *Conn) syncGroups(request syncGroupRequestV0) (syncGroupResponseV0, error) {
+func (c *Conn) syncGroup(request syncGroupRequestV0) (syncGroupResponseV0, error) {
 	var response syncGroupResponseV0
 
 	err := c.readOperation(
@@ -767,7 +767,6 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-		adjustedDeadline = deadline
 		switch c.fetchVersion {
 		case v10:
 			return c.wb.writeFetchRequestV10(
