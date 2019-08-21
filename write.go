@@ -621,7 +621,12 @@ func (wb *writeBuffer) writeRecord(attributes int8, baseTime time.Time, offset i
 	wb.writeVarInt(int64(milliseconds(timestampDelta)))
 	wb.writeVarInt(offsetDelta)
 
-	wb.writeVarBytes(msg.Key)
+	if msg.Key != nil {
+		wb.writeVarBytes(msg.Key)
+	} else {
+		//-1 is used to indicate null key
+		wb.writeVarInt(-1)
+	}
 	wb.writeVarBytes(msg.Value)
 	wb.writeVarArray(len(msg.Headers), func(i int) {
 		h := &msg.Headers[i]
