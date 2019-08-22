@@ -80,8 +80,13 @@ func (wb *writeBuffer) writeBytes(b []byte) {
 }
 
 func (wb *writeBuffer) writeVarBytes(b []byte) {
-	wb.writeVarInt(int64(len(b)))
-	wb.Write(b)
+	if b != nil {
+		wb.writeVarInt(int64(len(b)))
+		wb.Write(b)
+	} else {
+		//-1 is used to indicate nil key
+		wb.writeVarInt(-1)
+	}
 }
 
 func (wb *writeBuffer) writeBool(b bool) {
