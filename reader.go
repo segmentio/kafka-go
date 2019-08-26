@@ -635,6 +635,7 @@ func NewReader(config ReaderConfig) *Reader {
 			SessionTimeout:         r.config.SessionTimeout,
 			RebalanceTimeout:       r.config.RebalanceTimeout,
 			JoinGroupBackoff:       r.config.JoinGroupBackoff,
+			RetentionTime:          r.config.RetentionTime,
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
