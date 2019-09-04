@@ -892,10 +892,6 @@ func (r *Reader) Offset() int64 {
 // Lag returns the lag of the last message returned by ReadMessage, or -1
 // if r is backed by a consumer group.
 func (r *Reader) Lag() int64 {
-	if r.useConsumerGroup() {
-		return -1
-	}
-
 	r.mutex.Lock()
 	lag := r.lag
 	r.mutex.Unlock()
