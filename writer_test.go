@@ -47,6 +47,14 @@ func TestWriter(t *testing.T) {
 			scenario: "writing messsages with a small batch byte size",
 			function: testWriterSmallBatchBytes,
 		},
+		{
+			scenario: "writing messages to a connection after the broker's max idle connection time",
+			function: testWriterIdleConnDefaultTimeout,
+		},
+		{
+			scenario: "writing messages to a connection after the broker's max idle connection time, with lower idle conn timeout",
+			function: testWriterIdleConnSpecificTimeout,
+		},
 	}
 
 	for _, test := range tests {
@@ -205,33 +213,32 @@ func testWriterMaxBytes(t *testing.T) {
 		return
 	}
 
-	firstMsg :=[]byte("Hello World!")
+	firstMsg := []byte("Hello World!")
 	secondMsg := []byte("LeftOver!")
 	msgs := []Message{
-			{
-				Value: firstMsg,
-			},
-			{
-				Value: secondMsg,
-			},
-
+		{
+			Value: firstMsg,
+		},
+		{
+			Value: secondMsg,
+		},
 	}
-	if err := w.WriteMessages(context.Background(),msgs...) ; err == nil {
+	if err := w.WriteMessages(context.Background(), msgs...); err == nil {
 		t.Error("expected error")
 		return
 	} else if err != nil {
 		switch e := err.(type) {
 		case MessageTooLargeError:
 			if string(e.Message.Value) != string(firstMsg) {
-				t.Errorf("unxpected returned message. Expected: %s, Got %s",firstMsg, e.Message.Value)
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", firstMsg, e.Message.Value)
 				return
 			}
 			if len(e.Remaining) != 1 {
 				t.Error("expected remaining errors; found none")
 				return
 			}
-			if string(e.Remaining[0].Value) != string(secondMsg){
-				t.Errorf("unxpected returned message. Expected: %s, Got %s",secondMsg, e.Message.Value)
+			if string(e.Remaining[0].Value) != string(secondMsg) {
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", secondMsg, e.Message.Value)
 				return
 			}
 		default:
@@ -431,4 +438,65 @@ func testWriterSmallBatchBytes(t *testing.T) {
 		}
 		t.Error("bad messages in partition", msgs)
 	}
+}
+
+func testWriterIdleConnDefaultTimeout(t *testing.T) {
+	const topic = "test-writer-idleconn-1"
+	createTopic(t, topic, 1)
+	w := newTestWriter(WriterConfig{
+		Topic: topic,
+	})
+	defer w.Close()
+	ctx := context.Background()
+	msg := Message{Value: []byte("Hello World")}
+	// initial message when we establish a connection with the broker
+	err := w.WriteMessages(ctx, msg)
+	if err != nil {
+		t.Errorf("Unexpected error %v", err)
+	}
+	// sleep for more than the broker's max idle conn time
+	time.Sleep(2300 * time.Millisecond)
+
+	// The write should fail as we will try to send the message on a connection that the broker closed
+	err = w.WriteMessages(ctx, msg)
+	if err == nil {
+		t.Errorf("Expected broken pipe error")
+	}
+	// This write should pass as the writer will establish a new connection after the previous failure.
+	err = w.WriteMessages(ctx, msg)
+	if err != nil {
+		t.Errorf("Unexpected error %v", err)
+	}
+
+}
+
+func testWriterIdleConnSpecificTimeout(t *testing.T) {
+	const topic = "test-writer-idleconn-2"
+	createTopic(t, topic, 1)
+	w := newTestWriter(WriterConfig{
+		Topic:              topic,
+		ConnMaxIdleTimeout: 1500 * time.Millisecond,
+	})
+	defer w.Close()
+	ctx := context.Background()
+	msg := Message{Value: []byte("Hello World")}
+	// initial message when we establish a connection with the broker
+	err := w.WriteMessages(ctx, msg)
+	if err != nil {
+		t.Errorf("Unexpected error %v", err)
+	}
+	// sleep for more than the broker's max idle conn time
+	time.Sleep(2300 * time.Millisecond)
+
+	// This write should pass as the writer will establish a new connection after the max idle conn timeout.
+	err = w.WriteMessages(ctx, msg)
+	if err != nil {
+		t.Errorf("Unexpected error %v", err)
+	}
+	// This write should pass as the writer will establish a new connection after the previous failure.
+	err = w.WriteMessages(ctx, msg)
+	if err != nil {
+		t.Errorf("Unexpected error %v", err)
+	}
+
 }
