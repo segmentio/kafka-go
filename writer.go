@@ -254,7 +254,7 @@ func NewWriter(config WriterConfig) *Writer {
 		config.RebalanceInterval = 15 * time.Second
 	}
 	if config.ConnMaxIdleTimeout == 0 {
-		config.ConnMaxIdleTimeout = 540 * time.Second
+		config.ConnMaxIdleTimeout = 9 * time.Minute
 	}
 
 	w := &Writer{
