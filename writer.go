@@ -105,8 +105,8 @@ type WriterConfig struct {
 
 	// Connections that were idle for this duration will not be reused.
 	//
-	// Defaults to 540 seconds.
-	ConnMaxIdleTimeout time.Duration
+	// Defaults to 9 minutes.
+	IdleTimeout time.Duration
 
 	// Number of acknowledges from partition replicas required before receiving
 	// a response to a produce request (default to -1, which means to wait for
@@ -253,8 +253,8 @@ func NewWriter(config WriterConfig) *Writer {
 	if config.RebalanceInterval == 0 {
 		config.RebalanceInterval = 15 * time.Second
 	}
-	if config.ConnMaxIdleTimeout == 0 {
-		config.ConnMaxIdleTimeout = 9 * time.Minute
+	if config.IdleTimeout == 0 {
+		config.IdleTimeout = 9 * time.Minute
 	}
 
 	w := &Writer{
@@ -564,7 +564,7 @@ type writer struct {
 	maxMessageBytes int
 	batchTimeout    time.Duration
 	writeTimeout    time.Duration
-	connIdleTimeout time.Duration
+	idleTimeout     time.Duration
 	dialer          *Dialer
 	msgs            chan writerMessage
 	join            sync.WaitGroup
@@ -584,7 +584,7 @@ func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
 		maxMessageBytes: config.BatchBytes,
 		batchTimeout:    config.BatchTimeout,
 		writeTimeout:    config.WriteTimeout,
-		connIdleTimeout: config.ConnMaxIdleTimeout,
+		idleTimeout:     config.IdleTimeout,
 		dialer:          config.Dialer,
 		msgs:            make(chan writerMessage, config.QueueCapacity),
 		stats:           stats,
@@ -634,7 +634,7 @@ func (w *writer) run() {
 	var resch = make([](chan<- error), 0, w.batchSize)
 	var lastMsg writerMessage
 	var batchSizeBytes int
-	var connIdleDeadline time.Time
+	var idleDeadline time.Time
 
 	defer func() {
 		if conn != nil {
@@ -695,13 +695,16 @@ func (w *writer) run() {
 				}
 				batchTimerRunning = false
 			}
-			if len(batch) == 0 {
-				continue
-			}
-			if conn != nil && time.Now().After(connIdleDeadline) {
+
+			if conn != nil && time.Now().After(idleDeadline) {
 				conn.Close()
 				conn = nil
 			}
+
+			if len(batch) == 0 {
+				continue
+			}
+
 			var err error
 			if conn, err = w.write(conn, batch, resch); err != nil {
 				if conn != nil {
@@ -709,7 +712,7 @@ func (w *writer) run() {
 					conn = nil
 				}
 			}
-			connIdleDeadline = time.Now().Add(w.connIdleTimeout)
+			idleDeadline = time.Now().Add(w.idleTimeout)
 			for i := range batch {
 				batch[i] = Message{}
 			}
