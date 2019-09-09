@@ -103,6 +103,11 @@ type WriterConfig struct {
 	// The default is to refresh partitions every 15 seconds.
 	RebalanceInterval time.Duration
 
+	// Connections that were idle for this duration will not be reused.
+	//
+	// Defaults to 9 minutes.
+	IdleConnTimeout time.Duration
+
 	// Number of acknowledges from partition replicas required before receiving
 	// a response to a produce request (default to -1, which means to wait for
 	// all replicas).
@@ -247,6 +252,9 @@ func NewWriter(config WriterConfig) *Writer {
 
 	if config.RebalanceInterval == 0 {
 		config.RebalanceInterval = 15 * time.Second
+	}
+	if config.IdleConnTimeout == 0 {
+		config.IdleConnTimeout = 9 * time.Minute
 	}
 
 	w := &Writer{
@@ -556,6 +564,7 @@ type writer struct {
 	maxMessageBytes int
 	batchTimeout    time.Duration
 	writeTimeout    time.Duration
+	idleConnTimeout time.Duration
 	dialer          *Dialer
 	msgs            chan writerMessage
 	join            sync.WaitGroup
@@ -575,6 +584,7 @@ func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
 		maxMessageBytes: config.BatchBytes,
 		batchTimeout:    config.BatchTimeout,
 		writeTimeout:    config.WriteTimeout,
+		idleConnTimeout: config.IdleConnTimeout,
 		dialer:          config.Dialer,
 		msgs:            make(chan writerMessage, config.QueueCapacity),
 		stats:           stats,
@@ -624,6 +634,7 @@ func (w *writer) run() {
 	var resch = make([](chan<- error), 0, w.batchSize)
 	var lastMsg writerMessage
 	var batchSizeBytes int
+	var idleConnDeadline time.Time
 
 	defer func() {
 		if conn != nil {
@@ -684,6 +695,10 @@ func (w *writer) run() {
 				}
 				batchTimerRunning = false
 			}
+			if conn != nil && time.Now().After(idleConnDeadline) {
+				conn.Close()
+				conn = nil
+			}
 			if len(batch) == 0 {
 				continue
 			}
@@ -694,6 +709,7 @@ func (w *writer) run() {
 					conn = nil
 				}
 			}
+			idleConnDeadline = time.Now().Add(w.idleConnTimeout)
 			for i := range batch {
 				batch[i] = Message{}
 			}
