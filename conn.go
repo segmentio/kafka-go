@@ -1070,7 +1070,6 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 				)
 			case version >= 3:
 				return c.wb.writeProduceRequestV3(
-					codec,
 					id,
 					c.clientID,
 					c.topic,
@@ -1078,7 +1077,10 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					deadlineToTimeout(deadline, now),
 					int16(atomic.LoadInt32(&c.requiredAcks)),
 					c.transactionalID,
-					msgs...,
+					&recordBatch{
+						codec: codec,
+						msgs:  msgs,
+					},
 				)
 			default:
 				return c.wb.writeProduceRequestV2(

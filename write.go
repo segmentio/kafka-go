@@ -379,15 +379,15 @@ func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlation
 	return wb.Flush()
 }
 
-func (wb *writeBuffer) writeProduceRequestV3(codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, msgs ...Message) (err error) {
+func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, recordBatch *recordBatch) (err error) {
 	var size int32
 	var attributes int16
 	var compressed *bytes.Buffer
 
-	if codec == nil {
-		size = recordBatchSize(msgs...)
+	if recordBatch.codec == nil {
+		size = recordBatchSize(recordBatch.msgs...)
 	} else {
-		compressed, attributes, size, err = compressRecordBatch(codec, msgs...)
+		compressed, attributes, size, err = compressRecordBatch(recordBatch.codec, recordBatch.msgs...)
 		if err != nil {
 			return
 		}
@@ -425,18 +425,18 @@ func (wb *writeBuffer) writeProduceRequestV3(codec CompressionCodec, correlation
 	wb.writeInt32(partition)
 
 	wb.writeInt32(size)
-	baseTime := msgs[0].Time
-	lastTime := msgs[len(msgs)-1].Time
+	baseTime := recordBatch.msgs[0].Time
+	lastTime := recordBatch.msgs[len(recordBatch.msgs)-1].Time
 
 	if compressed != nil {
-		wb.writeRecordBatch(attributes, size, len(msgs), baseTime, lastTime, func(wb *writeBuffer) {
+		wb.writeRecordBatch(attributes, size, len(recordBatch.msgs), baseTime, lastTime, func(wb *writeBuffer) {
 			wb.Write(compressed.Bytes())
 		})
 		releaseBuffer(compressed)
 	} else {
-		wb.writeRecordBatch(attributes, size, len(msgs), baseTime, lastTime, func(wb *writeBuffer) {
-			for i, msg := range msgs {
-				wb.writeRecord(0, msgs[0].Time, int64(i), msg)
+		wb.writeRecordBatch(attributes, size, len(recordBatch.msgs), baseTime, lastTime, func(wb *writeBuffer) {
+			for i, msg := range recordBatch.msgs {
+				wb.writeRecord(0, recordBatch.msgs[0].Time, int64(i), msg)
 			}
 		})
 	}
@@ -572,25 +572,6 @@ func compressMessageSet(codec CompressionCodec, msgs ...Message) (compressed *by
 	return
 }
 
-func compressRecordBatch(codec CompressionCodec, msgs ...Message) (compressed *bytes.Buffer, attributes int16, size int32, err error) {
-	compressed = acquireBuffer()
-	compressor := codec.NewWriter(compressed)
-	wb := &writeBuffer{w: compressor}
-
-	for i, msg := range msgs {
-		wb.writeRecord(0, msgs[0].Time, int64(i), msg)
-	}
-
-	if err = compressor.Close(); err != nil {
-		releaseBuffer(compressed)
-		return
-	}
-
-	attributes = int16(codec.Code())
-	size = recordBatchHeaderSize + int32(compressed.Len())
-	return
-}
-
 func (wb *writeBuffer) writeMessage(offset int64, attributes int8, time time.Time, key, value []byte, cw *crc32Writer) {
 	const magicByte = 1 // compatible with kafka 0.10.0.0+
 
@@ -696,32 +677,4 @@ func recordSize(msg *Message, timestampDelta time.Duration, offsetDelta int64) i
 			h := &msg.Headers[i]
 			return varStringLen(h.Key) + varBytesLen(h.Value)
 		})
-}
-
-const recordBatchHeaderSize int32 = 0 +
-	8 + // base offset
-	4 + // batch length
-	4 + // partition leader epoch
-	1 + // magic
-	4 + // crc
-	2 + // attributes
-	4 + // last offset delta
-	8 + // first timestamp
-	8 + // max timestamp
-	8 + // producer id
-	2 + // producer epoch
-	4 + // base sequence
-	4 // msg count
-
-func recordBatchSize(msgs ...Message) (size int32) {
-	size = recordBatchHeaderSize
-	baseTime := msgs[0].Time
-
-	for i := range msgs {
-		msg := &msgs[i]
-		msz := recordSize(msg, msg.Time.Sub(baseTime), int64(i))
-		size += int32(msz + varIntLen(int64(msz)))
-	}
-
-	return
 }
