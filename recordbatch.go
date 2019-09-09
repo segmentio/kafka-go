@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bytes"
+	"time"
 )
 
 const recordBatchHeaderSize int32 = 0 +
@@ -72,6 +73,8 @@ func (r *recordBatch) init() (err error) {
 }
 
 func (r *recordBatch) writeTo(wb *writeBuffer) {
+	wb.writeInt32(r.size)
+
 	baseTime := r.msgs[0].Time
 	lastTime := r.msgs[len(r.msgs)-1].Time
 	if r.compressed != nil {
@@ -86,4 +89,16 @@ func (r *recordBatch) writeTo(wb *writeBuffer) {
 			}
 		})
 	}
+}
+
+func recordSize(msg *Message, timestampDelta time.Duration, offsetDelta int64) int {
+	return 1 + // attributes
+		varIntLen(int64(milliseconds(timestampDelta))) +
+		varIntLen(offsetDelta) +
+		varBytesLen(msg.Key) +
+		varBytesLen(msg.Value) +
+		varArrayLen(len(msg.Headers), func(i int) int {
+			h := &msg.Headers[i]
+			return varStringLen(h.Key) + varBytesLen(h.Value)
+		})
 }
