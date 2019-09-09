@@ -52,8 +52,21 @@ func compressRecordBatch(codec CompressionCodec, msgs ...Message) (compressed *b
 }
 
 type recordBatch struct {
+	// required input parameters
 	codec      CompressionCodec
 	attributes int16
 	msgs       []Message
+
+	// parameters calculated during init
 	compressed *bytes.Buffer
+	size       int32
+}
+
+func (r *recordBatch) init() (err error) {
+	if r.codec == nil {
+		r.size = recordBatchSize(r.msgs...)
+	} else {
+		r.compressed, r.attributes, r.size, err = compressRecordBatch(r.codec, r.msgs...)
+	}
+	return
 }

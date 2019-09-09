@@ -380,18 +380,6 @@ func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlation
 }
 
 func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, recordBatch *recordBatch) (err error) {
-	var size int32
-	var attributes int16
-	var compressed *bytes.Buffer
-
-	if recordBatch.codec == nil {
-		size = recordBatchSize(recordBatch.msgs...)
-	} else {
-		compressed, attributes, size, err = compressRecordBatch(recordBatch.codec, recordBatch.msgs...)
-		if err != nil {
-			return
-		}
-	}
 
 	h := requestHeader{
 		ApiKey:        int16(produceRequest),
@@ -409,7 +397,7 @@ func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topi
 		4 + // partition array length
 		4 + // partition
 		4 + // message set size
-		size
+		recordBatch.size
 
 	h.writeTo(wb)
 	wb.writeNullableString(transactionalID)
@@ -424,17 +412,17 @@ func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topi
 	wb.writeArrayLen(1)
 	wb.writeInt32(partition)
 
-	wb.writeInt32(size)
+	wb.writeInt32(recordBatch.size)
 	baseTime := recordBatch.msgs[0].Time
 	lastTime := recordBatch.msgs[len(recordBatch.msgs)-1].Time
 
-	if compressed != nil {
-		wb.writeRecordBatch(attributes, size, len(recordBatch.msgs), baseTime, lastTime, func(wb *writeBuffer) {
-			wb.Write(compressed.Bytes())
+	if recordBatch.compressed != nil {
+		wb.writeRecordBatch(recordBatch.attributes, recordBatch.size, len(recordBatch.msgs), baseTime, lastTime, func(wb *writeBuffer) {
+			wb.Write(recordBatch.compressed.Bytes())
 		})
-		releaseBuffer(compressed)
+		releaseBuffer(recordBatch.compressed)
 	} else {
-		wb.writeRecordBatch(attributes, size, len(recordBatch.msgs), baseTime, lastTime, func(wb *writeBuffer) {
+		wb.writeRecordBatch(recordBatch.attributes, recordBatch.size, len(recordBatch.msgs), baseTime, lastTime, func(wb *writeBuffer) {
 			for i, msg := range recordBatch.msgs {
 				wb.writeRecord(0, recordBatch.msgs[0].Time, int64(i), msg)
 			}
