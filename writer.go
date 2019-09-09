@@ -695,16 +695,13 @@ func (w *writer) run() {
 				}
 				batchTimerRunning = false
 			}
-
 			if conn != nil && time.Now().After(idleConnDeadline) {
 				conn.Close()
 				conn = nil
 			}
-
 			if len(batch) == 0 {
 				continue
 			}
-
 			var err error
 			if conn, err = w.write(conn, batch, resch); err != nil {
 				if conn != nil {
