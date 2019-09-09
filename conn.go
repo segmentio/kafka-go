@@ -496,10 +496,10 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV1) (offsetFetchResponseV1,
 	return res, nil
 }
 
-// syncGroups completes the handshake to join a consumer group
+// syncGroup completes the handshake to join a consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SyncGroup
-func (c *Conn) syncGroups(request syncGroupRequestV0) (syncGroupResponseV0, error) {
+func (c *Conn) syncGroup(request syncGroupRequestV0) (syncGroupResponseV0, error) {
 	var res syncGroupResponseV0
 
 	err := c.readOperation(
@@ -604,7 +604,7 @@ const (
 	// constants to skip the bound check that the connection would do otherwise.
 	// Programs can use this flag to avoid making a metadata request to the kafka
 	// broker to read the current first and last offsets of the partition.
-	SeekDontCheck = 1 << 31
+	SeekDontCheck = 1 << 30
 )
 
 // Seek sets the offset for the next read or write operation according to whence, which
@@ -766,7 +766,6 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-		adjustedDeadline = deadline
 		switch c.fetchVersion {
 		case v10:
 			c.wb.writeFetchRequestV10(

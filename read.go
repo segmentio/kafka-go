@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,13 @@ type readBuffer struct {
 	b   [16]byte
 	n   int
 	err error
+}
+
+func newBytesReader(b []byte) *readBuffer {
+	return &readBuffer{
+		r: bytes.NewReader(b),
+		n: len(b),
+	}
 }
 
 func (rb *readBuffer) readFull(b []byte) int {
