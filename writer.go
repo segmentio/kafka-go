@@ -319,7 +319,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		for i, msg := range msgs {
-			if int(msg.message(nil).size()) > w.config.BatchBytes {
+			if int(msg.size()) > w.config.BatchBytes {
 				err := MessageTooLargeError{
 					Message:   msg,
 					Remaining: msgs[i+1:],
@@ -651,7 +651,7 @@ func (w *writer) run() {
 			if lastMsg.res != nil {
 				resch = append(resch, lastMsg.res)
 			}
-			batchSizeBytes += int(lastMsg.msg.message(nil).size())
+			batchSizeBytes += int(lastMsg.msg.size())
 			lastMsg = writerMessage{}
 			if !batchTimerRunning {
 				batchTimer.Reset(w.batchTimeout)
@@ -663,7 +663,7 @@ func (w *writer) run() {
 			if !ok {
 				done, mustFlush = true, true
 			} else {
-				if int(wm.msg.message(nil).size())+batchSizeBytes > w.maxMessageBytes {
+				if int(wm.msg.size())+batchSizeBytes > w.maxMessageBytes {
 					// If the size of the current message puts us over the maxMessageBytes limit,
 					// store the message but don't send it in this batch.
 					mustFlush = true
@@ -674,7 +674,7 @@ func (w *writer) run() {
 				if wm.res != nil {
 					resch = append(resch, wm.res)
 				}
-				batchSizeBytes += int(wm.msg.message(nil).size())
+				batchSizeBytes += int(wm.msg.size())
 				mustFlush = len(batch) >= w.batchSize || batchSizeBytes >= w.maxMessageBytes
 			}
 			if !batchTimerRunning {
