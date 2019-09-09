@@ -413,21 +413,8 @@ func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topi
 	wb.writeInt32(partition)
 
 	wb.writeInt32(recordBatch.size)
-	baseTime := recordBatch.msgs[0].Time
-	lastTime := recordBatch.msgs[len(recordBatch.msgs)-1].Time
 
-	if recordBatch.compressed != nil {
-		wb.writeRecordBatch(recordBatch.attributes, recordBatch.size, len(recordBatch.msgs), baseTime, lastTime, func(wb *writeBuffer) {
-			wb.Write(recordBatch.compressed.Bytes())
-		})
-		releaseBuffer(recordBatch.compressed)
-	} else {
-		wb.writeRecordBatch(recordBatch.attributes, recordBatch.size, len(recordBatch.msgs), baseTime, lastTime, func(wb *writeBuffer) {
-			for i, msg := range recordBatch.msgs {
-				wb.writeRecord(0, recordBatch.msgs[0].Time, int64(i), msg)
-			}
-		})
-	}
+	recordBatch.writeTo(wb)
 
 	return wb.Flush()
 }

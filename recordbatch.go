@@ -70,3 +70,20 @@ func (r *recordBatch) init() (err error) {
 	}
 	return
 }
+
+func (r *recordBatch) writeTo(wb *writeBuffer) {
+	baseTime := r.msgs[0].Time
+	lastTime := r.msgs[len(r.msgs)-1].Time
+	if r.compressed != nil {
+		wb.writeRecordBatch(r.attributes, r.size, len(r.msgs), baseTime, lastTime, func(wb *writeBuffer) {
+			wb.Write(r.compressed.Bytes())
+		})
+		releaseBuffer(r.compressed)
+	} else {
+		wb.writeRecordBatch(r.attributes, r.size, len(r.msgs), baseTime, lastTime, func(wb *writeBuffer) {
+			for i, msg := range r.msgs {
+				wb.writeRecord(0, r.msgs[0].Time, int64(i), msg)
+			}
+		})
+	}
+}
