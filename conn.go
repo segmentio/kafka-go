@@ -1057,8 +1057,15 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 			switch version := c.apiVersions[produceRequest].MaxVersion; {
 			case version >= 7:
+				recordBatch, err :=
+					newRecordBatch(
+						codec,
+						msgs...,
+					)
+				if err != nil {
+					return err
+				}
 				return c.wb.writeProduceRequestV7(
-					codec,
 					id,
 					c.clientID,
 					c.topic,
@@ -1066,11 +1073,18 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					deadlineToTimeout(deadline, now),
 					int16(atomic.LoadInt32(&c.requiredAcks)),
 					c.transactionalID,
-					msgs...,
+					recordBatch,
 				)
 			case version >= 3:
+				recordBatch, err :=
+					newRecordBatch(
+						codec,
+						msgs...,
+					)
+				if err != nil {
+					return err
+				}
 				return c.wb.writeProduceRequestV3(
-					codec,
 					id,
 					c.clientID,
 					c.topic,
@@ -1078,7 +1092,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					deadlineToTimeout(deadline, now),
 					int16(atomic.LoadInt32(&c.requiredAcks)),
 					c.transactionalID,
-					msgs...,
+					recordBatch,
 				)
 			default:
 				return c.wb.writeProduceRequestV2(
