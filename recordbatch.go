@@ -63,7 +63,11 @@ type recordBatch struct {
 	size       int32
 }
 
-func (r *recordBatch) init() (err error) {
+func newRecordBatch(codec CompressionCodec, msgs ...Message) (r *recordBatch, err error) {
+	r = &recordBatch{
+		codec: codec,
+		msgs:  msgs,
+	}
 	if r.codec == nil {
 		r.size = recordBatchSize(r.msgs...)
 	} else {
