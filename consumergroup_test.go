@@ -637,8 +637,8 @@ func TestGenerationExitsOnPartitionChange(t *testing.T) {
 	gen := Generation{
 		conn:     conn,
 		done:     make(chan struct{}),
-		log:      func(func(*log.Logger)) {},
-		logError: func(func(*log.Logger)) {},
+		log:      func(func(Logger)) {},
+		logError: func(func(Logger)) {},
 	}
 
 	done := make(chan struct{})

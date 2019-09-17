@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"sort"
 	"sync"
@@ -570,8 +569,8 @@ type writer struct {
 	join            sync.WaitGroup
 	stats           *writerStats
 	codec           CompressionCodec
-	logger          *log.Logger
-	errorLogger     *log.Logger
+	logger          Logger
+	errorLogger     Logger
 }
 
 func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
@@ -606,13 +605,13 @@ func (w *writer) messages() chan<- writerMessage {
 	return w.msgs
 }
 
-func (w *writer) withLogger(do func(*log.Logger)) {
+func (w *writer) withLogger(do func(Logger)) {
 	if w.logger != nil {
 		do(w.logger)
 	}
 }
 
-func (w *writer) withErrorLogger(do func(*log.Logger)) {
+func (w *writer) withErrorLogger(do func(Logger)) {
 	if w.errorLogger != nil {
 		do(w.errorLogger)
 	} else {
@@ -743,7 +742,7 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 	if conn == nil {
 		if conn, err = w.dial(); err != nil {
 			w.stats.errors.observe(1)
-			w.withErrorLogger(func(logger *log.Logger) {
+			w.withErrorLogger(func(logger Logger) {
 				logger.Printf("error dialing kafka brokers for topic %s (partition %d): %s", w.topic, w.partition, err)
 			})
 			for i, res := range resch {
@@ -757,7 +756,7 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 	conn.SetWriteDeadline(time.Now().Add(w.writeTimeout))
 	if _, err = conn.WriteCompressedMessages(w.codec, batch...); err != nil {
 		w.stats.errors.observe(1)
-		w.withErrorLogger(func(logger *log.Logger) {
+		w.withErrorLogger(func(logger Logger) {
 			logger.Printf("error writing messages to %s (partition %d): %s", w.topic, w.partition, err)
 		})
 		for i, res := range resch {
