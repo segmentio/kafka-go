@@ -1266,7 +1266,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				break readLoop
 
 			case io.EOF:
-				r.withLogger(func(log *log.Logger) {
+				r.withLogger(func(log Logger) {
 					log.Printf("the kafka reader got an EOF for partition %d of %s at offset %d: %s", r.partition, r.topic, offset, err)
 				})
 				r.stats.errors.observe(1)
