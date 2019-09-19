@@ -1191,6 +1191,9 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			switch offset, err = r.read(ctx, offset, conn); err {
 			case nil:
 				errcount = 0
+			case EndOfBatch:
+				// done with this batch of messages...carry on.
+				break readLoop
 			case UnknownTopicOrPartition:
 				r.withErrorLogger(func(log Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d, topic or parition not found on this broker, %v", r.partition, r.topic, offset, r.brokers)
@@ -1263,14 +1266,6 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				// imported.  This is a fatal error b/c the reader cannot
 				// proceed.
 				r.sendError(ctx, err)
-				break readLoop
-
-			case io.EOF:
-				r.withLogger(func(log Logger) {
-					log.Printf("the kafka reader got an EOF for partition %d of %s at offset %d: %s", r.partition, r.topic, offset, err)
-				})
-				r.stats.errors.observe(1)
-				conn.Close()
 				break readLoop
 
 			default:

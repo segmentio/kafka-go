@@ -3,7 +3,6 @@ package kafka
 import (
 	"context"
 	"errors"
-	"io"
 	"math"
 	"strings"
 	"testing"
@@ -269,7 +268,7 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 		var msg Message
 
 		if msg, err = batch.ReadMessage(); err != nil {
-			if err == io.EOF {
+			if err == EndOfBatch {
 				err = nil
 			}
 			return

@@ -2,10 +2,15 @@ package kafka
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"sync"
 	"time"
 )
+
+// EndOfBatch is returned by the Read functions when there are no more messages
+// left in the batch.
+var EndOfBatch = errors.New("no more messages in this batch")
 
 // A Batch is an iterator over a sequence of messages fetched from a kafka
 // server.
@@ -68,7 +73,7 @@ func (batch *Batch) close() (err error) {
 		batch.msgs.discard()
 	}
 
-	if err = batch.err; err == io.EOF {
+	if err = batch.err; err == EndOfBatch {
 		err = nil
 	}
 
@@ -94,7 +99,7 @@ func (batch *Batch) close() (err error) {
 
 // Err returns a non-nil error if the batch is broken. This is the same error
 // that would be returned by Read, ReadMessage or Close (except in the case of
-// io.EOF which is never returned by Close).
+// EndOfBatch which is never returned by Close).
 //
 // This method is useful when building retry mechanisms for (*Conn).ReadBatch,
 // the program can check whether the batch carried a error before attempting to
@@ -109,7 +114,7 @@ func (batch *Batch) Err() error { return batch.err }
 // number of bytes read, or an error if the next message couldn't be read.
 //
 // If an error is returned the batch cannot be used anymore and calling Read
-// again will keep returning that error. All errors except io.EOF (indicating
+// again will keep returning that error. All errors except EndOfBatch (indicating
 // that the program consumed all messages from the batch) are also returned by
 // Close.
 //
@@ -253,7 +258,7 @@ func checkTimeoutErr(deadline time.Time) (err error) {
 	if !deadline.IsZero() && time.Now().After(deadline) {
 		err = RequestTimedOut
 	} else {
-		err = io.EOF
+		err = EndOfBatch
 	}
 	return
 }

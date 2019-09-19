@@ -441,8 +441,8 @@ func isTemporary(err error) bool {
 	return ok && e.Temporary()
 }
 
-func silentEOF(err error) error {
-	if err == io.EOF {
+func silentEndOfBatch(err error) error {
+	if err == EndOfBatch {
 		err = nil
 	}
 	return err
