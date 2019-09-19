@@ -2,15 +2,10 @@ package kafka
 
 import (
 	"bufio"
-	"errors"
 	"io"
 	"sync"
 	"time"
 )
-
-// EndOfBatch is returned by the Read functions when there are no more messages
-// left in the batch.
-var EndOfBatch = errors.New("no more messages in this batch")
 
 // A Batch is an iterator over a sequence of messages fetched from a kafka
 // server.
@@ -73,7 +68,7 @@ func (batch *Batch) close() (err error) {
 		batch.msgs.discard()
 	}
 
-	if err = batch.err; err == EndOfBatch {
+	if err = batch.err; err == io.EOF {
 		err = nil
 	}
 
@@ -99,7 +94,7 @@ func (batch *Batch) close() (err error) {
 
 // Err returns a non-nil error if the batch is broken. This is the same error
 // that would be returned by Read, ReadMessage or Close (except in the case of
-// EndOfBatch which is never returned by Close).
+// io.EOF which is never returned by Close).
 //
 // This method is useful when building retry mechanisms for (*Conn).ReadBatch,
 // the program can check whether the batch carried a error before attempting to
@@ -114,7 +109,7 @@ func (batch *Batch) Err() error { return batch.err }
 // number of bytes read, or an error if the next message couldn't be read.
 //
 // If an error is returned the batch cannot be used anymore and calling Read
-// again will keep returning that error. All errors except EndOfBatch (indicating
+// again will keep returning that error. All errors except io.EOF (indicating
 // that the program consumed all messages from the batch) are also returned by
 // Close.
 //
@@ -235,7 +230,12 @@ func (batch *Batch) readMessage(
 		err = batch.msgs.discard()
 		switch {
 		case err != nil:
-			batch.err = err
+			// Since io.EOF is used by the batch to indicate that there is are
+			// no more messages to consume, it is crucial that any io.EOF errors
+			// on the underlying connection are repackaged.  Otherwise, the
+			// caller can't tell the difference between a batch that was fully
+			// consumed or a batch whose connection is in an error state.
+			batch.err = dontExpectEOF(err)
 		case batch.msgs.remaining() == 0:
 			// Because we use the adjusted deadline we could end up returning
 			// before the actual deadline occurred. This is necessary otherwise
@@ -248,7 +248,12 @@ func (batch *Batch) readMessage(
 			batch.err = err
 		}
 	default:
-		batch.err = err
+		// Since io.EOF is used by the batch to indicate that there is are
+		// no more messages to consume, it is crucial that any io.EOF errors
+		// on the underlying connection are repackaged.  Otherwise, the
+		// caller can't tell the difference between a batch that was fully
+		// consumed or a batch whose connection is in an error state.
+		batch.err = dontExpectEOF(err)
 	}
 
 	return
@@ -258,7 +263,7 @@ func checkTimeoutErr(deadline time.Time) (err error) {
 	if !deadline.IsZero() && time.Now().After(deadline) {
 		err = RequestTimedOut
 	} else {
-		err = EndOfBatch
+		err = io.EOF
 	}
 	return
 }

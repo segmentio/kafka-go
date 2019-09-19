@@ -696,7 +696,7 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 func (c *Conn) Read(b []byte) (int, error) {
 	batch := c.ReadBatch(1, len(b))
 	n, err := batch.Read(b)
-	return n, coalesceErrors(silentEndOfBatch(err), batch.Close())
+	return n, coalesceErrors(silentEOF(err), batch.Close())
 }
 
 // ReadMessage reads the message at the current offset from the connection,
@@ -717,7 +717,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 func (c *Conn) ReadMessage(maxBytes int) (Message, error) {
 	batch := c.ReadBatch(1, maxBytes)
 	msg, err := batch.ReadMessage()
-	return msg, coalesceErrors(silentEndOfBatch(err), batch.Close())
+	return msg, coalesceErrors(silentEOF(err), batch.Close())
 }
 
 // ReadBatch reads a batch of messages from the kafka server. The method always
@@ -851,7 +851,11 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
 		highWaterMark: highWaterMark,
-		err:           dontExpectEOF(err),
+		// there shouldn't be a short read on initially setting up the batch.
+		// as such, any io.EOF is re-mapped to an io.ErrUnexpectedEOF so that we
+		// don't accidentally signal that we successfully reached the end of the
+		// batch.
+		err: dontExpectEOF(err),
 	}
 }
 

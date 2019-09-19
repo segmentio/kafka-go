@@ -1191,8 +1191,11 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			switch offset, err = r.read(ctx, offset, conn); err {
 			case nil:
 				errcount = 0
-			case EndOfBatch:
-				// done with this batch of messages...carry on.
+			case io.EOF:
+				// done with this batch of messages...carry on.  note that this
+				// block relies on the batch repackaging real io.EOF errors as
+				// io.UnexpectedEOF.  otherwise, we would end up swallowing real
+				// errors here.
 				break readLoop
 			case UnknownTopicOrPartition:
 				r.withErrorLogger(func(log Logger) {
