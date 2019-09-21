@@ -230,7 +230,12 @@ func (batch *Batch) readMessage(
 		err = batch.msgs.discard()
 		switch {
 		case err != nil:
-			batch.err = err
+			// Since io.EOF is used by the batch to indicate that there is are
+			// no more messages to consume, it is crucial that any io.EOF errors
+			// on the underlying connection are repackaged.  Otherwise, the
+			// caller can't tell the difference between a batch that was fully
+			// consumed or a batch whose connection is in an error state.
+			batch.err = dontExpectEOF(err)
 		case batch.msgs.remaining() == 0:
 			// Because we use the adjusted deadline we could end up returning
 			// before the actual deadline occurred. This is necessary otherwise
@@ -243,7 +248,12 @@ func (batch *Batch) readMessage(
 			batch.err = err
 		}
 	default:
-		batch.err = err
+		// Since io.EOF is used by the batch to indicate that there is are
+		// no more messages to consume, it is crucial that any io.EOF errors
+		// on the underlying connection are repackaged.  Otherwise, the
+		// caller can't tell the difference between a batch that was fully
+		// consumed or a batch whose connection is in an error state.
+		batch.err = dontExpectEOF(err)
 	}
 
 	return

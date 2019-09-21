@@ -851,7 +851,11 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
 		highWaterMark: highWaterMark,
-		err:           dontExpectEOF(err),
+		// there shouldn't be a short read on initially setting up the batch.
+		// as such, any io.EOF is re-mapped to an io.ErrUnexpectedEOF so that we
+		// don't accidentally signal that we successfully reached the end of the
+		// batch.
+		err: dontExpectEOF(err),
 	}
 }
 
