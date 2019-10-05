@@ -1279,21 +1279,25 @@ func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32) error) (i
 }
 
 func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size int, lock *sync.Mutex, err error) {
-	c.rlock.Lock()
-
 	for {
 		var rsz int32
 		var rid int32
 
+		c.rlock.Lock()
 		deadline = d.setConnReadDeadline(c.conn)
+		rsz, rid, err = c.peekResponseSizeAndID()
 
-		if rsz, rid, err = c.peekResponseSizeAndID(); err != nil {
+		if err != nil {
+			d.unsetConnReadDeadline()
+			c.conn.Close()
+			c.rlock.Unlock()
 			break
 		}
 
 		if id == rid {
 			c.skipResponseSizeAndID()
 			size, lock = int(rsz-4), &c.rlock
+			// Don't unlock the read mutex to yield ownership to the caller.
 			break
 		}
 
@@ -1303,6 +1307,7 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 			// one it expects. This is a sign that the data we are reading on
 			// the wire is corrupted and the connection needs to be closed.
 			err = io.ErrNoProgress
+			c.rlock.Unlock()
 			break
 		}
 
@@ -1310,18 +1315,6 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 		// been received but the current operation is not the target for it.
 		c.rlock.Unlock()
 		runtime.Gosched()
-		c.rlock.Lock()
-	}
-
-	if err != nil {
-		d.unsetConnReadDeadline()
-		c.conn.Close()
-	}
-
-	if lock == nil {
-		// Only unlock the read mutex if the lock wasn't returned to yield
-		// ownership to the caller.
-		c.rlock.Unlock()
 	}
 
 	c.leave()
