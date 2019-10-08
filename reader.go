@@ -1070,7 +1070,7 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 
 	r.join.Add(len(offsetsByPartition))
 	for partition, offset := range offsetsByPartition {
-		go func(ctx context.Context, partition int, offset int64, join *sync.WaitGroup) {
+		go func(ctx context.Context, partition int, offset int64, version int64, join *sync.WaitGroup) {
 			defer join.Done()
 
 			(&reader{
@@ -1085,13 +1085,13 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 				maxWait:         r.config.MaxWait,
 				backoffDelayMin: r.config.ReadBackoffMin,
 				backoffDelayMax: r.config.ReadBackoffMax,
-				version:         r.version,
+				version:         version,
 				msgs:            r.msgs,
 				stats:           r.stats,
 				isolationLevel:  r.config.IsolationLevel,
 				maxAttempts:     r.config.MaxAttempts,
 			}).run(ctx, offset)
-		}(ctx, partition, offset, &r.join)
+		}(ctx, partition, offset, r.version, &r.join)
 	}
 }
 

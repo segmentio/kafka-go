@@ -1126,13 +1126,8 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 		},
 	)
 
-	if err != nil {
-		return
-	}
-
-	if perr != 0 {
+	if err == nil && perr != 0 {
 		err = perr
-		return
 	}
 
 	return
@@ -1148,12 +1143,6 @@ func (c *Conn) SetRequiredAcks(n int) error {
 	default:
 		return InvalidRequiredAcks
 	}
-}
-
-func (c *Conn) writeRequestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32, size int32) {
-	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
-	hdr.Size = (hdr.size() + size) - 4
-	hdr.writeTo(&c.wb)
 }
 
 func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req request) {
@@ -1259,7 +1248,6 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 		rsz, rid, err = c.peekResponseSizeAndID()
 
 		if err != nil {
-			d.unsetConnReadDeadline()
 			c.conn.Close()
 			c.rlock.Unlock()
 			break

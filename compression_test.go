@@ -99,6 +99,7 @@ func TestCompressedMessages(t *testing.T) {
 func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
 		topic := kafka.CreateTopic(t, 1)
+
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
 			Topic:            topic,
@@ -107,10 +108,12 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 		})
 		defer w.Close()
 
-		offset := 0
+		var offset int
 		var values []string
+
 		for i := 0; i < 10; i++ {
 			batch := make([]kafka.Message, i+1)
+
 			for j := range batch {
 				value := fmt.Sprintf("Hello World %d!", offset)
 				values = append(values, value)
@@ -120,6 +123,7 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 				}
 				offset++
 			}
+
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if err := w.WriteMessages(ctx, batch...); err != nil {
 				t.Errorf("error sending batch %d, reason: %+v", i+1, err)
@@ -140,10 +144,11 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// in order to ensure proper handling of decompressing message, read at
+		// in order to ensure proper handling of message decompression, read at
 		// offsets that we know to be in the middle of compressed message sets.
 		for base := range values {
 			r.SetOffset(int64(base))
+
 			for i := base; i < len(values); i++ {
 				msg, err := r.ReadMessage(ctx)
 				if err != nil {
