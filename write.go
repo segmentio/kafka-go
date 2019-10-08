@@ -351,6 +351,7 @@ func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlation
 		size = messageSetSize(msgs...)
 	} else {
 		compressed, attributes, size, wb.err = compressMessageSet(codec, msgs...)
+		msgs = []Message{{Value: compressed.Bytes()}}
 	}
 
 	h := requestHeader{
