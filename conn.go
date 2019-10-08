@@ -44,6 +44,9 @@ type Conn struct {
 	// base network connection
 	conn net.Conn
 
+	// number of inflight requests on the connection.
+	inflight int32
+
 	// offset management (synchronized on the mutex field)
 	mutex  sync.Mutex
 	offset int64
@@ -854,7 +857,11 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
 		offset:        offset,
 		highWaterMark: highWaterMark,
-		err:           dontExpectEOF(err),
+		// there shouldn't be a short read on initially setting up the batch.
+		// as such, any io.EOF is re-mapped to an io.ErrUnexpectedEOF so that we
+		// don't accidentally signal that we successfully reached the end of the
+		// batch.
+		err: dontExpectEOF(err),
 	}
 }
 
@@ -1055,7 +1062,6 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 			switch version := c.apiVersions[produceRequest].MaxVersion; {
 			case version >= 7:
 				c.wb.writeProduceRequestV7(
-					codec,
 					id,
 					c.clientID,
 					c.topic,
@@ -1063,11 +1069,10 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					deadlineToTimeout(deadline, now),
 					int16(atomic.LoadInt32(&c.requiredAcks)),
 					c.transactionalID,
-					msgs...,
+					newRecordBatch(codec, msgs...),
 				)
 			case version >= 3:
 				c.wb.writeProduceRequestV3(
-					codec,
 					id,
 					c.clientID,
 					c.topic,
@@ -1075,7 +1080,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					deadlineToTimeout(deadline, now),
 					int16(atomic.LoadInt32(&c.requiredAcks)),
 					c.transactionalID,
-					msgs...,
+					newRecordBatch(codec, msgs...),
 				)
 			default:
 				c.wb.writeProduceRequestV2(
@@ -1187,6 +1192,18 @@ func (c *Conn) writeOperation(write func(time.Time, int32), read func(time.Time)
 	return c.do(&c.wdeadline, write, read)
 }
 
+func (c *Conn) enter() {
+	atomic.AddInt32(&c.inflight, +1)
+}
+
+func (c *Conn) leave() {
+	atomic.AddInt32(&c.inflight, -1)
+}
+
+func (c *Conn) concurrency() int {
+	return int(atomic.LoadInt32(&c.inflight))
+}
+
 func (c *Conn) do(d *connDeadline, write func(time.Time, int32), read func(time.Time)) error {
 	id, err := c.doRequest(d, write)
 	if err != nil {
@@ -1212,6 +1229,7 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32), read func(time.
 }
 
 func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32)) (id int32, err error) {
+	c.enter()
 	c.wlock.Lock()
 	c.correlationID++
 	id = c.correlationID
@@ -1224,6 +1242,7 @@ func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32)) (id int3
 		// recoverable state so we're better off just giving up at this point to
 		// avoid any risk of corrupting the following operations.
 		c.conn.Close()
+		c.leave()
 	}
 
 	c.wlock.Unlock()
@@ -1231,60 +1250,45 @@ func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32)) (id int3
 }
 
 func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size int, lock *sync.Mutex, err error) {
-	// I applied exactly zero scientific process to choose this value,
-	// it seemed to worked fine in practice tho.
-	//
-	// My guess is 100 iterations where the goroutine gets descheduled
-	// by calling runtime.Gosched() may end up on a wait of ~10ms to ~1s
-	// (if the programs is heavily CPU bound and has lots of goroutines),
-	// so it should allow for bailing quickly without taking too much risk
-	// to get false positives.
-	const maxAttempts = 100
-	var lastID int32
-
-	for attempt := 0; attempt < maxAttempts; {
+	for {
 		var rsz int32
 		var rid int32
 
 		c.rlock.Lock()
 		deadline = d.setConnReadDeadline(c.conn)
+		rsz, rid, err = c.peekResponseSizeAndID()
 
-		if rsz, rid, err = c.peekResponseSizeAndID(); err != nil {
+		if err != nil {
 			d.unsetConnReadDeadline()
 			c.conn.Close()
 			c.rlock.Unlock()
-			return
+			break
 		}
 
 		if id == rid {
 			c.skipResponseSizeAndID()
 			size, lock = int(rsz-4), &c.rlock
-			return
+			// Don't unlock the read mutex to yield ownership to the caller.
+			break
+		}
+
+		if c.concurrency() == 1 {
+			// If the goroutine is the only one waiting on this connection it
+			// should be impossible to read a correlation id different from the
+			// one it expects. This is a sign that the data we are reading on
+			// the wire is corrupted and the connection needs to be closed.
+			err = io.ErrNoProgress
+			c.rlock.Unlock()
+			break
 		}
 
 		// Optimistically release the read lock if a response has already
 		// been received but the current operation is not the target for it.
 		c.rlock.Unlock()
 		runtime.Gosched()
-
-		// This check is a safety mechanism, if we make too many loop
-		// iterations and always draw the same id then we could be facing
-		// corrupted data on the wire, or the goroutine(s) sharing ownership
-		// of this connection may have panicked and therefore will not be able
-		// to participate in consuming bytes from the wire. To prevent entering
-		// an infinite loop which reads the same value over and over we bail
-		// with the uncommon io.ErrNoProgress error which should give a good
-		// enough signal about what is going wrong.
-		if rid != lastID {
-			attempt++
-		} else {
-			attempt = 0
-		}
-
-		lastID = rid
 	}
 
-	err = io.ErrNoProgress
+	c.leave()
 	return
 }
 
