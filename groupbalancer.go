@@ -1,8 +1,10 @@
 package kafka
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -144,7 +146,8 @@ func (r RoundRobinGroupBalancer) AssignGroups(members []GroupMember, topicPartit
 // performance benefits by minimizing round trip latency between the consumer
 // and the broker.  In environments where network traffic across racks incurs
 // charges (such as cross AZ data transfer in AWS), this strategy is also a cost
-// optimization measure by keeping network traffic local.
+// optimization measure because it keeps network traffic within the local rack
+// where possible.
 //
 // The primary objective is to spread partitions evenly across consumers with a
 // secondary focus on maximizing the number of partitions where the leader and
@@ -367,16 +370,27 @@ func findGroupBalancer(protocolName string, balancers []GroupBalancer) (GroupBal
 }
 
 // findRack is the default rack resolver strategy.  It currently only supports
-// Linux EC2 deployments and will return the name of the availability zone.
+//  * ECS with the task metadata endpoint enabled (returns the container
+//    instance's availability zone)
+//  * Linux EC2 (returns the instances' availability zone)
 func findRack() string {
 	switch whereAmI() {
-	case "aws":
-		return awsAvailabilityZone()
+	case "ecs":
+		return ecsAvailabilityZone()
+	case "ec2":
+		return ec2AvailabilityZone()
 	}
 	return ""
 }
 
+const ecsContainerMetadataURI = "ECS_CONTAINER_METADATA_URI"
+
+// whereAmI determines which strategy the rack resolver should use.
 func whereAmI() string {
+	// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-metadata-endpoint.html
+	if os.Getenv(ecsContainerMetadataURI) != "" {
+		return "ecs"
+	}
 	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/identify_ec2_instances.html
 	for _, path := range [...]string{
 		"/sys/devices/virtual/dmi/id/product_uuid",
@@ -389,17 +403,43 @@ func whereAmI() string {
 		s := string(b)
 		switch {
 		case strings.HasPrefix(s, "EC2"), strings.HasPrefix(s, "ec2"):
-			return "aws"
+			return "ec2"
 		}
 	}
 	return "somewhere"
 }
 
-// awsAvailabilityZone queries the metadata endpoint to discover the
+// ecsAvailabilityZone queries the task endpoint for the metadata URI that ECS
+// injects into the ECS_CONTAINER_METADATA_URI variable in order to retrieve
+// the availability zone where the task is running.
+func ecsAvailabilityZone() string {
+	client := http.Client{
+		Timeout: time.Second,
+		Transport: &http.Transport{
+			DisableCompression: true,
+			DisableKeepAlives:  true,
+		},
+	}
+	r, err := client.Get(os.Getenv(ecsContainerMetadataURI) + "/task")
+	if err != nil {
+		return ""
+	}
+	defer r.Body.Close()
+
+	var md struct {
+		AvailabilityZone string
+	}
+	if err := json.NewDecoder(r.Body).Decode(&md); err != nil {
+		return ""
+	}
+	return md.AvailabilityZone
+}
+
+// ec2AvailabilityZone queries the metadata endpoint to discover the
 // availability zone where this code is running.  we avoid calling this function
-// unless we know we're in AWS.  Otherwise, in other environments, we would need
+// unless we know we're in EC2.  Otherwise, in other environments, we would need
 // to wait for the request to 169.254.169.254 to timeout before proceeding.
-func awsAvailabilityZone() string {
+func ec2AvailabilityZone() string {
 	client := http.Client{
 		Timeout: time.Second,
 		Transport: &http.Transport{
