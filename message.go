@@ -151,10 +151,10 @@ func (r *messageSetReader) remaining() (remain int) {
 	}
 }
 
-func (r *messageSetReader) discard() (err error) {
+func (r *messageSetReader) discard() error {
 	switch r.version {
 	case 0: // empty
-		return
+		return nil
 	case 1:
 		return r.v1.discard()
 	case 2:

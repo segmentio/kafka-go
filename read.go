@@ -321,7 +321,7 @@ func (rb *readBuffer) readFetchResponseHeaderV2() (throttle int32, watermark int
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
 	if n != 1 {
-		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d", n)
+		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d (v2)", n)
 		return
 	}
 
@@ -333,7 +333,7 @@ func (rb *readBuffer) readFetchResponseHeaderV2() (throttle int32, watermark int
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
 	if n != 1 {
-		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d", n)
+		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d (v2)", n)
 		return
 	}
 
@@ -375,7 +375,7 @@ func (rb *readBuffer) readFetchResponseHeaderV5() (throttle int32, watermark int
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
 	if n != 1 {
-		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d", n)
+		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d (v5)", n)
 		return
 	}
 
@@ -387,7 +387,7 @@ func (rb *readBuffer) readFetchResponseHeaderV5() (throttle int32, watermark int
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
 	if n != 1 {
-		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d", n)
+		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d (v5)", n)
 		return
 	}
 
@@ -415,7 +415,7 @@ func (rb *readBuffer) readFetchResponseHeaderV5() (throttle int32, watermark int
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
 	if rb.n != int(messageSetSize) {
-		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d)", messageSetSize, rb.n)
+		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d, version = 5)", messageSetSize, rb.n)
 		return
 	}
 
@@ -441,12 +441,13 @@ func (rb *readBuffer) readFetchResponseHeaderV10() (throttle int32, watermark in
 		return
 	}
 
-	rb.readInt32()
+	rb.readInt32() // session id
+
 	n = rb.readInt32()
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
 	if n != 1 {
-		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d", n)
+		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d (v10)", n)
 		return
 	}
 
@@ -458,7 +459,7 @@ func (rb *readBuffer) readFetchResponseHeaderV10() (throttle int32, watermark in
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
 	if n != 1 {
-		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d", n)
+		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d (v10)", n)
 		return
 	}
 
@@ -486,7 +487,7 @@ func (rb *readBuffer) readFetchResponseHeaderV10() (throttle int32, watermark in
 	// This error should never trigger, unless there's a bug in the kafka client
 	// or server.
 	if rb.n != int(messageSetSize) {
-		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d)", messageSetSize, rb.n)
+		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d, version = 10)", messageSetSize, rb.n)
 		return
 	}
 
