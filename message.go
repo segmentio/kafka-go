@@ -138,14 +138,14 @@ func (r *messageSetReader) readMessage(min int64,
 	}
 }
 
-func (r *messageSetReader) remaining() (remain int) {
+func (r *messageSetReader) done() bool {
 	switch r.version {
 	case 0: // empty
-		return 0
+		return true
 	case 1:
-		return r.v1.remaining()
+		return r.v1.done()
 	case 2:
-		return r.v2.remaining()
+		return r.v2.done()
 	default:
 		panic("Invalid messageSetReader - unknown message reader version")
 	}
@@ -304,27 +304,20 @@ func (r *messageSetReaderV1) readMessage(min int64,
 	return
 }
 
-func (r *messageSetReaderV1) remaining() (remain int) {
-	for s := r.readerStack; s != nil; s = s.parent {
-		remain += s.reader.n
-	}
-	return
+func (r *messageSetReaderV1) done() bool {
+	return r.readerStack == nil
 }
 
 func (r *messageSetReaderV1) discard() error {
-	if r.readerStack == nil {
-		return nil
+	r.readerStack = nil
+
+	if r.reader != nil {
+		r.reader.discardAll()
+		if err := r.reader.err; err != errShortRead {
+			return err
+		}
 	}
-	// rewind up to the top-most reader b/c it's the only one that's doing
-	// actual i/o.  the rest are byte buffers that have been pushed on the stack
-	// while reading compressed message sets.
-	for r.parent != nil {
-		r.readerStack = r.parent
-	}
-	r.reader.discardAll()
-	if err := r.reader.err; err != errShortRead {
-		return err
-	}
+
 	return nil
 }
 
@@ -514,20 +507,19 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, rb.err
 }
 
-func (r *messageSetReaderV2) remaining() int {
-	if r.readerStack == nil {
-		return 0
-	}
-	return r.reader.n
+func (r *messageSetReaderV2) done() bool {
+	return r.messageCount == 0
 }
 
 func (r *messageSetReaderV2) discard() error {
-	if r.readerStack == nil {
-		return nil
+	r.messageCount = 0
+
+	if r.reader != nil {
+		r.reader.discardAll()
+		if err := r.reader.err; err != errShortRead {
+			return err
+		}
 	}
-	r.reader.discardAll()
-	if err := r.reader.err; err != errShortRead {
-		return err
-	}
+
 	return nil
 }

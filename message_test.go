@@ -30,8 +30,8 @@ func TestMessageSetReaderEmpty(t *testing.T) {
 		t.Errorf("expected RequestTimedOut, got %v", err)
 	}
 
-	if m.remaining() != 0 {
-		t.Errorf("expected 0 remaining, got %d", m.remaining())
+	if !m.done() {
+		t.Errorf("expected done to be true, got %v", m.done())
 	}
 
 	if m.discard() != nil {

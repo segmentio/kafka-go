@@ -766,10 +766,18 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		return &Batch{err: dontExpectEOF(err)}
 	}
 
+	version := v2
+	switch {
+	case c.fetchVersion >= v10:
+		version = v10
+	case c.fetchVersion >= v5:
+		version = v5
+	}
+
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-		switch c.fetchVersion {
+		switch version {
 		case v10:
 			c.wb.writeFetchRequestV10(
 				id,
@@ -822,7 +830,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var remain int
 
 	c.rb.n = size
-	switch c.fetchVersion {
+	switch version {
 	case v10:
 		throttle, highWaterMark, err = c.rb.readFetchResponseHeaderV10()
 	case v5:

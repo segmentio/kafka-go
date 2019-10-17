@@ -63,6 +63,7 @@ func (batch *Batch) close() (err error) {
 
 	batch.conn = nil
 	batch.lock = nil
+
 	if batch.msgs != nil {
 		batch.msgs.discard()
 	}
@@ -206,7 +207,7 @@ func (batch *Batch) readMessage(
 			// caller can't tell the difference between a batch that was fully
 			// consumed or a batch whose connection is in an error state.
 			batch.err = dontExpectEOF(err)
-		case batch.msgs.remaining() == 0:
+		case batch.msgs.done():
 			// Because we use the adjusted deadline we could end up returning
 			// before the actual deadline occurred. This is necessary otherwise
 			// timing out the connection for real could end up leaving it in an
