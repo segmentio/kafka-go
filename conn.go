@@ -829,7 +829,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var highWaterMark int64
 	var remain int
 
-	c.rb.n = size
+	c.rb.reset(size)
 	switch version {
 	case v10:
 		throttle, highWaterMark, err = c.rb.readFetchResponseHeaderV10()
@@ -838,23 +838,13 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	default:
 		throttle, highWaterMark, err = c.rb.readFetchResponseHeaderV2()
 	}
-	if err == errShortRead {
-		err = checkTimeoutErr(adjustedDeadline)
-	}
 
 	var msgs *messageSetReader
-	if err != nil {
+	if err != nil || highWaterMark == offset {
+		msgs = &messageSetReader{}
 		c.rb.discardAll()
 	} else {
-		if highWaterMark == offset {
-			msgs = &messageSetReader{}
-		} else {
-			msgs, err = newMessageSetReader(&c.rb, remain)
-		}
-	}
-
-	if err == errShortRead {
-		err = checkTimeoutErr(adjustedDeadline)
+		msgs, err = newMessageSetReader(&c.rb, remain)
 	}
 
 	return &Batch{
@@ -1214,7 +1204,7 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32), read func(time.
 		return err
 	}
 
-	c.rb.n = size
+	c.rb.reset(size)
 	read(deadline)
 	c.rb.discardAll()
 	d.unsetConnReadDeadline()

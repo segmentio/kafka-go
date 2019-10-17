@@ -24,6 +24,10 @@ func newBytesReader(b []byte) *readBuffer {
 	}
 }
 
+func (rb *readBuffer) reset(n int) {
+	rb.n, rb.err = n, nil
+}
+
 func (rb *readBuffer) readFull(b []byte) int {
 	if rb.err != nil {
 		if rb.err == io.EOF {
