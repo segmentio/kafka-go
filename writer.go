@@ -349,9 +349,9 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			select {
 			case e := <-res:
 				if e != nil {
-					if we, ok := e.(*writerError); ok {
+					if we, ok := e.(*WriterError); ok {
 						w.stats.retries.observe(1)
-						retry, err = append(retry, we.msg), we.err
+						retry, err = append(retry, we.Msg), we.Err
 					} else {
 						err = e
 					}
@@ -492,7 +492,7 @@ func (w *Writer) run() {
 					err = fmt.Errorf("failed to find any partitions for topic %s", w.config.Topic)
 				}
 				if wm.res != nil {
-					wm.res <- &writerError{msg: wm.msg, err: err}
+					wm.res <- &WriterError{Msg: wm.msg, Err: err}
 				}
 			}
 
@@ -746,7 +746,7 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 				logger.Printf("error dialing kafka brokers for topic %s (partition %d): %s", w.topic, w.partition, err)
 			})
 			for i, res := range resch {
-				res <- &writerError{msg: batch[i], err: err}
+				res <- &WriterError{Msg: batch[i], Err: err}
 			}
 			return
 		}
@@ -760,7 +760,7 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 			logger.Printf("error writing messages to %s (partition %d): %s", w.topic, w.partition, err)
 		})
 		for i, res := range resch {
-			res <- &writerError{msg: batch[i], err: err}
+			res <- &WriterError{Msg: batch[i], Err: err}
 		}
 	} else {
 		for _, m := range batch {
@@ -784,25 +784,25 @@ type writerMessage struct {
 	res chan<- error
 }
 
-type writerError struct {
-	msg Message
-	err error
+type WriterError struct {
+	Msg Message
+	Err error
 }
 
-func (e *writerError) Cause() error {
-	return e.err
+func (e *WriterError) Cause() error {
+	return e.Err
 }
 
-func (e *writerError) Error() string {
-	return e.err.Error()
+func (e *WriterError) Error() string {
+	return e.Err.Error()
 }
 
-func (e *writerError) Temporary() bool {
-	return isTemporary(e.err)
+func (e *WriterError) Temporary() bool {
+	return isTemporary(e.Err)
 }
 
-func (e *writerError) Timeout() bool {
-	return isTimeout(e.err)
+func (e *WriterError) Timeout() bool {
+	return isTimeout(e.Err)
 }
 
 func shuffledStrings(list []string) []string {
