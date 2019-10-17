@@ -174,6 +174,16 @@ type readerStack struct {
 	base   int64
 }
 
+func (r *readerStack) discard() error {
+	if r.reader != nil {
+		r.reader.discardAll()
+		if err := r.reader.err; err != errShortRead {
+			return err
+		}
+	}
+	return nil
+}
+
 func newMessageSetReader(rb *readBuffer, remain int) (*messageSetReader, error) {
 	const headerLength = 8 + 4 + 4 + 1 // offset + messageSize + crc + magicByte
 
@@ -309,13 +319,14 @@ func (r *messageSetReaderV1) done() bool {
 }
 
 func (r *messageSetReaderV1) discard() error {
+	rs := r.readerStack
 	r.readerStack = nil
 
-	if r.reader != nil {
-		r.reader.discardAll()
-		if err := r.reader.err; err != errShortRead {
-			return err
+	if rs != nil {
+		for rs.parent != nil {
+			rs = rs.parent
 		}
+		return rs.discard()
 	}
 
 	return nil
@@ -512,13 +523,12 @@ func (r *messageSetReaderV2) done() bool {
 }
 
 func (r *messageSetReaderV2) discard() error {
+	rs := r.readerStack
+	r.readerStack = nil
 	r.messageCount = 0
 
-	if r.reader != nil {
-		r.reader.discardAll()
-		if err := r.reader.err; err != errShortRead {
-			return err
-		}
+	if rs != nil {
+		return rs.discard()
 	}
 
 	return nil
