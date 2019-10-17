@@ -174,13 +174,23 @@ type readerStack struct {
 	base   int64
 }
 
+func (r *readerStack) rewind() *readerStack {
+	for r != nil && r.parent != nil {
+		r = r.parent
+	}
+	return r
+}
+
 func (r *readerStack) discard() error {
+	r = r.rewind()
+
 	if r.reader != nil {
 		r.reader.discardAll()
 		if err := r.reader.err; err != errShortRead {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -323,9 +333,6 @@ func (r *messageSetReaderV1) discard() error {
 	r.readerStack = nil
 
 	if rs != nil {
-		for rs.parent != nil {
-			rs = rs.parent
-		}
 		return rs.discard()
 	}
 
