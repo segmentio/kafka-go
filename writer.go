@@ -133,6 +133,27 @@ type WriterConfig struct {
 	newPartitionWriter func(partition int, config WriterConfig, stats *writerStats) partitionWriter
 }
 
+type WriterError struct {
+	Msg Message
+	Err error
+}
+
+func (e *WriterError) Cause() error {
+	return e.Err
+}
+
+func (e *WriterError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *WriterError) Temporary() bool {
+	return isTemporary(e.Err)
+}
+
+func (e *WriterError) Timeout() bool {
+	return isTimeout(e.Err)
+}
+
 // WriterStats is a data structure returned by a call to Writer.Stats that
 // exposes details about the behavior of the writer.
 type WriterStats struct {
@@ -782,27 +803,6 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 type writerMessage struct {
 	msg Message
 	res chan<- error
-}
-
-type WriterError struct {
-	Msg Message
-	Err error
-}
-
-func (e *WriterError) Cause() error {
-	return e.Err
-}
-
-func (e *WriterError) Error() string {
-	return e.Err.Error()
-}
-
-func (e *WriterError) Temporary() bool {
-	return isTemporary(e.Err)
-}
-
-func (e *WriterError) Timeout() bool {
-	return isTimeout(e.Err)
 }
 
 func shuffledStrings(list []string) []string {
