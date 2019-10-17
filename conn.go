@@ -843,7 +843,9 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	}
 
 	var msgs *messageSetReader
-	if err == nil {
+	if err != nil {
+		c.rb.discardAll()
+	} else {
 		if highWaterMark == offset {
 			msgs = &messageSetReader{}
 		} else {
