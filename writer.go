@@ -668,9 +668,7 @@ func (w *writer) run() {
 		// If a lstMsg exists we need to add it to the batch so we don't lose it.
 		if len(lastMsg.msg.Value) != 0 {
 			batch = append(batch, lastMsg.msg)
-			if lastMsg.res != nil {
-				resch = append(resch, lastMsg.res)
-			}
+			resch = append(resch, lastMsg.res)
 			batchSizeBytes += int(lastMsg.msg.size())
 			lastMsg = writerMessage{}
 			if !batchTimerRunning {
@@ -691,9 +689,7 @@ func (w *writer) run() {
 					break
 				}
 				batch = append(batch, wm.msg)
-				if wm.res != nil {
-					resch = append(resch, wm.res)
-				}
+				resch = append(resch, wm.res)
 				batchSizeBytes += int(wm.msg.size())
 				mustFlush = len(batch) >= w.batchSize || batchSizeBytes >= w.maxMessageBytes
 			}
@@ -767,7 +763,9 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 				logger.Printf("error dialing kafka brokers for topic %s (partition %d): %s", w.topic, w.partition, err)
 			})
 			for i, res := range resch {
-				res <- &WriterError{Msg: batch[i], Err: err}
+				if res != nil {
+					res <- &WriterError{Msg: batch[i], Err: err}
+				}
 			}
 			return
 		}
@@ -781,7 +779,9 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 			logger.Printf("error writing messages to %s (partition %d): %s", w.topic, w.partition, err)
 		})
 		for i, res := range resch {
-			res <- &WriterError{Msg: batch[i], Err: err}
+			if res != nil {
+				res <- &WriterError{Msg: batch[i], Err: err}
+			}
 		}
 	} else {
 		for _, m := range batch {
@@ -789,7 +789,9 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 			w.stats.bytes.observe(int64(len(m.Key) + len(m.Value)))
 		}
 		for _, res := range resch {
-			res <- nil
+			if res != nil {
+				res <- nil
+			}
 		}
 	}
 	t1 := time.Now()
