@@ -652,6 +652,7 @@ func (w *writer) run() {
 	var done bool
 	var batch = make([]Message, 0, w.batchSize)
 	var resch = make([](chan<- error), 0, w.batchSize)
+	var ids = make([]int, 0, w.batchSize)
 	var lastMsg writerMessage
 	var batchSizeBytes int
 	var idleConnDeadline time.Time
@@ -669,6 +670,7 @@ func (w *writer) run() {
 		if len(lastMsg.msg.Value) != 0 {
 			batch = append(batch, lastMsg.msg)
 			resch = append(resch, lastMsg.res)
+			ids = append(ids, lastMsg.id)
 			batchSizeBytes += int(lastMsg.msg.size())
 			lastMsg = writerMessage{}
 			if !batchTimerRunning {
@@ -690,6 +692,7 @@ func (w *writer) run() {
 				}
 				batch = append(batch, wm.msg)
 				resch = append(resch, wm.res)
+				ids = append(ids, wm.id)
 				batchSizeBytes += int(wm.msg.size())
 				mustFlush = len(batch) >= w.batchSize || batchSizeBytes >= w.maxMessageBytes
 			}
@@ -719,7 +722,7 @@ func (w *writer) run() {
 				continue
 			}
 			var err error
-			if conn, err = w.write(conn, batch, resch); err != nil {
+			if conn, err = w.write(conn, batch, resch, ids); err != nil {
 				if conn != nil {
 					conn.Close()
 					conn = nil
@@ -733,8 +736,13 @@ func (w *writer) run() {
 			for i := range resch {
 				resch[i] = nil
 			}
+
+			for i := range ids {
+				ids[i] = 0
+			}
 			batch = batch[:0]
 			resch = resch[:0]
+			ids = ids[:0]
 			batchSizeBytes = 0
 		}
 	}
@@ -754,7 +762,7 @@ func (w *writer) dial() (conn *Conn, err error) {
 	return
 }
 
-func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
+func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error), _ []int) (ret *Conn, err error) {
 	w.stats.writes.observe(1)
 	if conn == nil {
 		if conn, err = w.dial(); err != nil {
@@ -805,6 +813,7 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 type writerMessage struct {
 	msg Message
 	res chan<- error
+	id  int
 }
 
 func shuffledStrings(list []string) []string {
