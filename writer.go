@@ -351,6 +351,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			case w.msgs <- writerMessage{
 				msg: msg,
 				res: res,
+				id:  i,
 			}:
 			case <-ctx.Done():
 				w.mutex.RUnlock()
