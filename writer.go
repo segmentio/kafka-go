@@ -324,9 +324,9 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	}
 
 	var err error
-	var res chan error
+	var res chan writerResponse
 	if !w.config.Async {
-		res = make(chan error, len(msgs))
+		res = make(chan writerResponse, len(msgs))
 	}
 	t0 := time.Now()
 
@@ -370,12 +370,12 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		for i := 0; i != len(msgs); i++ {
 			select {
 			case e := <-res:
-				if e != nil {
-					if we, ok := e.(*WriterError); ok {
+				if e.err != nil {
+					if we, ok := e.err.(*WriterError); ok {
 						w.stats.retries.observe(1)
 						retry, err = append(retry, we.Msg), we.Err
 					} else {
-						err = e
+						err = e.err
 					}
 				}
 			case <-ctx.Done():
@@ -514,7 +514,13 @@ func (w *Writer) run() {
 					err = fmt.Errorf("failed to find any partitions for topic %s", w.config.Topic)
 				}
 				if wm.res != nil {
-					wm.res <- &WriterError{Msg: wm.msg, Err: err}
+					wm.res <- writerResponse{
+						id: wm.id,
+						err: &WriterError{
+							Msg: wm.msg,
+							Err: err,
+						},
+					}
 				}
 			}
 
@@ -652,7 +658,7 @@ func (w *writer) run() {
 	var conn *Conn
 	var done bool
 	var batch = make([]Message, 0, w.batchSize)
-	var resch = make([](chan<- error), 0, w.batchSize)
+	var resch = make([](chan<- writerResponse), 0, w.batchSize)
 	var ids = make([]int, 0, w.batchSize)
 	var lastMsg writerMessage
 	var batchSizeBytes int
@@ -763,7 +769,7 @@ func (w *writer) dial() (conn *Conn, err error) {
 	return
 }
 
-func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error), _ []int) (ret *Conn, err error) {
+func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- writerResponse), ids []int) (ret *Conn, err error) {
 	w.stats.writes.observe(1)
 	if conn == nil {
 		if conn, err = w.dial(); err != nil {
@@ -773,7 +779,13 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error), _ []
 			})
 			for i, res := range resch {
 				if res != nil {
-					res <- &WriterError{Msg: batch[i], Err: err}
+					res <- writerResponse{
+						id: ids[i],
+						err: &WriterError{
+							Msg: batch[i],
+							Err: err,
+						},
+					}
 				}
 			}
 			return
@@ -789,7 +801,13 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error), _ []
 		})
 		for i, res := range resch {
 			if res != nil {
-				res <- &WriterError{Msg: batch[i], Err: err}
+				res <- writerResponse{
+					id: ids[i],
+					err: &WriterError{
+						Msg: batch[i],
+						Err: err,
+					},
+				}
 			}
 		}
 	} else {
@@ -797,9 +815,12 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error), _ []
 			w.stats.messages.observe(1)
 			w.stats.bytes.observe(int64(len(m.Key) + len(m.Value)))
 		}
-		for _, res := range resch {
+		for i, res := range resch {
 			if res != nil {
-				res <- nil
+				res <- writerResponse{
+					id:  i,
+					err: nil,
+				}
 			}
 		}
 	}
@@ -813,8 +834,13 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error), _ []
 
 type writerMessage struct {
 	msg Message
-	res chan<- error
+	res chan<- writerResponse
 	id  int
+}
+
+type writerResponse struct {
+	id  int
+	err error
 }
 
 func shuffledStrings(list []string) []string {
