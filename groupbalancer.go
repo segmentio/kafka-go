@@ -372,7 +372,7 @@ func findGroupBalancer(protocolName string, balancers []GroupBalancer) (GroupBal
 // findRack is the default rack resolver strategy.  It currently only supports
 //  * ECS with the task metadata endpoint enabled (returns the container
 //    instance's availability zone)
-//  * Linux EC2 (returns the instances' availability zone)
+//  * Linux EC2 (returns the instance's availability zone)
 func findRack() string {
 	switch whereAmI() {
 	case "ecs":
