@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"strings"
 	"sync"
@@ -135,11 +134,11 @@ type ConsumerGroupConfig struct {
 
 	// If not nil, specifies a logger used to report internal changes within the
 	// reader.
-	Logger *log.Logger
+	Logger Logger
 
 	// ErrorLogger is the logger used to report errors. If nil, the reader falls
 	// back to using Logger instead.
-	ErrorLogger *log.Logger
+	ErrorLogger Logger
 
 	// connect is a function for dialing the coordinator.  This is provided for
 	// unit testing to mock broker connections.
@@ -304,8 +303,8 @@ type Generation struct {
 	wg   sync.WaitGroup
 
 	retentionMillis int64
-	log             func(func(*log.Logger))
-	logError        func(func(*log.Logger))
+	log             func(func(Logger))
+	logError        func(func(Logger))
 }
 
 // close stops the generation and waits for all functions launched via Start to
@@ -374,7 +373,7 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 	_, err := g.conn.offsetCommit(request)
 	if err == nil {
 		// if logging is enabled, print out the partitions that were committed.
-		g.log(func(l *log.Logger) {
+		g.log(func(l Logger) {
 			var report []string
 			for _, t := range request.Topics {
 				report = append(report, fmt.Sprintf("\ttopic: %s", t.Topic))
@@ -394,11 +393,11 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 // end of the generation.
 func (g *Generation) heartbeatLoop(interval time.Duration) {
 	g.Start(func(ctx context.Context) {
-		g.log(func(l *log.Logger) {
+		g.log(func(l Logger) {
 			l.Printf("started heartbeat for group, %v [%v]", g.GroupID, interval)
 		})
-		defer g.log(func(l *log.Logger) {
-			l.Println("stopped heartbeat for group,", g.GroupID)
+		defer g.log(func(l Logger) {
+			l.Printf("stopped heartbeat for group %s\n", g.GroupID)
 		})
 
 		ticker := time.NewTicker(interval)
@@ -430,10 +429,10 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 // establish a new connection to the coordinator.
 func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 	g.Start(func(ctx context.Context) {
-		g.log(func(l *log.Logger) {
+		g.log(func(l Logger) {
 			l.Printf("started partition watcher for group, %v, topic %v [%v]", g.GroupID, topic, interval)
 		})
-		defer g.log(func(l *log.Logger) {
+		defer g.log(func(l Logger) {
 			l.Printf("stopped partition watcher for group, %v, topic %v", g.GroupID, topic)
 		})
 
@@ -442,7 +441,7 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 
 		ops, err := g.conn.ReadPartitions(topic)
 		if err != nil {
-			g.logError(func(l *log.Logger) {
+			g.logError(func(l Logger) {
 				l.Printf("Problem getting partitions during startup, %v\n, Returning and setting up nextGeneration", err)
 			})
 			return
@@ -457,13 +456,13 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 				switch err {
 				case nil, UnknownTopicOrPartition:
 					if len(ops) != oParts {
-						g.log(func(l *log.Logger) {
+						g.log(func(l Logger) {
 							l.Printf("Partition changes found, reblancing group: %v.", g.GroupID)
 						})
 						return
 					}
 				default:
-					g.logError(func(l *log.Logger) {
+					g.logError(func(l Logger) {
 						l.Printf("Problem getting partitions while checking for changes, %v", err)
 					})
 					if _, ok := err.(Error); ok {
@@ -632,7 +631,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// conditions.
 	conn, err := cg.coordinator()
 	if err != nil {
-		cg.withErrorLogger(func(log *log.Logger) {
+		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
 		})
 		return memberID, err // a prior memberID may still be valid, so don't return ""
@@ -647,19 +646,19 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// consumer is elected leader.  it may also change or assign the member ID.
 	memberID, generationID, groupAssignments, err = cg.joinGroup(conn, memberID)
 	if err != nil {
-		cg.withErrorLogger(func(log *log.Logger) {
+		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
 		})
 		return memberID, err
 	}
-	cg.withLogger(func(log *log.Logger) {
+	cg.withLogger(func(log Logger) {
 		log.Printf("Joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
 	})
 
 	// sync group
 	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments)
 	if err != nil {
-		cg.withErrorLogger(func(log *log.Logger) {
+		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to sync group %s: %v", cg.config.ID, err)
 		})
 		return memberID, err
@@ -669,7 +668,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	var offsets map[string]map[int]int64
 	offsets, err = cg.fetchOffsets(conn, assignments)
 	if err != nil {
-		cg.withErrorLogger(func(log *log.Logger) {
+		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to fetch offsets for group %s: %v", cg.config.ID, err)
 		})
 		return memberID, err
@@ -788,7 +787,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	memberID = response.MemberID
 	generationID := response.GenerationID
 
-	cg.withLogger(func(l *log.Logger) {
+	cg.withLogger(func(l Logger) {
 		l.Printf("joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
 	})
 
@@ -800,7 +799,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		}
 		assignments = v
 
-		cg.withLogger(func(l *log.Logger) {
+		cg.withLogger(func(l Logger) {
 			for memberID, assignment := range assignments {
 				for topic, partitions := range assignment {
 					l.Printf("assigned member/topic/partitions %v/%v/%v", memberID, topic, partitions)
@@ -809,7 +808,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		})
 	}
 
-	cg.withLogger(func(l *log.Logger) {
+	cg.withLogger(func(l Logger) {
 		l.Printf("joinGroup succeeded for response, %v.  generationID=%v, memberID=%v", cg.config.ID, response.GenerationID, response.MemberID)
 	})
 
@@ -848,8 +847,8 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
 // their various partitions
 func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroupResponseV1) (GroupMemberAssignments, error) {
-	cg.withLogger(func(l *log.Logger) {
-		l.Println("selected as leader for group,", cg.config.ID)
+	cg.withLogger(func(l Logger) {
+		l.Printf("selected as leader for group, %s\n", cg.config.ID)
 	})
 
 	balancer, ok := findGroupBalancer(group.GroupProtocol, cg.config.GroupBalancers)
@@ -876,7 +875,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 		return nil, err
 	}
 
-	cg.withLogger(func(l *log.Logger) {
+	cg.withLogger(func(l Logger) {
 		l.Printf("using '%v' balancer to assign group, %v", group.GroupProtocol, cg.config.ID)
 		for _, member := range members {
 			l.Printf("found member: %v/%#v", member.ID, member.UserData)
@@ -935,12 +934,12 @@ func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generation
 	}
 
 	if len(assignments.Topics) == 0 {
-		cg.withLogger(func(l *log.Logger) {
+		cg.withLogger(func(l Logger) {
 			l.Printf("received empty assignments for group, %v as member %s for generation %d", cg.config.ID, memberID, generationID)
 		})
 	}
 
-	cg.withLogger(func(l *log.Logger) {
+	cg.withLogger(func(l Logger) {
 		l.Printf("sync group finished for group, %v", cg.config.ID)
 	})
 
@@ -975,7 +974,7 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 			})
 		}
 
-		cg.withErrorLogger(func(logger *log.Logger) {
+		cg.withErrorLogger(func(logger Logger) {
 			logger.Printf("Syncing %d assignments for generation %d as member %s", len(request.GroupAssignments), generationID, memberID)
 		})
 	}
@@ -1048,7 +1047,7 @@ func (cg *ConsumerGroup) leaveGroup(memberID string) error {
 		return nil
 	}
 
-	cg.withLogger(func(log *log.Logger) {
+	cg.withLogger(func(log Logger) {
 		log.Printf("Leaving group %s, member %s", cg.config.ID, memberID)
 	})
 
@@ -1067,7 +1066,7 @@ func (cg *ConsumerGroup) leaveGroup(memberID string) error {
 		MemberID: memberID,
 	})
 	if err != nil {
-		cg.withErrorLogger(func(log *log.Logger) {
+		cg.withErrorLogger(func(log Logger) {
 			log.Printf("leave group failed for group, %v, and member, %v: %v", cg.config.ID, memberID, err)
 		})
 	}
@@ -1077,13 +1076,13 @@ func (cg *ConsumerGroup) leaveGroup(memberID string) error {
 	return err
 }
 
-func (cg *ConsumerGroup) withLogger(do func(*log.Logger)) {
+func (cg *ConsumerGroup) withLogger(do func(Logger)) {
 	if cg.config.Logger != nil {
 		do(cg.config.Logger)
 	}
 }
 
-func (cg *ConsumerGroup) withErrorLogger(do func(*log.Logger)) {
+func (cg *ConsumerGroup) withErrorLogger(do func(Logger)) {
 	if cg.config.ErrorLogger != nil {
 		do(cg.config.ErrorLogger)
 	} else {

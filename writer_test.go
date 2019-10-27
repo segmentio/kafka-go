@@ -205,33 +205,32 @@ func testWriterMaxBytes(t *testing.T) {
 		return
 	}
 
-	firstMsg :=[]byte("Hello World!")
+	firstMsg := []byte("Hello World!")
 	secondMsg := []byte("LeftOver!")
 	msgs := []Message{
-			{
-				Value: firstMsg,
-			},
-			{
-				Value: secondMsg,
-			},
-
+		{
+			Value: firstMsg,
+		},
+		{
+			Value: secondMsg,
+		},
 	}
-	if err := w.WriteMessages(context.Background(),msgs...) ; err == nil {
+	if err := w.WriteMessages(context.Background(), msgs...); err == nil {
 		t.Error("expected error")
 		return
 	} else if err != nil {
 		switch e := err.(type) {
 		case MessageTooLargeError:
 			if string(e.Message.Value) != string(firstMsg) {
-				t.Errorf("unxpected returned message. Expected: %s, Got %s",firstMsg, e.Message.Value)
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", firstMsg, e.Message.Value)
 				return
 			}
 			if len(e.Remaining) != 1 {
 				t.Error("expected remaining errors; found none")
 				return
 			}
-			if string(e.Remaining[0].Value) != string(secondMsg){
-				t.Errorf("unxpected returned message. Expected: %s, Got %s",secondMsg, e.Message.Value)
+			if string(e.Remaining[0].Value) != string(secondMsg) {
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", secondMsg, e.Message.Value)
 				return
 			}
 		default:

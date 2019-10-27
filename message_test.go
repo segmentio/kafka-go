@@ -2,7 +2,9 @@ package kafka
 
 import (
 	"bufio"
+	"math/rand"
 	"testing"
+	"time"
 )
 
 func TestMessageSetReaderEmpty(t *testing.T) {
@@ -33,4 +35,33 @@ func TestMessageSetReaderEmpty(t *testing.T) {
 	if m.discard() != nil {
 		t.Errorf("unexpected error from discard(): %v", m.discard())
 	}
+}
+
+func TestMessageSize(t *testing.T) {
+	rand.Seed(time.Now().UnixNano())
+	for i := 0; i < 20; i++ {
+		t.Run("Run", func(t *testing.T) {
+			msg := Message{
+				Key:   make([]byte, rand.Intn(200)),
+				Value: make([]byte, rand.Intn(200)),
+				Time:  randate(),
+			}
+			expSize := msg.message(nil).size()
+			gotSize := msg.size()
+			if expSize != gotSize {
+				t.Errorf("Expected size %d, but got size %d", expSize, gotSize)
+			}
+		})
+	}
+
+}
+
+// https://stackoverflow.com/questions/43495745/how-to-generate-random-date-in-go-lang/43497333#43497333
+func randate() time.Time {
+	min := time.Date(1970, 1, 0, 0, 0, 0, 0, time.UTC).Unix()
+	max := time.Date(2070, 1, 0, 0, 0, 0, 0, time.UTC).Unix()
+	delta := max - min
+
+	sec := rand.Int63n(delta) + min
+	return time.Unix(sec, 0)
 }
