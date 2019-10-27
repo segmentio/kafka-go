@@ -993,6 +993,30 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 	return
 }
 
+// TopicList returns the list of existing topics.
+func (c *Conn) TopicList() (topics []string, err error) {
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			// Request format for V0 and V1 is identical
+			return c.writeRequest(metadataRequest, v0, id, topicMetadataRequestV1(nil))
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV0
+
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+
+			topics = make([]string, len(res.Topics))
+			for i := range res.Topics {
+				topics[i] = res.Topics[i].TopicName
+			}
+			return nil
+		},
+	)
+	return
+}
+
 // Write writes a message to the kafka broker that this connection was
 // established to. The method returns the number of bytes written, or an error
 // if something went wrong.
