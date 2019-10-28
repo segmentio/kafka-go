@@ -148,8 +148,12 @@ func (f *fakeWriter) messages() chan<- writerMessage {
 	go func() {
 		for {
 			msg := <-ch
-			msg.res <- &WriterError{
-				Err: errors.New("bad attempt"),
+			msg.res <- writerResponse{
+				id: msg.id,
+				err: &WriterError{
+					Err: errors.New("bad attempt"),
+					Msg: msg.msg,
+				},
 			}
 		}
 	}()
