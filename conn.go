@@ -1398,19 +1398,18 @@ var defaultApiVersions map[apiKey]ApiVersion = map[apiKey]ApiVersion{
 }
 
 func (c *Conn) ApiVersions() ([]ApiVersion, error) {
-	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
-		if deadline.IsZero() {
-			// ApiVersions is called automatically when API version negotiation
-			// needs to happen, so we are not garanteed that a read deadline has
-			// been set yet. Fallback to use the write deadline in case it was
-			// set, for example when version negotiation is initiated during a
-			// produce request.
-			deadline = c.wdeadline.deadline()
-		}
+	deadline := &c.rdeadline
 
-		now := time.Now()
-		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+	if deadline.deadline().IsZero() {
+		// ApiVersions is called automatically when API version negotiation
+		// needs to happen, so we are not garanteed that a read deadline has
+		// been set yet. Fallback to use the write deadline in case it was
+		// set, for example when version negotiation is initiated during a
+		// produce request.
+		deadline = &c.wdeadline
+	}
 
+	id, err := c.doRequest(deadline, func(_ time.Time, id int32) error {
 		h := requestHeader{
 			ApiKey:        int16(apiVersionsRequest),
 			ApiVersion:    int16(v0),
@@ -1418,7 +1417,6 @@ func (c *Conn) ApiVersions() ([]ApiVersion, error) {
 			ClientID:      c.clientID,
 		}
 		h.Size = (h.size() - 4)
-
 		h.writeTo(&c.wb)
 		return c.wbuf.Flush()
 	})
@@ -1426,7 +1424,7 @@ func (c *Conn) ApiVersions() ([]ApiVersion, error) {
 		return nil, err
 	}
 
-	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
+	_, size, lock, err := c.waitResponse(deadline, id)
 	if err != nil {
 		return nil, err
 	}
