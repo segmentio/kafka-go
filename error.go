@@ -6,6 +6,7 @@ import (
 )
 
 // Error represents the different error codes that may be returned by kafka.
+// https://kafka.apache.org/protocol#protocol_error_codes
 type Error int
 
 const (
@@ -22,6 +23,7 @@ const (
 	MessageSizeTooLarge                Error = 10
 	StaleControllerEpoch               Error = 11
 	OffsetMetadataTooLarge             Error = 12
+	NetworkException                   Error = 13
 	GroupLoadInProgress                Error = 14
 	GroupCoordinatorNotAvailable       Error = 15
 	NotCoordinatorForGroup             Error = 16
@@ -85,6 +87,12 @@ const (
 	FencedLeaderEpoch                  Error = 74
 	UnknownLeaderEpoch                 Error = 75
 	UnsupportedCompressionType         Error = 76
+	StaleBrokerEpoch                   Error = 77
+	OffsetNotAvailable                 Error = 78
+	MemberIDRequired                   Error = 79
+	PreferredLeaderNotAvailable        Error = 80
+	GroupMaxSizeReached                Error = 81
+	FencedInstanceID                   Error = 82
 )
 
 // Error satisfies the error interface.
@@ -99,14 +107,35 @@ func (e Error) Timeout() bool {
 
 // Temporary returns true if the operation that generated the error may succeed
 // if retried at a later time.
+// Kafka error documentation specifies these as "retriable"
+// https://kafka.apache.org/protocol#protocol_error_codes
 func (e Error) Temporary() bool {
-	return e == LeaderNotAvailable ||
-		e == BrokerNotAvailable ||
-		e == ReplicaNotAvailable ||
-		e == GroupLoadInProgress ||
-		e == GroupCoordinatorNotAvailable ||
-		e == RebalanceInProgress ||
-		e.Timeout()
+	switch e {
+	case InvalidMessage,
+		UnknownTopicOrPartition,
+		LeaderNotAvailable,
+		NotLeaderForPartition,
+		RequestTimedOut,
+		NetworkException,
+		GroupLoadInProgress,
+		GroupCoordinatorNotAvailable,
+		NotCoordinatorForGroup,
+		NotEnoughReplicas,
+		NotEnoughReplicasAfterAppend,
+		NotController,
+		KafkaStorageError,
+		FetchSessionIDNotFound,
+		InvalidFetchSessionEpoch,
+		ListenerNotFound,
+		FencedLeaderEpoch,
+		UnknownLeaderEpoch,
+		OffsetNotAvailable,
+		PreferredLeaderNotAvailable:
+		return true
+
+	default:
+		return false
+	}
 }
 
 // Title returns a human readable title for the error.

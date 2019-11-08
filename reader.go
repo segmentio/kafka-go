@@ -15,7 +15,7 @@ import (
 
 const (
 	LastOffset  int64 = -1 // The most recent offset available for a partition.
-	FirstOffset       = -2 // The least recent offset available for a partition.
+	FirstOffset int64 = -2 // The least recent offset available for a partition.
 )
 
 const (
