@@ -7,23 +7,11 @@ func (r topicMetadataRequestV1) size() int32 {
 }
 
 func (r topicMetadataRequestV1) writeTo(wb *writeBuffer) {
-	wb.writeStringArray([]string(r))
-}
-
-type metadataResponseV0 struct {
-	Brokers []brokerMetadataV0
-	Topics  []topicMetadataV0
-}
-
-func (r metadataResponseV0) size() int32 {
-	n1 := sizeofArray(len(r.Brokers), func(i int) int32 { return r.Brokers[i].size() })
-	n2 := sizeofArray(len(r.Topics), func(i int) int32 { return r.Topics[i].size() })
-	return n1 + n2
-}
-
-func (r metadataResponseV0) writeTo(wb *writeBuffer) {
-	wb.writeArray(len(r.Brokers), func(i int) { r.Brokers[i].writeTo(wb) })
-	wb.writeArray(len(r.Topics), func(i int) { r.Topics[i].writeTo(wb) })
+	if len([]string(r)) > 0 {
+		wb.writeStringArray([]string(r))
+	} else {
+		wb.writeInt32(-1)
+	}
 }
 
 type metadataResponseV1 struct {
@@ -44,22 +32,6 @@ func (r metadataResponseV1) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(r.Topics), func(i int) { r.Topics[i].writeTo(wb) })
 }
 
-type brokerMetadataV0 struct {
-	NodeID int32
-	Host   string
-	Port   int32
-}
-
-func (b brokerMetadataV0) size() int32 {
-	return 4 + 4 + sizeofString(b.Host)
-}
-
-func (b brokerMetadataV0) writeTo(wb *writeBuffer) {
-	wb.writeInt32(b.NodeID)
-	wb.writeString(b.Host)
-	wb.writeInt32(b.Port)
-}
-
 type brokerMetadataV1 struct {
 	NodeID int32
 	Host   string
@@ -76,24 +48,6 @@ func (b brokerMetadataV1) writeTo(wb *writeBuffer) {
 	wb.writeString(b.Host)
 	wb.writeInt32(b.Port)
 	wb.writeString(b.Rack)
-}
-
-type topicMetadataV0 struct {
-	TopicErrorCode int16
-	TopicName      string
-	Partitions     []partitionMetadataV1
-}
-
-func (t topicMetadataV0) size() int32 {
-	return 2 +
-		sizeofString(t.TopicName) +
-		sizeofArray(len(t.Partitions), func(i int) int32 { return t.Partitions[i].size() })
-}
-
-func (t topicMetadataV0) writeTo(wb *writeBuffer) {
-	wb.writeInt16(t.TopicErrorCode)
-	wb.writeString(t.TopicName)
-	wb.writeArray(len(t.Partitions), func(i int) { t.Partitions[i].writeTo(wb) })
 }
 
 type topicMetadataV1 struct {
