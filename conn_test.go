@@ -1024,6 +1024,23 @@ func testBrokers(t *testing.T, conn *Conn) {
 	}
 }
 
+func TestReadPartitionsNoTopic(t *testing.T) {
+	conn, err := Dial("tcp", "127.0.0.1:9092")
+	if err != nil {
+		t.Error(err)
+	}
+	defer conn.Close()
+
+	parts, err := conn.ReadPartitions()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(parts) == 0 {
+		t.Errorf("no partitions were returned")
+	}
+}
+
 func TestUnsupportedSASLMechanism(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

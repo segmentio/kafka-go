@@ -956,10 +956,16 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 // connection. If there are none, the method fetches all partitions of the kafka
 // cluster.
 func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err error) {
-	defaultTopics := [...]string{c.topic}
 
-	if len(topics) == 0 && len(c.topic) != 0 {
-		topics = defaultTopics[:]
+	if len(topics) == 0 {
+		if len(c.topic) != 0 {
+			defaultTopics := [...]string{c.topic}
+			topics = defaultTopics[:]
+		} else {
+			// topics needs to be explicitly nil-ed out or the broker will
+			// interpret it as a request for 0 partitions instead of all.
+			topics = nil
+		}
 	}
 
 	err = c.readOperation(
