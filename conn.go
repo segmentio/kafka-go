@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,12 @@ type Partition struct {
 	Replicas []Broker
 	Isr      []Broker
 	ID       int
+}
+
+// Topic carries the metadata associated with a kafka topic
+type Topic struct {
+	Name      string
+	ErrorCode int16
 }
 
 // Conn represents a connection to a kafka broker.
@@ -916,6 +923,7 @@ func (c *Conn) ReadOffsets() (first, last int64, err error) {
 }
 
 func (c *Conn) readOffset(t int64) (offset int64, err error) {
+
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
 			return c.wb.writeListOffsetRequestV1(id, c.clientID, c.topic, c.partition, t)
@@ -1017,6 +1025,25 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 			return nil
 		},
 	)
+	return
+}
+
+// Lists all topics matching specified regex
+func (c *Conn) ListTopics(regex string) (partitions []Partition, err error) {
+
+	rgx, err := regexp.Compile(regex)
+
+	allPartitions, err := c.ReadPartitions()
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, partition := range allPartitions {
+		if rgx.MatchString(partition.Topic) {
+			partitions = append(partitions, partition)
+		}
+	}
 	return
 }
 
