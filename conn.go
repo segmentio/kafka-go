@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -36,12 +35,6 @@ type Partition struct {
 	Replicas []Broker
 	Isr      []Broker
 	ID       int
-}
-
-// Topic carries the metadata associated with a kafka topic
-type Topic struct {
-	Name      string
-	ErrorCode int16
 }
 
 // Conn represents a connection to a kafka broker.
@@ -1029,22 +1022,52 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 }
 
 // Lists all topics matching specified regex
-func (c *Conn) ListTopics(regex string) (partitions []Partition, err error) {
+func (c *Conn) ListTopics() (topics map[string][]int, err error) {
 
-	rgx, err := regexp.Compile(regex)
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1(nil))
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV1
+			topics = make(map[string][]int)
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
 
-	allPartitions, err := c.ReadPartitions()
+			for _, t := range res.Topics {
 
-	if err != nil {
-		return nil, err
-	}
+				if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
+					// We only report errors if they happened for the topic of
+					// the connection, otherwise the topic will simply have no
+					// partitions in the result set.
+					return Error(t.TopicErrorCode)
+				}
+				partitionIDs := []int{}
+				for _, p := range t.Partitions {
+					partitionIDs = append(partitionIDs, int(p.PartitionID))
+				}
+				topics[t.TopicName] = partitionIDs
 
-	for _, partition := range allPartitions {
-		if rgx.MatchString(partition.Topic) {
-			partitions = append(partitions, partition)
-		}
-	}
+			}
+			return nil
+		},
+	)
 	return
+
+	//allPartitions, err := c.ReadPartitions()
+	//
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	//topics := make(map[string][]string)
+	//for _, partition := range allPartitions {
+	//	if rgx.MatchString(partition.Topic) {
+	//		partitions = append(partitions, partition)
+	//	}
+	//}
+	//return
 }
 
 // Write writes a message to the kafka broker that this connection was

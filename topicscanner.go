@@ -3,6 +3,7 @@ package kafka
 import (
 	"errors"
 	"os"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -25,7 +26,7 @@ type (
 		id         string
 		regex      string
 		brokers    []string
-		updateChan chan []Partition
+		updateChan chan map[string][]int
 	}
 )
 
@@ -39,6 +40,7 @@ func (t *topicScanner) startScanning() {
 				t.cleanup()
 				break outer
 			case subscriberID := <-t.unsubscribeChan:
+
 				unsubscribe(subscriberID)
 			default:
 				t.updateTopicSubscribers()
@@ -49,7 +51,7 @@ func (t *topicScanner) startScanning() {
 	}()
 }
 
-func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID string, updateChannel chan []Partition, unsubscribeChannel chan string, err error) {
+func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID string, updateChannel chan map[string][]int, unsubscribeChannel chan string, err error) {
 
 	if len(regex) == 0 {
 		err = errors.New("regex must be non-empty in order to subscribe")
@@ -59,7 +61,32 @@ func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID s
 		err = errors.New("brokers must be non-empty in order to subscribe")
 		return
 	}
-	updateChannel = make(chan []Partition)
+	updateChannel = make(chan map[string][]int)
+	unsubscribeChannel = t.unsubscribeChan
+	subscriber := topicScannerSubscriber{
+		updateChan: updateChannel,
+		regex:      regex,
+		brokers:    brokers,
+	}
+	subscriber.generateID()
+	t.subscribers = append(t.subscribers, subscriber)
+
+	subscriberID = subscriber.id
+
+	return
+}
+
+func (t *topicScanner) Subscribe(regex string, brokers []string) (subscriberID string, updateChannel chan map[string][]int, unsubscribeChannel chan string, err error) {
+
+	if len(regex) == 0 {
+		err = errors.New("regex must be non-empty in order to subscribe")
+		return
+	}
+	if len(brokers) == 0 {
+		err = errors.New("brokers must be non-empty in order to subscribe")
+		return
+	}
+	updateChannel = make(chan map[string][]int)
 	unsubscribeChannel = t.unsubscribeChan
 	subscriber := topicScannerSubscriber{
 		updateChan: updateChannel,
@@ -84,9 +111,9 @@ func unsubscribe(subscriberID string) {
 }
 
 func (t *topicScanner) updateTopicSubscribers() {
-	brokerTopics := make(map[string][]Partition)
+	brokerTopics := make(map[string]map[string][]int)
 	for _, subscriber := range t.subscribers {
-		subscriberPartitions := []Partition{}
+		subscriberTopics := map[string][]int{}
 		for _, broker := range subscriber.brokers {
 			b, ok := brokerTopics[broker]
 			if !ok {
@@ -94,24 +121,40 @@ func (t *topicScanner) updateTopicSubscribers() {
 				if err != nil {
 					continue
 				}
-				partitions, err := conn.ListTopics(subscriber.regex)
-				if err == nil && len(partitions) > 0 {
-					brokerTopics[broker] = partitions
-					subscriberPartitions = append(subscriberPartitions, partitions...)
+				topics, err := conn.ListTopics()
+				if err != nil {
+					continue
 				}
 				conn.Close()
+				rgx, err := regexp.Compile(subscriber.regex)
+
+				if err == nil && len(topics) > 0 {
+					brokerTopics[broker] = topics
+					for topic, newPartitions := range topics {
+						if rgx.MatchString(topic) {
+							if _, ok := subscriberTopics[topic]; ok {
+								subscriberTopics[topic] = append(subscriberTopics[topic], newPartitions...)
+							} else {
+								subscriberTopics[topic] = newPartitions
+							}
+						}
+					}
+				}
 
 			} else {
-				subscriberPartitions = append(subscriberPartitions, b...)
+				subscriberTopics = b
 			}
+			brokerTopics[broker] = subscriberTopics
+			subscriber.updateChan <- subscriberTopics
 		}
-		subscriber.updateChan <- subscriberPartitions
 	}
 
 }
 
 func getTopicScanner() *topicScanner {
+
 	once.Do(func() {
+
 		interval := defaultScanningIntervalMS
 		intervalString, ok := os.LookupEnv("TOPIC_SCANNER_INTERVAL_MS")
 		if ok {
@@ -126,7 +169,7 @@ func getTopicScanner() *topicScanner {
 			closeChan:       make(chan struct{}),
 			unsubscribeChan: make(chan string),
 		}
-
+		topicscanner.startScanning()
 	})
 	return topicscanner
 }
