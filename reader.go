@@ -25,8 +25,9 @@ const (
 )
 
 var (
-	errOnlyAvailableWithGroup = errors.New("unavailable when GroupID is not set")
-	errNotAvailableWithGroup  = errors.New("unavailable when GroupID is set")
+	errOnlyAvailableWithGroup   = errors.New("unavailable when GroupID is not set")
+	errNotAvailableWithGroup    = errors.New("unavailable when GroupID is set")
+	errNotAvailableWithWildcard = errors.New("unavailable when wildcard topics are enabled")
 )
 
 const (
@@ -65,6 +66,10 @@ type Reader struct {
 	// reader stats are all made of atomic values, no need for synchronization.
 	// Use a pointer to ensure 64-bit alignment of the values.
 	stats *readerStats
+
+	// The regex config contains information associated with reading from
+	// a wildcard topic
+	regexConfig *regexConfig
 }
 
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
@@ -88,17 +93,17 @@ func (r *Reader) unsubscribe() {
 }
 
 func (r *Reader) subscribe(assignments []PartitionAssignment) {
-	offsetsByPartition := make(map[int]int64)
+	offsetsByPartitionByTopic := make(map[string]map[int]int64)
 	for _, assignment := range assignments {
-		offsetsByPartition[assignment.ID] = assignment.Offset
+		offsetsByPartitionByTopic[r.config.Topic] = map[int]int64{assignment.ID: assignment.Offset}
 	}
 
 	r.mutex.Lock()
-	r.start(offsetsByPartition)
+	r.start(offsetsByPartitionByTopic)
 	r.mutex.Unlock()
 
 	r.withLogger(func(l Logger) {
-		l.Printf("subscribed to partitions: %+v", offsetsByPartition)
+		l.Printf("subscribed to partitions: %+v", offsetsByPartitionByTopic)
 	})
 }
 
@@ -240,6 +245,33 @@ func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 	}
 }
 
+// listenToTopicUpdates provides the main topic scanner updates management loop
+func (r *Reader) listenToTopicUpdates() {
+outer:
+	for {
+		select {
+		case _ = <-r.regexConfig.cancelUpdateTopicLoopChan:
+			close(r.regexConfig.cancelUpdateTopicLoopChan)
+			break outer
+		case newTopics := <-r.regexConfig.updateChan:
+			newAssignments := make(map[string]map[int]int64)
+			for topic, newPartitions := range newTopics {
+				_, ok := r.regexConfig.assignments[topic]
+				//new topic
+				if !ok {
+					partitionOffsets := make(map[int]int64)
+					for _, partitionID := range newPartitions {
+						partitionOffsets[partitionID] = FirstOffset
+					}
+					newAssignments[topic] = partitionOffsets
+				}
+			}
+			r.regexConfig.assignments = newAssignments
+			r.regexConfig.interuptChan <- struct{}{}
+		}
+	}
+}
+
 // run provides the main consumer group management loop.  Each iteration performs the
 // handshake to join the Reader to the consumer group.
 //
@@ -267,7 +299,13 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.stats.rebalances.observe(1)
 
-		r.subscribe(gen.Assignments[r.config.Topic])
+		if r.config.WildcardTopicEnabled {
+			for topic := range r.regexConfig.assignments {
+				r.subscribe(gen.Assignments[topic])
+			}
+		} else {
+			r.subscribe(gen.Assignments[r.config.Topic])
+		}
 
 		gen.Start(func(ctx context.Context) {
 			r.commitLoop(ctx, gen)
@@ -299,7 +337,8 @@ type ReaderConfig struct {
 	Topic string
 
 	// Partition to read messages from.  Either Partition or GroupID may
-	// be assigned, but not both
+	// be assigned, but not both. If WildcardTopicEnabled is true, the
+	// partitions would be auto-assigned
 	Partition int
 
 	// An dialer used to open connections to the kafka server. This field is
@@ -429,6 +468,12 @@ type ReaderConfig struct {
 	//
 	// The default is to try 3 times.
 	MaxAttempts int
+
+	// Whether the specified topic in the config should be interpreted as a
+	// wildcard topic and have it subscribed to the topic scanner
+	//
+	// The default is false.
+	WildcardTopicEnabled bool
 }
 
 // Validate method validates ReaderConfig properties.
@@ -598,6 +643,26 @@ func NewReader(config ReaderConfig) *Reader {
 		version = 1
 	}
 
+	var rc *regexConfig
+	if config.WildcardTopicEnabled {
+		if scanner := getTopicScanner(); scanner != nil {
+			subscriberID, updateChan, unsubscribeChan, err := scanner.subscribe(config.Topic, config.Brokers)
+			if err != nil {
+				panic(err)
+			}
+			readerStatsPartition = -1
+			rc = &regexConfig{
+				subscriberID:              subscriberID,
+				assignments:               regexAssignments{},
+				updateChan:                updateChan,
+				unsubscribeChan:           unsubscribeChan,
+				cancelUpdateTopicLoopChan: make(chan struct{}),
+				interuptChan:              make(chan struct{}, 1),
+			}
+		}
+
+	}
+
 	stctx, stop := context.WithCancel(context.Background())
 	r := &Reader{
 		config:  config,
@@ -617,16 +682,28 @@ func NewReader(config ReaderConfig) *Reader {
 			// once when the reader is created.
 			partition: strconv.Itoa(readerStatsPartition),
 		},
-		version: version,
+		version:     version,
+		regexConfig: rc,
+	}
+
+	if config.WildcardTopicEnabled {
+		go r.listenToTopicUpdates()
 	}
 
 	if r.useConsumerGroup() {
 		r.done = make(chan struct{})
+		topics := []string{r.config.Topic}
+		if config.WildcardTopicEnabled {
+			topics = []string{}
+			for topic, _ := range r.regexConfig.assignments {
+				topics = append(topics, topic)
+			}
+		}
 		cg, err := NewConsumerGroup(ConsumerGroupConfig{
 			ID:                     r.config.GroupID,
 			Brokers:                r.config.Brokers,
 			Dialer:                 r.config.Dialer,
-			Topics:                 []string{r.config.Topic},
+			Topics:                 topics,
 			GroupBalancers:         r.config.GroupBalancers,
 			HeartbeatInterval:      r.config.HeartbeatInterval,
 			PartitionWatchInterval: r.config.PartitionWatchInterval,
@@ -675,6 +752,12 @@ func (r *Reader) Close() error {
 		close(r.msgs)
 	}
 
+	//if the regex config exists, unsubscribe to the topic scanner
+	if r.regexConfig != nil {
+		r.regexConfig.cancelUpdateTopicLoopChan <- struct{}{}
+		r.regexConfig.unsubscribeChan <- r.regexConfig.subscriberID
+	}
+
 	return nil
 }
 
@@ -711,22 +794,31 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 // Use CommitMessages to commit the offset.
 func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 	r.activateReadLag()
-
 	for {
 		r.mutex.Lock()
-
 		if !r.closed && r.version == 0 {
-			r.start(map[int]int64{r.config.Partition: r.offset})
+
+			offsets := make(map[string]map[int]int64)
+			if r.config.WildcardTopicEnabled {
+				for topic, offsetsByPartition := range r.regexConfig.assignments {
+					offsets[topic] = offsetsByPartition
+				}
+
+			} else {
+				offsets[r.config.Topic] = map[int]int64{r.config.Partition: r.offset}
+			}
+			r.start(offsets)
 		}
 
 		version := r.version
 		r.mutex.Unlock()
-
 		select {
 		case <-ctx.Done():
 			return Message{}, ctx.Err()
-
+		case <-r.regexConfig.interuptChan:
+			continue
 		case m, ok := <-r.msgs:
+
 			if !ok {
 				return Message{}, io.EOF
 			}
@@ -913,6 +1005,9 @@ func (r *Reader) SetOffset(offset int64) error {
 	if r.useConsumerGroup() {
 		return errNotAvailableWithGroup
 	}
+	if r.config.WildcardTopicEnabled {
+		return errNotAvailableWithWildcard
+	}
 
 	var err error
 	r.mutex.Lock()
@@ -927,7 +1022,7 @@ func (r *Reader) SetOffset(offset int64) error {
 		r.offset = offset
 
 		if r.version != 0 {
-			r.start(map[int]int64{r.config.Partition: r.offset})
+			r.start(map[string]map[int]int64{r.config.Topic: {r.config.Partition: r.offset}})
 		}
 
 		r.activateReadLag()
@@ -1056,7 +1151,7 @@ func (r *Reader) readLag(ctx context.Context) {
 	}
 }
 
-func (r *Reader) start(offsetsByPartition map[int]int64) {
+func (r *Reader) start(offsetsByPartitionByTopic map[string]map[int]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
 		return
@@ -1068,31 +1163,36 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 	r.cancel = cancel
 	r.version++
 
-	r.join.Add(len(offsetsByPartition))
-	for partition, offset := range offsetsByPartition {
-		go func(ctx context.Context, partition int, offset int64, join *sync.WaitGroup) {
-			defer join.Done()
+	for topic, offsetsByPartition := range offsetsByPartitionByTopic {
+		r.join.Add(len(offsetsByPartition))
 
-			(&reader{
-				dialer:          r.config.Dialer,
-				logger:          r.config.Logger,
-				errorLogger:     r.config.ErrorLogger,
-				brokers:         r.config.Brokers,
-				topic:           r.config.Topic,
-				partition:       partition,
-				minBytes:        r.config.MinBytes,
-				maxBytes:        r.config.MaxBytes,
-				maxWait:         r.config.MaxWait,
-				backoffDelayMin: r.config.ReadBackoffMin,
-				backoffDelayMax: r.config.ReadBackoffMax,
-				version:         r.version,
-				msgs:            r.msgs,
-				stats:           r.stats,
-				isolationLevel:  r.config.IsolationLevel,
-				maxAttempts:     r.config.MaxAttempts,
-			}).run(ctx, offset)
-		}(ctx, partition, offset, &r.join)
+		for partition, offset := range offsetsByPartition {
+
+			go func(ctx context.Context, topic string, partition int, offset int64, join *sync.WaitGroup) {
+				defer join.Done()
+
+				(&reader{
+					dialer:          r.config.Dialer,
+					logger:          r.config.Logger,
+					errorLogger:     r.config.ErrorLogger,
+					brokers:         r.config.Brokers,
+					topic:           topic,
+					partition:       partition,
+					minBytes:        r.config.MinBytes,
+					maxBytes:        r.config.MaxBytes,
+					maxWait:         r.config.MaxWait,
+					backoffDelayMin: r.config.ReadBackoffMin,
+					backoffDelayMax: r.config.ReadBackoffMax,
+					version:         r.version,
+					msgs:            r.msgs,
+					stats:           r.stats,
+					isolationLevel:  r.config.IsolationLevel,
+					maxAttempts:     r.config.MaxAttempts,
+				}).run(ctx, offset)
+			}(ctx, topic, partition, offset, &r.join)
+		}
 	}
+
 }
 
 // A reader reads messages from kafka and produces them on its channels, it's
@@ -1134,6 +1234,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 	// be surfaced to the program.
 	// If the reader wasn't retrying then the program would block indefinitely
 	// on a Read call after reading the first error.
+
 	for attempt := 0; true; attempt++ {
 		if attempt != 0 {
 			if !sleep(ctx, backoff(attempt, r.backoffDelayMin, r.backoffDelayMax)) {
@@ -1290,12 +1391,17 @@ func (r *reader) run(ctx context.Context, offset int64) {
 }
 
 func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, start int64, err error) {
+
+	return r.initializeWithTopicAndPartition(ctx, r.topic, r.partition, offset)
+}
+
+func (r *reader) initializeWithTopicAndPartition(ctx context.Context, topic string, partition int, offset int64) (conn *Conn, start int64, err error) {
 	for i := 0; i != len(r.brokers) && conn == nil; i++ {
 		var broker = r.brokers[i]
 		var first, last int64
 
 		t0 := time.Now()
-		conn, err = r.dialer.DialLeader(ctx, "tcp", broker, r.topic, r.partition)
+		conn, err = r.dialer.DialLeader(ctx, "tcp", broker, topic, partition)
 		t1 := time.Now()
 		r.stats.dials.observe(1)
 		r.stats.dialTime.observeDuration(t1.Sub(t0))

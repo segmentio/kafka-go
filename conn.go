@@ -1045,6 +1045,7 @@ func (c *Conn) ListTopics() (topics map[string][]int, err error) {
 				}
 				partitionIDs := []int{}
 				for _, p := range t.Partitions {
+
 					partitionIDs = append(partitionIDs, int(p.PartitionID))
 				}
 				topics[t.TopicName] = partitionIDs

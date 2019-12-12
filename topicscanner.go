@@ -61,7 +61,7 @@ func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID s
 		err = errors.New("brokers must be non-empty in order to subscribe")
 		return
 	}
-	updateChannel = make(chan map[string][]int)
+	updateChannel = make(chan map[string][]int, 1)
 	unsubscribeChannel = t.unsubscribeChan
 	subscriber := topicScannerSubscriber{
 		updateChan: updateChannel,
@@ -73,31 +73,7 @@ func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID s
 
 	subscriberID = subscriber.id
 
-	return
-}
-
-func (t *topicScanner) Subscribe(regex string, brokers []string) (subscriberID string, updateChannel chan map[string][]int, unsubscribeChannel chan string, err error) {
-
-	if len(regex) == 0 {
-		err = errors.New("regex must be non-empty in order to subscribe")
-		return
-	}
-	if len(brokers) == 0 {
-		err = errors.New("brokers must be non-empty in order to subscribe")
-		return
-	}
-	updateChannel = make(chan map[string][]int)
-	unsubscribeChannel = t.unsubscribeChan
-	subscriber := topicScannerSubscriber{
-		updateChan: updateChannel,
-		regex:      regex,
-		brokers:    brokers,
-	}
-	subscriber.generateID()
-	t.subscribers = append(t.subscribers, subscriber)
-
-	subscriberID = subscriber.id
-
+	updateChannel <- t.getSubscriberTopics(subscriber, map[string]map[string][]int{})
 	return
 }
 
@@ -113,42 +89,48 @@ func unsubscribe(subscriberID string) {
 func (t *topicScanner) updateTopicSubscribers() {
 	brokerTopics := make(map[string]map[string][]int)
 	for _, subscriber := range t.subscribers {
-		subscriberTopics := map[string][]int{}
-		for _, broker := range subscriber.brokers {
-			b, ok := brokerTopics[broker]
-			if !ok {
-				conn, err := Dial("tcp", broker)
-				if err != nil {
-					continue
-				}
-				topics, err := conn.ListTopics()
-				if err != nil {
-					continue
-				}
-				conn.Close()
-				rgx, err := regexp.Compile(subscriber.regex)
+		subscriberTopics := t.getSubscriberTopics(subscriber, brokerTopics)
+		subscriber.updateChan <- subscriberTopics
+	}
 
-				if err == nil && len(topics) > 0 {
-					brokerTopics[broker] = topics
-					for topic, newPartitions := range topics {
-						if rgx.MatchString(topic) {
-							if _, ok := subscriberTopics[topic]; ok {
-								subscriberTopics[topic] = append(subscriberTopics[topic], newPartitions...)
-							} else {
-								subscriberTopics[topic] = newPartitions
-							}
+}
+
+func (t *topicScanner) getSubscriberTopics(subscriber topicScannerSubscriber, brokerTopics map[string]map[string][]int) (subscriberTopics map[string][]int) {
+	subscriberTopics = map[string][]int{}
+	for _, broker := range subscriber.brokers {
+		b, ok := brokerTopics[broker]
+		if !ok {
+			conn, err := Dial("tcp", broker)
+			if err != nil {
+				continue
+			}
+			topics, err := conn.ListTopics()
+			if err != nil {
+				continue
+			}
+			conn.Close()
+			rgx, err := regexp.Compile(subscriber.regex)
+
+			if err == nil && len(topics) > 0 {
+				brokerTopics[broker] = topics
+				for topic, newPartitions := range topics {
+					if rgx.MatchString(topic) {
+						if _, ok := subscriberTopics[topic]; ok {
+							subscriberTopics[topic] = append(subscriberTopics[topic], newPartitions...)
+						} else {
+							subscriberTopics[topic] = newPartitions
 						}
 					}
 				}
-
-			} else {
-				subscriberTopics = b
 			}
-			brokerTopics[broker] = subscriberTopics
-			subscriber.updateChan <- subscriberTopics
+
+		} else {
+			subscriberTopics = b
 		}
+		brokerTopics[broker] = subscriberTopics
 	}
 
+	return
 }
 
 func getTopicScanner() *topicScanner {
