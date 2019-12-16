@@ -664,6 +664,7 @@ func NewReader(config ReaderConfig) *Reader {
 	var rc *regexConfig
 	if config.WildcardTopicEnabled {
 		if scanner := getTopicScanner(); scanner != nil {
+
 			subscriberID, updateChan, unsubscribeChan, err := scanner.subscribe(config.Topic, config.Brokers)
 			if err != nil {
 				panic(err)
@@ -681,6 +682,8 @@ func NewReader(config ReaderConfig) *Reader {
 				cancelUpdateTopicLoopChan: make(chan struct{}),
 				interuptChan:              make(chan struct{}, 1),
 			}
+		} else {
+			panic(errors.New("could not get topic scanner"))
 		}
 
 	}
@@ -711,11 +714,11 @@ func NewReader(config ReaderConfig) *Reader {
 	if config.WildcardTopicEnabled {
 		go r.listenToTopicUpdates()
 	}
-
 	if r.useConsumerGroup() {
 		r.done = make(chan struct{})
 		topics := []string{r.config.Topic}
 		if config.WildcardTopicEnabled {
+
 			topics = []string{}
 			for topic, _ := range r.regexConfig.assignments {
 				topics = append(topics, topic)

@@ -72,9 +72,16 @@ func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID s
 	t.subscribers = append(t.subscribers, subscriber)
 
 	subscriberID = subscriber.id
+	go func() {
+		updateChannel <- t.getSubscriberTopics(subscriber, map[string]map[string][]int{})
+	}()
 
-	updateChannel <- t.getSubscriberTopics(subscriber, map[string]map[string][]int{})
 	return
+}
+
+//Run this after youve started listening to the subscription's update channel
+func (t *topicScanner) getInitialTopics() {
+
 }
 
 func unsubscribe(subscriberID string) {
