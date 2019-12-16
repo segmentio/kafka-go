@@ -514,7 +514,7 @@ func TestCloseLeavesGroup(t *testing.T) {
 
 	_, err = r.ReadMessage(ctx)
 	if err != nil {
-		t.Fatalf("our reader never joind its group or couldn't read a message: %v", err)
+		t.Fatalf("our reader never joined its group or couldn't read a message: %v", err)
 	}
 	resp := descGroups()
 	if len(resp.Groups) != 1 {

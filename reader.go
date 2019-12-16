@@ -49,16 +49,17 @@ type Reader struct {
 	msgs chan readerMessage
 
 	// mutable fields of the reader (synchronized on the mutex)
-	mutex   sync.Mutex
-	join    sync.WaitGroup
-	cancels []context.CancelFunc
-	stop    context.CancelFunc
-	done    chan struct{}
-	commits chan commitRequest
-	version int64 // version holds the generation of the spawned readers
-	offset  int64
-	lag     int64
-	closed  bool
+	mutex     sync.Mutex
+	join      sync.WaitGroup
+	cancels   []context.CancelFunc
+	stop      context.CancelFunc
+	done      chan struct{}
+	interrupt chan struct{}
+	commits   chan commitRequest
+	version   int64 // version holds the generation of the spawned readers
+	offset    int64
+	lag       int64
+	closed    bool
 
 	// reader stats are all made of atomic values, no need for synchronization.
 	once  uint32
@@ -83,6 +84,7 @@ func (r *Reader) cancel() {
 	for _, cancelFunc := range r.cancels {
 		cancelFunc()
 	}
+	r.cancels = []context.CancelFunc{}
 }
 
 func (r *Reader) unsubscribe() {
@@ -99,10 +101,13 @@ func (r *Reader) unsubscribe() {
 }
 
 func (r *Reader) subscribe(topic string, assignments []PartitionAssignment) {
+
 	offsetsByPartitionByTopic := make(map[string]map[int]int64)
+	offsetsByPartition := make(map[int]int64)
 	for _, assignment := range assignments {
-		offsetsByPartitionByTopic[topic] = map[int]int64{assignment.ID: assignment.Offset}
+		offsetsByPartition[assignment.ID] = assignment.Offset
 	}
+	offsetsByPartitionByTopic[topic] = offsetsByPartition
 
 	r.mutex.Lock()
 	r.start(offsetsByPartitionByTopic)
@@ -281,7 +286,7 @@ outer:
 			r.regexConfig.assignments = newAssignments
 
 			//if currently fetching a message interrupt the fetch if its blocked
-			r.regexConfig.interuptChan <- struct{}{}
+			r.interrupt <- struct{}{}
 		}
 	}
 }
@@ -680,23 +685,23 @@ func NewReader(config ReaderConfig) *Reader {
 				updateChan:                updateChan,
 				unsubscribeChan:           unsubscribeChan,
 				cancelUpdateTopicLoopChan: make(chan struct{}),
-				interuptChan:              make(chan struct{}, 1),
 			}
 		} else {
-			panic(errors.New("could not get topic scanner"))
+			panic(fmt.Errorf("could not get topic scanner"))
 		}
 
 	}
 
 	stctx, stop := context.WithCancel(context.Background())
 	r := &Reader{
-		config:  config,
-		msgs:    make(chan readerMessage, config.QueueCapacity),
-		cancels: *new([]context.CancelFunc),
-		commits: make(chan commitRequest, config.QueueCapacity),
-		stop:    stop,
-		offset:  FirstOffset,
-		stctx:   stctx,
+		config:    config,
+		msgs:      make(chan readerMessage, config.QueueCapacity),
+		cancels:   *new([]context.CancelFunc),
+		commits:   make(chan commitRequest, config.QueueCapacity),
+		interrupt: make(chan struct{}, 1),
+		stop:      stop,
+		offset:    FirstOffset,
+		stctx:     stctx,
 		stats: &readerStats{
 			dialTime:   makeSummary(),
 			readTime:   makeSummary(),
@@ -840,10 +845,9 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 		select {
 		case <-ctx.Done():
 			return Message{}, ctx.Err()
-		case <-r.regexConfig.interuptChan:
+		case <-r.interrupt:
 			continue
 		case m, ok := <-r.msgs:
-
 			if !ok {
 				return Message{}, io.EOF
 			}
@@ -883,7 +887,6 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 	if !r.useConsumerGroup() {
 		return errOnlyAvailableWithGroup
 	}
-
 	var errch <-chan error
 	var creq = commitRequest{
 		commits: makeCommits(msgs...),
@@ -1183,7 +1186,6 @@ func (r *Reader) start(offsetsByPartitionByTopic map[string]map[int]int64) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
 	r.cancels = append(r.cancels, cancel)
 	r.version++
 
@@ -1319,7 +1321,6 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				conn.Close()
 				return
 			}
-
 			switch offset, err = r.read(ctx, offset, conn); err {
 			case nil:
 				errcount = 0
@@ -1404,6 +1405,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				break readLoop
 
 			default:
+
 				if _, ok := err.(Error); ok {
 					r.sendError(ctx, err)
 				} else {

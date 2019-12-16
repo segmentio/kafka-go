@@ -7,7 +7,6 @@ type (
 		updateChan                <-chan map[string][]int
 		unsubscribeChan           chan<- string
 		cancelUpdateTopicLoopChan chan struct{}
-		interuptChan              chan struct{}
 	}
 	regexAssignments map[string]map[int]int64
 )
