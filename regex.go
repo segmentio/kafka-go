@@ -12,13 +12,15 @@ type (
 	regexAssignments map[string]map[int]int64
 )
 
-func (r *regexConfig) getAssignmentPartitionsForTopic(topic string) *[]int {
-	if offsetsByPartition, ok := r.assignments[topic]; ok {
-		var partitions []int
-		for partition, _ := range offsetsByPartition {
-			partitions = append(partitions, partition)
+func getOffsetsByPartitionByTopic(topics map[string][]int) (offsetsByPartitionByTopic map[string]map[int]int64) {
+
+	offsetsByPartitionByTopic = map[string]map[int]int64{}
+	for topic, partitions := range topics {
+		offsetsByPartition := map[int]int64{}
+		for _, partition := range partitions {
+			offsetsByPartition[partition] = FirstOffset
 		}
-		return &partitions
+		offsetsByPartitionByTopic[topic] = offsetsByPartition
 	}
-	return nil
+	return
 }

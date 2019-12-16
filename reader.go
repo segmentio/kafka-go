@@ -51,7 +51,7 @@ type Reader struct {
 	// mutable fields of the reader (synchronized on the mutex)
 	mutex   sync.Mutex
 	join    sync.WaitGroup
-	cancel  context.CancelFunc
+	cancels []context.CancelFunc
 	stop    context.CancelFunc
 	done    chan struct{}
 	commits chan commitRequest
@@ -79,6 +79,12 @@ func (r *Reader) useConsumerGroup() bool { return r.config.GroupID != "" }
 // async commits.
 func (r *Reader) useSyncCommits() bool { return r.config.CommitInterval == 0 }
 
+func (r *Reader) cancel() {
+	for _, cancelFunc := range r.cancels {
+		cancelFunc()
+	}
+}
+
 func (r *Reader) unsubscribe() {
 	r.cancel()
 	r.join.Wait()
@@ -92,10 +98,10 @@ func (r *Reader) unsubscribe() {
 	// another consumer to avoid such a race.
 }
 
-func (r *Reader) subscribe(assignments []PartitionAssignment) {
+func (r *Reader) subscribe(topic string, assignments []PartitionAssignment) {
 	offsetsByPartitionByTopic := make(map[string]map[int]int64)
 	for _, assignment := range assignments {
-		offsetsByPartitionByTopic[r.config.Topic] = map[int]int64{assignment.ID: assignment.Offset}
+		offsetsByPartitionByTopic[topic] = map[int]int64{assignment.ID: assignment.Offset}
 	}
 
 	r.mutex.Lock()
@@ -181,8 +187,11 @@ func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 
 		case req := <-r.commits:
 			offsets.merge(req.commits)
+
 			req.errch <- r.commitOffsetsWithRetry(gen, offsets, defaultCommitRetries)
+
 			offsets.reset()
+
 		}
 	}
 }
@@ -243,6 +252,7 @@ func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 	} else {
 		r.commitLoopInterval(ctx, gen)
 	}
+
 }
 
 // listenToTopicUpdates provides the main topic scanner updates management loop
@@ -254,9 +264,9 @@ outer:
 			close(r.regexConfig.cancelUpdateTopicLoopChan)
 			break outer
 		case newTopics := <-r.regexConfig.updateChan:
-			newAssignments := make(map[string]map[int]int64)
+			newAssignments := getOffsetsByPartitionByTopic(newTopics)
 			for topic, newPartitions := range newTopics {
-				_, ok := r.regexConfig.assignments[topic]
+				oldAssignment, ok := r.regexConfig.assignments[topic]
 				//new topic
 				if !ok {
 					partitionOffsets := make(map[int]int64)
@@ -264,9 +274,13 @@ outer:
 						partitionOffsets[partitionID] = FirstOffset
 					}
 					newAssignments[topic] = partitionOffsets
+				} else {
+					newAssignments[topic] = oldAssignment
 				}
 			}
 			r.regexConfig.assignments = newAssignments
+
+			//if currently fetching a message interrupt the fetch if its blocked
 			r.regexConfig.interuptChan <- struct{}{}
 		}
 	}
@@ -286,6 +300,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 	for {
 		gen, err := cg.Next(r.stctx)
+
 		if err != nil {
 			if err == r.stctx.Err() {
 				return
@@ -298,13 +313,16 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		}
 
 		r.stats.rebalances.observe(1)
+		r.cancel() // always cancel the previous reader
 
 		if r.config.WildcardTopicEnabled {
 			for topic := range r.regexConfig.assignments {
-				r.subscribe(gen.Assignments[topic])
+
+				r.subscribe(topic, gen.Assignments[topic])
+
 			}
 		} else {
-			r.subscribe(gen.Assignments[r.config.Topic])
+			r.subscribe(r.config.Topic, gen.Assignments[r.config.Topic])
 		}
 
 		gen.Start(func(ctx context.Context) {
@@ -650,10 +668,14 @@ func NewReader(config ReaderConfig) *Reader {
 			if err != nil {
 				panic(err)
 			}
+
+			//Get the initial topics to subscribe to
+			initialTopics := <-updateChan
+
 			readerStatsPartition = -1
 			rc = &regexConfig{
 				subscriberID:              subscriberID,
-				assignments:               regexAssignments{},
+				assignments:               getOffsetsByPartitionByTopic(initialTopics),
 				updateChan:                updateChan,
 				unsubscribeChan:           unsubscribeChan,
 				cancelUpdateTopicLoopChan: make(chan struct{}),
@@ -667,7 +689,7 @@ func NewReader(config ReaderConfig) *Reader {
 	r := &Reader{
 		config:  config,
 		msgs:    make(chan readerMessage, config.QueueCapacity),
-		cancel:  func() {},
+		cancels: *new([]context.CancelFunc),
 		commits: make(chan commitRequest, config.QueueCapacity),
 		stop:    stop,
 		offset:  FirstOffset,
@@ -1159,8 +1181,7 @@ func (r *Reader) start(offsetsByPartitionByTopic map[string]map[int]int64) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	r.cancel() // always cancel the previous reader
-	r.cancel = cancel
+	r.cancels = append(r.cancels, cancel)
 	r.version++
 
 	for topic, offsetsByPartition := range offsetsByPartitionByTopic {
@@ -1234,10 +1255,11 @@ func (r *reader) run(ctx context.Context, offset int64) {
 	// be surfaced to the program.
 	// If the reader wasn't retrying then the program would block indefinitely
 	// on a Read call after reading the first error.
-
 	for attempt := 0; true; attempt++ {
+
 		if attempt != 0 {
 			if !sleep(ctx, backoff(attempt, r.backoffDelayMin, r.backoffDelayMax)) {
+
 				return
 			}
 		}
@@ -1258,17 +1280,21 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			})
 			continue
 		default:
+
 			// Wait 4 attempts before reporting the first errors, this helps
 			// mitigate situations where the kafka server is temporarily
 			// unavailable.
 			if attempt >= r.maxAttempts {
+
 				r.sendError(ctx, err)
 			} else {
+
 				r.stats.errors.observe(1)
 				r.withErrorLogger(func(log Logger) {
 					log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, err)
 				})
 			}
+
 			continue
 		}
 
@@ -1284,7 +1310,9 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		errcount := 0
 	readLoop:
 		for {
+
 			if !sleep(ctx, backoff(errcount, r.backoffDelayMin, r.backoffDelayMax)) {
+
 				conn.Close()
 				return
 			}
