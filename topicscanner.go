@@ -2,6 +2,8 @@ package kafka
 
 import (
 	"errors"
+	"fmt"
+	"math/rand"
 	"os"
 	"regexp"
 	"strconv"
@@ -30,6 +32,38 @@ type (
 	}
 )
 
+//Singleton getter for the topic scanner
+//All processes that want to subscribe to the scanner should call this first
+//The first process to call this method will instantiate the topic scanner, and get it to start scanning
+//TOPIC_SCANNER_INTERVAL_MS is the environment variable that determines how often the scanner should wake up to scan
+func getTopicScanner() *topicScanner {
+
+	once.Do(func() {
+
+		interval := defaultScanningIntervalMS
+		intervalString, ok := os.LookupEnv("TOPIC_SCANNER_INTERVAL_MS")
+		if ok {
+			intervalFromString, err := strconv.Atoi(intervalString)
+			if err == nil {
+				interval = intervalFromString
+			}
+		}
+		topicscanner = &topicScanner{
+			scanIntervalMS:  interval,
+			subscribers:     []topicScannerSubscriber{},
+			closeChan:       make(chan struct{}),
+			unsubscribeChan: make(chan string),
+		}
+		topicscanner.startScanning()
+	})
+	return topicscanner
+}
+
+//This is the main loop for the topic scanner
+//It handles:
+// 1) instructions to close, calling cleanup()
+// 2) clients un-subscribing from the topic scanner
+// 3) updating each subscriber with the current list of topics that match their regex pattern
 func (t *topicScanner) startScanning() {
 
 	go func() {
@@ -43,7 +77,8 @@ func (t *topicScanner) startScanning() {
 
 				unsubscribe(subscriberID)
 			default:
-				t.updateTopicSubscribers()
+
+				t.updateSubscribers()
 				time.Sleep(time.Duration(t.scanIntervalMS) * time.Millisecond)
 			}
 		}
@@ -51,6 +86,11 @@ func (t *topicScanner) startScanning() {
 	}()
 }
 
+//This is the way in which subscribers to the topic scanner formally subscribe to the scanner
+//It returns back:
+// 1) the id of the subscription
+// 2) the channel that the scanner will update the client on it's current topics
+// 3) the channel that the subscriber should use to inform the scanner that it should no longer send it updates
 func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID string, updateChannel chan map[string][]int, unsubscribeChannel chan string, err error) {
 
 	if len(regex) == 0 {
@@ -79,11 +119,8 @@ func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID s
 	return
 }
 
-//Run this after youve started listening to the subscription's update channel
-func (t *topicScanner) getInitialTopics() {
-
-}
-
+//Should not be called directly, if you want to unsubscribe, send a message on the unsubscribe channel
+//Remove the subscription as to no longer update it during the recurring scans
 func unsubscribe(subscriberID string) {
 	for index, subscriber := range topicscanner.subscribers {
 		if subscriber.id == subscriberID {
@@ -93,7 +130,8 @@ func unsubscribe(subscriberID string) {
 	}
 }
 
-func (t *topicScanner) updateTopicSubscribers() {
+//Run through all the subscribers
+func (t *topicScanner) updateSubscribers() {
 	brokerTopics := make(map[string]map[string][]int)
 	for _, subscriber := range t.subscribers {
 		subscriberTopics := t.getSubscriberTopics(subscriber, brokerTopics)
@@ -102,10 +140,20 @@ func (t *topicScanner) updateTopicSubscribers() {
 
 }
 
+//Get the specific topics that match the subscribers' regex
+//This mutates the brokerTopics map that it gets passed in, in order to keep track of
+//all the topics/partitions in each broker to save the scanner from scanning the same
+//broker multiple times for multiple subscribers that have it
 func (t *topicScanner) getSubscriberTopics(subscriber topicScannerSubscriber, brokerTopics map[string]map[string][]int) (subscriberTopics map[string][]int) {
 	subscriberTopics = map[string][]int{}
+
+	//cant compile regex, no point to continue
+	rgx, err := regexp.Compile(subscriber.regex)
+	if err != nil {
+		return
+	}
 	for _, broker := range subscriber.brokers {
-		b, ok := brokerTopics[broker]
+		topics, ok := brokerTopics[broker]
 		if !ok {
 			conn, err := Dial("tcp", broker)
 			if err != nil {
@@ -116,9 +164,8 @@ func (t *topicScanner) getSubscriberTopics(subscriber topicScannerSubscriber, br
 				continue
 			}
 			conn.Close()
-			rgx, err := regexp.Compile(subscriber.regex)
 
-			if err == nil && len(topics) > 0 {
+			if len(topics) > 0 {
 				brokerTopics[broker] = topics
 				for topic, newPartitions := range topics {
 					if rgx.MatchString(topic) {
@@ -132,7 +179,15 @@ func (t *topicScanner) getSubscriberTopics(subscriber topicScannerSubscriber, br
 			}
 
 		} else {
-			subscriberTopics = b
+			for topic, newPartitions := range topics {
+				if rgx.MatchString(topic) {
+					if _, ok := subscriberTopics[topic]; ok {
+						subscriberTopics[topic] = append(subscriberTopics[topic], newPartitions...)
+					} else {
+						subscriberTopics[topic] = newPartitions
+					}
+				}
+			}
 		}
 		brokerTopics[broker] = subscriberTopics
 	}
@@ -140,33 +195,16 @@ func (t *topicScanner) getSubscriberTopics(subscriber topicScannerSubscriber, br
 	return
 }
 
-func getTopicScanner() *topicScanner {
-
-	once.Do(func() {
-
-		interval := defaultScanningIntervalMS
-		intervalString, ok := os.LookupEnv("TOPIC_SCANNER_INTERVAL_MS")
-		if ok {
-			intervalFromString, err := strconv.Atoi(intervalString)
-			if err == nil {
-				interval = intervalFromString
-			}
-		}
-		topicscanner = &topicScanner{
-			scanIntervalMS:  interval,
-			subscribers:     []topicScannerSubscriber{},
-			closeChan:       make(chan struct{}),
-			unsubscribeChan: make(chan string),
-		}
-		topicscanner.startScanning()
-	})
-	return topicscanner
-}
-
+//Instruct the topic scanner to close
+//Will trigger cleanup()
 func (t *topicScanner) close() {
 	t.closeChan <- struct{}{}
 }
 
+//The Cleanup process for the topic scanner
+//Close all of the subscribers' topics
+//Close the close channel
+//Clear the subscribers
 func (t *topicScanner) cleanup() {
 	for _, subscriber := range t.subscribers {
 		close(subscriber.updateChan)
@@ -175,10 +213,13 @@ func (t *topicScanner) cleanup() {
 	topicscanner.subscribers = []topicScannerSubscriber{}
 }
 
+//generate a unique ID for each subscriber of the topic scanner
 func (s *topicScannerSubscriber) generateID() {
 	id := s.regex
 	for _, broker := range s.brokers {
 		id += "_" + broker
 	}
+
+	id = fmt.Sprintf(id+"_%016x", rand.Int63())
 	s.id = id
 }
