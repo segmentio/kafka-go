@@ -70,7 +70,7 @@ type Reader struct {
 
 	// The regex config contains information associated with reading from
 	// a wildcard topic
-	regexConfig *regexConfig
+	wildcardConfig *wildcardConfig
 }
 
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
@@ -80,6 +80,7 @@ func (r *Reader) useConsumerGroup() bool { return r.config.GroupID != "" }
 // async commits.
 func (r *Reader) useSyncCommits() bool { return r.config.CommitInterval == 0 }
 
+//Call all of the current cancel functions to stop any child readers
 func (r *Reader) cancel() {
 	for _, cancelFunc := range r.cancels {
 		cancelFunc()
@@ -102,6 +103,7 @@ func (r *Reader) unsubscribe() {
 
 func (r *Reader) subscribe(topic string, assignments []PartitionAssignment) {
 
+	//create a mapping specifying the offset for each partition for each topic that is assigned to this consumer group
 	offsetsByPartitionByTopic := make(map[string]map[int]int64)
 	offsetsByPartition := make(map[int]int64)
 	for _, assignment := range assignments {
@@ -260,18 +262,21 @@ func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 
 }
 
-// listenToTopicUpdates provides the main topic scanner updates management loop
+//listenToTopicUpdates listens to:
+// 1) cancelUpdateTopicLoopChan: called when the reader is closed to stop this loop
+// 2) updateChan: Listens for new topics in the subscriptions, sends a message to the reader's
+//    main loop to tell it that it has new topics to listen to
 func (r *Reader) listenToTopicUpdates() {
 outer:
 	for {
 		select {
-		case _ = <-r.regexConfig.cancelUpdateTopicLoopChan:
-			close(r.regexConfig.cancelUpdateTopicLoopChan)
+		case _ = <-r.wildcardConfig.cancelUpdateTopicLoopChan:
+			close(r.wildcardConfig.cancelUpdateTopicLoopChan)
 			break outer
-		case newTopics := <-r.regexConfig.updateChan:
+		case newTopics := <-r.wildcardConfig.updateChan:
 			newAssignments := getOffsetsByPartitionByTopic(newTopics)
 			for topic, newPartitions := range newTopics {
-				oldAssignment, ok := r.regexConfig.assignments[topic]
+				oldAssignment, ok := r.wildcardConfig.assignments[topic]
 				//new topic
 				if !ok {
 					partitionOffsets := make(map[int]int64)
@@ -280,10 +285,22 @@ outer:
 					}
 					newAssignments[topic] = partitionOffsets
 				} else {
+					partitionOffsets := make(map[int]int64)
+
+					//If there are any new partitions, add them with a zero-ed offset
+					for _, partitionID := range newPartitions {
+
+						if offset, ok := oldAssignment[partitionID]; !ok {
+							partitionOffsets[partitionID] = FirstOffset
+						} else {
+							partitionOffsets[partitionID] = offset
+						}
+					}
+
 					newAssignments[topic] = oldAssignment
 				}
 			}
-			r.regexConfig.assignments = newAssignments
+			r.wildcardConfig.assignments = newAssignments
 
 			//if currently fetching a message interrupt the fetch if its blocked
 			r.interrupt <- struct{}{}
@@ -321,7 +338,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		r.cancel() // always cancel the previous reader
 
 		if r.config.WildcardTopicEnabled {
-			for topic := range r.regexConfig.assignments {
+			for topic := range r.wildcardConfig.assignments {
 
 				r.subscribe(topic, gen.Assignments[topic])
 
@@ -666,7 +683,7 @@ func NewReader(config ReaderConfig) *Reader {
 		version = 1
 	}
 
-	var rc *regexConfig
+	var rc *wildcardConfig
 	if config.WildcardTopicEnabled {
 		if scanner := getTopicScanner(); scanner != nil {
 
@@ -679,7 +696,7 @@ func NewReader(config ReaderConfig) *Reader {
 			initialTopics := <-updateChan
 
 			readerStatsPartition = -1
-			rc = &regexConfig{
+			rc = &wildcardConfig{
 				subscriberID:              subscriberID,
 				assignments:               getOffsetsByPartitionByTopic(initialTopics),
 				updateChan:                updateChan,
@@ -712,8 +729,8 @@ func NewReader(config ReaderConfig) *Reader {
 			// once when the reader is created.
 			partition: strconv.Itoa(readerStatsPartition),
 		},
-		version:     version,
-		regexConfig: rc,
+		version:        version,
+		wildcardConfig: rc,
 	}
 
 	if config.WildcardTopicEnabled {
@@ -725,7 +742,7 @@ func NewReader(config ReaderConfig) *Reader {
 		if config.WildcardTopicEnabled {
 
 			topics = []string{}
-			for topic, _ := range r.regexConfig.assignments {
+			for topic, _ := range r.wildcardConfig.assignments {
 				topics = append(topics, topic)
 			}
 		}
@@ -783,9 +800,9 @@ func (r *Reader) Close() error {
 	}
 
 	//if the regex config exists, unsubscribe to the topic scanner
-	if r.regexConfig != nil {
-		r.regexConfig.cancelUpdateTopicLoopChan <- struct{}{}
-		r.regexConfig.unsubscribeChan <- r.regexConfig.subscriberID
+	if r.wildcardConfig != nil {
+		r.wildcardConfig.cancelUpdateTopicLoopChan <- struct{}{}
+		r.wildcardConfig.unsubscribeChan <- r.wildcardConfig.subscriberID
 	}
 
 	return nil
@@ -830,13 +847,14 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 
 			offsets := make(map[string]map[int]int64)
 			if r.config.WildcardTopicEnabled {
-				for topic, offsetsByPartition := range r.regexConfig.assignments {
+				for topic, offsetsByPartition := range r.wildcardConfig.assignments {
 					offsets[topic] = offsetsByPartition
 				}
 
 			} else {
 				offsets[r.config.Topic] = map[int]int64{r.config.Partition: r.offset}
 			}
+			r.cancel()
 			r.start(offsets)
 		}
 
@@ -1050,6 +1068,7 @@ func (r *Reader) SetOffset(offset int64) error {
 		r.offset = offset
 
 		if r.version != 0 {
+			r.cancel()
 			r.start(map[string]map[int]int64{r.config.Topic: {r.config.Partition: r.offset}})
 		}
 

@@ -1,17 +1,17 @@
 package kafka
 
 type (
-	regexConfig struct {
+	wildcardConfig struct {
 		subscriberID              string
-		assignments               regexAssignments
+		assignments               wildcardAssignments
 		updateChan                <-chan map[string][]int
 		unsubscribeChan           chan<- string
 		cancelUpdateTopicLoopChan chan struct{}
 	}
-	regexAssignments map[string]map[int]int64
+	wildcardAssignments map[string]map[int]int64
 )
 
-func getOffsetsByPartitionByTopic(topics map[string][]int) (offsetsByPartitionByTopic map[string]map[int]int64) {
+func getOffsetsByPartitionByTopic(topics map[string][]int) (offsetsByPartitionByTopic wildcardAssignments) {
 
 	offsetsByPartitionByTopic = map[string]map[int]int64{}
 	for topic, partitions := range topics {
