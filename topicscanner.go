@@ -87,7 +87,8 @@ func getTopicScanner() *topicScanner {
 //It handles:
 // 1) instructions to close, calling cleanup()
 // 2) clients un-subscribing from the topic scanner
-// 3) updating each subscriber with the current list of topics that match their regex pattern
+// 3) clients subscribing to the topic scanner will have priority in receiving their topics
+// 4) every set interval, updating each subscriber with the current list of topics that match their regex pattern
 func (t *topicScanner) startScanning() {
 
 	go func() {
