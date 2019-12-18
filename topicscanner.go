@@ -113,7 +113,9 @@ func (t *topicScanner) startScanning() {
 
 				}
 			case _ = <-ticker.C:
+				t.mutex.Lock()
 				t.updateSubscribers()
+				t.mutex.Unlock()
 			}
 		}
 
@@ -142,8 +144,9 @@ func (t *topicScanner) subscribe(regex string, brokers []string) (subscriberID s
 		brokers:    brokers,
 	}
 	subscriber.generateID()
+	t.mutex.Lock()
 	t.subscribers = append(t.subscribers, subscriber)
-
+	t.mutex.Unlock()
 	subscriberID = subscriber.id
 
 	go func() {
