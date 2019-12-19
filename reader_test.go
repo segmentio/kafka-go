@@ -2,8 +2,10 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"reflect"
 	"strconv"
 	"sync"
@@ -1282,6 +1284,103 @@ func TestConsumerGroupWithMissingTopic(t *testing.T) {
 	if nMsgs != 1 {
 		t.Fatalf("expected to receive one message, but got %d", nMsgs)
 	}
+}
+
+// Test that a reader can read from several topics through wildcard, and periodically
+// recieves updated topics to read from
+// https://github.com/segmentio/kafka-go/issues/131
+func TestReaderWildcardTopics(t *testing.T) {
+
+	ctx, _ := context.WithTimeout(context.Background(), 20*time.Second)
+
+	//make the scanner more aggressive for the test
+	err := os.Setenv("TOPIC_SCANNER_INTERVAL_MS", "1000")
+	if err != nil {
+		t.Fatalf("could not scanner interval: %v", err)
+	}
+	groupid := makeGroupID()
+	topic1 := fmt.Sprintf("kafka-go-wildcard-%s-%016x", groupid, rand.Int63())
+	topic2 := fmt.Sprintf("kafka-go-wildcard-%s-%016x", groupid, rand.Int63())
+	topic3 := fmt.Sprintf("kafka-go-wildcard-%s-%016x", groupid, rand.Int63())
+	//
+	//fmt.Println(topic1)
+	topicRegex := "kafka-go-wildcard-" + groupid + "-[0-9,a-z]*"
+	//
+	//reg, _ := regexp.Compile(topicRegex)
+	//fmt.Println(reg.MatchString(topic1))
+
+	//Start the scanner manually close it when done
+	scanner := getTopicScanner()
+	defer scanner.close()
+
+	conf := ReaderConfig{
+		Brokers:              []string{"localhost:9092"},
+		GroupID:              groupid,
+		Topic:                topicRegex,
+		MaxWait:              time.Second,
+		WildcardTopicEnabled: true,
+	}
+
+	createTopic(t, topic1, 1)
+	createTopic(t, topic2, 1)
+	reader := NewReader(conf)
+
+	w1 := NewWriter(WriterConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   topic1,
+	})
+	defer w1.Close()
+
+	w2 := NewWriter(WriterConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   topic2,
+	})
+	defer w2.Close()
+
+	if err := w1.WriteMessages(ctx, Message{Value: []byte("message 1")}); err != nil {
+		t.Fatalf("Failed to write message: %+v", err)
+	}
+	if err := w2.WriteMessages(ctx, Message{Value: []byte("message 2")}); err != nil {
+		t.Fatalf("Failed to write message: %+v", err)
+	}
+
+	if _, err := reader.ReadMessage(ctx); err != nil {
+
+		t.Fatalf("Failed to read message: %+v", err)
+
+	}
+
+	if _, err := reader.ReadMessage(ctx); err != nil {
+
+		t.Fatalf("Failed to read message: %+v", err)
+
+	}
+
+	//this topic should be picked up by the scanner and the topic list should be updated
+	createTopic(t, topic3, 1)
+	w3 := NewWriter(WriterConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   topic3,
+	})
+	defer w3.Close()
+
+	if err := w3.WriteMessages(ctx, Message{Value: []byte("message 3")}); err != nil {
+		t.Fatalf("Failed to write message: %+v", err)
+	}
+
+	for {
+		if len(reader.wildcardConfig.assignments) == 3 {
+
+			break
+		}
+	}
+
+	if msg, err := reader.ReadMessage(ctx); err != nil {
+		t.Fatalf("Failed to read message: %+v", err)
+	} else if msg.Topic != topic3 {
+		t.Fatal("Final message was not from topic: " + topic3)
+	}
+
 }
 
 func getOffsets(t *testing.T, config ReaderConfig) offsetFetchResponseV1 {

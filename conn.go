@@ -1055,20 +1055,6 @@ func (c *Conn) ListTopics() (topics map[string][]int, err error) {
 		},
 	)
 	return
-
-	//allPartitions, err := c.ReadPartitions()
-	//
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	//topics := make(map[string][]string)
-	//for _, partition := range allPartitions {
-	//	if rgx.MatchString(partition.Topic) {
-	//		partitions = append(partitions, partition)
-	//	}
-	//}
-	//return
 }
 
 // Write writes a message to the kafka broker that this connection was

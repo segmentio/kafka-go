@@ -274,36 +274,49 @@ outer:
 			close(r.wildcardConfig.cancelUpdateTopicLoopChan)
 			break outer
 		case newTopics := <-r.wildcardConfig.updateChan:
-			newAssignments := getOffsetsByPartitionByTopic(newTopics)
-			for topic, newPartitions := range newTopics {
-				oldAssignment, ok := r.wildcardConfig.assignments[topic]
-				//new topic
-				if !ok {
-					partitionOffsets := make(map[int]int64)
-					for _, partitionID := range newPartitions {
-						partitionOffsets[partitionID] = FirstOffset
+			topicsAreDifferent := false
+			if len(newTopics) != len(r.wildcardConfig.assignments) {
+				topicsAreDifferent = true
+			} else {
+				for topic, _ := range r.wildcardConfig.assignments {
+					if _, ok := r.wildcardConfig.assignments[topic]; !ok {
+						topicsAreDifferent = true
+						break
 					}
-					newAssignments[topic] = partitionOffsets
-				} else {
-					partitionOffsets := make(map[int]int64)
-
-					//If there are any new partitions, add them with a zero-ed offset
-					for _, partitionID := range newPartitions {
-
-						if offset, ok := oldAssignment[partitionID]; !ok {
-							partitionOffsets[partitionID] = FirstOffset
-						} else {
-							partitionOffsets[partitionID] = offset
-						}
-					}
-
-					newAssignments[topic] = oldAssignment
 				}
 			}
-			r.wildcardConfig.assignments = newAssignments
+			if topicsAreDifferent {
+				newAssignments := getOffsetsByPartitionByTopic(newTopics)
+				for topic, newPartitions := range newTopics {
+					oldAssignment, ok := r.wildcardConfig.assignments[topic]
+					//new topic
+					if !ok {
+						partitionOffsets := make(map[int]int64)
+						for _, partitionID := range newPartitions {
+							partitionOffsets[partitionID] = FirstOffset
+						}
+						newAssignments[topic] = partitionOffsets
+					} else {
+						partitionOffsets := make(map[int]int64)
 
-			//if currently fetching a message interrupt the fetch if its blocked
-			r.interrupt <- struct{}{}
+						//If there are any new partitions, add them with a zero-ed offset
+						for _, partitionID := range newPartitions {
+
+							if offset, ok := oldAssignment[partitionID]; !ok {
+								partitionOffsets[partitionID] = FirstOffset
+							} else {
+								partitionOffsets[partitionID] = offset
+							}
+						}
+
+						newAssignments[topic] = oldAssignment
+					}
+				}
+				r.wildcardConfig.assignments = newAssignments
+
+				//if currently fetching a message interrupt the fetch if its blocked
+				r.interrupt <- struct{}{}
+			}
 		}
 	}
 }
@@ -313,18 +326,55 @@ outer:
 //
 // This function is responsible for closing the consumer group upon exit.
 func (r *Reader) run(cg *ConsumerGroup) {
-	defer close(r.done)
+	restarted := false
+	defer func() {
+		if !restarted {
+			close(r.done)
+		}
+	}()
 	defer cg.Close()
-
 	r.withLogger(func(l Logger) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
-
 	for {
+
 		gen, err := cg.Next(r.stctx)
 
 		if err != nil {
 			if err == r.stctx.Err() {
+				return
+			}
+			if err == ErrGroupRestarted {
+				topics := []string{}
+				for topic, _ := range r.wildcardConfig.assignments {
+					topics = append(topics, topic)
+				}
+				if len(topics) != 0 {
+
+					newCG, err := NewConsumerGroup(ConsumerGroupConfig{
+						ID:                     r.config.GroupID,
+						Brokers:                r.config.Brokers,
+						Dialer:                 r.config.Dialer,
+						Topics:                 topics,
+						GroupBalancers:         r.config.GroupBalancers,
+						HeartbeatInterval:      r.config.HeartbeatInterval,
+						PartitionWatchInterval: r.config.PartitionWatchInterval,
+						WatchPartitionChanges:  r.config.WatchPartitionChanges,
+						SessionTimeout:         r.config.SessionTimeout,
+						RebalanceTimeout:       r.config.RebalanceTimeout,
+						JoinGroupBackoff:       r.config.JoinGroupBackoff,
+						RetentionTime:          r.config.RetentionTime,
+						StartOffset:            r.config.StartOffset,
+						Logger:                 r.config.Logger,
+						ErrorLogger:            r.config.ErrorLogger,
+					})
+					if err != nil {
+						panic(err)
+					}
+					r.run(newCG)
+					restarted = true
+
+				}
 				return
 			}
 			r.stats.errors.observe(1)
@@ -353,14 +403,23 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		gen.Start(func(ctx context.Context) {
 			// wait for the generation to end and then unsubscribe.
 			select {
+			case <-r.interrupt:
+
+				cg.restart <- struct{}{}
+
+				break
+
 			case <-ctx.Done():
 				// continue to next generation
 			case <-r.stctx.Done():
 				// this will be the last loop because the reader is closed.
 			}
 			r.unsubscribe()
+
 		})
+
 	}
+
 }
 
 // ReaderConfig is a configuration object used to create new instances of

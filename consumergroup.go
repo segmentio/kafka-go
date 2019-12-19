@@ -21,6 +21,9 @@ var ErrGroupClosed = errors.New("consumer group is closed")
 // Generation's Start function when the context has been closed.
 var ErrGenerationEnded = errors.New("consumer group generation has ended")
 
+// ErrGroupRestarted is returned when the group needs to be restarted because it received new topics
+var ErrGroupRestarted = errors.New("consumer group restarted")
+
 const (
 	// defaultProtocolType holds the default protocol type documented in the
 	// kafka protocol
@@ -504,10 +507,11 @@ func NewConsumerGroup(config ConsumerGroupConfig) (*ConsumerGroup, error) {
 	}
 
 	cg := &ConsumerGroup{
-		config: config,
-		next:   make(chan *Generation),
-		errs:   make(chan error),
-		done:   make(chan struct{}),
+		config:  config,
+		next:    make(chan *Generation),
+		errs:    make(chan error),
+		done:    make(chan struct{}),
+		restart: make(chan struct{}),
 	}
 	cg.wg.Add(1)
 	go func() {
@@ -530,6 +534,7 @@ type ConsumerGroup struct {
 	closeOnce sync.Once
 	wg        sync.WaitGroup
 	done      chan struct{}
+	restart   chan struct{}
 }
 
 // Close terminates the current generation by causing this member to leave and
@@ -559,6 +564,8 @@ func (cg *ConsumerGroup) Next(ctx context.Context) (*Generation, error) {
 		return nil, ErrGroupClosed
 	case err := <-cg.errs:
 		return nil, err
+	case <-cg.restart:
+		return nil, ErrGroupRestarted
 	case next := <-cg.next:
 		return next, nil
 	}
