@@ -1368,13 +1368,6 @@ func TestReaderWildcardTopics(t *testing.T) {
 		t.Fatalf("Failed to write message: %+v", err)
 	}
 
-	for {
-		if len(reader.wildcardConfig.assignments) == 3 {
-
-			break
-		}
-	}
-
 	if msg, err := reader.ReadMessage(ctx); err != nil {
 		t.Fatalf("Failed to read message: %+v", err)
 	} else if msg.Topic != topic3 {
