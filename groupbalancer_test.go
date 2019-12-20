@@ -3,9 +3,6 @@ package kafka
 import (
 	"bytes"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"os"
 	"reflect"
 	"strconv"
 	"testing"
@@ -382,24 +379,24 @@ func TestFindMembersByTopicSortsByMemberID(t *testing.T) {
 func TestRackAffinityGroupBalancer(t *testing.T) {
 	t.Run("User Data", func(t *testing.T) {
 		t.Run("unknown zone", func(t *testing.T) {
-			b := RackAffinityGroupBalancer{RackResolver: func() (string, error) { return "", nil }}
+			b := RackAffinityGroupBalancer{}
 			zone, err := b.UserData()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(zone) != "unknown" {
-				t.Fatalf("expected a us-west-2 az but got %s", zone)
+			if string(zone) != "" {
+				t.Fatalf("expected empty zone but got %s", zone)
 			}
 		})
 
 		t.Run("configure zone", func(t *testing.T) {
-			b := RackAffinityGroupBalancer{RackResolver: func() (string, error) { return "zone1", nil }}
+			b := RackAffinityGroupBalancer{Rack: "zone1"}
 			zone, err := b.UserData()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if string(zone) != "zone1" {
-				t.Fatalf("expected a us-west-2 az but got %s", zone)
+				t.Fatalf("expected zone1 az but got %s", zone)
 			}
 		})
 	})
@@ -690,26 +687,4 @@ func TestRackAffinityGroupBalancer(t *testing.T) {
 			t.Fatalf("incorrect group assignment.  expected %v but got %v", expected, res)
 		}
 	})
-}
-
-func TestECSAvailabilityZone(t *testing.T) {
-	// mock the ECS metadata endpoint for the /task resource.
-	srv := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		if req.URL.Path != "/task" {
-			res.WriteHeader(404)
-			return
-		}
-		// this is a subset of a real response from the metadata task endpoint.
-		res.Write([]byte(`{"Cluster":"mycluster","TaskARN":"arn:aws:ecs:us-west-2:12345:task/mycluster/mytask","DesiredStatus":"RUNNING","KnownStatus":"RUNNING","Limits":{"CPU":0.25},"AvailabilityZone":"us-west-2c"}`))
-	}))
-	defer srv.Close()
-
-	os.Setenv(ecsContainerMetadataURI, "http://"+srv.Listener.Addr().String())
-	if where := whereAmI(); where != "ecs" {
-		t.Fatalf(where)
-	}
-
-	if rack := findRack(); rack != "us-west-2c" {
-		t.Fatalf(rack)
-	}
 }

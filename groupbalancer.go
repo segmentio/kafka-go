@@ -1,13 +1,7 @@
 package kafka
 
 import (
-	"encoding/json"
-	"io/ioutil"
-	"net/http"
-	"os"
 	"sort"
-	"strings"
-	"time"
 )
 
 // GroupMember describes a single participant in a consumer group.
@@ -151,33 +145,23 @@ func (r RoundRobinGroupBalancer) AssignGroups(members []GroupMember, topicPartit
 //
 // The primary objective is to spread partitions evenly across consumers with a
 // secondary focus on maximizing the number of partitions where the leader and
-// the consumer are in the same zone.  For best affinity, it's recommended to
+// the consumer are in the same rack.  For best affinity, it's recommended to
 // have a balanced spread of consumers and partition leaders across racks.
 //
 // This balancer requires Kafka version 0.10.0.0+ or later.  Earlier versions do
 // not return the brokers' racks in the metadata request.
 type RackAffinityGroupBalancer struct {
-	// RackResolver returns the name of the rack where this consumer is running.
-	// The rack will be communicated to the consumer group leader via the
-	// UserData so that assignments can be made with affinity to the partition
-	// leader.
-	//
-	// If the zone cannot be determined, the resolver should return the empty
-	// string with no error.
-	//
-	// If RackResolver is left unset, then a default resolver will be used.  The
-	// default strategy currently only supports Linux AWS deployments in EC2 or
-	// ECS and returns name of the availability zone (e.g. "us-west-2a").  It's
-	// assumed that the brokers' rack settings are also set to the AZ in which
-	// they are deployed.
-	RackResolver func() (string, error)
+	// Rack is the name of the rack where this consumer is running.  It will be
+	// communicated to the consumer group leader via the UserData so that
+	// assignments can be made with affinity to the partition leader.
+	Rack string
 }
 
-func (r *RackAffinityGroupBalancer) ProtocolName() string {
+func (r RackAffinityGroupBalancer) ProtocolName() string {
 	return "rack-affinity"
 }
 
-func (r *RackAffinityGroupBalancer) AssignGroups(members []GroupMember, partitions []Partition) GroupMemberAssignments {
+func (r RackAffinityGroupBalancer) AssignGroups(members []GroupMember, partitions []Partition) GroupMemberAssignments {
 	membersByTopic := make(map[string][]GroupMember)
 	for _, m := range members {
 		for _, t := range m.Topics {
@@ -205,23 +189,8 @@ func (r *RackAffinityGroupBalancer) AssignGroups(members []GroupMember, partitio
 	return assignments
 }
 
-func (r *RackAffinityGroupBalancer) UserData() ([]byte, error) {
-	var rack string
-	if r.RackResolver == nil {
-		rack = findRack()
-	} else {
-		var err error
-		rack, err = r.RackResolver()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if rack == "" {
-		rack = "unknown"
-	}
-
-	return []byte(rack), nil
+func (r RackAffinityGroupBalancer) UserData() ([]byte, error) {
+	return []byte(r.Rack), nil
 }
 
 func (r *RackAffinityGroupBalancer) assignTopic(members []GroupMember, partitions []Partition) map[string][]int {
@@ -367,94 +336,4 @@ func findGroupBalancer(protocolName string, balancers []GroupBalancer) (GroupBal
 		}
 	}
 	return nil, false
-}
-
-// findRack is the default rack resolver strategy.  It currently only supports
-//  * ECS with the task metadata endpoint enabled (returns the container
-//    instance's availability zone)
-//  * Linux EC2 (returns the instance's availability zone)
-func findRack() string {
-	switch whereAmI() {
-	case "ecs":
-		return ecsAvailabilityZone()
-	case "ec2":
-		return ec2AvailabilityZone()
-	}
-	return ""
-}
-
-const ecsContainerMetadataURI = "ECS_CONTAINER_METADATA_URI"
-
-// whereAmI determines which strategy the rack resolver should use.
-func whereAmI() string {
-	// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-metadata-endpoint.html
-	if os.Getenv(ecsContainerMetadataURI) != "" {
-		return "ecs"
-	}
-	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/identify_ec2_instances.html
-	for _, path := range [...]string{
-		"/sys/devices/virtual/dmi/id/product_uuid",
-		"/sys/hypervisor/uuid",
-	} {
-		b, err := ioutil.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		s := string(b)
-		switch {
-		case strings.HasPrefix(s, "EC2"), strings.HasPrefix(s, "ec2"):
-			return "ec2"
-		}
-	}
-	return "somewhere"
-}
-
-// ecsAvailabilityZone queries the task endpoint for the metadata URI that ECS
-// injects into the ECS_CONTAINER_METADATA_URI variable in order to retrieve
-// the availability zone where the task is running.
-func ecsAvailabilityZone() string {
-	client := http.Client{
-		Timeout: time.Second,
-		Transport: &http.Transport{
-			DisableCompression: true,
-			DisableKeepAlives:  true,
-		},
-	}
-	r, err := client.Get(os.Getenv(ecsContainerMetadataURI) + "/task")
-	if err != nil {
-		return ""
-	}
-	defer r.Body.Close()
-
-	var md struct {
-		AvailabilityZone string
-	}
-	if err := json.NewDecoder(r.Body).Decode(&md); err != nil {
-		return ""
-	}
-	return md.AvailabilityZone
-}
-
-// ec2AvailabilityZone queries the metadata endpoint to discover the
-// availability zone where this code is running.  we avoid calling this function
-// unless we know we're in EC2.  Otherwise, in other environments, we would need
-// to wait for the request to 169.254.169.254 to timeout before proceeding.
-func ec2AvailabilityZone() string {
-	client := http.Client{
-		Timeout: time.Second,
-		Transport: &http.Transport{
-			DisableCompression: true,
-			DisableKeepAlives:  true,
-		},
-	}
-	r, err := client.Get("http://169.254.169.254/latest/meta-data/placement/availability-zone")
-	if err != nil {
-		return ""
-	}
-	defer r.Body.Close()
-	b, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return ""
-	}
-	return string(b)
 }
