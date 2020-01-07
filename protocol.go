@@ -42,54 +42,54 @@ func (v ApiVersion) Format(w fmt.State, r rune) {
 type apiKey int16
 
 const (
-	produce apiKey = iota
-	fetch
-	listOffsets
-	metadata
-	leaderAndIsr
-	stopReplica
-	updateMetadata
-	controlledShutdown
-	offsetCommit
-	offsetFetch
-	findCoordinator
-	joinGroup
-	heartbeat
-	leaveGroup
-	syncGroup
-	describeGroups
-	listGroups
-	saslHandshake
-	apiVersions
-	createTopics
-	deleteTopics
-	deleteRecords
-	initProducerId
-	offsetForLeaderEpoch
-	addPartitionsToTxn
-	addOffsetsToTxn
-	endTxn
-	writeTxnMarkers
-	txnOffsetCommit
-	describeAcls
-	createAcls
-	deleteAcls
-	describeConfigs
-	alterConfigs
-	alterReplicaLogDirs
-	describeLogDirs
-	saslAuthenticate
-	createPartitions
-	createDelegationToken
-	renewDelegationToken
-	expireDelegationToken
-	describeDelegationToken
-	deleteGroups
-	electLeaders
-	incrementalAlterConfigs
-	alterPartitionReassignments
-	listPartitionReassignments
-	offsetDelete
+	produce                     apiKey = 0
+	fetch                       apiKey = 1
+	listOffsets                 apiKey = 2
+	metadata                    apiKey = 3
+	leaderAndIsr                apiKey = 4
+	stopReplica                 apiKey = 5
+	updateMetadata              apiKey = 6
+	controlledShutdown          apiKey = 7
+	offsetCommit                apiKey = 8
+	offsetFetch                 apiKey = 9
+	findCoordinator             apiKey = 10
+	joinGroup                   apiKey = 11
+	heartbeat                   apiKey = 12
+	leaveGroup                  apiKey = 13
+	syncGroup                   apiKey = 14
+	describeGroups              apiKey = 15
+	listGroups                  apiKey = 16
+	saslHandshake               apiKey = 17
+	apiVersions                 apiKey = 18
+	createTopics                apiKey = 19
+	deleteTopics                apiKey = 20
+	deleteRecords               apiKey = 21
+	initProducerId              apiKey = 22
+	offsetForLeaderEpoch        apiKey = 23
+	addPartitionsToTxn          apiKey = 24
+	addOffsetsToTxn             apiKey = 25
+	endTxn                      apiKey = 26
+	writeTxnMarkers             apiKey = 27
+	txnOffsetCommit             apiKey = 28
+	describeAcls                apiKey = 29
+	createAcls                  apiKey = 30
+	deleteAcls                  apiKey = 31
+	describeConfigs             apiKey = 32
+	alterConfigs                apiKey = 33
+	alterReplicaLogDirs         apiKey = 34
+	describeLogDirs             apiKey = 35
+	saslAuthenticate            apiKey = 36
+	createPartitions            apiKey = 37
+	createDelegationToken       apiKey = 38
+	renewDelegationToken        apiKey = 39
+	expireDelegationToken       apiKey = 40
+	describeDelegationToken     apiKey = 41
+	deleteGroups                apiKey = 42
+	electLeaders                apiKey = 43
+	incrementalAlterConfigs     apiKey = 44
+	alterPartitionReassignments apiKey = 45
+	listPartitionReassignments  apiKey = 46
+	offsetDelete                apiKey = 47
 )
 
 func (k apiKey) String() string {
@@ -102,17 +102,17 @@ func (k apiKey) String() string {
 type apiVersion int16
 
 const (
-	v0 apiVersion = iota
-	v1
-	v2
-	v3
-	v4
-	v5
-	v6
-	v7
-	v8
-	v9
-	v10
+	v0  apiVersion = 0
+	v1  apiVersion = 1
+	v2  apiVersion = 2
+	v3  apiVersion = 3
+	v4  apiVersion = 4
+	v5  apiVersion = 5
+	v6  apiVersion = 6
+	v7  apiVersion = 7
+	v8  apiVersion = 8
+	v9  apiVersion = 9
+	v10 apiVersion = 10
 )
 
 var apiKeyStrings = [...]string{
