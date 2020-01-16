@@ -15,7 +15,7 @@ func init() {
 
 const Code = 4
 
-const DefaultCompressionLevel = int(zstdlib.SpeedDefault)
+const DefaultCompressionLevel = 3
 
 type CompressionCodec struct{ level zstdlib.EncoderLevel }
 
