@@ -69,6 +69,42 @@ func TestProduceRequest(t *testing.T) {
 			},
 		},
 	})
+
+	headers := []Header{
+		{Key: "key-1", Value: []byte("value-1")},
+		{Key: "key-2", Value: []byte("value-2")},
+		{Key: "key-3", Value: []byte("value-3")},
+	}
+
+	testRequest(t, v5, &ProduceRequest{
+		TransactionalID: "1234",
+		Acks:            1,
+		Timeout:         500,
+		Topics: []ProduceRequestTopic{
+			{
+				Topic: "topic-1",
+				Partitions: []ProduceRequestPartition{
+					{
+						Partition: 1,
+						RecordSet: RecordSet{
+							Version:              2,
+							PartitionLeaderEpoch: 42,
+							BaseOffset:           10,
+							ProducerID:           1234567890,
+							ProducerEpoch:        1234,
+							BaseSequence:         5678,
+
+							Records: []Record{
+								{Offset: 11, Time: t0, Key: nil, Value: String("msg-0"), Headers: headers},
+								{Offset: 12, Time: t1, Key: nil, Value: String("msg-1")},
+								{Offset: 14, Time: t2, Key: Bytes([]byte{1}), Value: String("msg-2")},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 }
 
 func TestProduceResponse(t *testing.T) {

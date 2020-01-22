@@ -89,8 +89,8 @@ func TestMetadataResponse(t *testing.T) {
 
 	testResponse(t, v9, &MetadataResponse{
 		ThrottleTimeMs:              123,
+		ClusterID:                   "test",
 		ControllerID:                1,
-		ClientID:                    "me",
 		ClusterAuthorizedOperations: 0x01,
 		Brokers: []MetadataResponseBroker{
 			{
@@ -143,8 +143,8 @@ func BenchmarkMetadataRequest(b *testing.B) {
 func BenchmarkMetadataResponse(b *testing.B) {
 	benchmarkResponse(b, v9, &MetadataResponse{
 		ThrottleTimeMs:              123,
+		ClusterID:                   "test",
 		ControllerID:                1,
-		ClientID:                    "me",
 		ClusterAuthorizedOperations: 0x01,
 		Brokers: []MetadataResponseBroker{
 			{

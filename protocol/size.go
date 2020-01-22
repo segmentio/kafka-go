@@ -29,6 +29,42 @@ func sizeOfBytes(b []byte) int {
 	return 4 + len(b)
 }
 
+func sizeOfCompactString(s string) int {
+	return sizeOfVarInt(int64(len(s))) + len(s)
+}
+
+func sizeOfCompactBytes(b []byte) int {
+	return sizeOfVarInt(int64(len(b))) + len(b)
+}
+
+func sizeOfCompactNullString(s string) int {
+	n := len(s)
+	if n == 0 {
+		n = -1
+	}
+	return sizeOfVarInt(int64(n)) + len(s)
+}
+
+func sizeOfCompactNullBytes(b []byte) int {
+	n := len(b)
+	if b == nil {
+		n = -1
+	}
+	return sizeOfVarInt(int64(n)) + len(b)
+}
+
+func sizeOfVarInt(i int64) int {
+	u := uint64((i << 1) ^ (i >> 63)) // zig-zag encoding
+	n := 0
+
+	for u >= 0x80 {
+		u >>= 7
+		n++
+	}
+
+	return n + 1
+}
+
 func sizeFuncOf(typ reflect.Type, version int16, tag structTag) sizeFunc {
 	switch typ.Kind() {
 	case reflect.String:

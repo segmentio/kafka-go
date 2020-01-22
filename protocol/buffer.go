@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -171,6 +172,7 @@ type pageBuffer struct {
 	refc   refCount
 	pages  contiguousPages
 	length int
+	cursor int
 }
 
 func newPageBuffer() *pageBuffer {
@@ -209,6 +211,15 @@ func (pb *pageBuffer) newPage() *page {
 
 func (pb *pageBuffer) Len() int {
 	return pb.length
+}
+
+func (pb *pageBuffer) Read(b []byte) (int, error) {
+	if pb.cursor >= pb.length {
+		return 0, io.EOF
+	}
+	n, err := pb.ReadAt(b, int64(pb.cursor))
+	pb.cursor += n
+	return n, err
 }
 
 func (pb *pageBuffer) ReadAt(b []byte, off int64) (int, error) {
@@ -362,6 +373,14 @@ func (pages contiguousPages) indexOf(offset int64) int {
 	})
 }
 
+func (pages contiguousPages) scan(begin, end int64, f func([]byte) bool) {
+	for _, p := range pages.slice(begin, end) {
+		if !f(p.slice(begin, end)) {
+			break
+		}
+	}
+}
+
 var (
 	_ io.ReaderAt = contiguousPages{}
 	_ io.WriterAt = contiguousPages{}
@@ -491,4 +510,34 @@ func copyBytes(w io.Writer, b ByteSequence) (int64, error) {
 
 	_, err = b.Seek(s, io.SeekStart)
 	return n, err
+}
+
+type bufferedReader struct {
+	*bufio.Reader
+	limit io.LimitedReader
+}
+
+func (b *bufferedReader) reset(r io.Reader, n int64) {
+	b.limit.R = r
+	b.limit.N = n
+	b.Reader.Reset(&b.limit)
+}
+
+var bufferedReaderPool = sync.Pool{
+	New: func() interface{} { return newBufferedReader() },
+}
+
+func newBufferedReader() *bufferedReader {
+	return &bufferedReader{Reader: bufio.NewReaderSize(nil, 4096)}
+}
+
+func acquireBufferedReader(r io.Reader, n int64) *bufferedReader {
+	b := bufferedReaderPool.Get().(*bufferedReader)
+	b.reset(r, n)
+	return b
+}
+
+func releaseBufferedReader(b *bufferedReader) {
+	b.reset(nil, 0)
+	bufferedReaderPool.Put(b)
 }

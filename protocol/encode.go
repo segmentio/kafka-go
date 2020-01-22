@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"encoding/binary"
 	"io"
 	"reflect"
 )
@@ -77,22 +76,22 @@ func (e *encoder) encodeNullArray(v value, elemType reflect.Type, encodeElem enc
 }
 
 func (e *encoder) writeInt8(i int8) {
-	e.buffer[0] = byte(i)
+	writeInt8(e.buffer[:1], i)
 	e.writer.Write(e.buffer[:1])
 }
 
 func (e *encoder) writeInt16(i int16) {
-	binary.LittleEndian.PutUint16(e.buffer[:2], uint16(i))
+	writeInt16(e.buffer[:2], i)
 	e.writer.Write(e.buffer[:2])
 }
 
 func (e *encoder) writeInt32(i int32) {
-	binary.LittleEndian.PutUint32(e.buffer[:4], uint32(i))
+	writeInt32(e.buffer[:4], i)
 	e.writer.Write(e.buffer[:4])
 }
 
 func (e *encoder) writeInt64(i int64) {
-	binary.LittleEndian.PutUint64(e.buffer[:8], uint64(i))
+	writeInt64(e.buffer[:8], i)
 	e.writer.Write(e.buffer[:8])
 }
 
@@ -110,6 +109,20 @@ func (e *encoder) writeNullString(s string) {
 	}
 }
 
+func (e *encoder) writeCompactString(s string) {
+	e.writeVarInt(int64(len(s)))
+	io.WriteString(e.writer, s)
+}
+
+func (e *encoder) writeCompactNullString(s string) {
+	if s == "" {
+		e.writeVarInt(-1)
+	} else {
+		e.writeVarInt(int64(len(s)))
+		io.WriteString(e.writer, s)
+	}
+}
+
 func (e *encoder) writeBytes(b []byte) {
 	e.writeInt32(int32(len(b)))
 	e.writer.Write(b)
@@ -120,6 +133,20 @@ func (e *encoder) writeNullBytes(b []byte) {
 		e.writeInt32(-1)
 	} else {
 		e.writeInt32(int32(len(b)))
+		e.writer.Write(b)
+	}
+}
+
+func (e *encoder) writeCompactBytes(b []byte) {
+	e.writeVarInt(int64(len(b)))
+	e.writer.Write(b)
+}
+
+func (e *encoder) writeCompactNullBytes(b []byte) {
+	if b == nil {
+		e.writeVarInt(-1)
+	} else {
+		e.writeVarInt(int64(len(b)))
 		e.writer.Write(b)
 	}
 }
@@ -139,6 +166,36 @@ func (e *encoder) writeNullBytesFrom(b ByteSequence) error {
 		_, err := copyBytes(e.writer, b)
 		return err
 	}
+}
+
+func (e *encoder) writeCompactNullBytesFrom(b ByteSequence) error {
+	if b == nil {
+		e.writeVarInt(-1)
+		return nil
+	} else {
+		e.writeVarInt(b.Size())
+		_, err := copyBytes(e.writer, b)
+		return err
+	}
+}
+
+func (e *encoder) writeVarInt(i int64) {
+	b := e.buffer[:]
+	u := uint64((i << 1) ^ (i >> 63))
+	n := 0
+
+	for u >= 0x80 && n < len(b) {
+		b[n] = byte(u) | 0x80
+		u >>= 7
+		n++
+	}
+
+	if n < len(b) {
+		b[n] = byte(u)
+		n++
+	}
+
+	e.writer.Write(b[:n])
 }
 
 type encodeFunc func(*encoder, value)

@@ -10,9 +10,8 @@ var (
 )
 
 type crc32Hash struct {
-	//writer io.Writer
-	buffer [8]byte
 	sum    uint32
+	buffer [12]byte
 }
 
 func (h *crc32Hash) reset() {
@@ -43,12 +42,12 @@ func (h *crc32Hash) writeInt64(i int64) {
 	h.write(h.buffer[:8])
 }
 
-func (h *crc32Hash) writeNullBytes(p ByteSequence) {
-	if p == nil {
+func (h *crc32Hash) writeNullBytes(b ByteSequence) {
+	if b == nil {
 		h.writeInt32(-1)
 	} else {
-		h.writeInt32(int32(p.Size()))
-		copyBytes(h, p)
+		h.writeInt32(int32(b.Size()))
+		copyBytes(h, b)
 	}
 }
 

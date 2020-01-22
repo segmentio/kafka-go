@@ -10,13 +10,23 @@ import (
 	"time"
 )
 
+// Attributes is a bitset representing special attributes set on records.
+type Attributes int16
+
+// Header represents a single entry in a list of record headers.
+type Header struct {
+	Key   string
+	Value []byte
+}
+
 // Record values represent single records exchanged in Produce requests and
 // Fetch responses.
 type Record struct {
-	Offset int64
-	Time   time.Time
-	Key    ByteSequence
-	Value  ByteSequence
+	Offset  int64
+	Time    time.Time
+	Key     ByteSequence
+	Value   ByteSequence
+	Headers []Header
 }
 
 // Close closes both the key and value of the record.
@@ -33,10 +43,21 @@ func (r *Record) Close() error {
 // RecordSet represents a sequence of records in Produce requests and Fetch
 // responses. All v0, v1, and v2 formats are supported.
 type RecordSet struct {
-	Version    int8
-	BaseOffset int64
-	Records    []Record
-
+	// The message version that this record set will be represented as, valid
+	// values are 1, or 2.
+	Version int8
+	// The following fields carry properties used when representing the record
+	// batch in version 2.
+	Attributes           Attributes
+	PartitionLeaderEpoch int32
+	BaseOffset           int64
+	ProducerID           int64
+	ProducerEpoch        int16
+	BaseSequence         int32
+	// The list of records contained in this set.
+	Records []Record
+	// This unexported field is used internally to compute crc32 hashes of the
+	// record set during serialization and deserialization.
 	crc crc32Hash
 }
 
@@ -57,8 +78,8 @@ const messageSizeOffset = 8
 // the number of bytes consumed from r, and an non-nil error if the record set
 // could not be read.
 func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
-	var baseOffset uint64
-	var messageSize uint32
+	var baseOffset int64
+	var messageSize int32
 	var rn int64
 
 	rb, _ := r.(*bufio.Reader)
@@ -67,8 +88,8 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		if err != nil {
 			return 0, err
 		}
-		baseOffset = le64u(b[:8])
-		messageSize = le32u(b[8:12])
+		baseOffset = readInt64(b[:8])
+		messageSize = readInt32(b[8:12])
 	} else {
 		b := make([]byte, headerSize)
 
@@ -76,8 +97,8 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 			return int64(n), err
 		}
 
-		baseOffset = le64u(b[:8])
-		messageSize = le32u(b[8:12])
+		baseOffset = readInt64(b[:8])
+		messageSize = readInt32(b[8:12])
 		size := int64(messageSize)
 		size += headerSize
 
@@ -116,12 +137,9 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 		remain: math.MaxInt32,
 	}
 
-	buffer := newPageBuffer()
-	defer buffer.unref()
-
 	version := int8(0)
 	baseOffset := d.readInt64()
-	messageSize := int(d.readInt32())
+	messageSize := d.readInt32()
 
 	if d.err != nil {
 		return int64(math.MaxInt32 - d.remain), d.err
@@ -135,8 +153,10 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 		}
 	}()
 
-	d.remain = messageSize
-	defer d.discardAll()
+	buffer := newPageBuffer()
+	defer buffer.unref()
+
+	d.remain = int(messageSize)
 
 	for offset := baseOffset; d.remain > 0; offset++ {
 		crc := uint32(d.readInt32())
@@ -159,10 +179,7 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 		hasValue := d.readBytesTo(buffer)
 
 		if d.err != nil {
-			if d.err == ErrTruncated {
-				break
-			}
-			return headerSize + int64(messageSize-d.remain), d.err
+			break
 		}
 
 		var k ByteSequence
@@ -192,10 +209,8 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 			Key:    k,
 			Value:  v,
 		})
-	}
 
-	if d.discardAll(); d.err != nil && d.err != ErrTruncated {
-		return headerSize + int64(messageSize-d.remain), d.err
+		_ = attributes // TODO
 	}
 
 	*rs = RecordSet{
@@ -205,11 +220,150 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 	}
 
 	records = nil
-	return headerSize + int64(messageSize), nil
+	return headerSize + int64(int(messageSize)-d.remain), d.err
 }
 
 func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
-	return 0, nil
+	b, err := r.Peek(57)
+	if err != nil {
+		return 0, err
+	}
+
+	_ = b[56] // bound check elimination
+	var (
+		baseOffset           = readInt64(b[0:])
+		batchLength          = readInt32(b[8:])
+		partitionLeaderEpoch = readInt32(b[12:])
+		magicByte            = readInt8(b[16:])
+		crc                  = readInt32(b[17:])
+		attributes           = readInt16(b[21:])
+		lastOffsetDelta      = readInt32(b[23:])
+		firstTimestamp       = readInt64(b[27:])
+		maxTimestamp         = readInt64(b[35:])
+		producerID           = readInt64(b[43:])
+		producerEpoch        = readInt16(b[51:])
+		baseSequence         = readInt32(b[53:])
+	)
+	_ = maxTimestamp // not sure what this field is useful for
+
+	rs.crc.reset()
+	rs.crc.write(b[21:])
+
+	r.Discard(57)
+
+	buffer := newPageBuffer()
+	defer buffer.unref()
+
+	reader := acquireBufferedReader(r, int64(batchLength)-45)
+	defer releaseBufferedReader(reader)
+
+	n, err := buffer.ReadFrom(reader.Reader)
+	if err != nil {
+		return 57 + n, err
+	}
+	if n != (int64(batchLength) - 45) {
+		return 57 + n, io.ErrUnexpectedEOF
+	}
+
+	buffer.pages.scan(0, int64(n), func(b []byte) bool {
+		rs.crc.write(b)
+		return true
+	})
+
+	if rs.crc.sum != uint32(crc) {
+		return 57 + n, errorf("crc32 checksum mismatch (computed=%d found=%d)", rs.crc.sum, uint32(crc))
+	}
+
+	reader.Reset(buffer)
+	recordsLength := buffer.Len()
+
+	d := decoder{
+		reader: reader.Reader,
+		remain: recordsLength,
+	}
+
+	numRecords := lastOffsetDelta
+	if numRecords > 1e6 {
+		// Set a hard limit at 1M records in case the wire representation is
+		// malformed and the offset delta was invalid.
+		numRecords = 1e6
+	}
+
+	records := make([]Record, 0, numRecords)
+	defer func() {
+		for _, r := range records {
+			unref(r.Key)
+			unref(r.Value)
+		}
+	}()
+
+	for d.remain > 0 {
+		_ = d.readVarInt() // useless length of the record
+		_ = d.readInt8()   // record attributes (unused)
+		timestampDelta := d.readVarInt()
+		offsetDelta := d.readVarInt()
+
+		keyLength := d.readVarInt()
+		keyOffset := int64(recordsLength - d.remain)
+		if keyLength > 0 {
+			d.discard(int(keyLength))
+		}
+
+		valueLength := d.readVarInt()
+		valueOffset := int64(recordsLength - d.remain)
+		if valueLength > 0 {
+			d.discard(int(valueLength))
+		}
+
+		numHeaders := d.readVarInt()
+		headers := ([]Header)(nil)
+
+		if numHeaders > 0 {
+			headers = make([]Header, numHeaders)
+
+			for i := range headers {
+				headers[i] = Header{
+					Key:   d.readCompactString(),
+					Value: d.readCompactBytes(),
+				}
+			}
+		}
+
+		if d.err != nil {
+			break
+		}
+
+		var k ByteSequence
+		var v ByteSequence
+		if keyLength >= 0 {
+			k = buffer.ref(keyOffset, valueOffset)
+		}
+		if valueLength >= 0 {
+			v = buffer.ref(valueOffset, valueLength)
+		}
+
+		records = append(records, Record{
+			Offset:  int64(baseOffset) + offsetDelta,
+			Time:    makeTime(int64(firstTimestamp) + timestampDelta),
+			Key:     k,
+			Value:   v,
+			Headers: headers,
+		})
+	}
+
+	*rs = RecordSet{
+		Version:              int8(magicByte),
+		Attributes:           Attributes(attributes),
+		PartitionLeaderEpoch: int32(partitionLeaderEpoch),
+		BaseOffset:           int64(baseOffset),
+		ProducerID:           int64(producerID),
+		ProducerEpoch:        int16(producerEpoch),
+		BaseSequence:         int32(baseSequence),
+		Records:              records,
+	}
+
+	records = nil
+	return 57 + n, d.err
 }
 
 // WriteTo writes the representation of rs into w. The value of rs.Version
@@ -242,11 +396,12 @@ func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
 		}
 
 		i := buffer.Len()
-		t := timestamp(r.Time)
+		attributes := int8(0)
+		timestamp := timestamp(r.Time)
 		e.writeInt32(0) // crc32 placeholder
 		e.writeInt8(1)  // magic byte: version 1
-		e.writeInt8(0)  // attributes
-		e.writeInt64(t)
+		e.writeInt8(attributes)
+		e.writeInt64(timestamp)
 
 		if err := e.writeNullBytesFrom(r.Key); err != nil {
 			return 0, err
@@ -258,12 +413,12 @@ func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
 
 		rs.crc.reset()
 		rs.crc.writeInt8(1)
-		rs.crc.writeInt8(0)
-		rs.crc.writeInt64(t)
+		rs.crc.writeInt8(attributes)
+		rs.crc.writeInt64(timestamp)
 		rs.crc.writeNullBytes(r.Key)
 		rs.crc.writeNullBytes(r.Value)
 
-		b := u32le(rs.crc.sum)
+		b := packUint32(rs.crc.sum)
 		buffer.WriteAt(b[:], int64(i))
 	}
 
@@ -271,7 +426,7 @@ func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
 		e.writeInt64(0) // offset
 		e.writeInt32(0) // message set size
 	} else {
-		b := u32le(uint32(n) - headerSize)
+		b := packUint32(uint32(n) - headerSize)
 		buffer.WriteAt(b[:], messageSizeOffset)
 	}
 
@@ -279,7 +434,94 @@ func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
 }
 
 func (rs *RecordSet) writeToVersion2(w io.Writer) (int64, error) {
-	return 0, nil
+	buffer := newPageBuffer()
+	defer buffer.unref()
+
+	baseOffset := rs.BaseOffset
+	lastOffsetDelta := int32(0)
+	firstTimestamp := int64(0)
+	maxTimestamp := int64(0)
+
+	if records := rs.Records; len(records) != 0 {
+		last := len(records) - 1
+		lastOffsetDelta = int32(records[last].Offset - baseOffset)
+		firstTimestamp = timestamp(records[0].Time)
+		maxTimestamp = timestamp(records[last].Time)
+	}
+
+	b := [57]byte{}
+	writeInt64(b[0:], baseOffset)
+	writeInt32(b[8:], 0) // placeholder for record batch length
+	writeInt32(b[12:], rs.PartitionLeaderEpoch)
+	writeInt8(b[16:], 2)  // magic byte
+	writeInt32(b[17:], 0) // placeholder for crc32 checksum
+	writeInt16(b[21:], int16(rs.Attributes))
+	writeInt32(b[23:], lastOffsetDelta)
+	writeInt64(b[27:], firstTimestamp)
+	writeInt64(b[35:], maxTimestamp)
+	writeInt64(b[43:], rs.ProducerID)
+	writeInt16(b[51:], rs.ProducerEpoch)
+	writeInt32(b[53:], rs.BaseSequence)
+	buffer.Write(b[:])
+
+	e := encoder{writer: buffer}
+
+	for _, r := range rs.Records {
+		timestampDelta := timestamp(r.Time) - firstTimestamp
+		offsetDelta := r.Offset - baseOffset
+		keyLength := byteSequenceLength(r.Key)
+		valueLength := byteSequenceLength(r.Value)
+
+		length := 1 + // attributes
+			sizeOfVarInt(timestampDelta) +
+			sizeOfVarInt(offsetDelta) +
+			sizeOfVarInt(keyLength) +
+			sizeOfVarInt(valueLength) +
+			sizeOfVarInt(int64(len(r.Headers))) +
+			int(keyLength) +
+			int(valueLength)
+
+		for _, h := range r.Headers {
+			length += sizeOfCompactString(h.Key) + sizeOfCompactNullBytes(h.Value)
+		}
+
+		e.writeVarInt(int64(length))
+		e.writeInt8(0) // record attributes (unused)
+		e.writeVarInt(timestampDelta)
+		e.writeVarInt(offsetDelta)
+
+		if err := e.writeCompactNullBytesFrom(r.Key); err != nil {
+			return 0, err
+		}
+
+		if err := e.writeCompactNullBytesFrom(r.Value); err != nil {
+			return 0, err
+		}
+
+		e.writeVarInt(int64(len(r.Headers)))
+
+		for _, h := range r.Headers {
+			e.writeCompactString(h.Key)
+			e.writeCompactNullBytes(h.Value)
+		}
+	}
+
+	bufferLength := buffer.Len()
+	batchLength := bufferLength - 12
+
+	rs.crc.reset()
+	buffer.pages.scan(21, int64(bufferLength), func(b []byte) bool {
+		rs.crc.write(b)
+		return true
+	})
+
+	length := packUint32(uint32(batchLength))
+	buffer.WriteAt(length[:], 8)
+
+	checksum := packUint32(rs.crc.sum)
+	buffer.WriteAt(checksum[:], 17)
+
+	return buffer.WriteTo(w)
 }
 
 func timestamp(t time.Time) int64 {
@@ -293,27 +535,46 @@ func makeTime(t int64) time.Time {
 	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
 }
 
-func byteSequence(p *pageRef) ByteSequence {
-	if p == nil {
-		return nil
+func byteSequenceLength(b ByteSequence) int64 {
+	if b == nil {
+		return -1
 	}
-	return p
+	return b.Size()
 }
 
-func le32u(b []byte) uint32 {
-	return binary.LittleEndian.Uint32(b)
-}
-
-func le64u(b []byte) uint64 {
-	return binary.LittleEndian.Uint64(b)
-}
-
-func u32le(u uint32) (b [4]byte) {
+func packUint32(u uint32) (b [4]byte) {
 	binary.LittleEndian.PutUint32(b[:], u)
 	return
 }
 
-func u64le(u uint64) (b [8]byte) {
-	binary.LittleEndian.PutUint64(b[:], u)
-	return
+func readInt8(b []byte) int8 {
+	return int8(b[0])
+}
+
+func readInt16(b []byte) int16 {
+	return int16(binary.LittleEndian.Uint16(b))
+}
+
+func readInt32(b []byte) int32 {
+	return int32(binary.LittleEndian.Uint32(b))
+}
+
+func readInt64(b []byte) int64 {
+	return int64(binary.LittleEndian.Uint64(b))
+}
+
+func writeInt8(b []byte, i int8) {
+	b[0] = byte(i)
+}
+
+func writeInt16(b []byte, i int16) {
+	binary.LittleEndian.PutUint16(b, uint16(i))
+}
+
+func writeInt32(b []byte, i int32) {
+	binary.LittleEndian.PutUint32(b, uint32(i))
+}
+
+func writeInt64(b []byte, i int64) {
+	binary.LittleEndian.PutUint64(b, uint64(i))
 }

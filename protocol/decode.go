@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"bufio"
-	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"reflect"
@@ -60,10 +60,8 @@ func (d *decoder) discardAll() {
 		d.limit.R = d.reader
 		d.limit.N = int64(d.remain)
 		n, err := io.Copy(ioutil.Discard, &d.limit)
-		if err != nil {
-			d.err = err
-		}
 		d.remain -= int(n)
+		d.setError(err)
 	}
 }
 
@@ -74,15 +72,15 @@ func (d *decoder) discard(n int) {
 
 func (d *decoder) peek(n int) []byte {
 	if n > d.remain {
-		d.err = ErrTruncated
+		d.setError(io.ErrUnexpectedEOF)
 		return nil
 	}
 	b, err := d.reader.Peek(n)
-	if err != nil && d.err == nil {
+	if err != nil {
 		if err == io.EOF {
 			err = io.ErrUnexpectedEOF
 		}
-		d.err = err
+		d.setError(err)
 		return nil
 	}
 	return b
@@ -90,19 +88,36 @@ func (d *decoder) peek(n int) []byte {
 
 func (d *decoder) read(n int) []byte {
 	if n > d.remain {
-		d.err = ErrTruncated
+		d.setError(io.ErrUnexpectedEOF)
 		return nil
 	}
 	b := make([]byte, n)
 	n, err := io.ReadFull(d.reader, b)
+	d.remain -= n
 	if err != nil {
 		b = b[:n]
-		if d.err == nil {
-			d.err = err
-		}
+		d.setError(err)
 	}
-	d.remain -= n
 	return b
+}
+
+func (d *decoder) writeTo(n int, w io.Writer) {
+	if int(n) > d.remain {
+		d.setError(io.ErrUnexpectedEOF)
+	} else {
+		d.limit.R = d.reader
+		d.limit.N = int64(n)
+		n, err := io.Copy(w, &d.limit)
+		d.remain -= int(n)
+		d.setError(err)
+	}
+}
+
+func (d *decoder) setError(err error) {
+	if d.err == nil && err != nil {
+		d.err = err
+		d.discard(d.remain)
+	}
 }
 
 func (d *decoder) readInt8() int8 {
@@ -116,33 +131,41 @@ func (d *decoder) readInt8() int8 {
 
 func (d *decoder) readInt16() int16 {
 	if b := d.peek(2); len(b) == 2 {
-		u := binary.LittleEndian.Uint16(b)
+		i := readInt16(b)
 		d.discard(2)
-		return int16(u)
+		return i
 	}
 	return 0
 }
 
 func (d *decoder) readInt32() int32 {
 	if b := d.peek(4); len(b) == 4 {
-		u := binary.LittleEndian.Uint32(b)
+		i := readInt32(b)
 		d.discard(4)
-		return int32(u)
+		return i
 	}
 	return 0
 }
 
 func (d *decoder) readInt64() int64 {
 	if b := d.peek(8); len(b) == 8 {
-		u := binary.LittleEndian.Uint64(b)
+		i := readInt64(b)
 		d.discard(8)
-		return int64(u)
+		return i
 	}
 	return 0
 }
 
 func (d *decoder) readString() string {
 	if n := d.readInt16(); n < 0 {
+		return ""
+	} else {
+		return bytesToString(d.read(int(n)))
+	}
+}
+
+func (d *decoder) readCompactString() string {
+	if n := d.readVarInt(); n < 0 {
 		return ""
 	} else {
 		return bytesToString(d.read(int(n)))
@@ -161,19 +184,54 @@ func (d *decoder) readBytesTo(w io.Writer) bool {
 	if n := d.readInt32(); n < 0 {
 		return false
 	} else {
-		if int(n) > d.remain {
-			d.err = ErrTruncated
-			return false
-		}
-		d.limit.R = d.reader
-		d.limit.N = int64(n)
-		n, err := io.Copy(w, &d.limit)
-		d.remain -= int(n)
-		if err != nil {
-			d.err = err
-		}
-		return true
+		d.writeTo(int(n), w)
+		return d.err == nil
 	}
+}
+
+func (d *decoder) readCompactBytes() []byte {
+	if n := d.readVarInt(); n < 0 {
+		return nil
+	} else {
+		return d.read(int(n))
+	}
+}
+
+func (d *decoder) readCompactBytesTo(w io.Writer) bool {
+	if n := d.readVarInt(); n < 0 {
+		return false
+	} else {
+		d.writeTo(int(n), w)
+		return d.err == nil
+	}
+}
+
+func (d *decoder) readVarInt() int64 {
+	n := 11 // varints are at most 11 bytes
+
+	if n > d.remain {
+		n = d.remain
+	}
+
+	if b := d.peek(n); len(b) == n {
+		x := uint64(0)
+		s := uint(0)
+
+		for i, c := range b {
+			if (c & 0x80) == 0 {
+				x |= uint64(c) << s
+				v := int64(x>>1) ^ -(int64(x) & 1)
+				d.discard(i + 1)
+				return v
+			}
+			x |= uint64(c&0x7f) << s
+			s += 7
+		}
+
+		d.setError(fmt.Errorf("cannot decode varint from %#x", b))
+	}
+
+	return 0
 }
 
 type decodeFunc func(*decoder, value)

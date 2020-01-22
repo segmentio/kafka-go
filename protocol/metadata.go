@@ -12,7 +12,7 @@ func (r *MetadataRequest) ApiKey() ApiKey { return Metadata }
 type MetadataResponse struct {
 	ThrottleTimeMs              int32                    `kafka:"min=v3,max=v9"`
 	Brokers                     []MetadataResponseBroker `kafka:"min=v0,max=v9"`
-	ClientID                    string                   `kafka:"min=v2,max=v9,nullable"`
+	ClusterID                   string                   `kafka:"min=v2,max=v9,nullable"`
 	ControllerID                int32                    `kafka:"min=v1,max=v9"`
 	Topics                      []MetadataResponseTopic  `kafka:"min=v0,max=v9"`
 	ClusterAuthorizedOperations int32                    `kafka:"min=v8,max=v9"`
