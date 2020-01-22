@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+// Record values represent single records exchanged in Produce requests and
+// Fetch responses.
 type Record struct {
 	Offset int64
 	Time   time.Time
@@ -17,6 +19,18 @@ type Record struct {
 	Value  ByteSequence
 }
 
+// Close closes both the key and value of the record.
+func (r *Record) Close() error {
+	if r.Key != nil {
+		r.Key.Close()
+	}
+	if r.Value != nil {
+		r.Value.Close()
+	}
+}
+
+// RecordSet represents a sequence of records in Produce requests and Fetch
+// responses. All v0, v1, and v2 formats are supported.
 type RecordSet struct {
 	Version    int8
 	BaseOffset int64
@@ -25,15 +39,11 @@ type RecordSet struct {
 	crc crc32Hash
 }
 
+// Close closes all records of rs.
 func (rs *RecordSet) Close() error {
 	for i := range rs.Records {
 		r := &rs.Records[i]
-		if r.Key != nil {
-			r.Key.Close()
-		}
-		if r.Value != nil {
-			r.Value.Close()
-		}
+		r.Close()
 	}
 	return nil
 }
@@ -42,6 +52,9 @@ const headerSize = 8 + 4 // sizeof(baseOffset) + sizeof(messageSetSize)
 const magicByteOffset = 16
 const messageSizeOffset = 8
 
+// ReadFrom reads the representation of a record set from r into rs, returning
+// the number of bytes consumed from r, and an non-nil error if the record set
+// could not be read.
 func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 	var baseOffset uint64
 	var messageSize uint32
@@ -198,6 +211,12 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 	return 0, nil
 }
 
+// WriteTo writes the representation of rs into w. The value of rs.Version
+// dictates which format that the record set will be represented as.
+//
+// Note: since this package is only compatible with kafka 0.10 and above, the
+// method never produces messages in version 0. If rs.Version is zero, the
+// method defaults to producing messages in version 1.
 func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	switch rs.Version {
 	case 0, 1:

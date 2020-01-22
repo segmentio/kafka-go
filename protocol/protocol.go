@@ -2,12 +2,20 @@ package protocol
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 )
+
+// Message is an interface implemented by all request and response types of the
+// kafka protocol.
+//
+// This interface is used mostly as a safe-guard to provide a compile-time check
+// for values passed to functions dealing kafka message types.
+type Message interface {
+	ApiKey() ApiKey
+}
 
 type ApiKey int16
 
@@ -107,6 +115,15 @@ const (
 	v8  = 8
 	v9  = 9
 	v10 = 10
+	v11 = 11
+	v12 = 12
+	v13 = 13
+	v14 = 14
+	v15 = 15
+	v16 = 16
+	v17 = 17
+	v18 = 18
+	v19 = 19
 )
 
 var apiNames = [numApis]string{
@@ -158,10 +175,6 @@ var apiNames = [numApis]string{
 	AlterPartitionReassignments: "AlterPartitionReassignments",
 	ListPartitionReassignments:  "ListPartitionReassignments",
 	OffsetDelete:                "OffsetDelete",
-}
-
-type Message interface {
-	ApiKey() ApiKey
 }
 
 type messageType struct {
@@ -349,10 +362,6 @@ func parseVersion(s string) (int16, error) {
 	}
 	return int16(i), nil
 }
-
-var (
-	ErrCorrupted = errors.New("corrupted message with negative size")
-)
 
 func readMessageSize(r *bufio.Reader) (size int32, err error) {
 	d := &decoder{reader: r, remain: 4}

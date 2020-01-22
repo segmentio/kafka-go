@@ -10,6 +10,17 @@ import (
 	"sync/atomic"
 )
 
+// ByteSequence is an interface implemented by types that represent immutable
+// sequences of bytes.
+//
+// ByteSequence values are used to abstract the location where record keys and
+// values are read from (e.g. in-memory buffers, network sockets, files).
+//
+// The Close method should be called to release resources held by the sequence
+// when the program is done with it.
+//
+// ByteSequence values are generally not safe to use concurrently from multiple
+// goroutines.
 type ByteSequence interface {
 	Size() int64
 	io.Closer
@@ -19,6 +30,7 @@ type ByteSequence interface {
 	io.WriterTo
 }
 
+// Bytes constructs a ByteSequence which exposes the content of b.
 func Bytes(b []byte) ByteSequence {
 	r := &bytesReader{}
 	r.Reset(b)
@@ -31,6 +43,7 @@ func (r *bytesReader) Size() int64 { return int64(r.Len()) }
 
 func (r *bytesReader) Close() error { r.Reset(nil); return nil }
 
+// String constructs a ByteSequence which exposes the content of s.
 func String(s string) ByteSequence {
 	r := &stringReader{}
 	r.Reset(s)
