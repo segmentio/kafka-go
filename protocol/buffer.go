@@ -27,7 +27,6 @@ type ByteSequence interface {
 	io.Seeker
 	io.Reader
 	io.ReaderAt
-	io.WriterTo
 }
 
 // Bytes constructs a ByteSequence which exposes the content of b.
@@ -39,8 +38,6 @@ func Bytes(b []byte) ByteSequence {
 
 type bytesReader struct{ bytes.Reader }
 
-func (r *bytesReader) Size() int64 { return int64(r.Len()) }
-
 func (r *bytesReader) Close() error { r.Reset(nil); return nil }
 
 // String constructs a ByteSequence which exposes the content of s.
@@ -51,8 +48,6 @@ func String(s string) ByteSequence {
 }
 
 type stringReader struct{ strings.Reader }
-
-func (r *stringReader) Size() int64 { return int64(r.Len()) }
 
 func (r *stringReader) Close() error { r.Reset(""); return nil }
 
@@ -488,7 +483,7 @@ func copyBytes(w io.Writer, b ByteSequence) (int64, error) {
 		return 0, err
 	}
 
-	n, err := b.WriteTo(w)
+	n, err := io.Copy(w, b)
 	if err != nil {
 		b.Seek(s, io.SeekStart) // best effort repositioning
 		return n, err

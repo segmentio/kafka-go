@@ -65,6 +65,7 @@ func benchmarkResponse(b *testing.B, version int16, msg Message) {
 			}
 
 			b.SetBytes(int64(len(p)))
+			buffer.Reset()
 		})
 
 		b.Run("write", func(b *testing.B) {
