@@ -27,6 +27,7 @@ func (r *Record) Close() error {
 	if r.Value != nil {
 		r.Value.Close()
 	}
+	return nil
 }
 
 // RecordSet represents a sequence of records in Produce requests and Fetch
