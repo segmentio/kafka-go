@@ -336,10 +336,10 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 		var k ByteSequence
 		var v ByteSequence
 		if keyLength >= 0 {
-			k = buffer.ref(keyOffset, valueOffset)
+			k = buffer.ref(keyOffset, keyOffset+keyLength)
 		}
 		if valueLength >= 0 {
-			v = buffer.ref(valueOffset, valueLength)
+			v = buffer.ref(valueOffset, valueOffset+valueLength)
 		}
 
 		records = append(records, Record{

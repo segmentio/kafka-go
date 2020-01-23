@@ -63,6 +63,11 @@ func (rc *refCount) unref(onZero func()) {
 }
 
 const (
+	// Size of the memory buffer for a single page. We use a farily
+	// large size here (64 KiB) because batches exchanged with kafka
+	// tend to be multiple kilobytes in size, sometimes hundreds.
+	// Using large pages amortizes the overhead of the page metadata
+	// and algorithms to manage the pages.
 	pageSize = 65536
 )
 
@@ -123,7 +128,7 @@ func (p *page) ReadAt(b []byte, off int64) (int, error) {
 
 func (p *page) ReadFrom(r io.Reader) (int64, error) {
 	n, err := io.ReadFull(r, p.buffer[p.length:])
-	if err == io.ErrUnexpectedEOF {
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
 		err = nil
 	}
 	p.length += n
@@ -145,15 +150,6 @@ func (p *page) Write(b []byte) (int, error) {
 	return p.WriteAt(b, p.offset+int64(p.length))
 }
 
-func (p *page) WriteString(s string) (int, error) {
-	return p.Write([]byte(s))
-}
-
-func (p *page) WriteTo(w io.Writer) (int64, error) {
-	n, err := w.Write(p.buffer[:p.length])
-	return int64(n), err
-}
-
 var pagePool = sync.Pool{
 	New: func() interface{} {
 		return &page{buffer: &[pageSize]byte{}}
@@ -161,11 +157,10 @@ var pagePool = sync.Pool{
 }
 
 var (
-	_ io.ReaderAt     = (*page)(nil)
-	_ io.StringWriter = (*page)(nil)
-	_ io.Writer       = (*page)(nil)
-	_ io.WriterAt     = (*page)(nil)
-	_ io.WriterTo     = (*page)(nil)
+	_ io.ReaderAt   = (*page)(nil)
+	_ io.ReaderFrom = (*page)(nil)
+	_ io.Writer     = (*page)(nil)
+	_ io.WriterAt   = (*page)(nil)
 )
 
 type pageBuffer struct {
@@ -177,6 +172,7 @@ type pageBuffer struct {
 
 func newPageBuffer() *pageBuffer {
 	b := pageBufferPool.Get().(*pageBuffer)
+	b.cursor = 0
 	b.refc.ref()
 	return b
 }
@@ -287,7 +283,16 @@ func (pb *pageBuffer) WriteString(s string) (int, error) {
 }
 
 func (pb *pageBuffer) WriteTo(w io.Writer) (int64, error) {
-	return pb.pages.WriteTo(w)
+	var wn int
+	var err error
+	pb.pages.scan(int64(pb.cursor), int64(pb.length), func(b []byte) bool {
+		var n int
+		n, err = w.Write(b)
+		wn += n
+		return err == nil
+	})
+	pb.cursor += wn
+	return int64(wn), err
 }
 
 func (pb *pageBuffer) WriteAt(b []byte, off int64) (int, error) {
@@ -344,20 +349,6 @@ func (pages contiguousPages) WriteAt(b []byte, off int64) (int, error) {
 	return wn, nil
 }
 
-func (pages contiguousPages) WriteTo(w io.Writer) (int64, error) {
-	wn := int64(0)
-
-	for _, p := range pages {
-		n, err := p.WriteTo(w)
-		wn += n
-		if err != nil {
-			return wn, err
-		}
-	}
-
-	return wn, nil
-}
-
 func (pages contiguousPages) slice(begin, end int64) contiguousPages {
 	i := pages.indexOf(begin)
 	j := pages.indexOf(end)
@@ -384,7 +375,6 @@ func (pages contiguousPages) scan(begin, end int64, f func([]byte) bool) {
 var (
 	_ io.ReaderAt = contiguousPages{}
 	_ io.WriterAt = contiguousPages{}
-	_ io.WriterTo = contiguousPages{}
 )
 
 type pageRef struct {
@@ -489,6 +479,13 @@ func (ref *pageRef) scan(off int64, f func([]byte) bool) {
 		}
 	}
 }
+
+var (
+	_ io.Closer   = (*pageRef)(nil)
+	_ io.Reader   = (*pageRef)(nil)
+	_ io.ReaderAt = (*pageRef)(nil)
+	_ io.WriterTo = (*pageRef)(nil)
+)
 
 func unref(x interface{}) {
 	if r, _ := x.(interface{ unref() }); r != nil {
