@@ -116,6 +116,8 @@ func (p *page) Cap() int { return pageSize }
 
 func (p *page) Len() int { return p.length }
 
+func (p *page) Size() int64 { return int64(p.length) }
+
 func (p *page) ReadAt(b []byte, off int64) (int, error) {
 	if off -= p.offset; off < 0 || off > pageSize {
 		panic("offset out of range")
@@ -205,8 +207,25 @@ func (pb *pageBuffer) newPage() *page {
 	return newPage(int64(pb.length))
 }
 
+func (pb *pageBuffer) Close() error {
+	return nil
+}
+
 func (pb *pageBuffer) Len() int {
 	return pb.length
+}
+
+func (pb *pageBuffer) Size() int64 {
+	return int64(pb.length)
+}
+
+func (pb *pageBuffer) Seek(offset int64, whence int) (int64, error) {
+	c, err := seek(int64(pb.cursor), int64(pb.length), offset, whence)
+	if err != nil {
+		return -1, err
+	}
+	pb.cursor = int(c)
+	return c, nil
 }
 
 func (pb *pageBuffer) Read(b []byte) (int, error) {
@@ -248,6 +267,10 @@ func (pb *pageBuffer) ReadFrom(r io.Reader) (int64, error) {
 	}
 }
 
+func (pb *pageBuffer) WriteString(s string) (int, error) {
+	return pb.Write([]byte(s))
+}
+
 func (pb *pageBuffer) Write(b []byte) (int, error) {
 	wn := len(b)
 	if wn == 0 {
@@ -278,8 +301,15 @@ func (pb *pageBuffer) Write(b []byte) (int, error) {
 	return wn, nil
 }
 
-func (pb *pageBuffer) WriteString(s string) (int, error) {
-	return pb.Write([]byte(s))
+func (pb *pageBuffer) WriteAt(b []byte, off int64) (int, error) {
+	n, err := pb.pages.WriteAt(b, off)
+	if err != nil {
+		return n, err
+	}
+	if n < len(b) {
+		pb.Write(b[n:])
+	}
+	return len(b), nil
 }
 
 func (pb *pageBuffer) WriteTo(w io.Writer) (int64, error) {
@@ -293,17 +323,6 @@ func (pb *pageBuffer) WriteTo(w io.Writer) (int64, error) {
 	})
 	pb.cursor += wn
 	return int64(wn), err
-}
-
-func (pb *pageBuffer) WriteAt(b []byte, off int64) (int, error) {
-	n, err := pb.pages.WriteAt(b, off)
-	if err != nil {
-		return n, err
-	}
-	if n < len(b) {
-		pb.Write(b[n:])
-	}
-	return len(b), nil
 }
 
 var (
@@ -360,7 +379,7 @@ func (pages contiguousPages) slice(begin, end int64) contiguousPages {
 
 func (pages contiguousPages) indexOf(offset int64) int {
 	return sort.Search(len(pages), func(i int) bool {
-		return offset < (pages[i].offset + int64(pages[i].Len()))
+		return offset < (pages[i].offset + pages[i].Size())
 	})
 }
 
@@ -406,31 +425,18 @@ func (ref *pageRef) Size() int64 { return int64(ref.length) }
 func (ref *pageRef) Close() error { ref.unref(); return nil }
 
 func (ref *pageRef) Seek(offset int64, whence int) (int64, error) {
-	limit := int64(ref.length)
-	switch whence {
-	case io.SeekStart:
-		// absolute offset
-	case io.SeekCurrent:
-		offset = ref.cursor + offset
-	case io.SeekEnd:
-		offset = limit - offset
-	default:
-		return -1, fmt.Errorf("seek: invalid whence value: %d", whence)
+	c, err := seek(ref.cursor, int64(ref.length), offset, whence)
+	if err != nil {
+		return -1, err
 	}
-
-	if offset < 0 {
-		offset = 0
-	}
-
-	if offset > limit {
-		offset = limit
-	}
-
-	ref.cursor = offset
-	return offset, nil
+	ref.cursor = c
+	return c, nil
 }
 
 func (ref *pageRef) Read(b []byte) (int, error) {
+	if ref.cursor >= int64(ref.length) {
+		return 0, io.EOF
+	}
 	n, err := ref.ReadAt(b, ref.cursor)
 	ref.cursor += int64(n)
 	return n, err
@@ -493,6 +499,26 @@ func unref(x interface{}) {
 	}
 }
 
+func seek(cursor, limit, offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		// absolute offset
+	case io.SeekCurrent:
+		offset = cursor + offset
+	case io.SeekEnd:
+		offset = limit - offset
+	default:
+		return -1, fmt.Errorf("seek: invalid whence value: %d", whence)
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > limit {
+		offset = limit
+	}
+	return offset, nil
+}
+
 func copyBytes(w io.Writer, b ByteSequence) (int64, error) {
 	s, err := b.Seek(0, io.SeekCurrent)
 	if err != nil {
@@ -515,9 +541,20 @@ type bufferedReader struct {
 }
 
 func (b *bufferedReader) reset(r io.Reader, n int64) {
-	b.limit.R = r
-	b.limit.N = n
-	b.Reader.Reset(&b.limit)
+	switch {
+	case r == nil:
+		b.limit.R = nil
+		b.limit.N = 0
+		b.Reader.Reset(nil)
+	case n < 0:
+		b.limit.R = nil
+		b.limit.N = 0
+		b.Reader.Reset(r)
+	default:
+		b.limit.R = r
+		b.limit.N = n
+		b.Reader.Reset(&b.limit)
+	}
 }
 
 var bufferedReaderPool = sync.Pool{
@@ -525,7 +562,7 @@ var bufferedReaderPool = sync.Pool{
 }
 
 func newBufferedReader() *bufferedReader {
-	return &bufferedReader{Reader: bufio.NewReaderSize(nil, 4096)}
+	return &bufferedReader{Reader: bufio.NewReaderSize(nil, 1024)}
 }
 
 func acquireBufferedReader(r io.Reader, n int64) *bufferedReader {

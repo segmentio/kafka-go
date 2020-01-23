@@ -101,7 +101,7 @@ func (d *decoder) read(n int) []byte {
 	return b
 }
 
-func (d *decoder) writeTo(n int, w io.Writer) {
+func (d *decoder) writeTo(w io.Writer, n int) {
 	if int(n) > d.remain {
 		d.setError(io.ErrUnexpectedEOF)
 	} else {
@@ -184,7 +184,7 @@ func (d *decoder) readBytesTo(w io.Writer) bool {
 	if n := d.readInt32(); n < 0 {
 		return false
 	} else {
-		d.writeTo(int(n), w)
+		d.writeTo(w, int(n))
 		return d.err == nil
 	}
 }
@@ -201,7 +201,7 @@ func (d *decoder) readCompactBytesTo(w io.Writer) bool {
 	if n := d.readVarInt(); n < 0 {
 		return false
 	} else {
-		d.writeTo(int(n), w)
+		d.writeTo(w, int(n))
 		return d.err == nil
 	}
 }

@@ -37,6 +37,24 @@ func TestProduceRequest(t *testing.T) {
 					},
 				},
 			},
+
+			{
+				Topic: "topic-2",
+				Partitions: []ProduceRequestPartition{
+					{
+						Partition: 0,
+						RecordSet: RecordSet{
+							Version:    1,
+							Attributes: Gzip,
+							Records: []Record{
+								{Offset: 0, Time: t0, Key: nil, Value: String("msg-0")},
+								{Offset: 1, Time: t1, Key: nil, Value: String("msg-1")},
+								{Offset: 2, Time: t2, Key: Bytes([]byte{1}), Value: String("msg-2")},
+							},
+						},
+					},
+				},
+			},
 		},
 	})
 
@@ -98,6 +116,25 @@ func TestProduceRequest(t *testing.T) {
 								{Offset: 11, Time: t0, Key: nil, Value: String("msg-0"), Headers: headers},
 								{Offset: 12, Time: t1, Key: nil, Value: String("msg-1")},
 								{Offset: 14, Time: t2, Key: Bytes([]byte{1}), Value: String("msg-2")},
+							},
+						},
+					},
+				},
+			},
+
+			{
+				Topic: "topic-2",
+				Partitions: []ProduceRequestPartition{
+					{
+						Partition: 1,
+						RecordSet: RecordSet{
+							Version:    2,
+							BaseOffset: 1,
+							Attributes: Snappy,
+							Records: []Record{
+								{Offset: 0, Time: t0, Key: nil, Value: String("msg-0"), Headers: headers},
+								{Offset: 1, Time: t1, Key: nil, Value: String("msg-1")},
+								{Offset: 2, Time: t2, Key: Bytes([]byte{1}), Value: String("msg-2")},
 							},
 						},
 					},

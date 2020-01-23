@@ -5,15 +5,6 @@ import (
 	"sync"
 
 	"github.com/pierrec/lz4"
-	kafka "github.com/segmentio/kafka-go"
-)
-
-func init() {
-	kafka.RegisterCompressionCodec(NewCompressionCodec())
-}
-
-const (
-	Code = 3
 )
 
 type CompressionCodec struct{}
@@ -23,20 +14,20 @@ func NewCompressionCodec() *CompressionCodec {
 }
 
 // Code implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Code() int8 { return Code }
+func (c *CompressionCodec) Code() int8 { return 3 }
 
 // Name implements the kafka.CompressionCodec interface.
-func (CompressionCodec) Name() string { return "lz4" }
+func (c *CompressionCodec) Name() string { return "lz4" }
 
 // NewReader implements the kafka.CompressionCodec interface.
-func (CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 	z := readerPool.Get().(*lz4.Reader)
 	z.Reset(r)
 	return &reader{z}
 }
 
 // NewWriter implements the kafka.CompressionCodec interface.
-func (CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+func (c *CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
 	z := writerPool.Get().(*lz4.Writer)
 	z.Reset(w)
 	return &writer{z}

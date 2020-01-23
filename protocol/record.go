@@ -13,6 +13,27 @@ import (
 // Attributes is a bitset representing special attributes set on records.
 type Attributes int16
 
+const (
+	Gzip          Attributes = 1
+	Snappy        Attributes = 2
+	Lz4           Attributes = 3
+	Zstd          Attributes = 4
+	Transactional Attributes = 1 << 4
+	ControlBatch  Attributes = 1 << 5
+)
+
+func (a Attributes) Compression() Compression {
+	return Compression(a & 7)
+}
+
+func (a Attributes) Transactional() bool {
+	return (a & Transactional) != 0
+}
+
+func (a Attributes) ControlBatch() bool {
+	return (a & ControlBatch) != 0
+}
+
 // Header represents a single entry in a list of record headers.
 type Header struct {
 	Key   string
@@ -157,6 +178,7 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 	defer buffer.unref()
 
 	d.remain = int(messageSize)
+	baseAttributes := int8(0)
 
 	for offset := baseOffset; d.remain > 0; offset++ {
 		crc := uint32(d.readInt32())
@@ -172,10 +194,14 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 			version = magicByte
 		}
 
-		keyOffset := int64(buffer.Len())
+		if offset == baseOffset {
+			baseAttributes = attributes
+		}
+
+		keyOffset := buffer.Size()
 		hasKey := d.readBytesTo(buffer)
 
-		valueOffset := int64(buffer.Len())
+		valueOffset := buffer.Size()
 		hasValue := d.readBytesTo(buffer)
 
 		if d.err != nil {
@@ -188,7 +214,7 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 			k = buffer.ref(keyOffset, valueOffset)
 		}
 		if hasValue {
-			v = buffer.ref(valueOffset, int64(buffer.Len()))
+			v = buffer.ref(valueOffset, buffer.Size())
 		}
 
 		rs.crc.reset()
@@ -203,20 +229,39 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 			break
 		}
 
+		if compression := Attributes(attributes).Compression(); compression != 0 && hasValue {
+			if codec := compression.Codec(); codec != nil {
+				decompressor := codec.NewReader(v)
+				decompressed := acquireBufferedReader(decompressor, -1)
+
+				subset := RecordSet{}
+				_, d.err = subset.readFromVersion1(decompressed.Reader)
+
+				releaseBufferedReader(decompressed)
+				decompressor.Close()
+
+				if d.err != nil {
+					break
+				}
+
+				records = append(records, subset.Records...)
+				continue
+			}
+		}
+
 		records = append(records, Record{
 			Offset: offset,
 			Time:   makeTime(timestamp),
 			Key:    k,
 			Value:  v,
 		})
-
-		_ = attributes // TODO
 	}
 
 	*rs = RecordSet{
 		Version:    version,
 		BaseOffset: baseOffset,
 		Records:    records,
+		Attributes: Attributes(baseAttributes),
 	}
 
 	records = nil
@@ -272,6 +317,25 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 
 	if rs.crc.sum != uint32(crc) {
 		return 57 + n, errorf("crc32 checksum mismatch (computed=%d found=%d)", rs.crc.sum, uint32(crc))
+	}
+
+	if compression := Attributes(attributes).Compression(); compression != 0 {
+		codec := compression.Codec()
+		if codec == nil {
+			return 57 + n, errorf("unsupported compression codec (%d)", compression)
+		}
+
+		decompressor := codec.NewReader(buffer)
+		defer decompressor.Close()
+
+		uncompressed := newPageBuffer()
+		defer uncompressed.unref()
+
+		if _, err := uncompressed.ReadFrom(decompressor); err != nil {
+			return 57 + n, err
+		}
+
+		buffer = uncompressed
 	}
 
 	reader.Reset(buffer)
@@ -387,16 +451,46 @@ func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
 	buffer := newPageBuffer()
 	defer buffer.unref()
 
+	attributes := rs.Attributes
+	records := rs.Records
+
+	if compression := attributes.Compression(); compression != 0 && len(records) != 0 {
+		if codec := compression.Codec(); codec != nil {
+			compressed := newPageBuffer()
+			defer compressed.unref()
+
+			compressor := codec.NewWriter(compressed)
+			defer compressor.Close()
+
+			subset := *rs
+			subset.Attributes &= ^7 // erase compression
+
+			_, err := subset.writeToVersion1(compressor)
+			if err != nil {
+				return 0, err
+			}
+			if err := compressor.Close(); err != nil {
+				return 0, err
+			}
+
+			records = []Record{{
+				Offset: records[0].Offset,
+				Time:   records[0].Time,
+				Value:  compressed,
+			}}
+		}
+	}
+
 	e := encoder{writer: buffer}
 
-	for _, r := range rs.Records {
+	for _, r := range records {
 		if buffer.Len() == 0 {
 			e.writeInt64(r.Offset)
 			e.writeInt32(0) // message set size placeholder
 		}
 
 		i := buffer.Len()
-		attributes := int8(0)
+		attributes := int8(attributes)
 		timestamp := timestamp(r.Time)
 		e.writeInt32(0) // crc32 placeholder
 		e.writeInt8(1)  // magic byte: version 1
@@ -464,7 +558,16 @@ func (rs *RecordSet) writeToVersion2(w io.Writer) (int64, error) {
 	writeInt32(b[53:], rs.BaseSequence)
 	buffer.Write(b[:])
 
-	e := encoder{writer: buffer}
+	var e = encoder{writer: buffer}
+	var compressor io.WriteCloser
+
+	if compression := rs.Attributes.Compression(); compression != 0 {
+		if codec := compression.Codec(); codec != nil {
+			compressor = codec.NewWriter(buffer)
+			defer compressor.Close()
+			e.writer = compressor
+		}
+	}
 
 	for _, r := range rs.Records {
 		timestampDelta := timestamp(r.Time) - firstTimestamp
@@ -503,6 +606,12 @@ func (rs *RecordSet) writeToVersion2(w io.Writer) (int64, error) {
 		for _, h := range r.Headers {
 			e.writeCompactString(h.Key)
 			e.writeCompactNullBytes(h.Value)
+		}
+	}
+
+	if compressor != nil {
+		if err := compressor.Close(); err != nil {
+			return 0, err
 		}
 	}
 

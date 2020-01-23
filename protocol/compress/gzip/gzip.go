@@ -6,8 +6,6 @@ import (
 	"io"
 	"io/ioutil"
 	"sync"
-
-	kafka "github.com/segmentio/kafka-go"
 )
 
 var (
@@ -43,13 +41,7 @@ func (z *gzipReader) Reset(r io.Reader) {
 	z.Reader.Reset(r)
 }
 
-func init() {
-	kafka.RegisterCompressionCodec(NewCompressionCodec())
-}
-
 const (
-	Code = 1
-
 	DefaultCompressionLevel = gzip.DefaultCompression
 )
 
@@ -74,7 +66,7 @@ func NewCompressionCodecLevel(level int) *CompressionCodec {
 }
 
 // Code implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Code() int8 { return Code }
+func (c *CompressionCodec) Code() int8 { return 1 }
 
 // Name implements the kafka.CompressionCodec interface.
 func (c *CompressionCodec) Name() string { return "gzip" }

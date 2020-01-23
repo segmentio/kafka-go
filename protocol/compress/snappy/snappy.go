@@ -5,12 +5,7 @@ import (
 	"sync"
 
 	"github.com/golang/snappy"
-	kafka "github.com/segmentio/kafka-go"
 )
-
-func init() {
-	kafka.RegisterCompressionCodec(NewCompressionCodec())
-}
 
 // Framing is an enumeration type used to enable or disable xerial framing of
 // snappy messages.
@@ -19,10 +14,6 @@ type Framing int
 const (
 	Framed Framing = iota
 	Unframed
-)
-
-const (
-	Code = 2
 )
 
 type CompressionCodec struct{ framing Framing }
@@ -36,7 +27,7 @@ func NewCompressionCodecFraming(framing Framing) *CompressionCodec {
 }
 
 // Code implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Code() int8 { return Code }
+func (c *CompressionCodec) Code() int8 { return 2 }
 
 // Name implements the kafka.CompressionCodec interface.
 func (c *CompressionCodec) Name() string { return "snappy" }

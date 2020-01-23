@@ -7,16 +7,9 @@ import (
 	"sync"
 
 	"github.com/DataDog/zstd"
-	kafka "github.com/segmentio/kafka-go"
 )
 
-func init() {
-	kafka.RegisterCompressionCodec(NewCompressionCodec())
-}
-
 const (
-	Code = 4
-
 	DefaultCompressionLevel = zstd.DefaultCompression
 )
 
@@ -31,7 +24,7 @@ func NewCompressionCodecWith(level int) *CompressionCodec {
 }
 
 // Code implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Code() int8 { return Code }
+func (c *CompressionCodec) Code() int8 { return 4 }
 
 // Name implements the kafka.CompressionCodec interface.
 func (c *CompressionCodec) Name() string { return "zstd" }
