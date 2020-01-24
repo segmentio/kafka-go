@@ -54,16 +54,16 @@ type reader struct {
 
 // Close implements the io.Closer interface.
 func (r *reader) Close() error {
-	if r.err != io.ErrClosedPipe {
-		r.err = io.ErrClosedPipe
+	if r.dec != nil {
 		decPool.Put(r.dec)
+		r.dec = nil
+		r.err = io.ErrClosedPipe
 	}
 	return nil
 }
 
 // Read implements the io.Reader interface.
 func (r *reader) Read(p []byte) (n int, err error) {
-	println("zstd read", len(p))
 	if r.err != nil {
 		return 0, r.err
 	}
@@ -100,12 +100,14 @@ type writer struct {
 
 // Close implements the io.Closer interface.
 func (w *writer) Close() error {
-	if w.err == io.ErrClosedPipe {
-		return nil
+	if w.enc == nil {
+		return nil // already closed
 	}
-	w.err = io.ErrClosedPipe
+	err := w.enc.Close()
 	encPool.Put(w.enc)
-	return w.enc.Close()
+	w.enc = nil
+	w.err = io.ErrClosedPipe
+	return err
 }
 
 // WriteTo implements the io.WriterTo interface.
