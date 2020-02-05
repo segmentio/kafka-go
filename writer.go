@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -148,6 +149,24 @@ func (e *WriterError) Temporary() bool {
 
 func (e *WriterError) Timeout() bool {
 	return isTimeout(e.Err)
+}
+
+type WriterErrors []WriterError
+
+func (es WriterErrors) Error() string {
+	if len(es) == 1 {
+		return fmt.Sprintf("1 WriterError occurred:\n\t* %s\n", es[0].Err)
+	}
+
+	points := make([]string, len(es))
+	for i, we := range es {
+		points[i] = fmt.Sprintf("* %s", we.Err)
+	}
+
+	return fmt.Sprintf(
+		"%d WriterErrors occurred:\n\t%s\n",
+		len(es),
+		strings.Join(points, "\n\t"))
 }
 
 // WriterStats is a data structure returned by a call to Writer.Stats that
