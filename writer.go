@@ -138,10 +138,6 @@ type WriterError struct {
 	Err error
 }
 
-func (e *WriterError) Cause() error {
-	return e.Err
-}
-
 func (e *WriterError) Error() string {
 	return e.Err.Error()
 }
