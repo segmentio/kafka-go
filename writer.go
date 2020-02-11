@@ -338,7 +338,8 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return nil
 	}
 
-	var err error
+	errs := make(WriterErrors, 0, len(msgs))
+	tooLarge := 0
 	var res chan writerResponse
 	if !w.config.Async {
 		res = make(chan writerResponse, len(msgs))
@@ -346,83 +347,120 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	t0 := time.Now()
 
 	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
+		handled := make(map[int]bool, len(msgs))
 		w.mutex.RLock()
 
 		if w.closed {
 			w.mutex.RUnlock()
-			return io.ErrClosedPipe
+			for _, m := range msgs {
+				errs = append(errs, WriterError{
+					Msg: m,
+					Err: io.ErrClosedPipe,
+				})
+			}
+			return errs
 		}
 
 		for i, msg := range msgs {
 			if int(msg.size()) > w.config.BatchBytes {
-				err := MessageTooLargeError{
-					Message:   msg,
-					Remaining: msgs[i+1:],
+				errs = append(errs, WriterError{
+					Msg: msg,
+					Err: MessageTooLargeError{
+						Message: msg,
+					},
+				})
+				tooLarge += 1
+				handled[i] = true
+			} else {
+				select {
+				case w.msgs <- writerMessage{
+					msg: msg,
+					res: res,
+					id:  i,
+				}:
+				case <-ctx.Done():
+					w.mutex.RUnlock()
+					// treat all messages as failed
+					for j, m := range msgs {
+						// don't double count MessageTooLargeErrors which may already be present in errs
+						if _, ok := handled[j]; !ok {
+							errs = append(errs, WriterError{
+								Msg: m,
+								Err: ctx.Err(),
+							})
+						}
+					}
+					return errs
 				}
-				w.mutex.RUnlock()
-				return err
-			}
-			select {
-			case w.msgs <- writerMessage{
-				msg: msg,
-				res: res,
-				id:  i,
-			}:
-			case <-ctx.Done():
-				w.mutex.RUnlock()
-				return ctx.Err()
 			}
 		}
-
 		w.mutex.RUnlock()
 
 		if w.config.Async {
 			break
 		}
 
-		var retry []Message
-
-		for i := 0; i != len(msgs); i++ {
+		sent := len(msgs) - len(handled)
+		for i := 0; i != sent; i++ {
 			select {
-			case e := <-res:
-				if e.err != nil {
-					if we, ok := e.err.(*WriterError); ok {
-						w.stats.retries.observe(1)
-						retry, err = append(retry, we.Msg), we.Err
-					} else {
-						err = e.err
-					}
+			case r := <-res:
+				handled[r.id] = true
+				if r.err != nil {
+					w.stats.retries.observe(1)
+					errs = append(errs, *r.err)
 				}
 			case <-ctx.Done():
-				return ctx.Err()
+				// all unacked msgs become errors
+				for x := range msgs {
+					if _, ok := handled[x]; !ok {
+						errs = append(errs, WriterError{
+							Msg: msgs[x],
+							Err: ctx.Err(),
+						})
+					}
+				}
+				return errs
 			}
 		}
 
-		if msgs = retry; len(msgs) == 0 {
+		retryable := len(errs) - tooLarge
+		if retryable == 0 {
 			break
 		}
 
 		timer := time.NewTimer(backoff(attempt+1, 100*time.Millisecond, 1*time.Second))
+		var override error
 		select {
 		case <-timer.C:
-			// Only clear the error (so we retry the loop) if we have more retries, otherwise
-			// we risk silencing the error.
+			// Only clear the failures (so we retry the loop) if we have more retries
 			if attempt < w.config.MaxAttempts-1 {
-				err = nil
+				// populate msgs for a retry
+				msgs = msgs[:0]
+				for i := tooLarge; i < len(errs); i++ {
+					msgs = append(msgs, errs[i].Msg)
+				}
+				errs = errs[:tooLarge]
 			}
 		case <-ctx.Done():
-			err = ctx.Err()
+			override = ctx.Err()
 		case <-w.done:
-			err = io.ErrClosedPipe
+			override = io.ErrClosedPipe
 		}
 		timer.Stop()
 
-		if err != nil {
+		if override != nil {
+			for i := tooLarge; i < len(errs); i++ {
+				errs[i].Err = override
+			}
 			break
 		}
 	}
 	w.stats.writeTime.observeDuration(time.Since(t0))
-	return err
+
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
 }
 
 // Stats returns a snapshot of the writer stats since the last time the method
