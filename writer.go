@@ -153,19 +153,19 @@ func (e *WriterError) Timeout() bool {
 
 type WriterErrors []WriterError
 
-func (es WriterErrors) Error() string {
-	if len(es) == 1 {
-		return fmt.Sprintf("1 WriterError occurred:\n\t* %s\n", es[0].Err)
+func (wes WriterErrors) Error() string {
+	if len(wes) == 1 {
+		return fmt.Sprintf("1 WriterError occurred:\n\t* %s\n", wes[0].Err)
 	}
 
-	points := make([]string, len(es))
-	for i, we := range es {
+	points := make([]string, len(wes))
+	for i, we := range wes {
 		points[i] = fmt.Sprintf("* %s", we.Err)
 	}
 
 	return fmt.Sprintf(
 		"%d WriterErrors occurred:\n\t%s\n",
-		len(es),
+		len(wes),
 		strings.Join(points, "\n\t"))
 }
 
