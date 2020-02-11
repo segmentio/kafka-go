@@ -855,7 +855,7 @@ type writerMessage struct {
 
 type writerResponse struct {
 	id  int
-	err error
+	err *WriterError
 }
 
 func shuffledStrings(list []string) []string {
