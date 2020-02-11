@@ -58,6 +58,69 @@ func TestWriter(t *testing.T) {
 	}
 }
 
+type writerTestCase WriterErrors
+
+func (wt writerTestCase) errorsEqual(wes WriterErrors) bool {
+	exp := make(map[string]int)
+	numExp := 0
+	for _, t := range wt {
+		if t.Err != nil {
+			numExp += 1
+			k := string(t.Msg.Value) + t.Err.Error()
+			if _, ok := exp[k]; ok {
+				exp[k] += 1
+			} else {
+				exp[k] = 1
+			}
+		}
+	}
+
+	if len(wes) != numExp {
+		return false
+	}
+
+	for _, e := range wes {
+		k := string(e.Msg.Value) + e.Err.Error()
+		if _, ok := exp[k]; ok {
+			exp[k] -= 1
+		} else {
+			return false
+		}
+	}
+
+	for _, e := range exp {
+		if e != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (wt writerTestCase) msgs() []Message {
+	msgs := make([]Message, len(wt))
+	for i, m := range wt {
+		msgs[i] = m.Msg
+	}
+
+	return msgs
+}
+
+func (wt writerTestCase) expected() WriterErrors {
+	exp := make(WriterErrors, 0, len(wt))
+	for _, v := range wt {
+		if v.Err != nil {
+			exp = append(exp, v)
+		}
+	}
+
+	if len(exp) > 0 {
+		return exp
+	}
+
+	return nil
+}
+
 func newTestWriter(config WriterConfig) *Writer {
 	if len(config.Brokers) == 0 {
 		config.Brokers = []string{"localhost:9092"}
