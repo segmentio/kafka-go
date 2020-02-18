@@ -55,15 +55,6 @@ const (
 	CommitMessage ControlType = 1
 )
 
-func (msg Message) item() messageSetItem {
-	item := messageSetItem{
-		Offset:  msg.Offset,
-		Message: msg.message(),
-	}
-	item.MessageSize = item.Message.size()
-	return item
-}
-
 func (msg Message) message(cw *crc32Writer) message {
 	m := message{
 		MagicByte: 1,
