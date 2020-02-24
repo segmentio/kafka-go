@@ -151,6 +151,10 @@ func (e *WriterError) Timeout() bool {
 	return isTimeout(e.Err)
 }
 
+func (e *WriterError) Unwrap() error {
+	return e.Err
+}
+
 type WriterErrors []WriterError
 
 func (wes WriterErrors) Error() string {
