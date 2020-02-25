@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"math"
-	"sync"
 	"testing"
 	"time"
 )
@@ -38,8 +37,8 @@ func TestWriter(t *testing.T) {
 			function: testWriterRoundRobin1,
 		},
 		{
-			scenario: "running out of max attempts should return an error",
-			function: testWriterMaxAttemptsErr,
+			scenario: "errors returned when writing messages should be WriterErrors",
+			function: testWriterErrors,
 		},
 		{
 			scenario: "writing a message larger then the max bytes should return an error",
@@ -56,10 +55,6 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "writing messsages with a small batch byte size",
 			function: testWriterSmallBatchBytes,
-		},
-		{
-			scenario: "writing messages with retries enabled",
-			function: testWriterRetries,
 		},
 	}
 
@@ -356,7 +351,7 @@ func (w *errorWriter) close() {
 
 }
 
-func testWriterMaxAttemptsErr(t *testing.T) {
+func testWriterErrors(t *testing.T) {
 	tcs := []writerTestCase{
 		{
 			{
@@ -381,7 +376,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
 		Topic:       topic,
-		MaxAttempts: 2,
+		MaxAttempts: 1,
 		Balancer:    &RoundRobin{},
 		newPartitionWriter: func(_ int, _ WriterConfig, _ *writerStats) partitionWriter {
 			return &errorWriter{}
@@ -661,120 +656,5 @@ func testWriterSmallBatchBytes(t *testing.T) {
 			continue
 		}
 		t.Error("bad messages in partition", msgs)
-	}
-}
-
-type testRetryWriter struct {
-	ch   chan writerMessage
-	join sync.WaitGroup
-}
-
-func (w *testRetryWriter) messages() chan<- writerMessage {
-	return w.ch
-}
-
-func (w *testRetryWriter) close() {
-	close(w.ch)
-	w.join.Wait()
-}
-
-func (w *testRetryWriter) run(errs int) {
-	w.join.Add(1)
-	defer w.join.Done()
-
-	var done bool
-	for !done {
-		msg, ok := <-w.ch
-		if !ok {
-			done = true
-		} else {
-			if errs > 0 {
-				msg.res <- writerResponse{
-					id: msg.id,
-					err: &WriterError{
-						Msg: msg.msg,
-						Err: errors.New("bad attempt"),
-					},
-				}
-				errs -= 1
-			} else {
-				msg.res <- writerResponse{
-					id:  msg.id,
-					err: nil,
-				}
-			}
-		}
-	}
-}
-
-func newTestRetryWriter(_ int, _ WriterConfig, _ *writerStats) partitionWriter {
-	w := &testRetryWriter{ch: make(chan writerMessage, 1)}
-	go w.run(2)
-	return w
-}
-
-func testWriterRetries(t *testing.T) {
-	tcs := []writerTestCase{
-		{
-			{
-				Msg: Message{Value: []byte("test message 1")},
-				Err: nil,
-			},
-			{
-				Msg: Message{Value: []byte("test message 2")},
-				Err: nil,
-			},
-		},
-		{
-			{
-				Msg: Message{Value: []byte("these messages")},
-				Err: nil,
-			},
-			{
-				Msg: Message{Value: []byte("should succeed")},
-				Err: nil,
-			},
-			{
-				Msg: Message{Value: []byte("for this test case")},
-				Err: nil,
-			},
-		},
-		{
-			{
-				Msg: Message{Value: []byte("this message should fail")},
-				Err: errors.New("bad attempt"),
-			},
-		},
-	}
-
-	const topic = "test-writer-retry"
-	createTopic(t, topic, 1)
-
-	for i, tc := range tcs {
-		w := newTestWriter(WriterConfig{
-			Topic:              topic,
-			MaxAttempts:        2,
-			Balancer:           &RoundRobin{},
-			newPartitionWriter: newTestRetryWriter,
-		})
-
-		err := w.WriteMessages(context.Background(), tc.msgs()...)
-		if err == nil {
-			if tc.expected() != nil {
-				t.Errorf("test %d: expected error", i)
-			}
-		} else {
-			if wes, ok := err.(WriterErrors); !ok {
-				t.Errorf("test %d: expected WriterErrors", i)
-			} else {
-				if !tc.errorsEqual(wes) {
-					t.Errorf("test %d: unexpected errors occurred.\nExpected:\n%sFound:\n%s", i, tc.expected(), wes)
-				}
-			}
-		}
-
-		if err = w.Close(); err != nil {
-			t.Fatal(err)
-		}
 	}
 }

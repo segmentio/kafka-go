@@ -974,7 +974,7 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 			})
 		}
 
-		cg.withErrorLogger(func(logger Logger) {
+		cg.withLogger(func(logger Logger) {
 			logger.Printf("Syncing %d assignments for generation %d as member %s", len(request.GroupAssignments), generationID, memberID)
 		})
 	}

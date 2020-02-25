@@ -222,7 +222,7 @@ func (c *Conn) createTopics(request createTopicsRequestV0) (createTopicsResponse
 				deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
 				request.Timeout = milliseconds(deadlineToTimeout(deadline, now))
 			}
-			return c.writeRequest(createTopicsRequest, v0, id, request)
+			return c.writeRequest(createTopics, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {

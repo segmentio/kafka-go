@@ -7,7 +7,14 @@ func (r topicMetadataRequestV1) size() int32 {
 }
 
 func (r topicMetadataRequestV1) writeTo(wb *writeBuffer) {
-	wb.writeStringArray([]string(r))
+	// communicate nil-ness to the broker by passing -1 as the array length.
+	// for this particular request, the broker interpets a zero length array
+	// as a request for no topics whereas a nil array is for all topics.
+	if r == nil {
+		wb.writeArrayLen(-1)
+	} else {
+		wb.writeStringArray([]string(r))
+	}
 }
 
 type metadataResponseV1 struct {

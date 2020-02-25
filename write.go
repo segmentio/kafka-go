@@ -167,7 +167,7 @@ type writable interface {
 
 func (wb *writeBuffer) writeFetchRequestV2(correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration) error {
 	h := requestHeader{
-		ApiKey:        int16(fetchRequest),
+		ApiKey:        int16(fetch),
 		ApiVersion:    int16(v2),
 		CorrelationID: correlationID,
 		ClientID:      clientID,
@@ -203,7 +203,7 @@ func (wb *writeBuffer) writeFetchRequestV2(correlationID int32, clientID, topic 
 
 func (wb *writeBuffer) writeFetchRequestV5(correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration, isolationLevel int8) error {
 	h := requestHeader{
-		ApiKey:        int16(fetchRequest),
+		ApiKey:        int16(fetch),
 		ApiVersion:    int16(v5),
 		CorrelationID: correlationID,
 		ClientID:      clientID,
@@ -245,7 +245,7 @@ func (wb *writeBuffer) writeFetchRequestV5(correlationID int32, clientID, topic 
 
 func (wb *writeBuffer) writeFetchRequestV10(correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration, isolationLevel int8) error {
 	h := requestHeader{
-		ApiKey:        int16(fetchRequest),
+		ApiKey:        int16(fetch),
 		ApiVersion:    int16(v10),
 		CorrelationID: correlationID,
 		ClientID:      clientID,
@@ -297,7 +297,7 @@ func (wb *writeBuffer) writeFetchRequestV10(correlationID int32, clientID, topic
 
 func (wb *writeBuffer) writeListOffsetRequestV1(correlationID int32, clientID, topic string, partition int32, time int64) error {
 	h := requestHeader{
-		ApiKey:        int16(listOffsetRequest),
+		ApiKey:        int16(listOffsets),
 		ApiVersion:    int16(v1),
 		CorrelationID: correlationID,
 		ClientID:      clientID,
@@ -341,7 +341,7 @@ func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlation
 	}
 
 	h := requestHeader{
-		ApiKey:        int16(produceRequest),
+		ApiKey:        int16(produce),
 		ApiVersion:    int16(v2),
 		CorrelationID: correlationID,
 		ClientID:      clientID,
@@ -382,7 +382,7 @@ func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlation
 func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, recordBatch *recordBatch) (err error) {
 
 	h := requestHeader{
-		ApiKey:        int16(produceRequest),
+		ApiKey:        int16(produce),
 		ApiVersion:    int16(v3),
 		CorrelationID: correlationID,
 		ClientID:      clientID,
@@ -420,7 +420,7 @@ func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topi
 func (wb *writeBuffer) writeProduceRequestV7(correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, recordBatch *recordBatch) (err error) {
 
 	h := requestHeader{
-		ApiKey:        int16(produceRequest),
+		ApiKey:        int16(produce),
 		ApiVersion:    int16(v7),
 		CorrelationID: correlationID,
 		ClientID:      clientID,

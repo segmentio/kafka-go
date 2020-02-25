@@ -60,7 +60,7 @@ func testWriteFetchRequestV2(t *testing.T) {
 	const maxWait = 100 * time.Millisecond
 	testWriteOptimization(t,
 		requestHeader{
-			ApiKey:        int16(fetchRequest),
+			ApiKey:        int16(fetch),
 			ApiVersion:    int16(v2),
 			CorrelationID: testCorrelationID,
 			ClientID:      testClientID,
@@ -88,7 +88,7 @@ func testWriteListOffsetRequestV1(t *testing.T) {
 	const time = -1
 	testWriteOptimization(t,
 		requestHeader{
-			ApiKey:        int16(listOffsetRequest),
+			ApiKey:        int16(listOffsets),
 			ApiVersion:    int16(v1),
 			CorrelationID: testCorrelationID,
 			ClientID:      testClientID,
@@ -130,7 +130,7 @@ func testWriteProduceRequestV2(t *testing.T) {
 	const timeout = 100
 	testWriteOptimization(t,
 		requestHeader{
-			ApiKey:        int16(produceRequest),
+			ApiKey:        int16(produce),
 			ApiVersion:    int16(v2),
 			CorrelationID: testCorrelationID,
 			ClientID:      testClientID,

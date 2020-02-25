@@ -75,12 +75,28 @@ type Conn struct {
 	correlationID int32
 
 	// number of replica acks required when publishing to a partition
-	requiredAcks   int32
-	apiVersions    map[apiKey]ApiVersion
-	fetchVersion   apiVersion
-	produceVersion apiVersion
+	requiredAcks int32
+
+	// lazily loaded API versions used by this connection
+	apiVersions atomic.Value // apiVersionMap
 
 	transactionalID *string
+}
+
+type apiVersionMap map[apiKey]ApiVersion
+
+func (v apiVersionMap) negotiate(key apiKey, sortedSupportedVersions ...apiVersion) apiVersion {
+	x := v[key]
+
+	for i := len(sortedSupportedVersions) - 1; i >= 0; i-- {
+		s := sortedSupportedVersions[i]
+
+		if apiVersion(x.MaxVersion) >= s {
+			return s
+		}
+	}
+
+	return -1
 }
 
 // ConnConfig is a configuration object used to create new instances of Conn.
@@ -178,48 +194,48 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 			}},
 		}},
 	}).size()
-	c.selectVersions()
 	c.fetchMaxBytes = math.MaxInt32 - c.fetchMinSize
 	return c
 }
 
-func (c *Conn) selectVersions() {
-	var err error
-	apiVersions, err := c.ApiVersions()
+func (c *Conn) negotiateVersion(key apiKey, sortedSupportedVersions ...apiVersion) (apiVersion, error) {
+	v, err := c.loadVersions()
 	if err != nil {
-		c.apiVersions = defaultApiVersions
-	} else {
-		c.apiVersions = make(map[apiKey]ApiVersion)
-		for _, v := range apiVersions {
-			c.apiVersions[apiKey(v.ApiKey)] = v
-		}
+		return -1, err
 	}
-	for _, v := range c.apiVersions {
-		if apiKey(v.ApiKey) == fetchRequest {
-			switch version := v.MaxVersion; {
-			case version >= 10:
-				c.fetchVersion = 10
-			case version >= 5:
-				c.fetchVersion = 5
-			default:
-				c.fetchVersion = 2
-			}
-		}
-		if apiKey(v.ApiKey) == produceRequest {
-			if v.MaxVersion >= 7 {
-				c.produceVersion = 7
-			} else {
-				c.produceVersion = 2
-			}
-		}
+	a := v.negotiate(key, sortedSupportedVersions...)
+	if a < 0 {
+		return -1, fmt.Errorf("no matching versions were found between the client and the broker for API key %d", key)
 	}
+	return a, nil
+}
+
+func (c *Conn) loadVersions() (apiVersionMap, error) {
+	v, _ := c.apiVersions.Load().(apiVersionMap)
+	if v != nil {
+		return v, nil
+	}
+
+	brokerVersions, err := c.ApiVersions()
+	if err != nil {
+		return nil, err
+	}
+
+	v = make(apiVersionMap, len(brokerVersions))
+
+	for _, a := range brokerVersions {
+		v[apiKey(a.ApiKey)] = a
+	}
+
+	c.apiVersions.Store(v)
+	return v, nil
 }
 
 // Controller requests kafka for the current controller and returns its URL
 func (c *Conn) Controller() (broker Broker, err error) {
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
+			return c.writeRequest(metadata, v1, id, topicMetadataRequestV1([]string{}))
 		},
 		func(deadline time.Time, size int) error {
 			var res metadataResponseV1
@@ -247,7 +263,7 @@ func (c *Conn) Brokers() ([]Broker, error) {
 	var brokers []Broker
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1([]string{}))
+			return c.writeRequest(metadata, v1, id, topicMetadataRequestV1([]string{}))
 		},
 		func(deadline time.Time, size int) error {
 			var res metadataResponseV1
@@ -287,7 +303,7 @@ func (c *Conn) describeGroups(request describeGroupsRequestV0) (describeGroupsRe
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(describeGroupsRequest, v0, id, request)
+			return c.writeRequest(describeGroups, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -315,7 +331,7 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV0) (findCoordinato
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(groupCoordinatorRequest, v0, id, request)
+			return c.writeRequest(findCoordinator, v0, id, request)
 
 		},
 		func(deadline time.Time, size int) error {
@@ -342,7 +358,7 @@ func (c *Conn) heartbeat(request heartbeatRequestV0) (heartbeatResponseV0, error
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(heartbeatRequest, v0, id, request)
+			return c.writeRequest(heartbeat, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -368,7 +384,7 @@ func (c *Conn) joinGroup(request joinGroupRequestV1) (joinGroupResponseV1, error
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(joinGroupRequest, v1, id, request)
+			return c.writeRequest(joinGroup, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -394,7 +410,7 @@ func (c *Conn) leaveGroup(request leaveGroupRequestV0) (leaveGroupResponseV0, er
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(leaveGroupRequest, v0, id, request)
+			return c.writeRequest(leaveGroup, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -420,7 +436,7 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(listGroupsRequest, v1, id, request)
+			return c.writeRequest(listGroups, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -446,7 +462,7 @@ func (c *Conn) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponse
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(offsetCommitRequest, v2, id, request)
+			return c.writeRequest(offsetCommit, v2, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -477,7 +493,7 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV1) (offsetFetchResponseV1,
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(offsetFetchRequest, v1, id, request)
+			return c.writeRequest(offsetFetch, v1, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -507,7 +523,7 @@ func (c *Conn) syncGroup(request syncGroupRequestV0) (syncGroupResponseV0, error
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(syncGroupRequest, v0, id, request)
+			return c.writeRequest(syncGroup, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
@@ -767,10 +783,15 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		return &Batch{err: dontExpectEOF(err)}
 	}
 
+	fetchVersion, err := c.negotiateVersion(fetch, v2, v5, v10)
+	if err != nil {
+		return &Batch{err: dontExpectEOF(err)}
+	}
+
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
 		now := time.Now()
 		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-		switch c.fetchVersion {
+		switch fetchVersion {
 		case v10:
 			return c.wb.writeFetchRequestV10(
 				id,
@@ -821,7 +842,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var highWaterMark int64
 	var remain int
 
-	switch c.fetchVersion {
+	switch fetchVersion {
 	case v10:
 		throttle, highWaterMark, remain, err = readFetchResponseHeaderV10(&c.rbuf, size)
 	case v5:
@@ -935,15 +956,21 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 // connection. If there are none, the method fetches all partitions of the kafka
 // cluster.
 func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err error) {
-	defaultTopics := [...]string{c.topic}
 
-	if len(topics) == 0 && len(c.topic) != 0 {
-		topics = defaultTopics[:]
+	if len(topics) == 0 {
+		if len(c.topic) != 0 {
+			defaultTopics := [...]string{c.topic}
+			topics = defaultTopics[:]
+		} else {
+			// topics needs to be explicitly nil-ed out or the broker will
+			// interpret it as a request for 0 partitions instead of all.
+			topics = nil
+		}
 	}
 
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1(topics))
+			return c.writeRequest(metadata, v1, id, topicMetadataRequestV1(topics))
 		},
 		func(deadline time.Time, size int) error {
 			var res metadataResponseV1
@@ -1033,7 +1060,6 @@ func (c *Conn) WriteCompressedMessagesAt(codec CompressionCodec, msgs ...Message
 }
 
 func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, appendTime time.Time, err error) {
-
 	if len(msgs) == 0 {
 		return
 	}
@@ -1058,12 +1084,17 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 		nbytes += len(msg.Key) + len(msg.Value)
 	}
 
+	var produceVersion apiVersion
+	if produceVersion, err = c.negotiateVersion(produce, v2, v3, v7); err != nil {
+		return
+	}
+
 	err = c.writeOperation(
 		func(deadline time.Time, id int32) error {
 			now := time.Now()
 			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
-			switch version := c.apiVersions[produceRequest].MaxVersion; {
-			case version >= 7:
+			switch produceVersion {
+			case v7:
 				recordBatch, err :=
 					newRecordBatch(
 						codec,
@@ -1082,7 +1113,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 					c.transactionalID,
 					recordBatch,
 				)
-			case version >= 3:
+			case v3:
 				recordBatch, err :=
 					newRecordBatch(
 						codec,
@@ -1126,7 +1157,7 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 				// Read the list of partitions, there should be only one since
 				// we've produced a message to a single partition.
 				size, err = readArrayWith(r, size, func(r *bufio.Reader, size int) (int, error) {
-					switch c.produceVersion {
+					switch produceVersion {
 					case v7:
 						var p produceResponsePartitionV7
 						size, err := p.readFrom(r, size)
@@ -1347,44 +1378,26 @@ func (c *Conn) requestHeader(apiKey apiKey, apiVersion apiVersion, correlationID
 	}
 }
 
-type ApiVersion struct {
-	ApiKey     int16
-	MinVersion int16
-	MaxVersion int16
-}
-
-var defaultApiVersions map[apiKey]ApiVersion = map[apiKey]ApiVersion{
-	produceRequest:          ApiVersion{int16(produceRequest), int16(v2), int16(v2)},
-	fetchRequest:            ApiVersion{int16(fetchRequest), int16(v2), int16(v2)},
-	listOffsetRequest:       ApiVersion{int16(listOffsetRequest), int16(v1), int16(v1)},
-	metadataRequest:         ApiVersion{int16(metadataRequest), int16(v1), int16(v1)},
-	offsetCommitRequest:     ApiVersion{int16(offsetCommitRequest), int16(v2), int16(v2)},
-	offsetFetchRequest:      ApiVersion{int16(offsetFetchRequest), int16(v1), int16(v1)},
-	groupCoordinatorRequest: ApiVersion{int16(groupCoordinatorRequest), int16(v0), int16(v0)},
-	joinGroupRequest:        ApiVersion{int16(joinGroupRequest), int16(v1), int16(v1)},
-	heartbeatRequest:        ApiVersion{int16(heartbeatRequest), int16(v0), int16(v0)},
-	leaveGroupRequest:       ApiVersion{int16(leaveGroupRequest), int16(v0), int16(v0)},
-	syncGroupRequest:        ApiVersion{int16(syncGroupRequest), int16(v0), int16(v0)},
-	describeGroupsRequest:   ApiVersion{int16(describeGroupsRequest), int16(v1), int16(v1)},
-	listGroupsRequest:       ApiVersion{int16(listGroupsRequest), int16(v1), int16(v1)},
-	apiVersionsRequest:      ApiVersion{int16(apiVersionsRequest), int16(v0), int16(v0)},
-	createTopicsRequest:     ApiVersion{int16(createTopicsRequest), int16(v0), int16(v0)},
-	deleteTopicsRequest:     ApiVersion{int16(deleteTopicsRequest), int16(v1), int16(v1)},
-}
-
 func (c *Conn) ApiVersions() ([]ApiVersion, error) {
-	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
-		now := time.Now()
-		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+	deadline := &c.rdeadline
 
+	if deadline.deadline().IsZero() {
+		// ApiVersions is called automatically when API version negotiation
+		// needs to happen, so we are not garanteed that a read deadline has
+		// been set yet. Fallback to use the write deadline in case it was
+		// set, for example when version negotiation is initiated during a
+		// produce request.
+		deadline = &c.wdeadline
+	}
+
+	id, err := c.doRequest(deadline, func(_ time.Time, id int32) error {
 		h := requestHeader{
-			ApiKey:        int16(apiVersionsRequest),
+			ApiKey:        int16(apiVersions),
 			ApiVersion:    int16(v0),
 			CorrelationID: id,
 			ClientID:      c.clientID,
 		}
 		h.Size = (h.size() - 4)
-
 		h.writeTo(&c.wb)
 		return c.wbuf.Flush()
 	})
@@ -1392,7 +1405,7 @@ func (c *Conn) ApiVersions() ([]ApiVersion, error) {
 		return nil, err
 	}
 
-	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
+	_, size, lock, err := c.waitResponse(deadline, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1503,14 +1516,15 @@ func (c *Conn) saslHandshake(mechanism string) error {
 	// number will affect how the SASL authentication
 	// challenge/responses are sent
 	var resp saslHandshakeResponseV0
-	version := v0
-	if c.apiVersions[saslHandshakeRequest].MaxVersion >= 1 {
-		version = v1
+
+	version, err := c.negotiateVersion(saslHandshake, v0, v1)
+	if err != nil {
+		return err
 	}
 
-	err := c.writeOperation(
+	err = c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(saslHandshakeRequest, version, id, &saslHandshakeRequestV0{Mechanism: mechanism})
+			return c.writeRequest(saslHandshake, version, id, &saslHandshakeRequestV0{Mechanism: mechanism})
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (int, error) {
@@ -1532,13 +1546,17 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 	// if we sent a v1 handshake, then we must encapsulate the authentication
 	// request in a saslAuthenticateRequest.  otherwise, we read and write raw
 	// bytes.
-	if c.apiVersions[saslHandshakeRequest].MaxVersion >= 1 {
+	version, err := c.negotiateVersion(saslHandshake, v0, v1)
+	if err != nil {
+		return nil, err
+	}
+	if version == v1 {
 		var request = saslAuthenticateRequestV0{Data: data}
 		var response saslAuthenticateResponseV0
 
 		err := c.writeOperation(
 			func(deadline time.Time, id int32) error {
-				return c.writeRequest(saslAuthenticateRequest, v0, id, request)
+				return c.writeRequest(saslAuthenticate, v0, id, request)
 			},
 			func(deadline time.Time, size int) error {
 				return expectZeroSize(func() (remain int, err error) {
@@ -1563,8 +1581,7 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 	}
 
 	var respLen int32
-	_, err := readInt32(&c.rbuf, 4, &respLen)
-	if err != nil {
+	if _, err := readInt32(&c.rbuf, 4, &respLen); err != nil {
 		return nil, err
 	}
 

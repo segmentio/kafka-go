@@ -10,7 +10,7 @@ import (
 func TestListGroupsResponseV1(t *testing.T) {
 	item := listGroupsResponseV1{
 		ErrorCode: 2,
-		Groups: []ListGroupsResponseGroupV1{
+		Groups: []listGroupsResponseGroupV1{
 			{
 				GroupID:      "a",
 				ProtocolType: "b",

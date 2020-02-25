@@ -14,22 +14,22 @@ func (t listGroupsRequestV1) size() int32 {
 func (t listGroupsRequestV1) writeTo(wb *writeBuffer) {
 }
 
-type ListGroupsResponseGroupV1 struct {
+type listGroupsResponseGroupV1 struct {
 	// GroupID holds the unique group identifier
 	GroupID      string
 	ProtocolType string
 }
 
-func (t ListGroupsResponseGroupV1) size() int32 {
+func (t listGroupsResponseGroupV1) size() int32 {
 	return sizeofString(t.GroupID) + sizeofString(t.ProtocolType)
 }
 
-func (t ListGroupsResponseGroupV1) writeTo(wb *writeBuffer) {
+func (t listGroupsResponseGroupV1) writeTo(wb *writeBuffer) {
 	wb.writeString(t.GroupID)
 	wb.writeString(t.ProtocolType)
 }
 
-func (t *ListGroupsResponseGroupV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+func (t *listGroupsResponseGroupV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readString(r, size, &t.GroupID); err != nil {
 		return
 	}
@@ -47,7 +47,7 @@ type listGroupsResponseV1 struct {
 
 	// ErrorCode holds response error code
 	ErrorCode int16
-	Groups    []ListGroupsResponseGroupV1
+	Groups    []listGroupsResponseGroupV1
 }
 
 func (t listGroupsResponseV1) size() int32 {
@@ -71,7 +71,7 @@ func (t *listGroupsResponseV1) readFrom(r *bufio.Reader, size int) (remain int, 
 	}
 
 	fn := func(withReader *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
-		var item ListGroupsResponseGroupV1
+		var item listGroupsResponseGroupV1
 		if fnRemain, fnErr = (&item).readFrom(withReader, withSize); err != nil {
 			return
 		}

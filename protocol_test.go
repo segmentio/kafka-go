@@ -8,6 +8,29 @@ import (
 	"testing"
 )
 
+func TestApiVersionsFormat(t *testing.T) {
+	for _, test := range []struct {
+		version ApiVersion
+		format  string
+		output  string
+	}{
+		{version: ApiVersion{1, 2, 5}, format: "%s", output: "Fetch"},
+		{version: ApiVersion{1, 2, 5}, format: "%d", output: "1"},
+		{version: ApiVersion{1, 2, 5}, format: "%-d", output: "2"},
+		{version: ApiVersion{1, 2, 5}, format: "%+d", output: "5"},
+		{version: ApiVersion{1, 2, 5}, format: "%v", output: "Fetch[v2:v5]"},
+		{version: ApiVersion{1, 2, 5}, format: "%-v", output: "v2"},
+		{version: ApiVersion{1, 2, 5}, format: "%+v", output: "v5"},
+		{version: ApiVersion{1, 2, 5}, format: "%#v", output: "kafka.ApiVersion{ApiKey:1 MinVersion:2 MaxVersion:5}"},
+	} {
+		t.Run(test.output, func(t *testing.T) {
+			if s := fmt.Sprintf(test.format, test.version); s != test.output {
+				t.Error("output mismatch:", s, "!=", test.output)
+			}
+		})
+	}
+}
+
 func TestProtocol(t *testing.T) {
 	t.Parallel()
 
@@ -23,7 +46,7 @@ func TestProtocol(t *testing.T) {
 
 		requestHeader{
 			Size:          26,
-			ApiKey:        int16(offsetCommitRequest),
+			ApiKey:        int16(offsetCommit),
 			ApiVersion:    int16(v2),
 			CorrelationID: 42,
 			ClientID:      "Hello World!",
