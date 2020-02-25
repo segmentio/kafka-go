@@ -1,10 +1,11 @@
 version: "3"
 services:
   kafka:
-    image: wurstmeister/kafka:2.11-0.11.0.3
+    image: wurstmeister/kafka:2.11-1.1.1
     restart: on-failure:3
     links:
       - zookeeper
+      - kerberos
     ports:
       - "9092:9092"
       - "9093:9093"
@@ -20,12 +21,30 @@ services:
       KAFKA_MESSAGE_MAX_BYTES: 200000000
       KAFKA_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
       KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
-      KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
-      KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
+      KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512,GSSAPI'
+      KAFKA_SASL_KERBEROS_SERVICE_NAME: 'kafka'
+      KAFKA_SECURITY_INTER_BROKER_PROTOCOL: 'PLAINTEXT'
+      LOG4J_LOGGER_ORG_APACHE_KAFKA_COMMON_SECURITY: 'DEBUG' # todo?
+      LOG4J_LOGGER_JAVA_SECURITY: 'DEBUG' # todo?
+      LOG4J_LOGGER_JAVAX_SECURITY: 'DEBUG' # todo?
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf -Djava.security.krb5.realm=EXAMPLE.COM -Djava.security.krb5.kdc=kerberos -Dsun.security.krb5.debug=true"
       CUSTOM_INIT_SCRIPT: |-
-        echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
+        echo -e BQIAAABHAAEAC0VYQU1QTEUuQ09NAAVrYWZrYQAAAAFeRcuyBAASACDNuCwaPo9iftBybhW6EKmzuu2+YHOMZEcweTx1u3BUKAAAAAQAAAA3AAEAC0VYQU1QTEUuQ09NAAVrYWZrYQAAAAFeRcuyBAARABB96I+0uB0BnswqPSNTq7Y8AAAABAAAAFoAAgALRVhBTVBMRS5DT00ABWthZmthABFrYWZrYS5leGFtcGxlLmNvbQAAAAFeRcvcBAASACD11VKGV2vu4w8EGiSUAA3K8j6BEGlsouyfgt9yMOiCbQAAAAQAAABKAAIAC0VYQU1QTEUuQ09NAAVrYWZrYQARa2Fma2EuZXhhbXBsZS5jb20AAAABXkXL3AQAEQAQkvX74KsJySBJ5TjtqKCl2QAAAAQ= | base64 -d > /etc/kafka.keytab;
+        echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\ncom.sun.security.auth.module.Krb5LoginModule required\n useKeyTab=true\n storeKey=true\n keyTab="/etc/kafka.keytab"\n principal="kafka/kafka.example.com@EXAMPLE.COM"\n isInitiator=false; };' > /opt/kafka/config/kafka_server_jaas.conf;
         /opt/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
   zookeeper:
     image: wurstmeister/zookeeper
     ports:
       - "2181:2181"
+  kerberos:
+    build:
+      dockerfile: Dockerfile-krb5
+      context: sasl/gssapi/
+    environment:
+      KRB5_REALM: 'EXAMPLE.COM'
+      KRB5_KDC: 'localhost'
+      KRB5_PASS: 'mypass'
+    ports:
+      - "88:88"
+      - "464:464"
+      - "749:749"

@@ -7,8 +7,7 @@ import (
 
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl"
-	"github.com/segmentio/kafka-go/sasl/plain"
-	"github.com/segmentio/kafka-go/sasl/scram"
+	"github.com/segmentio/kafka-go/sasl/gssapi"
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
@@ -26,48 +25,71 @@ func TestSASL(t *testing.T) {
 		invalid  func() sasl.Mechanism
 		minKafka string
 	}{
+		/*	{
+				valid: func() sasl.Mechanism {
+					return plain.Mechanism{
+						Username: "adminplain",
+						Password: "admin-secret",
+					}
+				},
+				invalid: func() sasl.Mechanism {
+					return plain.Mechanism{
+						Username: "adminplain",
+						Password: "badpassword",
+					}
+				},
+			},
+			{
+				valid: func() sasl.Mechanism {
+					mech, _ := scram.Mechanism(scram.SHA256, "adminscram", "admin-secret-256")
+					return mech
+				},
+				invalid: func() sasl.Mechanism {
+					mech, _ := scram.Mechanism(scram.SHA256, "adminscram", "badpassword")
+					return mech
+				},
+				minKafka: "0.10.2.0",
+			},
+			{
+				valid: func() sasl.Mechanism {
+					mech, _ := scram.Mechanism(scram.SHA512, "adminscram", "admin-secret-512")
+					return mech
+				},
+				invalid: func() sasl.Mechanism {
+					mech, _ := scram.Mechanism(scram.SHA512, "adminscram", "badpassword")
+					return mech
+				},
+				minKafka: "0.10.2.0",
+			},*/
 		{
 			valid: func() sasl.Mechanism {
-				return plain.Mechanism{
-					Username: "adminplain",
-					Password: "admin-secret",
-				}
-			},
-			invalid: func() sasl.Mechanism {
-				return plain.Mechanism{
-					Username: "adminplain",
-					Password: "badpassword",
-				}
-			},
-		},
-		{
-			valid: func() sasl.Mechanism {
-				mech, _ := scram.Mechanism(scram.SHA256, "adminscram", "admin-secret-256")
+				mech, _ := gssapi.Mechanism(gssapi.Config{
+					Realm:    "EXAMPLE.COM",
+					Username: "admin/admin",
+					Password: "mypass",
+					KDCAddr:  "127.0.0.1:88",
+					Service:  "kafka/kafka.example.com",
+				})
 				return mech
 			},
 			invalid: func() sasl.Mechanism {
-				mech, _ := scram.Mechanism(scram.SHA256, "adminscram", "badpassword")
+				mech, _ := gssapi.Mechanism(gssapi.Config{
+					Realm:    "EXAMPLE.COM",
+					Username: "admin/admin",
+					Password: "blah",
+					KDCAddr:  "127.0.0.1:88",
+					Service:  "kafka/kafka.example.com",
+				})
 				return mech
 			},
-			minKafka: "0.10.2.0",
-		},
-		{
-			valid: func() sasl.Mechanism {
-				mech, _ := scram.Mechanism(scram.SHA512, "adminscram", "admin-secret-512")
-				return mech
-			},
-			invalid: func() sasl.Mechanism {
-				mech, _ := scram.Mechanism(scram.SHA512, "adminscram", "badpassword")
-				return mech
-			},
-			minKafka: "0.10.2.0",
 		},
 	}
 
 	for _, tt := range tests {
 		mech := tt.valid()
 		if !ktesting.KafkaIsAtLeast(tt.minKafka) {
-			t.Skip("requires min kafka version " + tt.minKafka)
+			t.Log(mech.Name() + " requires min kafka version " + tt.minKafka)
+			continue
 		}
 
 		t.Run(mech.Name()+" success", func(t *testing.T) {

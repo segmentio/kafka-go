@@ -298,6 +298,14 @@ func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
 		return err
 	}
 
+	// by contract, the state machine may satisfy io.Closer if it has resources
+	// to clean up.
+	defer func() {
+		if c, ok := sess.(io.Closer); ok {
+			c.Close()
+		}
+	}()
+
 	for completed := false; !completed; {
 		challenge, err := conn.saslAuthenticate(state)
 		switch err {

@@ -1,0 +1,19 @@
+FROM gcavalcante8808/krb5-server
+
+# configure the krb server env vars exported by the image.
+ENV KRB5_REALM=EXAMPLE.COM
+ENV KRB5_KDC=localhost
+ENV KRB5_PASS=mypass
+
+# copy our dumped krb5 db that contains the kafka/kafka.example.com@EXAMPLE.COM
+# service principal whose key is in the kafka.keytab.
+COPY principal.db /principal.db
+
+# trim the last line from the entrypoint that starts the service.  add a command
+# to load our DB then re-add the line to start the service.
+RUN cat /docker-entrypoint.sh | sed '$d' > /krbinit.sh
+RUN echo "kdb5_util load /principal.db" >> /krbinit.sh
+RUN echo "/usr/bin/supervisord -c /etc/supervisord.conf" >> /krbinit.sh
+RUN chmod 775 /krbinit.sh
+
+ENTRYPOINT ["/krbinit.sh"]

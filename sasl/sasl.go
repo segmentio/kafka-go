@@ -35,6 +35,9 @@ type Mechanism interface {
 // bytes to the server.  Eventually either Next will indicate that the
 // authentication has been successfully completed via the done return value, or
 // it will indicate that the authentication failed by returning a non-nil error.
+//
+// A StateMachine may optionally satisfy io.Closer, in which it will be closed
+// by the dialer once the SASL handshake is complete.
 type StateMachine interface {
 	// Next continues challenge-response authentication. A non-nil error
 	// indicates that the client should abort the authentication attempt.  If
