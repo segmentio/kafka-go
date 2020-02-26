@@ -1020,6 +1020,37 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 	return
 }
 
+// Lists all topics matching specified regex
+func (c *Conn) ListTopics() (topics []string, err error) {
+
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadataRequest, v1, id, topicMetadataRequestV1(nil))
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV1
+			topics = []string{}
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+
+			for _, t := range res.Topics {
+
+				if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
+					// We only report errors if they happened for the topic of
+					// the connection, otherwise the topic will simply have no
+					// partitions in the result set.
+					return Error(t.TopicErrorCode)
+				}
+				topics = append(topics, t.TopicName)
+
+			}
+			return nil
+		},
+	)
+	return
+}
+
 // Write writes a message to the kafka broker that this connection was
 // established to. The method returns the number of bytes written, or an error
 // if something went wrong.
