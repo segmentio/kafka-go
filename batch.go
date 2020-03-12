@@ -221,7 +221,7 @@ func (batch *Batch) readMessage(
 
 	offset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
 	switch err {
-	case nil:
+	case nil, errControlMessage:
 		batch.offset = offset + 1
 	case errShortRead:
 		// As an "optimization" kafka truncates the returned response after

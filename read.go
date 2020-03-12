@@ -13,6 +13,7 @@ type readable interface {
 }
 
 var errShortRead = errors.New("not enough bytes available to load the response")
+var errControlMessage = errors.New("the message is control message")
 
 func peekRead(r *bufio.Reader, sz int, n int, f func([]byte)) (int, error) {
 	if n > sz {

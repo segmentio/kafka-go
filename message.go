@@ -561,8 +561,13 @@ func (r *messageSetReaderV2) readMessage(min int64,
 			return
 		}
 	}
+
+	if r.header.controlType() == controlMessage {
+		err = errControlMessage
+	}
+
 	r.messageCount--
-	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, nil
+	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, err
 }
 
 func (r *messageSetReaderV2) readMessageHeader(header *Header) (err error) {

@@ -1370,6 +1370,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 		}
 
 		if msg, err = batch.ReadMessage(); err != nil {
+			if err == errControlMessage {
+				continue
+			}
 			batch.Close()
 			break
 		}
