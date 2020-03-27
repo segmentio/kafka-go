@@ -11,8 +11,7 @@ import (
 	"time"
 )
 
-// AsyncHandler is a type representing a callback method that is invoked for failures
-// in an asynchronous producer
+// AsyncHandler is a type representing a callback method for Async producer failures
 type AsyncHandler func(err error)
 
 // The Writer type provides the implementation of a producer of kafka messages
@@ -484,7 +483,6 @@ func (w *Writer) run() {
 					wm.res <- &writerError{msg: wm.msg, err: err}
 				}
 			}
-
 		case <-ticker.C:
 			rebalance = true
 		}
