@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+// AsyncHandler is a type representing a callback method that is invoked for failures
+// in an asynchronous producer
+type AsyncHandler func(err error)
+
 // The Writer type provides the implementation of a producer of kafka messages
 // that automatically distributes messages across partitions of a single topic
 // using a configurable balancing policy.
@@ -22,9 +26,10 @@ type Writer struct {
 	mutex  sync.RWMutex
 	closed bool
 
-	join sync.WaitGroup
-	msgs chan writerMessage
-	done chan struct{}
+	join    sync.WaitGroup
+	msgs    chan writerMessage
+	done    chan struct{}
+	errChan chan error
 
 	// writer stats are all made of atomic values, no need for synchronization.
 	// Use a pointer to ensure 64-bit alignment of the values.
@@ -117,6 +122,11 @@ type WriterConfig struct {
 	// the returned value. Use this only if you don't care about guarantees of
 	// whether the messages were written to kafka.
 	Async bool
+
+	// A handler function that will be invoked for produce errors, in an Async producer
+	//
+	// Defaults to nil
+	AsyncCallback AsyncHandler
 
 	// CompressionCodec set the codec to be used to compress Kafka messages.
 	// Note that messages are allowed to overwrite the compression codec individually.
@@ -257,9 +267,10 @@ func NewWriter(config WriterConfig) *Writer {
 	}
 
 	w := &Writer{
-		config: config,
-		msgs:   make(chan writerMessage, config.QueueCapacity),
-		done:   make(chan struct{}),
+		config:  config,
+		msgs:    make(chan writerMessage, config.QueueCapacity),
+		done:    make(chan struct{}),
+		errChan: make(chan error),
 		stats: &writerStats{
 			dialTime:  makeSummary(),
 			writeTime: makeSummary(),
@@ -306,6 +317,8 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	var res chan error
 	if !w.config.Async {
 		res = make(chan error, len(msgs))
+	} else if w.config.AsyncCallback != nil {
+		res = w.errChan
 	}
 	t0 := time.Now()
 	defer w.stats.writeTime.observeDuration(time.Since(t0))
@@ -401,6 +414,7 @@ func (w *Writer) Close() (err error) {
 		w.closed = true
 		close(w.msgs)
 		close(w.done)
+		close(w.errChan)
 	}
 
 	w.mutex.Unlock()
@@ -413,6 +427,14 @@ func (w *Writer) run() {
 
 	ticker := time.NewTicker(w.config.RebalanceInterval)
 	defer ticker.Stop()
+
+	if w.config.Async && w.config.AsyncCallback != nil {
+		go func() {
+			for err := range w.errChan {
+				w.config.AsyncCallback(err)
+			}
+		}()
+	}
 
 	var rebalance = true
 	var writers = make(map[int]partitionWriter)
