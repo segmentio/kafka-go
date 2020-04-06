@@ -50,7 +50,7 @@ const (
 
 	// defaultRetentionTime holds the length of time a the consumer group will be
 	// saved by kafka.  This value tells the broker to use its configured value.
-	defaultRetentionTime = -1
+	defaultRetentionTime = -1 * time.Millisecond
 
 	// defaultPartitionWatchTime contains the amount of time the kafka-go will wait to
 	// query the brokers looking for partition changes.
