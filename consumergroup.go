@@ -215,7 +215,7 @@ func (config *ConsumerGroupConfig) Validate() error {
 		return errors.New(fmt.Sprintf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff))
 	}
 
-	if config.RetentionTime < defaultRetentionTime {
+	if config.RetentionTime < 0 && config.RetentionTime != defaultRetentionTime {
 		return errors.New(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
 	}
 
