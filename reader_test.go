@@ -1313,3 +1313,24 @@ func getOffsets(t *testing.T, config ReaderConfig) offsetFetchResponseV1 {
 
 	return offsets
 }
+
+func TestReaderClose(t *testing.T) {
+	t.Parallel()
+
+	r := NewReader(ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   makeTopic(),
+		MaxWait: 2 * time.Second,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, _ = r.FetchMessage(ctx)
+
+	t0 := time.Now()
+	r.Close()
+	if time.Since(t0) > 100*time.Millisecond {
+		t.Errorf("r.Close took too long")
+	}
+}
