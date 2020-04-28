@@ -2,7 +2,7 @@ package compress_test
 
 import (
 	"bytes"
-	compressGzip "compress/gzip"
+	stdgzip "compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -16,16 +16,16 @@ import (
 	"time"
 
 	kafka "github.com/segmentio/kafka-go"
-	"github.com/segmentio/kafka-go/protocol"
-	"github.com/segmentio/kafka-go/protocol/compress/gzip"
-	"github.com/segmentio/kafka-go/protocol/compress/lz4"
-	"github.com/segmentio/kafka-go/protocol/compress/snappy"
-	"github.com/segmentio/kafka-go/protocol/compress/zstd"
+	pkg "github.com/segmentio/kafka-go/compress"
+	"github.com/segmentio/kafka-go/compress/gzip"
+	"github.com/segmentio/kafka-go/compress/lz4"
+	"github.com/segmentio/kafka-go/compress/snappy"
+	"github.com/segmentio/kafka-go/compress/zstd"
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
-func TestCompressionCodecs(t *testing.T) {
-	for i, c := range compress.Codecs {
+func TestCodecs(t *testing.T) {
+	for i, c := range pkg.Codecs {
 		if c != nil {
 			if code := c.Code(); int8(code) != int8(i) {
 				t.Fatal("default compression codec table is misconfigured for", c.Name())
@@ -39,15 +39,15 @@ func TestCompression(t *testing.T) {
 		Value: []byte("message"),
 	}
 
-	testEncodeDecode(t, msg, gzip.NewCompressionCodec())
-	testEncodeDecode(t, msg, snappy.NewCompressionCodec())
-	testEncodeDecode(t, msg, lz4.NewCompressionCodec())
+	testEncodeDecode(t, msg, new(gzip.Codec))
+	testEncodeDecode(t, msg, new(snappy.Codec))
+	testEncodeDecode(t, msg, new(lz4.Codec))
 	if ktesting.KafkaIsAtLeast("2.1.0") {
-		testEncodeDecode(t, msg, zstd.NewCompressionCodec())
+		testEncodeDecode(t, msg, new(zstd.Codec))
 	}
 }
 
-func compress(codec protocol.CompressionCodec, src []byte) ([]byte, error) {
+func compress(codec pkg.Codec, src []byte) ([]byte, error) {
 	b := new(bytes.Buffer)
 	r := bytes.NewReader(src)
 	w := codec.NewWriter(b)
@@ -61,7 +61,7 @@ func compress(codec protocol.CompressionCodec, src []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func decompress(codec protocol.CompressionCodec, src []byte) ([]byte, error) {
+func decompress(codec pkg.Codec, src []byte) ([]byte, error) {
 	b := new(bytes.Buffer)
 	r := codec.NewReader(bytes.NewReader(src))
 	if _, err := io.Copy(b, r); err != nil {
@@ -74,7 +74,7 @@ func decompress(codec protocol.CompressionCodec, src []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func testEncodeDecode(t *testing.T, m kafka.Message, codec protocol.CompressionCodec) {
+func testEncodeDecode(t *testing.T, m kafka.Message, codec pkg.Codec) {
 	var r1, r2 []byte
 	var err error
 
@@ -99,16 +99,16 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec protocol.CompressionC
 }
 
 func TestCompressedMessages(t *testing.T) {
-	testCompressedMessages(t, gzip.NewCompressionCodec())
-	testCompressedMessages(t, snappy.NewCompressionCodec())
-	testCompressedMessages(t, lz4.NewCompressionCodec())
+	testCompressedMessages(t, new(gzip.Codec))
+	testCompressedMessages(t, new(snappy.Codec))
+	testCompressedMessages(t, new(lz4.Codec))
 
 	if ktesting.KafkaIsAtLeast("2.1.0") {
-		testCompressedMessages(t, zstd.NewCompressionCodec())
+		testCompressedMessages(t, new(zstd.Codec))
 	}
 }
 
-func testCompressedMessages(t *testing.T, codec protocol.CompressionCodec) {
+func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
 		t.Parallel()
 
@@ -184,7 +184,7 @@ func TestMixedCompressedMessages(t *testing.T) {
 
 	offset := 0
 	var values []string
-	produce := func(n int, codec protocol.CompressionCodec) {
+	produce := func(n int, codec pkg.Codec) {
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
 			Topic:            topic,
@@ -211,10 +211,10 @@ func TestMixedCompressedMessages(t *testing.T) {
 	// different compression codecs.  reader should be able to properly handle
 	// all of them.
 	produce(10, nil)
-	produce(20, gzip.NewCompressionCodec())
+	produce(20, new(gzip.Codec))
 	produce(5, nil)
-	produce(10, snappy.NewCompressionCodec())
-	produce(10, lz4.NewCompressionCodec())
+	produce(10, new(snappy.Codec))
+	produce(10, new(lz4.Codec))
 	produce(5, nil)
 
 	r := kafka.NewReader(kafka.ReaderConfig{
@@ -273,27 +273,27 @@ func (nopWriteCloser) Close() error { return nil }
 
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
-		codec    protocol.CompressionCodec
-		function func(*testing.B, protocol.CompressionCodec, *bytes.Buffer, []byte) float64
+		codec    pkg.Codec
+		function func(*testing.B, pkg.Codec, *bytes.Buffer, []byte) float64
 	}{
 		{
 			codec:    &noopCodec{},
 			function: benchmarkCompression,
 		},
 		{
-			codec:    gzip.NewCompressionCodec(),
+			codec:    new(gzip.Codec),
 			function: benchmarkCompression,
 		},
 		{
-			codec:    snappy.NewCompressionCodec(),
+			codec:    new(snappy.Codec),
 			function: benchmarkCompression,
 		},
 		{
-			codec:    lz4.NewCompressionCodec(),
+			codec:    new(lz4.Codec),
 			function: benchmarkCompression,
 		},
 		{
-			codec:    zstd.NewCompressionCodec(),
+			codec:    new(zstd.Codec),
 			function: benchmarkCompression,
 		},
 	}
@@ -304,7 +304,7 @@ func BenchmarkCompression(b *testing.B) {
 	}
 	defer f.Close()
 
-	z, err := compressGzip.NewReader(f)
+	z, err := stdgzip.NewReader(f)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func BenchmarkCompression(b *testing.B) {
 	}
 }
 
-func benchmarkCompression(b *testing.B, codec protocol.CompressionCodec, buf *bytes.Buffer, payload []byte) float64 {
+func benchmarkCompression(b *testing.B, codec pkg.Codec, buf *bytes.Buffer, payload []byte) float64 {
 	// In case only the decompression benchmark are run, we use this flags to
 	// detect whether we have to compress the payload before the decompression
 	// benchmarks.
