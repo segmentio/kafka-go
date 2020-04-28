@@ -1,13 +1,15 @@
-package protocol
+package prototest
 
 import (
 	"bufio"
 	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/segmentio/kafka-go/protocol"
 )
 
-func testResponse(t *testing.T, version int16, msg Message) {
+func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 	defer closeMessage(msg)
 
 	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
@@ -15,11 +17,11 @@ func testResponse(t *testing.T, version int16, msg Message) {
 		r := bufio.NewReader(b)
 		w := bufio.NewWriter(b)
 
-		if err := WriteResponse(w, version, 1234, msg); err != nil {
+		if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
 			t.Fatal(err)
 		}
 
-		correlationID, res, err := ReadResponse(r, int16(msg.ApiKey()), version)
+		correlationID, res, err := protocol.ReadResponse(r, int16(msg.ApiKey()), version)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,7 +37,7 @@ func testResponse(t *testing.T, version int16, msg Message) {
 	})
 }
 
-func benchmarkResponse(b *testing.B, version int16, msg Message) {
+func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 	defer closeMessage(msg)
 
 	b.Run(fmt.Sprintf("v%d", version), func(b *testing.B) {
@@ -46,7 +48,7 @@ func benchmarkResponse(b *testing.B, version int16, msg Message) {
 		b.Run("read", func(b *testing.B) {
 			w := bufio.NewWriter(buffer)
 
-			if err := WriteResponse(w, version, 1234, msg); err != nil {
+			if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
 				b.Fatal(err)
 			}
 
@@ -55,7 +57,7 @@ func benchmarkResponse(b *testing.B, version int16, msg Message) {
 			r := bufio.NewReader(x)
 
 			for i := 0; i < b.N; i++ {
-				_, res, err := ReadResponse(r, apiKey, version)
+				_, res, err := protocol.ReadResponse(r, apiKey, version)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -73,7 +75,7 @@ func benchmarkResponse(b *testing.B, version int16, msg Message) {
 			n := int64(0)
 
 			for i := 0; i < b.N; i++ {
-				if err := WriteResponse(w, version, 1234, msg); err != nil {
+				if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
 					b.Fatal(err)
 				}
 				n = int64(buffer.Len())

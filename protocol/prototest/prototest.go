@@ -1,13 +1,15 @@
-package protocol
+package prototest
 
 import (
 	"bytes"
 	"io"
 	"reflect"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol"
 )
 
-func closeMessage(m Message) {
+func closeMessage(m protocol.Message) {
 	if c, ok := m.(io.Closer); ok {
 		c.Close()
 	}
@@ -17,8 +19,8 @@ func deepEqual(x1, x2 interface{}) bool {
 	if x1 == nil {
 		return x2 == nil
 	}
-	if b1, ok := x1.(ByteSequence); ok {
-		if b2, ok := x2.(ByteSequence); ok {
+	if b1, ok := x1.(protocol.ByteSequence); ok {
+		if b2, ok := x2.(protocol.ByteSequence); ok {
 			return deepEqualByteSequence(b1, b2)
 		}
 		return false
@@ -114,7 +116,7 @@ func deepEqualSlice(v1, v2 reflect.Value) bool {
 	return true
 }
 
-func deepEqualByteSequence(s1, s2 ByteSequence) bool {
+func deepEqualByteSequence(s1, s2 protocol.ByteSequence) bool {
 	n1 := s1.Size()
 	n2 := s2.Size()
 

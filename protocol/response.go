@@ -13,6 +13,11 @@ func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int3
 	}
 
 	t := &apiTypes[apiKey]
+	if t == nil {
+		err = errorf("unsupported api: %s", apiNames[apiKey])
+		return
+	}
+
 	minVersion := t.minVersion()
 	maxVersion := t.maxVersion()
 
@@ -45,6 +50,10 @@ func WriteResponse(w *bufio.Writer, apiVersion int16, correlationID int32, msg M
 	}
 
 	t := &apiTypes[apiKey]
+	if t == nil {
+		return errorf("unsupported api: %s", apiNames[apiKey])
+	}
+
 	minVersion := t.minVersion()
 	maxVersion := t.maxVersion()
 

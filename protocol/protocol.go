@@ -3,6 +3,7 @@ package protocol
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
@@ -103,29 +104,6 @@ const (
 	numApis = 48
 )
 
-const (
-	v0  = 0
-	v1  = 1
-	v2  = 2
-	v3  = 3
-	v4  = 4
-	v5  = 5
-	v6  = 6
-	v7  = 7
-	v8  = 8
-	v9  = 9
-	v10 = 10
-	v11 = 11
-	v12 = 12
-	v13 = 13
-	v14 = 14
-	v15 = 15
-	v16 = 16
-	v17 = 17
-	v18 = 18
-	v19 = 19
-)
-
 var apiNames = [numApis]string{
 	Produce:                     "Produce",
 	Fetch:                       "Fetch",
@@ -208,30 +186,26 @@ func (t apiType) maxVersion() int16 {
 	return t.requests[len(t.requests)-1].version
 }
 
-var apiTypes = [numApis]apiType{
-	Produce: {
-		requests:  typesOf(ProduceRequest{}),
-		responses: typesOf(ProduceResponse{}),
-	},
+var apiTypes [numApis]apiType
 
-	Fetch: {
-		requests:  typesOf(FetchRequest{}),
-		responses: typesOf(FetchResponse{}),
-	},
+// Register is automatically called by sub-packages are imported to install a
+// new pair of request/response message types.
+func Register(req, res Message) {
+	k1 := req.ApiKey()
+	k2 := res.ApiKey()
 
-	ListOffsets: {
-		requests:  typesOf(ListOffsetsRequest{}),
-		responses: typesOf(ListOffsetsResponse{}),
-	},
+	if k1 != k2 {
+		panic(fmt.Sprintf("[%T/%T]: request and response API keys mismatch: %d != %d", req, res, k1, k2))
+	}
 
-	Metadata: {
-		requests:  typesOf(MetadataRequest{}),
-		responses: typesOf(MetadataResponse{}),
-	},
+	apiTypes[k1] = apiType{
+		requests:  typesOf(req),
+		responses: typesOf(res),
+	}
 }
 
 func typesOf(v interface{}) []messageType {
-	return makeTypes(reflect.TypeOf(v))
+	return makeTypes(reflect.TypeOf(v).Elem())
 }
 
 func makeTypes(t reflect.Type) []messageType {
@@ -371,4 +345,49 @@ func readMessageSize(r *bufio.Reader) (size int32, err error) {
 		err = d.err
 	}
 	return
+}
+
+type Broker struct {
+	Rack string
+	Host string
+	Port int
+	ID   int
+}
+
+func (b Broker) Network() string {
+	return "tcp"
+}
+
+func (b Broker) String() string {
+	return net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
+}
+
+type Cluster struct {
+	ClusterID  string
+	Controller int
+	Brokers    map[int]Broker
+	Topics     map[string]Topic
+}
+
+func (c *Cluster) IsZero() bool {
+	return c.ClusterID == "" && c.Controller == 0 && len(c.Brokers) == 0 && len(c.Topics) == 0
+}
+
+type Topic struct {
+	Name       string
+	Error      int
+	Partitions map[int]Partition
+}
+
+type Partition struct {
+	ID     int
+	Error  int
+	Leader int
+	// TODO: add ISR to allow consuming from followers with kafka 2.3+
+}
+
+type BrokerMessage interface {
+	Message
+
+	Broker(Cluster) (Broker, error)
 }

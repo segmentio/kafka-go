@@ -199,7 +199,8 @@ func TestWriteV2RecordBatch(t *testing.T) {
 		return
 	}
 
-	topic := CreateTopic(t, 1)
+	topic := makeTopic()
+	createTopic(t, topic, 1)
 	msgs := make([]Message, 15)
 	for i := range msgs {
 		value := fmt.Sprintf("Sample message content: %d!", i)

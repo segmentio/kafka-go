@@ -1,14 +1,24 @@
-package protocol
+package listoffsets_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/segmentio/kafka-go/protocol/listoffsets"
+	"github.com/segmentio/kafka-go/protocol/prototest"
+)
+
+const (
+	v1 = 1
+	v4 = 4
+)
 
 func TestListOffsetsRequest(t *testing.T) {
-	testRequest(t, v1, &ListOffsetsRequest{
+	prototest.TestRequest(t, v1, &listoffsets.Request{
 		ReplicaID: 1,
-		Topics: []ListOffsetsRequestTopic{
+		Topics: []listoffsets.RequestTopic{
 			{
 				Topic: "topic-1",
-				Partitions: []ListOffsetsRequestPartition{
+				Partitions: []listoffsets.RequestPartition{
 					{Partition: 0, Timestamp: 1e9},
 					{Partition: 1, Timestamp: 1e9},
 					{Partition: 2, Timestamp: 1e9},
@@ -17,13 +27,13 @@ func TestListOffsetsRequest(t *testing.T) {
 		},
 	})
 
-	testRequest(t, v4, &ListOffsetsRequest{
+	prototest.TestRequest(t, v4, &listoffsets.Request{
 		ReplicaID:      1,
 		IsolationLevel: 2,
-		Topics: []ListOffsetsRequestTopic{
+		Topics: []listoffsets.RequestTopic{
 			{
 				Topic: "topic-1",
-				Partitions: []ListOffsetsRequestPartition{
+				Partitions: []listoffsets.RequestPartition{
 					{Partition: 0, Timestamp: 1e9},
 					{Partition: 1, Timestamp: 1e9},
 					{Partition: 2, Timestamp: 1e9},
@@ -31,7 +41,7 @@ func TestListOffsetsRequest(t *testing.T) {
 			},
 			{
 				Topic: "topic-2",
-				Partitions: []ListOffsetsRequestPartition{
+				Partitions: []listoffsets.RequestPartition{
 					{Partition: 0, CurrentLeaderEpoch: 10, Timestamp: 1e9},
 					{Partition: 1, CurrentLeaderEpoch: 11, Timestamp: 1e9},
 					{Partition: 2, CurrentLeaderEpoch: 12, Timestamp: 1e9},
@@ -42,11 +52,11 @@ func TestListOffsetsRequest(t *testing.T) {
 }
 
 func TestListOffsetsResponse(t *testing.T) {
-	testResponse(t, v1, &ListOffsetsResponse{
-		Topics: []ListOffsetsResponseTopic{
+	prototest.TestResponse(t, v1, &listoffsets.Response{
+		Topics: []listoffsets.ResponseTopic{
 			{
 				Topic: "topic-1",
-				Partitions: []ListOffsetsResponsePartition{
+				Partitions: []listoffsets.ResponsePartition{
 					{
 						Partition: 0,
 						ErrorCode: 0,
@@ -58,11 +68,11 @@ func TestListOffsetsResponse(t *testing.T) {
 		},
 	})
 
-	testResponse(t, v4, &ListOffsetsResponse{
-		Topics: []ListOffsetsResponseTopic{
+	prototest.TestResponse(t, v4, &listoffsets.Response{
+		Topics: []listoffsets.ResponseTopic{
 			{
 				Topic: "topic-1",
-				Partitions: []ListOffsetsResponsePartition{
+				Partitions: []listoffsets.ResponsePartition{
 					{
 						ThrottleTimeMs: 1234,
 						Partition:      0,
@@ -75,7 +85,7 @@ func TestListOffsetsResponse(t *testing.T) {
 			},
 			{
 				Topic: "topic-2",
-				Partitions: []ListOffsetsResponsePartition{
+				Partitions: []listoffsets.ResponsePartition{
 					{
 						ThrottleTimeMs: 1234,
 						Partition:      0,

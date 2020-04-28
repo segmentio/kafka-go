@@ -95,18 +95,6 @@ func (d *Dialer) Dial(network string, address string) (*Conn, error) {
 // 1 minute, the connect to each single address will be given 15 seconds to
 // complete before trying the next one.
 func (d *Dialer) DialContext(ctx context.Context, network string, address string) (*Conn, error) {
-	if d.Timeout != 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, d.Timeout)
-		defer cancel()
-	}
-
-	if !d.Deadline.IsZero() {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, d.Deadline)
-		defer cancel()
-	}
-
 	return d.connect(
 		ctx,
 		network,
@@ -258,6 +246,17 @@ func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn, config *tls.Conf
 // connect opens a socket connection to the broker, wraps it to create a
 // kafka connection, and performs SASL authentication if configured to do so.
 func (d *Dialer) connect(ctx context.Context, network, address string, connCfg ConnConfig) (*Conn, error) {
+	if d.Timeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d.Timeout)
+		defer cancel()
+	}
+
+	if !d.Deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, d.Deadline)
+		defer cancel()
+	}
 
 	c, err := d.dialContext(ctx, network, address)
 	if err != nil {

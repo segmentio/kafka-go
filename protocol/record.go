@@ -8,22 +8,24 @@ import (
 	"io"
 	"math"
 	"time"
+
+	"github.com/segmentio/kafka-go/compress"
 )
 
 // Attributes is a bitset representing special attributes set on records.
 type Attributes int16
 
 const (
-	Gzip          Attributes = 1
-	Snappy        Attributes = 2
-	Lz4           Attributes = 3
-	Zstd          Attributes = 4
+	Gzip          Attributes = Attributes(compress.Gzip)   // 1
+	Snappy        Attributes = Attributes(compress.Snappy) // 2
+	Lz4           Attributes = Attributes(compress.Lz4)    // 3
+	Zstd          Attributes = Attributes(compress.Zstd)   // 4
 	Transactional Attributes = 1 << 4
 	ControlBatch  Attributes = 1 << 5
 )
 
-func (a Attributes) Compression() Compression {
-	return Compression(a & 7)
+func (a Attributes) Compression() compress.Compression {
+	return compress.Compression(a & 7)
 }
 
 func (a Attributes) Transactional() bool {

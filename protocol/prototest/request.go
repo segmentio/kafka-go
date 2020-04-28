@@ -1,13 +1,15 @@
-package protocol
+package prototest
 
 import (
 	"bufio"
 	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/segmentio/kafka-go/protocol"
 )
 
-func testRequest(t *testing.T, version int16, msg Message) {
+func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 	defer closeMessage(msg)
 
 	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
@@ -15,11 +17,11 @@ func testRequest(t *testing.T, version int16, msg Message) {
 		r := bufio.NewReader(b)
 		w := bufio.NewWriter(b)
 
-		if err := WriteRequest(w, version, 1234, "me", msg); err != nil {
+		if err := protocol.WriteRequest(w, version, 1234, "me", msg); err != nil {
 			t.Fatal(err)
 		}
 
-		apiVersion, correlationID, clientID, req, err := ReadRequest(r)
+		apiVersion, correlationID, clientID, req, err := protocol.ReadRequest(r)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -41,7 +43,7 @@ func testRequest(t *testing.T, version int16, msg Message) {
 	})
 }
 
-func benchmarkRequest(b *testing.B, version int16, msg Message) {
+func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
 	defer closeMessage(msg)
 
 	b.Run(fmt.Sprintf("v%d", version), func(b *testing.B) {
@@ -51,7 +53,7 @@ func benchmarkRequest(b *testing.B, version int16, msg Message) {
 		b.Run("read", func(b *testing.B) {
 			w := bufio.NewWriter(buffer)
 
-			if err := WriteRequest(w, version, 1234, "client", msg); err != nil {
+			if err := protocol.WriteRequest(w, version, 1234, "client", msg); err != nil {
 				b.Fatal(err)
 			}
 
@@ -60,7 +62,7 @@ func benchmarkRequest(b *testing.B, version int16, msg Message) {
 			r := bufio.NewReader(x)
 
 			for i := 0; i < b.N; i++ {
-				_, _, _, req, err := ReadRequest(r)
+				_, _, _, req, err := protocol.ReadRequest(r)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -78,7 +80,7 @@ func benchmarkRequest(b *testing.B, version int16, msg Message) {
 			n := int64(0)
 
 			for i := 0; i < b.N; i++ {
-				if err := WriteRequest(w, version, 1234, "client", msg); err != nil {
+				if err := protocol.WriteRequest(w, version, 1234, "client", msg); err != nil {
 					b.Fatal(err)
 				}
 				n = int64(buffer.Len())

@@ -1,4 +1,4 @@
-package kafka_test
+package compress_test
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,12 +16,23 @@ import (
 	"time"
 
 	kafka "github.com/segmentio/kafka-go"
-	"github.com/segmentio/kafka-go/gzip"
-	"github.com/segmentio/kafka-go/lz4"
-	"github.com/segmentio/kafka-go/snappy"
+	"github.com/segmentio/kafka-go/protocol"
+	"github.com/segmentio/kafka-go/protocol/compress/gzip"
+	"github.com/segmentio/kafka-go/protocol/compress/lz4"
+	"github.com/segmentio/kafka-go/protocol/compress/snappy"
+	"github.com/segmentio/kafka-go/protocol/compress/zstd"
 	ktesting "github.com/segmentio/kafka-go/testing"
-	"github.com/segmentio/kafka-go/zstd"
 )
+
+func TestCompressionCodecs(t *testing.T) {
+	for i, c := range compress.Codecs {
+		if c != nil {
+			if code := c.Code(); int8(code) != int8(i) {
+				t.Fatal("default compression codec table is misconfigured for", c.Name())
+			}
+		}
+	}
+}
 
 func TestCompression(t *testing.T) {
 	msg := kafka.Message{
@@ -35,7 +47,7 @@ func TestCompression(t *testing.T) {
 	}
 }
 
-func compress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
+func compress(codec protocol.CompressionCodec, src []byte) ([]byte, error) {
 	b := new(bytes.Buffer)
 	r := bytes.NewReader(src)
 	w := codec.NewWriter(b)
@@ -49,7 +61,7 @@ func compress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func decompress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
+func decompress(codec protocol.CompressionCodec, src []byte) ([]byte, error) {
 	b := new(bytes.Buffer)
 	r := codec.NewReader(bytes.NewReader(src))
 	if _, err := io.Copy(b, r); err != nil {
@@ -62,7 +74,7 @@ func decompress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCodec) {
+func testEncodeDecode(t *testing.T, m kafka.Message, codec protocol.CompressionCodec) {
 	var r1, r2 []byte
 	var err error
 
@@ -96,11 +108,11 @@ func TestCompressedMessages(t *testing.T) {
 	}
 }
 
-func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
+func testCompressedMessages(t *testing.T, codec protocol.CompressionCodec) {
 	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
 		t.Parallel()
 
-		topic := kafka.CreateTopic(t, 1)
+		topic := createTopic(t, 1)
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
 			Topic:            topic,
@@ -168,11 +180,11 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 func TestMixedCompressedMessages(t *testing.T) {
 	t.Parallel()
 
-	topic := kafka.CreateTopic(t, 1)
+	topic := createTopic(t, 1)
 
 	offset := 0
 	var values []string
-	produce := func(n int, codec kafka.CompressionCodec) {
+	produce := func(n int, codec protocol.CompressionCodec) {
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
 			Topic:            topic,
@@ -261,8 +273,8 @@ func (nopWriteCloser) Close() error { return nil }
 
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
-		codec    kafka.CompressionCodec
-		function func(*testing.B, kafka.CompressionCodec, *bytes.Buffer, []byte) float64
+		codec    protocol.CompressionCodec
+		function func(*testing.B, protocol.CompressionCodec, *bytes.Buffer, []byte) float64
 	}{
 		{
 			codec:    &noopCodec{},
@@ -327,7 +339,7 @@ func BenchmarkCompression(b *testing.B) {
 	}
 }
 
-func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, buf *bytes.Buffer, payload []byte) float64 {
+func benchmarkCompression(b *testing.B, codec protocol.CompressionCodec, buf *bytes.Buffer, payload []byte) float64 {
 	// In case only the decompression benchmark are run, we use this flags to
 	// detect whether we have to compress the payload before the decompression
 	// benchmarks.
@@ -387,4 +399,36 @@ func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, buf *bytes
 	})
 
 	return 1 - (float64(buf.Len()) / float64(len(payload)))
+}
+
+func makeTopic() string {
+	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
+}
+
+func createTopic(t *testing.T, partitions int) string {
+	topic := makeTopic()
+
+	conn, err := kafka.Dial("tcp", "localhost:9092")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	err = conn.CreateTopics(kafka.TopicConfig{
+		Topic:             topic,
+		NumPartitions:     partitions,
+		ReplicationFactor: 1,
+	})
+
+	switch err {
+	case nil:
+		// ok
+	case kafka.TopicAlreadyExists:
+		// ok
+	default:
+		t.Error("bad createTopics", err)
+		t.FailNow()
+	}
+
+	return topic
 }

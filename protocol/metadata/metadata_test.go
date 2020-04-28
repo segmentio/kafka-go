@@ -1,18 +1,31 @@
-package protocol
+package metadata_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/segmentio/kafka-go/protocol/metadata"
+	"github.com/segmentio/kafka-go/protocol/prototest"
+)
+
+const (
+	v0 = 0
+	v1 = 1
+	v4 = 4
+	v8 = 8
+	v9 = 9
+)
 
 func TestMetadataRequest(t *testing.T) {
-	testRequest(t, v0, &MetadataRequest{
+	prototest.TestRequest(t, v0, &metadata.Request{
 		TopicNames: nil,
 	})
 
-	testRequest(t, v4, &MetadataRequest{
+	prototest.TestRequest(t, v4, &metadata.Request{
 		TopicNames:             []string{"hello", "world"},
 		AllowAutoTopicCreation: true,
 	})
 
-	testRequest(t, v8, &MetadataRequest{
+	prototest.TestRequest(t, v8, &metadata.Request{
 		TopicNames:                          []string{"hello", "world"},
 		AllowAutoTopicCreation:              true,
 		IncludeCustomerAuthorizedOperations: true,
@@ -21,8 +34,8 @@ func TestMetadataRequest(t *testing.T) {
 }
 
 func TestMetadataResponse(t *testing.T) {
-	testResponse(t, v0, &MetadataResponse{
-		Brokers: []MetadataResponseBroker{
+	prototest.TestResponse(t, v0, &metadata.Response{
+		Brokers: []metadata.ResponseBroker{
 			{
 				NodeID: 0,
 				Host:   "127.0.0.1",
@@ -34,10 +47,10 @@ func TestMetadataResponse(t *testing.T) {
 				Port:   9093,
 			},
 		},
-		Topics: []MetadataResponseTopic{
+		Topics: []metadata.ResponseTopic{
 			{
 				Name: "topic-1",
-				Partitions: []MetadataResponsePartition{
+				Partitions: []metadata.ResponsePartition{
 					{
 						PartitionIndex: 0,
 						LeaderID:       1,
@@ -49,9 +62,9 @@ func TestMetadataResponse(t *testing.T) {
 		},
 	})
 
-	testResponse(t, v1, &MetadataResponse{
+	prototest.TestResponse(t, v1, &metadata.Response{
 		ControllerID: 1,
-		Brokers: []MetadataResponseBroker{
+		Brokers: []metadata.ResponseBroker{
 			{
 				NodeID: 0,
 				Host:   "127.0.0.1",
@@ -65,11 +78,11 @@ func TestMetadataResponse(t *testing.T) {
 				Rack:   "rack-2",
 			},
 		},
-		Topics: []MetadataResponseTopic{
+		Topics: []metadata.ResponseTopic{
 			{
 				Name:       "topic-1",
 				IsInternal: true,
-				Partitions: []MetadataResponsePartition{
+				Partitions: []metadata.ResponsePartition{
 					{
 						PartitionIndex: 0,
 						LeaderID:       1,
@@ -87,12 +100,12 @@ func TestMetadataResponse(t *testing.T) {
 		},
 	})
 
-	testResponse(t, v9, &MetadataResponse{
+	prototest.TestResponse(t, v9, &metadata.Response{
 		ThrottleTimeMs:              123,
 		ClusterID:                   "test",
 		ControllerID:                1,
 		ClusterAuthorizedOperations: 0x01,
-		Brokers: []MetadataResponseBroker{
+		Brokers: []metadata.ResponseBroker{
 			{
 				NodeID: 0,
 				Host:   "127.0.0.1",
@@ -106,10 +119,10 @@ func TestMetadataResponse(t *testing.T) {
 				Rack:   "rack-2",
 			},
 		},
-		Topics: []MetadataResponseTopic{
+		Topics: []metadata.ResponseTopic{
 			{
 				Name: "topic-1",
-				Partitions: []MetadataResponsePartition{
+				Partitions: []metadata.ResponsePartition{
 					{
 						PartitionIndex:  0,
 						LeaderID:        1,
@@ -132,7 +145,7 @@ func TestMetadataResponse(t *testing.T) {
 }
 
 func BenchmarkMetadataRequest(b *testing.B) {
-	benchmarkRequest(b, v8, &MetadataRequest{
+	prototest.BenchmarkRequest(b, v8, &metadata.Request{
 		TopicNames:                          []string{"hello", "world"},
 		AllowAutoTopicCreation:              true,
 		IncludeCustomerAuthorizedOperations: true,
@@ -141,12 +154,12 @@ func BenchmarkMetadataRequest(b *testing.B) {
 }
 
 func BenchmarkMetadataResponse(b *testing.B) {
-	benchmarkResponse(b, v9, &MetadataResponse{
+	prototest.BenchmarkResponse(b, v9, &metadata.Response{
 		ThrottleTimeMs:              123,
 		ClusterID:                   "test",
 		ControllerID:                1,
 		ClusterAuthorizedOperations: 0x01,
-		Brokers: []MetadataResponseBroker{
+		Brokers: []metadata.ResponseBroker{
 			{
 				NodeID: 0,
 				Host:   "127.0.0.1",
@@ -160,10 +173,10 @@ func BenchmarkMetadataResponse(b *testing.B) {
 				Rack:   "rack-2",
 			},
 		},
-		Topics: []MetadataResponseTopic{
+		Topics: []metadata.ResponseTopic{
 			{
 				Name: "topic-1",
-				Partitions: []MetadataResponsePartition{
+				Partitions: []metadata.ResponsePartition{
 					{
 						PartitionIndex:  0,
 						LeaderID:        1,

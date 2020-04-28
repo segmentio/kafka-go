@@ -375,3 +375,316 @@ func TestFindMembersByTopicSortsByMemberID(t *testing.T) {
 		})
 	}
 }
+
+func TestRackAffinityGroupBalancer(t *testing.T) {
+	t.Run("User Data", func(t *testing.T) {
+		t.Run("unknown zone", func(t *testing.T) {
+			b := RackAffinityGroupBalancer{}
+			zone, err := b.UserData()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(zone) != "" {
+				t.Fatalf("expected empty zone but got %s", zone)
+			}
+		})
+
+		t.Run("configure zone", func(t *testing.T) {
+			b := RackAffinityGroupBalancer{Rack: "zone1"}
+			zone, err := b.UserData()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(zone) != "zone1" {
+				t.Fatalf("expected zone1 az but got %s", zone)
+			}
+		})
+	})
+
+	t.Run("Balance", func(t *testing.T) {
+		b := RackAffinityGroupBalancer{}
+
+		brokers := map[string]Broker{
+			"z1": {ID: 1, Rack: "z1"},
+			"z2": {ID: 2, Rack: "z2"},
+			"z3": {ID: 2, Rack: "z3"},
+			"":   {},
+		}
+
+		tests := []struct {
+			name            string
+			memberCounts    map[string]int
+			partitionCounts map[string]int
+			result          map[string]map[string]int
+		}{
+			{
+				name: "unknown and known zones",
+				memberCounts: map[string]int{
+					"":   1,
+					"z1": 1,
+					"z2": 1,
+				},
+				partitionCounts: map[string]int{
+					"z1": 5,
+					"z2": 4,
+					"":   9,
+				},
+				result: map[string]map[string]int{
+					"z1": {"": 1, "z1": 5},
+					"z2": {"": 2, "z2": 4},
+					"":   {"": 6},
+				},
+			},
+			{
+				name: "all unknown",
+				memberCounts: map[string]int{
+					"": 5,
+				},
+				partitionCounts: map[string]int{
+					"": 103,
+				},
+				result: map[string]map[string]int{
+					"": {"": 103},
+				},
+			},
+			{
+				name: "remainder stays local",
+				memberCounts: map[string]int{
+					"z1": 3,
+					"z2": 3,
+					"z3": 3,
+				},
+				partitionCounts: map[string]int{
+					"z1": 20,
+					"z2": 19,
+					"z3": 20,
+				},
+				result: map[string]map[string]int{
+					"z1": {"z1": 20},
+					"z2": {"z2": 19},
+					"z3": {"z3": 20},
+				},
+			},
+			{
+				name: "imbalanced partitions",
+				memberCounts: map[string]int{
+					"z1": 1,
+					"z2": 1,
+					"z3": 1,
+				},
+				partitionCounts: map[string]int{
+					"z1": 7,
+					"z2": 0,
+					"z3": 7,
+				},
+				result: map[string]map[string]int{
+					"z1": {"z1": 5},
+					"z2": {"z1": 2, "z3": 2},
+					"z3": {"z3": 5},
+				},
+			},
+			{
+				name: "imbalanced members",
+				memberCounts: map[string]int{
+					"z1": 5,
+					"z2": 3,
+					"z3": 1,
+				},
+				partitionCounts: map[string]int{
+					"z1": 9,
+					"z2": 9,
+					"z3": 9,
+				},
+				result: map[string]map[string]int{
+					"z1": {"z1": 9, "z3": 6},
+					"z2": {"z2": 9},
+					"z3": {"z3": 3},
+				},
+			},
+			{
+				name: "no consumers in zone",
+				memberCounts: map[string]int{
+					"z2": 10,
+				},
+				partitionCounts: map[string]int{
+					"z1": 20,
+					"z3": 19,
+				},
+				result: map[string]map[string]int{
+					"z2": {"z1": 20, "z3": 19},
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+
+				// create members per the distribution in the test case.
+				var members []GroupMember
+				for zone, count := range tt.memberCounts {
+					for i := 0; i < count; i++ {
+						members = append(members, GroupMember{
+							ID:       zone + ":" + strconv.Itoa(len(members)+1),
+							Topics:   []string{"test"},
+							UserData: []byte(zone),
+						})
+					}
+				}
+
+				// create partitions per the distribution in the test case.
+				var partitions []Partition
+				for zone, count := range tt.partitionCounts {
+					for i := 0; i < count; i++ {
+						partitions = append(partitions, Partition{
+							ID:     len(partitions),
+							Topic:  "test",
+							Leader: brokers[zone],
+						})
+					}
+				}
+
+				res := b.AssignGroups(members, partitions)
+
+				// verification #1...all members must be assigned and with the
+				// correct load.
+				minLoad := len(partitions) / len(members)
+				maxLoad := minLoad
+				if len(partitions)%len(members) != 0 {
+					maxLoad++
+				}
+				for _, member := range members {
+					assignments, _ := res[member.ID]["test"]
+					if len(assignments) < minLoad || len(assignments) > maxLoad {
+						t.Errorf("expected between %d and %d partitions for member %s", minLoad, maxLoad, member.ID)
+					}
+				}
+
+				// verification #2...all partitions are assigned, and the distribution
+				// per source zone matches.
+				partsPerZone := make(map[string]map[string]int)
+				uniqueParts := make(map[int]struct{})
+				for id, topicToPartitions := range res {
+
+					for topic, assignments := range topicToPartitions {
+						if topic != "test" {
+							t.Fatalf("wrong topic...expected test but got %s", topic)
+						}
+
+						var member GroupMember
+						for _, m := range members {
+							if id == m.ID {
+								member = m
+								break
+							}
+						}
+						if member.ID == "" {
+							t.Fatal("empty member ID returned")
+						}
+
+						var partition Partition
+						for _, id := range assignments {
+
+							uniqueParts[id] = struct{}{}
+
+							for _, p := range partitions {
+								if p.ID == int(id) {
+									partition = p
+									break
+								}
+							}
+							if partition.Topic == "" {
+								t.Fatal("empty topic ID returned")
+							}
+							counts, ok := partsPerZone[string(member.UserData)]
+							if !ok {
+								counts = make(map[string]int)
+								partsPerZone[string(member.UserData)] = counts
+							}
+							counts[partition.Leader.Rack]++
+						}
+					}
+				}
+
+				if len(partitions) != len(uniqueParts) {
+					t.Error("not all partitions were assigned")
+				}
+				if !reflect.DeepEqual(tt.result, partsPerZone) {
+					t.Errorf("wrong balanced zones.  expected %v but got %v", tt.result, partsPerZone)
+				}
+			})
+		}
+	})
+
+	t.Run("Multi Topic", func(t *testing.T) {
+		b := RackAffinityGroupBalancer{}
+
+		brokers := map[string]Broker{
+			"z1": {ID: 1, Rack: "z1"},
+			"z2": {ID: 2, Rack: "z2"},
+			"z3": {ID: 2, Rack: "z3"},
+			"":   {},
+		}
+
+		members := []GroupMember{
+			{
+				ID:       "z1",
+				Topics:   []string{"topic1", "topic2"},
+				UserData: []byte("z1"),
+			},
+			{
+				ID:       "z2",
+				Topics:   []string{"topic2", "topic3"},
+				UserData: []byte("z2"),
+			},
+			{
+				ID:       "z3",
+				Topics:   []string{"topic3", "topic1"},
+				UserData: []byte("z3"),
+			},
+		}
+
+		partitions := []Partition{
+			{
+				ID:     1,
+				Topic:  "topic1",
+				Leader: brokers["z1"],
+			},
+			{
+				ID:     2,
+				Topic:  "topic1",
+				Leader: brokers["z3"],
+			},
+			{
+				ID:     1,
+				Topic:  "topic2",
+				Leader: brokers["z1"],
+			},
+			{
+				ID:     2,
+				Topic:  "topic2",
+				Leader: brokers["z2"],
+			},
+			{
+				ID:     1,
+				Topic:  "topic3",
+				Leader: brokers["z3"],
+			},
+			{
+				ID:     2,
+				Topic:  "topic3",
+				Leader: brokers["z2"],
+			},
+		}
+
+		expected := GroupMemberAssignments{
+			"z1": {"topic1": []int{1}, "topic2": []int{1}},
+			"z2": {"topic2": []int{2}, "topic3": []int{2}},
+			"z3": {"topic3": []int{1}, "topic1": []int{2}},
+		}
+
+		res := b.AssignGroups(members, partitions)
+		if !reflect.DeepEqual(expected, res) {
+			t.Fatalf("incorrect group assignment.  expected %v but got %v", expected, res)
+		}
+	})
+}

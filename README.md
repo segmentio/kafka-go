@@ -30,6 +30,27 @@ APIs for interacting with Kafka, mirroring concepts and implementing interfaces 
 the Go standard library to make it easy to use and integrate with existing
 software.
 
+## Migrating to 0.4
+
+Version 0.4 introduces a few breaking changes to the repository structure which
+should have minimal impact on programs and should only manifest at compile time
+(the runtime behavior should remain unchanged).
+
+* Programs do not need to import compression packages anymore in order to read
+compressed messages from kafka. All compression codecs are supported by default.
+
+* Programs that used the compression codecs direction must be adapted.
+Compression codecs are now exposed in the `compress` sub-package.
+
+With 0.4, we know that we are starting to introduce a bit more complexity in the
+code, but the plan is to eventually converge towards a simpler and more effective
+API, allowing us to keep up with Kafka's ever growing feature set, and bringing
+a more efficient implementation to programs depending on kafka-go.
+
+We truly appreciate everyone's input and contributions, which have made this
+project way more than what it was when we started it, and we're looking forward
+to receive more feedback on where we should take it.
+
 ## Kafka versions
 
 `kafka-go` is currently compatible with Kafka versions from 0.10.1.0 to 2.1.0. While latest versions will be working,
@@ -279,6 +300,12 @@ w := kafka.NewWriter(kafka.WriterConfig{
 Compression can be enabled on the `Writer` by configuring the `CompressionCodec`:
 
 ```go
+import (
+    "github.com/segmentio/kafka-go/compress/snappy"
+)
+
+...
+
 w := kafka.NewWriter(kafka.WriterConfig{
 	Brokers: []string{"localhost:9092"},
 	Topic:   "topic-A",
@@ -286,15 +313,13 @@ w := kafka.NewWriter(kafka.WriterConfig{
 })
 ```
 
-The `Reader` will by determine if the consumed messages are compressed by 
-examining the message attributes.  However, the package(s) for all expected 
-codecs must be imported so that they get loaded correctly.  For example, if you 
-are going to be receiving messages compressed with Snappy, add the following
-import:
+The `Reader` will by determine if the consumed messages are compressed by
+examining the message attributes.  However, the package(s) for all expected
+codecs must be imported so that they get loaded correctly.
 
-```go
-import _ "github.com/segmentio/kafka-go/snappy"
-```
+_Note: in versions prior to 0.4 programs had to import compression packages to
+install codecs and support reading compressed messages from kafka. This is no
+longer the case and import of the compression packages are now no-ops._
 
 ## TLS Support
 

@@ -49,8 +49,8 @@ const (
 	defaultJoinGroupBackoff = 5 * time.Second
 
 	// defaultRetentionTime holds the length of time a the consumer group will be
-	// saved by kafka
-	defaultRetentionTime = time.Hour * 24
+	// saved by kafka.  This value tells the broker to use its configured value.
+	defaultRetentionTime = -1 * time.Millisecond
 
 	// defaultPartitionWatchTime contains the amount of time the kafka-go will wait to
 	// query the brokers looking for partition changes.
@@ -119,10 +119,13 @@ type ConsumerGroupConfig struct {
 	// Default: 5s
 	JoinGroupBackoff time.Duration
 
-	// RetentionTime optionally sets the length of time the consumer group will be saved
-	// by the broker
+	// RetentionTime optionally sets the length of time the consumer group will
+	// be saved by the broker.  -1 will disable the setting and leave the
+	// retention up to the broker's offsets.retention.minutes property.  By
+	// default, that setting is 1 day for kafka < 2.0 and 7 days for kafka >=
+	// 2.0.
 	//
-	// Default: 24h
+	// Default: -1
 	RetentionTime time.Duration
 
 	// StartOffset determines from whence the consumer group should begin
@@ -212,7 +215,7 @@ func (config *ConsumerGroupConfig) Validate() error {
 		return errors.New(fmt.Sprintf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff))
 	}
 
-	if config.RetentionTime < 0 {
+	if config.RetentionTime < 0 && config.RetentionTime != defaultRetentionTime {
 		return errors.New(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
 	}
 

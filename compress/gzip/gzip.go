@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
-	"io/ioutil"
 	"sync"
 )
 
@@ -41,52 +40,52 @@ func (z *gzipReader) Reset(r io.Reader) {
 	z.Reader.Reset(r)
 }
 
-const (
-	DefaultCompressionLevel = gzip.DefaultCompression
-)
+// Codec is the implementation of a compress.Codec which supports creating
+// readers and writers for kafka messages compressed with gzip.
+type Codec struct {
+	// The compression level to configure on writers created by this codec.
+	// Acceptable values are defined in the standard gzip package.
+	//
+	// Default to gzip.DefaultCompressionLevel.
+	Level int
 
-type CompressionCodec struct{ writerPool sync.Pool }
-
-func NewCompressionCodec() *CompressionCodec {
-	return NewCompressionCodecLevel(DefaultCompressionLevel)
+	writerPool sync.Pool
 }
 
-func NewCompressionCodecLevel(level int) *CompressionCodec {
-	return &CompressionCodec{
-		writerPool: sync.Pool{
-			New: func() interface{} {
-				w, err := gzip.NewWriterLevel(ioutil.Discard, level)
-				if err != nil {
-					return err
-				}
-				return w
-			},
-		},
-	}
-}
+// Code implements the compress.Codec interface.
+func (c *Codec) Code() int8 { return 1 }
 
-// Code implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Code() int8 { return 1 }
+// Name implements the compress.Codec interface.
+func (c *Codec) Name() string { return "gzip" }
 
-// Name implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Name() string { return "gzip" }
-
-// NewReader implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+// NewReader implements the compress.Codec interface.
+func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
 	z := readerPool.Get().(*gzipReader)
 	z.Reset(r)
 	return &reader{z}
 }
 
-// NewWriter implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+// NewWriter implements the compress.Codec interface.
+func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 	x := c.writerPool.Get()
 	z, _ := x.(*gzip.Writer)
 	if z == nil {
-		return errorWriter{err: x.(error)}
+		x, err := gzip.NewWriterLevel(w, c.level())
+		if err != nil {
+			return errorWriter{err}
+		}
+		z = x
+	} else {
+		z.Reset(w)
 	}
-	z.Reset(w)
 	return &writer{c, z}
+}
+
+func (c *Codec) level() int {
+	if c.Level != 0 {
+		return c.Level
+	}
+	return gzip.DefaultCompression
 }
 
 type reader struct{ *gzipReader }
@@ -102,7 +101,7 @@ func (r *reader) Close() (err error) {
 }
 
 type writer struct {
-	c *CompressionCodec
+	c *Codec
 	*gzip.Writer
 }
 

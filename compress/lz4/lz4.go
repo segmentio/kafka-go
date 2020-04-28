@@ -7,27 +7,25 @@ import (
 	"github.com/pierrec/lz4"
 )
 
-type CompressionCodec struct{}
+// Codec is the implementation of a compress.Codec which supports creating
+// readers and writers for kafka messages compressed with lz4.
+type Codec struct{}
 
-func NewCompressionCodec() *CompressionCodec {
-	return &CompressionCodec{}
-}
+// Code implements the compress.Codec interface.
+func (c *Codec) Code() int8 { return 3 }
 
-// Code implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Code() int8 { return 3 }
+// Name implements the compress.Codec interface.
+func (c *Codec) Name() string { return "lz4" }
 
-// Name implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Name() string { return "lz4" }
-
-// NewReader implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+// NewReader implements the compress.Codec interface.
+func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
 	z := readerPool.Get().(*lz4.Reader)
 	z.Reset(r)
 	return &reader{z}
 }
 
-// NewWriter implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+// NewWriter implements the compress.Codec interface.
+func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 	z := writerPool.Get().(*lz4.Writer)
 	z.Reset(w)
 	return &writer{z}

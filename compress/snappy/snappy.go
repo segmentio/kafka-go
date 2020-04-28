@@ -16,34 +16,33 @@ const (
 	Unframed
 )
 
-type CompressionCodec struct{ framing Framing }
-
-func NewCompressionCodec() *CompressionCodec {
-	return NewCompressionCodecFraming(Framed)
+// Codec is the implementation of a compress.Codec which supports creating
+// readers and writers for kafka messages compressed with snappy.
+type Codec struct {
+	// An optional framing to apply to snappy compression.
+	//
+	// Default to Framed.
+	Framing Framing
 }
 
-func NewCompressionCodecFraming(framing Framing) *CompressionCodec {
-	return &CompressionCodec{framing}
-}
+// Code implements the compress.Codec interface.
+func (c *Codec) Code() int8 { return 2 }
 
-// Code implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Code() int8 { return 2 }
+// Name implements the compress.Codec interface.
+func (c *Codec) Name() string { return "snappy" }
 
-// Name implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) Name() string { return "snappy" }
-
-// NewReader implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
+// NewReader implements the compress.Codec interface.
+func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
 	x := readerPool.Get().(*xerialReader)
 	x.Reset(r)
 	return &reader{x}
 }
 
-// NewWriter implements the kafka.CompressionCodec interface.
-func (c *CompressionCodec) NewWriter(w io.Writer) io.WriteCloser {
+// NewWriter implements the compress.Codec interface.
+func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 	x := writerPool.Get().(*xerialWriter)
 	x.Reset(w)
-	x.framed = c.framing == Framed
+	x.framed = c.Framing == Framed
 	return &writer{x}
 }
 
