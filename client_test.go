@@ -1,14 +1,56 @@
 package kafka
 
 import (
+	"context"
+	"net"
+	"sync"
 	"time"
 )
 
-func newLocalClient() *Client {
-	return &Client{
-		Addr:    TCP("localhost"),
+func newLocalClient() (*Client, func()) {
+	return newClient(TCP("localhost"))
+}
+
+func newClient(addr net.Addr) (*Client, func()) {
+	conns := &connGroup{
+		dial: (&net.Dialer{}).DialContext,
+	}
+
+	transport := &Transport{
+		Dial: conns.Dial,
+	}
+
+	client := &Client{
+		Addr:    addr,
 		Timeout: 5 * time.Second,
 	}
+
+	return client, func() { transport.CloseIdleConnections(); conns.Wait() }
+}
+
+type connGroup struct {
+	dial func(context.Context, string, string) (net.Conn, error)
+	sync.WaitGroup
+}
+
+func (g *connGroup) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	c, err := g.dial(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	g.Add(1)
+	return &groupConn{Conn: c, group: g}, nil
+}
+
+type groupConn struct {
+	net.Conn
+	group *connGroup
+	once  sync.Once
+}
+
+func (c *groupConn) Close() error {
+	defer c.once.Do(c.group.Done)
+	return c.Conn.Close()
 }
 
 /*

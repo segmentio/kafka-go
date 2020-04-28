@@ -9,7 +9,8 @@ import (
 )
 
 func TestClientDeleteTopics(t *testing.T) {
-	client := newLocalClient()
+	client, shutdown := newLocalClient()
+	defer shutdown()
 
 	topic := makeTopic()
 	createTopic(t, topic, 1)

@@ -15,7 +15,8 @@ func TestClientCreateTopics(t *testing.T) {
 		topic3 = "client-topic-3"
 	)
 
-	client := newLocalClient()
+	client, shutdown := newLocalClient()
+	defer shutdown()
 
 	config := []ConfigEntry{{
 		ConfigName:  "retention.ms",
