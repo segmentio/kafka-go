@@ -259,16 +259,18 @@ func structEncodeFuncOf(typ reflect.Type, version int16) encodeFunc {
 
 	var fields []field
 	forEachStructField(typ, func(typ reflect.Type, index index, tag string) {
-		forEachStructTag(tag, func(tag structTag) bool {
-			if tag.MinVersion <= version && version <= tag.MaxVersion {
-				fields = append(fields, field{
-					encode: encodeFuncOf(typ, version, tag),
-					index:  index,
-				})
-				return false
-			}
-			return true
-		})
+		if typ.Size() != 0 { // skip struct{}
+			forEachStructTag(tag, func(tag structTag) bool {
+				if tag.MinVersion <= version && version <= tag.MaxVersion {
+					fields = append(fields, field{
+						encode: encodeFuncOf(typ, version, tag),
+						index:  index,
+					})
+					return false
+				}
+				return true
+			})
+		}
 	})
 
 	return func(e *encoder, v value) {

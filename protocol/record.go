@@ -654,7 +654,7 @@ func byteSequenceLength(b ByteSequence) int64 {
 }
 
 func packUint32(u uint32) (b [4]byte) {
-	binary.LittleEndian.PutUint32(b[:], u)
+	binary.BigEndian.PutUint32(b[:], u)
 	return
 }
 
@@ -663,15 +663,15 @@ func readInt8(b []byte) int8 {
 }
 
 func readInt16(b []byte) int16 {
-	return int16(binary.LittleEndian.Uint16(b))
+	return int16(binary.BigEndian.Uint16(b))
 }
 
 func readInt32(b []byte) int32 {
-	return int32(binary.LittleEndian.Uint32(b))
+	return int32(binary.BigEndian.Uint32(b))
 }
 
 func readInt64(b []byte) int64 {
-	return int64(binary.LittleEndian.Uint64(b))
+	return int64(binary.BigEndian.Uint64(b))
 }
 
 func writeInt8(b []byte, i int8) {
@@ -679,13 +679,13 @@ func writeInt8(b []byte, i int8) {
 }
 
 func writeInt16(b []byte, i int16) {
-	binary.LittleEndian.PutUint16(b, uint16(i))
+	binary.BigEndian.PutUint16(b, uint16(i))
 }
 
 func writeInt32(b []byte, i int32) {
-	binary.LittleEndian.PutUint32(b, uint32(i))
+	binary.BigEndian.PutUint32(b, uint32(i))
 }
 
 func writeInt64(b []byte, i int64) {
-	binary.LittleEndian.PutUint64(b, uint64(i))
+	binary.BigEndian.PutUint64(b, uint64(i))
 }

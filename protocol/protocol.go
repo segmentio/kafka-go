@@ -310,7 +310,7 @@ func forEachStructField(t reflect.Type, do func(reflect.Type, index, string)) {
 	for i, n := 0, t.NumField(); i < n; i++ {
 		f := t.Field(i)
 
-		if f.PkgPath != "" {
+		if f.PkgPath != "" && f.Name != "_" {
 			continue
 		}
 

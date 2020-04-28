@@ -1,11 +1,17 @@
 package kafka
 
 import (
-	"context"
-	"testing"
 	"time"
 )
 
+func newLocalClient() *Client {
+	return &Client{
+		Addr:    TCP("localhost"),
+		Timeout: 5 * time.Second,
+	}
+}
+
+/*
 func TestClient(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -89,3 +95,4 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 		}
 	}
 }
+*/

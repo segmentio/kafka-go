@@ -25,31 +25,28 @@ type RoundTripper interface {
 	// RoundTrip sends a request to a kafka broker and returns the response that
 	// was received, or a non-nil error.
 	//
-	// The context passed as first argument is used to asynchronnously abort the
-	// request.
-	RoundTrip(context.Context, protocol.Message) (protocol.Message, error)
+	// The context passed as first argument can be used to asynchronnously abort
+	// the call if needed.
+	RoundTrip(context.Context, net.Addr, protocol.Message) (protocol.Message, error)
 }
 
 // Transport is an implementation of the RoundTripper interface.
 //
 // Transport values manage a pool of connections and automatically discovers the
-// cluster layout to manage to dispatch produce and fetch requests to the
-// partition leaders.
+// clusters layout to manage to dispatch produce and fetch requests to the
+// appropriate brokers.
 //
 // Transport values are safe to use concurrently from multiple goroutines.
 //
 // Note: The intent is for the Transport to become the underlying layer of the
 // kafka.Reader and kafka.Writer types.
 type Transport struct {
-	// Address of the kafka cluster that the transport will be sending requests
-	// to. If a program needs to interact with multiple kafka clusters, it needs
-	// to create one transport for each cluster.
-	Addr string
-
 	// A function used to establish connections to the kafka cluster.
 	Dial func(context.Context, string, string) (net.Conn, error)
 
-	// Time limit set for establishing connections to the kafka cluster.
+	// Time limit set for establishing connections to the kafka cluster. This
+	// limit includes all round trips done to establish the connections (TLS
+	// hadbhaske, SASL negotiation, etc...).
 	//
 	// Defaults to 5s.
 	DialTimeout time.Duration
@@ -79,20 +76,26 @@ type Transport struct {
 	// sends requests.
 	ClientID string
 
-	// If non-nil, the transport establishes TLS connections to the cluster.
+	// An optional configuration for TLS connections established by this
+	// transport.
+	//
+	// If the Server
 	TLS *tls.Config
 
 	// SASL configures the Transfer to use SASL authentication.
 	SASL sasl.Mechanism
 
-	mutex  sync.RWMutex
-	once   sync.Once
-	ready  chan struct{}
-	done   chan struct{}
-	ctrl   *conn
-	conns  map[int]*conn
-	layout protocol.Cluster
-	err    error
+	mutex sync.RWMutex
+	pools map[networkAddress]*connPool
+}
+
+// DefaultTransport is the default transport used by kafka clients in this
+// package.
+var DefaultTransport RoundTripper = &Transport{
+	Dial: (&net.Dialer{
+		Timeout:   3 * time.Second,
+		DualStack: true,
+	}).DialContext,
 }
 
 // CloseIdleConnections closes all idle connections immediately, and marks all
@@ -101,18 +104,12 @@ func (t *Transport) CloseIdleConnections() {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	for _, conn := range t.conns {
-		conn.unref()
+	for _, pool := range t.pools {
+		pool.closeIdleConnections()
 	}
 
-	for id := range t.conns {
-		delete(t.conns, id)
-	}
-
-	if t.done != nil {
-		close(t.done)
-		t.ctrl = nil
-		t.done = nil
+	for k := range t.pools {
+		delete(t.pools, k)
 	}
 }
 
@@ -131,7 +128,7 @@ func (t *Transport) CloseIdleConnections() {
 //
 // This example illustrates the way this method is expected to be used:
 //
-//	r, err := transport.RoundTrip(ctx, &fetch.Request{ ... })
+//	r, err := transport.RoundTrip(ctx, addr, &fetch.Request{ ... })
 //  if err != nil {
 //		...
 //	} else {
@@ -146,60 +143,17 @@ func (t *Transport) CloseIdleConnections() {
 // This API was introduced in version 0.4 as a way to leverage the lower-level
 // features of the kafka protocol, but also provide a more efficient way of
 // managing connections to kafka brokers.
-func (t *Transport) RoundTrip(ctx context.Context, req protocol.Message) (protocol.Message, error) {
-	t.init()
-	canceled := ctx.Done()
-
-	select {
-	case <-t.ready:
-	case <-canceled:
-		return nil, ctx.Err()
-	}
-
-	c, err := t.grabConn(req)
-	if err != nil {
-		return nil, err
-	}
-
-	defer c.unref()
-	res := make(chan connResponse, 1)
-
-	select {
-	case c.reqs <- connRequest{
-		req: req,
-		res: res,
-	}:
-	case <-canceled:
-		return nil, ctx.Err()
-	}
-
-	select {
-	case r := <-res:
-		return r.res, r.err
-	case <-canceled:
-		return nil, ctx.Err()
-	}
+func (t *Transport) RoundTrip(ctx context.Context, addr net.Addr, req protocol.Message) (protocol.Message, error) {
+	return t.grabPool(addr).roundTrip(ctx, req)
 }
 
-// Layout returns the cluster layout known to t.
+// ClusterLayout returns the layout of the cluster at the given address.
 //
 // The transport caches the layout, so calling this method frequently should not
 // add any overhead to the program. A context is still expected for asynchronous
 // cancellation when the transport cache is still empty.
-func (t *Transport) Layout(ctx context.Context) (protocol.Cluster, error) {
-	t.init()
-	canceled := ctx.Done()
-
-	select {
-	case <-t.ready:
-	case <-canceled:
-		return protocol.Cluster{}, ctx.Err()
-	}
-
-	t.mutex.RLock()
-	layout, err := t.layout, t.err
-	t.mutex.RUnlock()
-	return layout, err
+func (t *Transport) ClusterLayout(ctx context.Context, addr net.Addr) (protocol.Cluster, error) {
+	return t.grabPool(addr).clusterLayout(ctx)
 }
 
 func (t *Transport) dial() func(context.Context, string, string) (net.Conn, error) {
@@ -237,27 +191,172 @@ func (t *Transport) metadataUpdateInterval() time.Duration {
 	return 2 * time.Second
 }
 
-func (t *Transport) init() {
+type connPool struct {
+	network                string
+	address                string
+	dial                   func(context.Context, string, string) (net.Conn, error)
+	dialTimeout            time.Duration
+	readTimeout            time.Duration
+	idleTimeout            time.Duration
+	metadataUpdateInterval time.Duration
+	clientID               string
+	tls                    *tls.Config
+	sasl                   sasl.Mechanism
+
+	mutex  sync.RWMutex
+	once   sync.Once
+	ready  chan struct{}
+	done   chan struct{}
+	ctrl   *conn
+	conns  map[int]*conn
+	layout protocol.Cluster
+	err    error
+}
+
+func (t *Transport) grabPool(addr net.Addr) *connPool {
+	k := networkAddress{
+		network: addr.Network(),
+		address: addr.String(),
+	}
+
+	t.mutex.RLock()
+	p := t.pools[k]
+	t.mutex.RUnlock()
+
+	if p != nil {
+		return p
+	}
+
+	network := k.network
+	address := k.address
+
+	host, port, _ := net.SplitHostPort(address)
+	if port == "" {
+		port = "9092"
+	}
+	if host == "" {
+		host = address
+	}
+	address = net.JoinHostPort(host, port)
+
+	var tlsConfig *tls.Config
+	if network == "tls" {
+		network = "tcp"
+
+		switch tlsConfig = t.TLS; {
+		case tlsConfig == nil:
+			tlsConfig = &tls.Config{ServerName: host}
+		case tlsConfig.ServerName == "" && !tlsConfig.InsecureSkipVerify:
+			tlsConfig = tlsConfig.Clone()
+			tlsConfig.ServerName = host
+		}
+	}
+
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	if t.ready == nil {
-		t.ready = make(chan struct{})
+	if p := t.pools[k]; p != nil {
+		return p
 	}
 
-	if t.conns == nil {
-		t.conns = make(map[int]*conn)
+	p = &connPool{
+		network:                network,
+		address:                address,
+		dial:                   t.dial(),
+		dialTimeout:            t.dialTimeout(),
+		readTimeout:            t.readTimeout(),
+		idleTimeout:            t.idleTimeout(),
+		metadataUpdateInterval: t.metadataUpdateInterval(),
+		clientID:               t.ClientID,
+		tls:                    tlsConfig,
+		sasl:                   t.SASL,
+
+		done:  make(chan struct{}),
+		ready: make(chan struct{}),
+		conns: make(map[int]*conn),
 	}
 
-	if t.ctrl == nil {
-		t.ctrl = t.connect("tcp", t.Addr)
-		t.done = make(chan struct{})
-		go t.discover(t.ctrl, t.done)
+	if t.pools == nil {
+		t.pools = map[networkAddress]*connPool{k: p}
+	} else {
+		t.pools[k] = p
+	}
+
+	p.ctrl = p.connect(k.network, k.address)
+	go p.discover(p.ctrl, p.done)
+	return p
+}
+
+func (p *connPool) closeIdleConnections() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	for _, conn := range p.conns {
+		conn.unref()
+	}
+
+	for id := range p.conns {
+		delete(p.conns, id)
+	}
+
+	if p.done != nil {
+		close(p.done)
+		p.ctrl = nil
+		p.done = nil
 	}
 }
 
-func (t *Transport) setReady() {
-	t.once.Do(func() { close(t.ready) })
+func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protocol.Message, error) {
+	canceled := ctx.Done()
+
+	select {
+	case <-p.ready:
+	case <-canceled:
+		return nil, ctx.Err()
+	}
+
+	c, err := p.grabConn(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer c.unref()
+	res := make(chan connResponse, 1)
+
+	select {
+	case c.reqs <- connRequest{
+		req: req,
+		res: res,
+	}:
+	case <-canceled:
+		return nil, ctx.Err()
+	}
+
+	select {
+	case r := <-res:
+		return r.res, r.err
+	case <-canceled:
+		return nil, ctx.Err()
+	}
+}
+
+func (p *connPool) clusterLayout(ctx context.Context) (protocol.Cluster, error) {
+	canceled := ctx.Done()
+
+	select {
+	case <-p.ready:
+	case <-canceled:
+		return protocol.Cluster{}, ctx.Err()
+	}
+
+	p.mutex.RLock()
+	layout, err := p.layout, p.err
+	p.mutex.RUnlock()
+	return layout, err
+}
+
+func (p *connPool) setReady() {
+	p.once.Do(func() { close(p.ready) })
 }
 
 // grabConn returns the connection which should serve the request passed as
@@ -273,11 +372,11 @@ func (t *Transport) setReady() {
 //
 // In either cases, the requests are multiplexed so we can keep a minimal number
 // of connections open (N+1, where N is the number of brokers in the cluster).
-func (t *Transport) grabConn(req protocol.Message) (*conn, error) {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
+func (p *connPool) grabConn(req protocol.Message) (*conn, error) {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
 
-	layout, err := t.layout, t.err
+	layout, err := p.layout, p.err
 	if err != nil {
 		return nil, err
 	}
@@ -289,9 +388,9 @@ func (t *Transport) grabConn(req protocol.Message) (*conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		c = t.conns[broker.ID]
+		c = p.conns[broker.ID]
 	default:
-		c = t.ctrl
+		c = p.ctrl
 	}
 
 	c.ref()
@@ -301,17 +400,17 @@ func (t *Transport) grabConn(req protocol.Message) (*conn, error) {
 // update is called periodically by the goroutine running the discover method
 // to refresh the cluster layout information used by the transport to route
 // requests to brokers.
-func (t *Transport) update(layout protocol.Cluster, err error) {
-	t.mutex.Lock()
-	defer t.setReady()
-	defer t.mutex.Unlock()
+func (p *connPool) update(layout protocol.Cluster, err error) {
+	p.mutex.Lock()
+	defer p.setReady()
+	defer p.mutex.Unlock()
 
 	if err != nil {
 		// Only update the error on the transport if the cluster layout was
 		// unknown. This ensures that we prioritize a previously known state
 		// of the cluster to reduce the impact of transient failures.
-		if t.layout.IsZero() {
-			t.err = err
+		if p.layout.IsZero() {
+			p.err = err
 		}
 		return
 	}
@@ -322,18 +421,18 @@ func (t *Transport) update(layout protocol.Cluster, err error) {
 	// (e.g. Produce requests going to brokers that are not leading a
 	// partition), the program is expected to handle these errors and retry
 	// accordingly.
-	t.layout, t.err = layout, nil
+	p.layout, p.err = layout, nil
 
-	for id, broker := range t.layout.Brokers {
-		if _, ok := t.conns[id]; !ok {
-			t.conns[id] = t.connect(broker.Network(), broker.String())
+	for id, broker := range p.layout.Brokers {
+		if _, ok := p.conns[id]; !ok {
+			p.conns[id] = p.connect(broker.Network(), broker.String())
 		}
 	}
 
-	for id, conn := range t.conns {
-		if _, ok := t.layout.Brokers[id]; !ok {
+	for id, conn := range p.conns {
+		if _, ok := p.layout.Brokers[id]; !ok {
 			conn.unref()
-			delete(t.conns, id)
+			delete(p.conns, id)
 		}
 	}
 }
@@ -341,10 +440,10 @@ func (t *Transport) update(layout protocol.Cluster, err error) {
 // discover is the entry point of an internal goroutine for the transport which
 // periodically requests updates of the cluster metadata and refreshes the
 // transport cached cluster layout.
-func (t *Transport) discover(conn *conn, done <-chan struct{}) {
+func (p *connPool) discover(conn *conn, done <-chan struct{}) {
 	defer conn.unref()
 
-	ticker := time.NewTicker(t.metadataUpdateInterval())
+	ticker := time.NewTicker(p.metadataUpdateInterval)
 	defer ticker.Stop()
 
 	res := make(chan connResponse, 1)
@@ -367,9 +466,9 @@ func (t *Transport) discover(conn *conn, done <-chan struct{}) {
 		}
 
 		if r.err != nil {
-			t.update(protocol.Cluster{}, r.err)
+			p.update(protocol.Cluster{}, r.err)
 		} else {
-			t.update(makeLayout(r.res.(*meta.Response)), nil)
+			p.update(makeLayout(r.res.(*meta.Response)), nil)
 		}
 
 		select {
@@ -449,6 +548,7 @@ var (
 	// Default dialer used by the transport connections when no Dial function
 	// was configured by the program.
 	defaultDialer = net.Dialer{
+		Timeout:   3 * time.Second,
 		DualStack: true,
 	}
 )
@@ -460,16 +560,8 @@ type conn struct {
 	// Reference counter used to orchestrate graceful shutdown.
 	refc uintptr
 	// Immutable state of the connection.
-	reqs        chan<- connRequest
-	network     string
-	address     string
-	dial        func(context.Context, string, string) (net.Conn, error)
-	dialTimeout time.Duration
-	readTimeout time.Duration
-	idleTimeout time.Duration
-	clientID    string
-	tls         *tls.Config
-	sasl        sasl.Mechanism
+	pool *connPool
+	reqs chan<- connRequest
 	// Shared state of the connection, this is synchronized on the mutex through
 	// calls to the synchronized method. Both goroutines of the connection share
 	// the state maintained in these fields.
@@ -479,22 +571,14 @@ type conn struct {
 	inflight map[int32]connRequest // set of inflight requests on the connection
 }
 
-func (t *Transport) connect(network, address string) *conn {
+func (p *connPool) connect(network, address string) *conn {
 	reqs := make(chan connRequest)
 	conn := &conn{
-		refc:        1,
-		reqs:        reqs,
-		network:     network,
-		address:     address,
-		dial:        t.dial(),
-		dialTimeout: t.dialTimeout(),
-		readTimeout: t.readTimeout(),
-		idleTimeout: t.idleTimeout(),
-		clientID:    t.ClientID,
-		tls:         t.TLS,
-		sasl:        t.SASL,
-		recycled:    make(map[int32]struct{}),
-		inflight:    make(map[int32]connRequest),
+		refc:     1,
+		pool:     p,
+		reqs:     reqs,
+		recycled: make(map[int32]struct{}),
+		inflight: make(map[int32]connRequest),
 	}
 	go conn.run(reqs)
 	return conn
@@ -557,12 +641,12 @@ func (c *conn) synchronized(f func()) {
 }
 
 func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16, error) {
-	deadline := time.Now().Add(c.dialTimeout)
+	deadline := time.Now().Add(c.pool.dialTimeout)
 
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 
-	netConn, err := c.dial(ctx, c.network, c.address)
+	netConn, err := c.pool.dial(ctx, c.pool.network, c.pool.address)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -572,8 +656,8 @@ func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16
 		}
 	}()
 
-	if c.tls != nil {
-		netConn = tls.Client(netConn, c.tls)
+	if c.pool.tls != nil {
+		netConn = tls.Client(netConn, c.pool.tls)
 	}
 
 	nc := netConn
@@ -586,13 +670,13 @@ func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16
 		return nil, nil, nil, err
 	}
 
-	if c.sasl != nil {
-		if err := c.authenticateSASL(ctx, rw, c.sasl); err != nil {
+	if c.pool.sasl != nil {
+		if err := c.authenticateSASL(ctx, rw, c.pool.sasl); err != nil {
 			return nil, nil, nil, err
 		}
 	}
 
-	r, err := protocol.RoundTrip(rw, v0, c.clientID, new(apiversions.Request))
+	r, err := protocol.RoundTrip(rw, v0, c.pool.clientID, new(apiversions.Request))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -600,7 +684,7 @@ func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16
 	ver := make(map[protocol.ApiKey]int16, len(res.ApiKeys))
 
 	if res.ErrorCode != 0 {
-		return nil, nil, nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", c.address, Error(res.ErrorCode))
+		return nil, nil, nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", c.pool.address, Error(res.ErrorCode))
 	}
 
 	for _, r := range res.ApiKeys {
@@ -608,7 +692,7 @@ func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16
 		ver[apiKey] = apiKey.SelectVersion(r.MinVersion, r.MaxVersion)
 	}
 
-	if err := nc.SetDeadline(time.Now().Add(c.idleTimeout)); err != nil {
+	if err := nc.SetDeadline(time.Now().Add(c.pool.idleTimeout)); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -647,7 +731,7 @@ func (c *conn) dispatch(conn net.Conn, done chan<- error, rb *bufio.Reader) {
 
 		c.synchronized(func() {
 			if len(c.inflight) == 0 {
-				conn.SetDeadline(time.Now().Add(c.idleTimeout))
+				conn.SetDeadline(time.Now().Add(c.pool.idleTimeout))
 			}
 		})
 	}
@@ -693,9 +777,9 @@ func (c *conn) run(reqs <-chan connRequest) {
 
 			r.version = versions[r.req.ApiKey()]
 			id := c.register(r)
-			conn.SetDeadline(time.Now().Add(c.readTimeout))
+			conn.SetDeadline(time.Now().Add(c.pool.readTimeout))
 
-			if err := protocol.WriteRequest(wb, r.version, id, c.clientID, r.req); err != nil {
+			if err := protocol.WriteRequest(wb, r.version, id, c.pool.clientID, r.req); err != nil {
 				closeConn(err)
 			}
 
@@ -764,7 +848,7 @@ func (c *conn) authenticateSASL(ctx context.Context, rw *bufio.ReadWriter, mecha
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslHandshake
 func (c *conn) saslHandshake(rw *bufio.ReadWriter, mechanism string) error {
-	msg, err := protocol.RoundTrip(rw, v0, c.clientID, &saslhandshake.Request{
+	msg, err := protocol.RoundTrip(rw, v0, c.pool.clientID, &saslhandshake.Request{
 		Mechanism: mechanism,
 	})
 	if err != nil {
@@ -782,7 +866,7 @@ func (c *conn) saslHandshake(rw *bufio.ReadWriter, mechanism string) error {
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
 func (c *conn) saslAuthenticate(rw *bufio.ReadWriter, data []byte) ([]byte, error) {
-	msg, err := protocol.RoundTrip(rw, v1, c.clientID, &saslauthenticate.Request{
+	msg, err := protocol.RoundTrip(rw, v1, c.pool.clientID, &saslauthenticate.Request{
 		AuthBytes: data,
 	})
 	if err != nil {

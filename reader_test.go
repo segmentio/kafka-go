@@ -272,6 +272,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 		return
 	}
 	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
 
 	_, err = conn.createTopics(createTopicsRequestV0{
 		Topics: []createTopicsRequestV0Topic{
@@ -281,7 +282,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 				ReplicationFactor: 1,
 			},
 		},
-		Timeout: int32(30 * time.Second / time.Millisecond),
+		Timeout: milliseconds(time.Second),
 	})
 	switch err {
 	case nil:
@@ -291,6 +292,20 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	default:
 		t.Error("bad createTopics", err)
 		t.FailNow()
+	}
+}
+
+func deleteTopic(t *testing.T, topic ...string) {
+	conn, err := Dial("tcp", "localhost:9092")
+	if err != nil {
+		t.Error("bad conn")
+		return
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
+
+	if err := conn.DeleteTopics(topic...); err != nil {
+		t.Fatal(err)
 	}
 }
 

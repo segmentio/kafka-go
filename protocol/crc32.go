@@ -28,17 +28,17 @@ func (h *crc32Hash) writeInt8(i int8) {
 }
 
 func (h *crc32Hash) writeInt16(i int16) {
-	binary.LittleEndian.PutUint16(h.buffer[:2], uint16(i))
+	binary.BigEndian.PutUint16(h.buffer[:2], uint16(i))
 	h.write(h.buffer[:2])
 }
 
 func (h *crc32Hash) writeInt32(i int32) {
-	binary.LittleEndian.PutUint32(h.buffer[:4], uint32(i))
+	binary.BigEndian.PutUint32(h.buffer[:4], uint32(i))
 	h.write(h.buffer[:4])
 }
 
 func (h *crc32Hash) writeInt64(i int64) {
-	binary.LittleEndian.PutUint64(h.buffer[:8], uint64(i))
+	binary.BigEndian.PutUint64(h.buffer[:8], uint64(i))
 	h.write(h.buffer[:8])
 }
 

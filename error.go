@@ -501,3 +501,13 @@ type MessageTooLargeError struct {
 func (e MessageTooLargeError) Error() string {
 	return MessageSizeTooLarge.Error()
 }
+
+func makeError(code int16, message string) error {
+	if code == 0 {
+		return nil
+	}
+	if message == "" {
+		return Error(code)
+	}
+	return fmt.Errorf("%w: %s", Error(code), message)
+}

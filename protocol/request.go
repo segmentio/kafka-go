@@ -86,7 +86,7 @@ func WriteRequest(w *bufio.Writer, apiVersion int16, correlationID int32, client
 	e.writeInt16(int16(apiKey))
 	e.writeInt16(apiVersion)
 	e.writeInt32(correlationID)
-	e.writeString(clientID)
+	e.writeNullString(clientID)
 	r.encode(e, v)
 	return w.Flush()
 }
