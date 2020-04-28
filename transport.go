@@ -6,7 +6,9 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,10 +69,13 @@ type Transport struct {
 	// Defaults to 30s.
 	IdleTimeout time.Duration
 
-	// Time interval between updates of the cluster metadata.
+	// TTL for the metadata cached by this transport. Note that the value
+	// configured here is an upper bound, the transport randomizes the TTLs to
+	// avoid getting into states where multiple clients end up synchronized and
+	// cause bursts of requests to the kafka broker.
 	//
-	// Default to 2s.
-	MetadataUpdateInterval time.Duration
+	// Default to 6s.
+	MetadataTTL time.Duration
 
 	// Unique identifier that the transport communicates to the brokers when it
 	// sends requests.
@@ -147,15 +152,6 @@ func (t *Transport) RoundTrip(ctx context.Context, addr net.Addr, req protocol.M
 	return t.grabPool(addr).roundTrip(ctx, req)
 }
 
-// ClusterLayout returns the layout of the cluster at the given address.
-//
-// The transport caches the layout, so calling this method frequently should not
-// add any overhead to the program. A context is still expected for asynchronous
-// cancellation when the transport cache is still empty.
-func (t *Transport) ClusterLayout(ctx context.Context, addr net.Addr) (protocol.Cluster, error) {
-	return t.grabPool(addr).clusterLayout(ctx)
-}
-
 func (t *Transport) dial() func(context.Context, string, string) (net.Conn, error) {
 	if t.Dial != nil {
 		return t.Dial
@@ -184,33 +180,11 @@ func (t *Transport) idleTimeout() time.Duration {
 	return 30 * time.Second
 }
 
-func (t *Transport) metadataUpdateInterval() time.Duration {
-	if t.MetadataUpdateInterval > 0 {
-		return t.MetadataUpdateInterval
+func (t *Transport) metadataTTL() time.Duration {
+	if t.MetadataTTL > 0 {
+		return t.MetadataTTL
 	}
-	return 2 * time.Second
-}
-
-type connPool struct {
-	network                string
-	address                string
-	dial                   func(context.Context, string, string) (net.Conn, error)
-	dialTimeout            time.Duration
-	readTimeout            time.Duration
-	idleTimeout            time.Duration
-	metadataUpdateInterval time.Duration
-	clientID               string
-	tls                    *tls.Config
-	sasl                   sasl.Mechanism
-
-	mutex  sync.RWMutex
-	once   sync.Once
-	ready  chan struct{}
-	done   chan struct{}
-	ctrl   *conn
-	conns  map[int]*conn
-	layout protocol.Cluster
-	err    error
+	return 6 * time.Second
 }
 
 func (t *Transport) grabPool(addr net.Addr) *connPool {
@@ -260,16 +234,16 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	}
 
 	p = &connPool{
-		network:                network,
-		address:                address,
-		dial:                   t.dial(),
-		dialTimeout:            t.dialTimeout(),
-		readTimeout:            t.readTimeout(),
-		idleTimeout:            t.idleTimeout(),
-		metadataUpdateInterval: t.metadataUpdateInterval(),
-		clientID:               t.ClientID,
-		tls:                    tlsConfig,
-		sasl:                   t.SASL,
+		network:     network,
+		address:     address,
+		dial:        t.dial(),
+		dialTimeout: t.dialTimeout(),
+		readTimeout: t.readTimeout(),
+		idleTimeout: t.idleTimeout(),
+		metadataTTL: t.metadataTTL(),
+		clientID:    t.ClientID,
+		tls:         tlsConfig,
+		sasl:        t.SASL,
 
 		done:  make(chan struct{}),
 		ready: make(chan struct{}),
@@ -285,6 +259,29 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	p.ctrl = p.connect(k.network, k.address)
 	go p.discover(p.ctrl, p.done)
 	return p
+}
+
+type connPool struct {
+	network     string
+	address     string
+	dial        func(context.Context, string, string) (net.Conn, error)
+	dialTimeout time.Duration
+	readTimeout time.Duration
+	idleTimeout time.Duration
+	metadataTTL time.Duration
+	clientID    string
+	tls         *tls.Config
+	sasl        sasl.Mechanism
+
+	mutex    sync.RWMutex
+	once     sync.Once
+	ready    chan struct{}
+	done     chan struct{}
+	ctrl     *conn
+	conns    map[int]*conn
+	metadata *meta.Response
+	layout   protocol.Cluster
+	err      error
 }
 
 func (p *connPool) closeIdleConnections() {
@@ -315,6 +312,11 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 		return nil, ctx.Err()
 	}
 
+	switch m := req.(type) {
+	case *meta.Request:
+		return filterMetadataResponse(m, p.metadata), nil
+	}
+
 	c, err := p.grabConn(req)
 	if err != nil {
 		return nil, err
@@ -338,21 +340,6 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 	case <-canceled:
 		return nil, ctx.Err()
 	}
-}
-
-func (p *connPool) clusterLayout(ctx context.Context) (protocol.Cluster, error) {
-	canceled := ctx.Done()
-
-	select {
-	case <-p.ready:
-	case <-canceled:
-		return protocol.Cluster{}, ctx.Err()
-	}
-
-	p.mutex.RLock()
-	layout, err := p.layout, p.err
-	p.mutex.RUnlock()
-	return layout, err
 }
 
 func (p *connPool) setReady() {
@@ -400,7 +387,24 @@ func (p *connPool) grabConn(req protocol.Message) (*conn, error) {
 // update is called periodically by the goroutine running the discover method
 // to refresh the cluster layout information used by the transport to route
 // requests to brokers.
-func (p *connPool) update(layout protocol.Cluster, err error) {
+func (p *connPool) update(metadata *meta.Response, err error) {
+	var layout protocol.Cluster
+
+	if metadata != nil {
+		metadata.ThrottleTimeMs = 0
+
+		// Normalize the lists so we can apply binary search on them.
+		sortMetadataBrokers(metadata.Brokers)
+		sortMetadataTopics(metadata.Topics)
+
+		for i := range metadata.Topics {
+			t := &metadata.Topics[i]
+			sortMetadataPartitions(t.Partitions)
+		}
+
+		layout = makeLayout(metadata)
+	}
+
 	p.mutex.Lock()
 	defer p.setReady()
 	defer p.mutex.Unlock()
@@ -409,7 +413,7 @@ func (p *connPool) update(layout protocol.Cluster, err error) {
 		// Only update the error on the transport if the cluster layout was
 		// unknown. This ensures that we prioritize a previously known state
 		// of the cluster to reduce the impact of transient failures.
-		if p.layout.IsZero() {
+		if p.metadata == nil {
 			p.err = err
 		}
 		return
@@ -421,7 +425,7 @@ func (p *connPool) update(layout protocol.Cluster, err error) {
 	// (e.g. Produce requests going to brokers that are not leading a
 	// partition), the program is expected to handle these errors and retry
 	// accordingly.
-	p.layout, p.err = layout, nil
+	p.metadata, p.layout, p.err = metadata, layout, nil
 
 	for id, broker := range p.layout.Brokers {
 		if _, ok := p.conns[id]; !ok {
@@ -443,15 +447,24 @@ func (p *connPool) update(layout protocol.Cluster, err error) {
 func (p *connPool) discover(conn *conn, done <-chan struct{}) {
 	defer conn.unref()
 
-	ticker := time.NewTicker(p.metadataUpdateInterval)
-	defer ticker.Stop()
+	prng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	metadataTTL := func() time.Duration {
+		return time.Duration(prng.Int63n(int64(p.metadataTTL)))
+	}
+
+	timer := time.NewTimer(metadataTTL())
+	defer timer.Stop()
 
 	res := make(chan connResponse, 1)
+	req := &meta.Request{
+		IncludeCustomerAuthorizedOperations: true,
+		IncludeTopicAuthorizedOperations:    true,
+	}
 
 	for {
 		select {
 		case conn.reqs <- connRequest{
-			req: new(meta.Request),
+			req: req,
 			res: res,
 		}:
 		case <-done:
@@ -465,18 +478,63 @@ func (p *connPool) discover(conn *conn, done <-chan struct{}) {
 			return
 		}
 
-		if r.err != nil {
-			p.update(protocol.Cluster{}, r.err)
-		} else {
-			p.update(makeLayout(r.res.(*meta.Response)), nil)
-		}
+		res, _ := r.res.(*meta.Response)
+		p.update(res, r.err)
 
 		select {
-		case <-ticker.C:
+		case <-timer.C:
+			timer.Reset(metadataTTL())
 		case <-done:
 			return
 		}
 	}
+}
+
+func filterMetadataResponse(req *meta.Request, res *meta.Response) *meta.Response {
+	ret := *res
+
+	if len(req.TopicNames) != 0 {
+		ret.Topics = make([]meta.ResponseTopic, len(req.TopicNames))
+
+		for i, topicName := range req.TopicNames {
+			j, ok := findMetadataTopic(res.Topics, topicName)
+			if ok {
+				ret.Topics[i] = res.Topics[j]
+			} else {
+				ret.Topics[i] = meta.ResponseTopic{
+					ErrorCode: int16(UnknownTopicOrPartition),
+					Name:      topicName,
+				}
+			}
+		}
+	}
+
+	return &ret
+}
+
+func findMetadataTopic(topics []meta.ResponseTopic, topicName string) (int, bool) {
+	i := sort.Search(len(topics), func(i int) bool {
+		return topics[i].Name >= topicName
+	})
+	return i, i >= 0 && i < len(topics) && topics[i].Name == topicName
+}
+
+func sortMetadataBrokers(brokers []meta.ResponseBroker) {
+	sort.Slice(brokers, func(i, j int) bool {
+		return brokers[i].NodeID < brokers[j].NodeID
+	})
+}
+
+func sortMetadataTopics(topics []meta.ResponseTopic) {
+	sort.Slice(topics, func(i, j int) bool {
+		return topics[i].Name < topics[j].Name
+	})
+}
+
+func sortMetadataPartitions(partitions []meta.ResponsePartition) {
+	sort.Slice(partitions, func(i, j int) bool {
+		return partitions[i].PartitionIndex < partitions[j].PartitionIndex
+	})
 }
 
 func makeLayout(metadataResponse *meta.Response) protocol.Cluster {
@@ -521,6 +579,19 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 	}
 
 	return protocolPartitions
+}
+
+func (p *connPool) connect(network, address string) *conn {
+	reqs := make(chan connRequest)
+	conn := &conn{
+		refc:     1,
+		pool:     p,
+		reqs:     reqs,
+		recycled: make(map[int32]struct{}),
+		inflight: make(map[int32]connRequest),
+	}
+	go conn.run(reqs)
+	return conn
 }
 
 type connRequest struct {
@@ -569,19 +640,6 @@ type conn struct {
 	idgen    int32                 // generates new correlation ids
 	recycled map[int32]struct{}    // correlation ids available for reuse
 	inflight map[int32]connRequest // set of inflight requests on the connection
-}
-
-func (p *connPool) connect(network, address string) *conn {
-	reqs := make(chan connRequest)
-	conn := &conn{
-		refc:     1,
-		pool:     p,
-		reqs:     reqs,
-		recycled: make(map[int32]struct{}),
-		inflight: make(map[int32]connRequest),
-	}
-	go conn.run(reqs)
-	return conn
 }
 
 func (c *conn) ref() {
@@ -874,7 +932,7 @@ func (c *conn) saslAuthenticate(rw *bufio.ReadWriter, data []byte) ([]byte, erro
 	}
 	res := msg.(*saslauthenticate.Response)
 	if res.ErrorCode != 0 {
-		err = Error(res.ErrorCode)
+		err = makeError(res.ErrorCode, res.ErrorMessage)
 	}
 	return res.AuthBytes, err
 }
