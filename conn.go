@@ -171,7 +171,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	c := &Conn{
 		conn:            conn,
 		rbuf:            *bufio.NewReader(conn),
-		wbuf:            *bufio.NewWriter(conn),
+		wbuf:            *bufio.NewWriter(io.MultiWriter(conn, debug(">"))),
 		clientID:        config.ClientID,
 		topic:           config.Topic,
 		partition:       int32(config.Partition),

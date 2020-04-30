@@ -353,11 +353,6 @@ func extractOffset(base int64, msgSet []byte) (offset int64, err error) {
 	return
 }
 
-type Header struct {
-	Key   string
-	Value []byte
-}
-
 type messageSetHeaderV2 struct {
 	firstOffset          int64
 	length               int32

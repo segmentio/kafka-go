@@ -7,6 +7,30 @@ import (
 	"time"
 )
 
+func newLocalClientAndTopic() (*Client, string, func()) {
+	topic := makeTopic()
+	client, shutdown := newClient(TCP("localhost"))
+
+	_, err := client.CreateTopics(context.Background(), &CreateTopicsRequest{
+		Topics: []TopicConfig{{
+			Topic:             topic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		}},
+	})
+	if err != nil {
+		shutdown()
+		panic(err)
+	}
+
+	return client, topic, func() {
+		client.DeleteTopics(context.Background(), &DeleteTopicsRequest{
+			Topics: []string{topic},
+		})
+		shutdown()
+	}
+}
+
 func newLocalClient() (*Client, func()) {
 	return newClient(TCP("localhost"))
 }

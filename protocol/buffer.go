@@ -219,6 +219,15 @@ func (pb *pageBuffer) Size() int64 {
 	return int64(pb.length)
 }
 
+func (pb *pageBuffer) Truncate(n int) {
+	if n < pb.length {
+		pb.length = n
+	}
+	if n < pb.cursor {
+		pb.cursor = n
+	}
+}
+
 func (pb *pageBuffer) Seek(offset int64, whence int) (int64, error) {
 	c, err := seek(int64(pb.cursor), int64(pb.length), offset, whence)
 	if err != nil {

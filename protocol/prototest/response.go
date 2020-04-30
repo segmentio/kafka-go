@@ -3,6 +3,7 @@ package prototest
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"testing"
 
@@ -20,6 +21,8 @@ func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 		if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
 			t.Fatal(err)
 		}
+
+		t.Logf("\n%s", hex.Dump(b.Bytes()))
 
 		correlationID, res, err := protocol.ReadResponse(r, int16(msg.ApiKey()), version)
 		if err != nil {

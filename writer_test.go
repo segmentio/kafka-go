@@ -31,18 +31,22 @@ func TestWriter(t *testing.T) {
 			scenario: "running out of max attempts should return an error",
 			function: testWriterMaxAttemptsErr,
 		},
+
 		{
 			scenario: "writing a message larger then the max bytes should return an error",
 			function: testWriterMaxBytes,
 		},
+
 		{
 			scenario: "writing a batch of message based on batch byte size",
 			function: testWriterBatchBytes,
 		},
+
 		{
 			scenario: "writing a batch of messages",
 			function: testWriterBatchSize,
 		},
+
 		{
 			scenario: "writing messsages with a small batch byte size",
 			function: testWriterSmallBatchBytes,

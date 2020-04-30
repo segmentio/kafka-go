@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math/rand"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/apiversions"
+	"github.com/segmentio/kafka-go/protocol/createtopics"
+	"github.com/segmentio/kafka-go/protocol/deletetopics"
 	meta "github.com/segmentio/kafka-go/protocol/metadata"
 	"github.com/segmentio/kafka-go/protocol/saslauthenticate"
 	"github.com/segmentio/kafka-go/protocol/saslhandshake"
@@ -245,8 +248,9 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		tls:         tlsConfig,
 		sasl:        t.SASL,
 
-		done:  make(chan struct{}),
-		ready: make(chan struct{}),
+		ready: make(event),
+		done:  make(event),
+		wake:  make(chan event),
 		conns: make(map[int]*conn),
 	}
 
@@ -257,11 +261,18 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	}
 
 	p.ctrl = p.connect(k.network, k.address)
-	go p.discover(p.ctrl, p.done)
+	go p.discover(p.ctrl, p.wake, p.done)
 	return p
 }
 
+type event chan struct{}
+
+func (e event) trigger() { close(e) }
+
 type connPool struct {
+	// Immutable fields of the connection pool. Connections access these field
+	// on their parent pool in a ready-only fashion, so no synchronization is
+	// required.
 	network     string
 	address     string
 	dial        func(context.Context, string, string) (net.Conn, error)
@@ -272,16 +283,19 @@ type connPool struct {
 	clientID    string
 	tls         *tls.Config
 	sasl        sasl.Mechanism
-
+	// Signaling mechanisms to orchestrate communications between the pool and
+	// the rest of the program.
+	once  sync.Once  // ensure that `ready` is triggered only once
+	ready event      // triggered after the first metadata update
+	done  event      // triggered when the connection pool is closed
+	wake  chan event // used to force metadata updates
+	// Mutable fields of the connection pool, access must be synchronized.
 	mutex    sync.RWMutex
-	once     sync.Once
-	ready    chan struct{}
-	done     chan struct{}
-	ctrl     *conn
-	conns    map[int]*conn
-	metadata *meta.Response
-	layout   protocol.Cluster
-	err      error
+	conns    map[int]*conn    // data connections used for produce/fetch/etc...
+	ctrl     *conn            // control connection used for metadata requests
+	metadata *meta.Response   // last metadata response seen by the pool
+	err      error            // last error from metadata requests
+	layout   protocol.Cluster // cluster layout built from metadata response
 }
 
 func (p *connPool) closeIdleConnections() {
@@ -297,24 +311,44 @@ func (p *connPool) closeIdleConnections() {
 	}
 
 	if p.done != nil {
-		close(p.done)
+		p.done.trigger()
 		p.ctrl = nil
 		p.done = nil
 	}
 }
 
+func (p *connPool) cachedMetadata() (*meta.Response, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	return p.metadata, p.err
+}
+
 func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protocol.Message, error) {
 	canceled := ctx.Done()
-
+	// This first select should never block after the first metadata response
+	// that would mark the pool as `ready`.
 	select {
 	case <-p.ready:
 	case <-canceled:
 		return nil, ctx.Err()
 	}
 
+	var refreshMetadata bool
 	switch m := req.(type) {
 	case *meta.Request:
-		return filterMetadataResponse(m, p.metadata), nil
+		// We serve metadata requests directly from the transport cache.
+		//
+		// This reduces the number of round trips to kafka brokers while keeping
+		// the logic simple when applying partitioning strategies.
+		r, err := p.cachedMetadata()
+		if err != nil {
+			return nil, err
+		}
+		return filterMetadataResponse(m, r), nil
+	case *createtopics.Request, *deletetopics.Request:
+		// Force an update of the metadata when adding or removing topics,
+		// otherwise the cached state would get out of sync.
+		refreshMetadata = true
 	}
 
 	c, err := p.grabConn(req)
@@ -334,16 +368,33 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 		return nil, ctx.Err()
 	}
 
+	var r connResponse
 	select {
-	case r := <-res:
-		return r.res, r.err
+	case r = <-res:
 	case <-canceled:
 		return nil, ctx.Err()
 	}
+	if r.err != nil {
+		return nil, r.err
+	}
+
+	if refreshMetadata {
+		notify := make(event)
+		select {
+		case <-canceled:
+		case p.wake <- notify:
+			select {
+			case <-notify:
+			case <-canceled:
+			}
+		}
+	}
+
+	return r.res, nil
 }
 
 func (p *connPool) setReady() {
-	p.once.Do(func() { close(p.ready) })
+	p.once.Do(p.ready.trigger)
 }
 
 // grabConn returns the connection which should serve the request passed as
@@ -363,14 +414,13 @@ func (p *connPool) grabConn(req protocol.Message) (*conn, error) {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
 
-	layout, err := p.layout, p.err
-	if err != nil {
-		return nil, err
-	}
-
 	var c *conn
 	switch m := req.(type) {
 	case protocol.BrokerMessage:
+		layout, err := p.layout, p.err
+		if err != nil {
+			return nil, err
+		}
 		broker, err := m.Broker(layout)
 		if err != nil {
 			return nil, err
@@ -444,7 +494,7 @@ func (p *connPool) update(metadata *meta.Response, err error) {
 // discover is the entry point of an internal goroutine for the transport which
 // periodically requests updates of the cluster metadata and refreshes the
 // transport cached cluster layout.
-func (p *connPool) discover(conn *conn, done <-chan struct{}) {
+func (p *connPool) discover(conn *conn, wake <-chan event, done <-chan struct{}) {
 	defer conn.unref()
 
 	prng := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -461,6 +511,7 @@ func (p *connPool) discover(conn *conn, done <-chan struct{}) {
 		IncludeTopicAuthorizedOperations:    true,
 	}
 
+	var notify event
 	for {
 		select {
 		case conn.reqs <- connRequest{
@@ -481,11 +532,17 @@ func (p *connPool) discover(conn *conn, done <-chan struct{}) {
 		res, _ := r.res.(*meta.Response)
 		p.update(res, r.err)
 
+		if notify != nil {
+			notify.trigger()
+			notify = nil
+		}
+
 		select {
 		case <-timer.C:
 			timer.Reset(metadataTTL())
 		case <-done:
 			return
+		case notify = <-wake:
 		}
 	}
 }
@@ -698,6 +755,13 @@ func (c *conn) synchronized(f func()) {
 	f()
 }
 
+type debug string
+
+func (d debug) Write(b []byte) (int, error) {
+	fmt.Println(hex.Dump(b))
+	return len(b), nil
+}
+
 func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16, error) {
 	deadline := time.Now().Add(c.pool.dialTimeout)
 
@@ -720,8 +784,8 @@ func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16
 
 	nc := netConn
 	rw := &bufio.ReadWriter{
-		Reader: bufio.NewReaderSize(netConn, bufferSize),
-		Writer: bufio.NewWriterSize(netConn, bufferSize),
+		Reader: bufio.NewReaderSize(io.TeeReader(netConn, debug("<")), bufferSize),
+		Writer: bufio.NewWriterSize(io.MultiWriter(netConn, debug(">")), bufferSize),
 	}
 
 	if err := nc.SetDeadline(deadline); err != nil {
@@ -776,6 +840,7 @@ func (c *conn) dispatch(conn net.Conn, done chan<- error, rb *bufio.Reader) {
 		}
 
 		_, res, err := protocol.ReadResponse(rb, int16(r.req.ApiKey()), r.version)
+		fmt.Println("read response >>>", err)
 
 		r.res <- connResponse{
 			res: res,
@@ -838,6 +903,7 @@ func (c *conn) run(reqs <-chan connRequest) {
 			conn.SetDeadline(time.Now().Add(c.pool.readTimeout))
 
 			if err := protocol.WriteRequest(wb, r.version, id, c.pool.clientID, r.req); err != nil {
+				fmt.Println("error writing request:", err)
 				closeConn(err)
 			}
 

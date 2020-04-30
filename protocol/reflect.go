@@ -3,6 +3,7 @@
 package protocol
 
 import (
+	"fmt"
 	"reflect"
 )
 
@@ -69,6 +70,7 @@ type array struct {
 }
 
 func makeArray(t reflect.Type, n int) array {
+	fmt.Println("make array of", n, t)
 	return array{val: reflect.MakeSlice(reflect.SliceOf(t), n, n)}
 }
 

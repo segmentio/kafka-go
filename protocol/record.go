@@ -93,71 +93,91 @@ func (rs *RecordSet) Close() error {
 	return nil
 }
 
-const headerSize = 8 + 4 // sizeof(baseOffset) + sizeof(messageSetSize)
 const magicByteOffset = 16
-const messageSizeOffset = 8
 
 // ReadFrom reads the representation of a record set from r into rs, returning
 // the number of bytes consumed from r, and an non-nil error if the record set
 // could not be read.
 func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
-	var baseOffset int64
-	var messageSize int32
+	var size int32
+	var magic byte
 	var rn int64
 
 	rb, _ := r.(*bufio.Reader)
 	if rb != nil {
-		b, err := rb.Peek(headerSize)
+		// This is an optimized code path for the common case where we're
+		// reading from a bufio.Reader, we use the Peek method to get a pointer
+		// to the internal buffer of the reader and avoid allocating a temporary
+		// area to store the data.
+		b, err := rb.Peek(4)
+		// We need to consume the size, because the readFromVersion* methods
+		// expect to be positionned at the beginning of the message set or
+		// record batch.
+		n, _ := rb.Discard(len(b))
 		if err != nil {
-			return 0, err
+			return int64(n), dontExpectEOF(err)
 		}
-		baseOffset = readInt64(b[:8])
-		messageSize = readInt32(b[8:12])
+
+		if size = readInt32(b); size <= 0 {
+			*rs = RecordSet{}
+			return int64(n), nil
+		}
+
+		fmt.Println("read size:", size)
+
+		c, err := rb.Peek(magicByteOffset + 1)
+		if err != nil {
+			rb.Discard(len(c))
+			return int64(n + len(c)), dontExpectEOF(err)
+		}
+		magic = c[magicByteOffset]
+		rn = int64(n)
 	} else {
-		b := make([]byte, headerSize)
+		// Less optimal code path, we need to allocate a temporary buffer to
+		// read the size and magic byte from the reader.
+		b := make([]byte, 4+magicByteOffset+1)
 
-		if n, err := io.ReadFull(r, b); err != nil {
-			return int64(n), err
+		if n, err := io.ReadFull(r, b[:4]); err != nil {
+			return int64(n), dontExpectEOF(err)
 		}
 
-		baseOffset = readInt64(b[:8])
-		messageSize = readInt32(b[8:12])
-		size := int64(messageSize)
-		size += headerSize
-
-		rb = bufio.NewReader(io.LimitReader(io.MultiReader(bytes.NewReader(b), r), size))
-		rn = headerSize
-	}
-
-	if messageSize == 0 {
-		*rs = RecordSet{
-			Version:    1,
-			BaseOffset: int64(baseOffset),
-			Records:    []Record{},
+		if size = readInt32(b[:4]); size <= 0 {
+			*rs = RecordSet{}
+			return 4, nil
 		}
-		rb.Discard(headerSize)
-		return headerSize, nil
+
+		if n, err := io.ReadFull(r, b[4:]); err != nil {
+			return 4 + int64(n), dontExpectEOF(err)
+		}
+		magic = b[magicByteOffset]
+		// Reconstruct the prefix that we just had to consume from the reader
+		// to pass the data to the right read method based on the magic number
+		// that we got. Note that we offset the buffer by 4 bytes to skip the
+		// size because the readFromVersion* methods expect to be positioned at
+		// the beginning of the message set or record batch.
+		prefix := bytes.NewReader(b[4:])
+		reader := io.MultiReader(prefix, r)
+		rb = bufio.NewReader(reader)
+		rn = int64(len(b))
 	}
 
-	b, err := rb.Peek(magicByteOffset + 1)
-	if err != nil {
-		return rn, err
-	}
-
-	switch version := b[magicByteOffset]; version {
+	var n int64
+	var err error
+	switch magic {
 	case 0, 1:
-		return rs.readFromVersion1(rb)
+		n, err = rs.readFromVersion1(rb, size)
 	case 2:
-		return rs.readFromVersion2(rb)
+		n, err = rs.readFromVersion2(rb, size)
 	default:
-		return int64(len(b)), fmt.Errorf("unsupported message version %d for message of size %d starting at offset %d", version, messageSize, baseOffset)
+		return rn, fmt.Errorf("unsupported message version %d for message of size %d", magic, size)
 	}
+	return 4 + n, dontExpectEOF(err)
 }
 
-func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
+func (rs *RecordSet) readFromVersion1(r *bufio.Reader, size int32) (int64, error) {
 	d := decoder{
 		reader: r,
-		remain: math.MaxInt32,
+		remain: int(size),
 	}
 
 	version := int8(0)
@@ -165,7 +185,7 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 	messageSize := d.readInt32()
 
 	if d.err != nil {
-		return int64(math.MaxInt32 - d.remain), d.err
+		return int64(int(size) - d.remain), d.err
 	}
 
 	records := make([]Record, 0, 100)
@@ -227,6 +247,11 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 		rs.crc.writeNullBytes(v)
 
 		if rs.crc.sum != crc {
+			fmt.Println("magicByte =", magicByte)
+			fmt.Println("attributes =", attributes)
+			fmt.Println("timestamp =", timestamp)
+			fmt.Println(k)
+			fmt.Println(v)
 			d.err = errorf("crc32 checksum mismatch (computed=%d found=%d)", rs.crc.sum, crc)
 			break
 		}
@@ -237,7 +262,7 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 				decompressed := acquireBufferedReader(decompressor, -1)
 
 				subset := RecordSet{}
-				_, d.err = subset.readFromVersion1(decompressed.Reader)
+				_, d.err = subset.readFromVersion1(decompressed.Reader, math.MaxInt32)
 
 				releaseBufferedReader(decompressed)
 				decompressor.Close()
@@ -267,16 +292,17 @@ func (rs *RecordSet) readFromVersion1(r *bufio.Reader) (int64, error) {
 	}
 
 	records = nil
-	return headerSize + int64(int(messageSize)-d.remain), d.err
+	return 12 + int64(int(messageSize)-d.remain), d.err
 }
 
-func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
-	b, err := r.Peek(57)
+func (rs *RecordSet) readFromVersion2(r *bufio.Reader, size int32) (int64, error) {
+	b, err := r.Peek(61)
 	if err != nil {
-		return 0, err
+		n, _ := r.Discard(len(b))
+		return int64(n), err
 	}
 
-	_ = b[56] // bound check elimination
+	_ = b[60] // bound check elimination
 	var (
 		baseOffset           = readInt64(b[0:])
 		batchLength          = readInt32(b[8:])
@@ -290,26 +316,29 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 		producerID           = readInt64(b[43:])
 		producerEpoch        = readInt16(b[51:])
 		baseSequence         = readInt32(b[53:])
+		numRecords           = readInt32(b[57:])
 	)
-	_ = maxTimestamp // not sure what this field is useful for
+	fmt.Println("reading", numRecords, "records")
+	_ = lastOffsetDelta // this is not useful for reading the records
+	_ = maxTimestamp    // not sure what this field is useful for
 
 	rs.crc.reset()
 	rs.crc.write(b[21:])
 
-	r.Discard(57)
+	r.Discard(61)
 
 	buffer := newPageBuffer()
 	defer buffer.unref()
 
-	reader := acquireBufferedReader(r, int64(batchLength)-45)
+	reader := acquireBufferedReader(r, int64(batchLength)-49)
 	defer releaseBufferedReader(reader)
 
 	n, err := buffer.ReadFrom(reader.Reader)
 	if err != nil {
-		return 57 + n, err
+		return 61 + n, err
 	}
-	if n != (int64(batchLength) - 45) {
-		return 57 + n, io.ErrUnexpectedEOF
+	if n != (int64(batchLength) - 49) {
+		return 61 + n, io.ErrUnexpectedEOF
 	}
 
 	buffer.pages.scan(0, int64(n), func(b []byte) bool {
@@ -318,13 +347,13 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 	})
 
 	if rs.crc.sum != uint32(crc) {
-		return 57 + n, errorf("crc32 checksum mismatch (computed=%d found=%d)", rs.crc.sum, uint32(crc))
+		return 61 + n, errorf("crc32 checksum mismatch (computed=%d found=%d)", rs.crc.sum, uint32(crc))
 	}
 
 	if compression := Attributes(attributes).Compression(); compression != 0 {
 		codec := compression.Codec()
 		if codec == nil {
-			return 57 + n, errorf("unsupported compression codec (%d)", compression)
+			return 61 + n, errorf("unsupported compression codec (%d)", compression)
 		}
 
 		decompressor := codec.NewReader(buffer)
@@ -334,7 +363,7 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 		defer uncompressed.unref()
 
 		if _, err := uncompressed.ReadFrom(decompressor); err != nil {
-			return 57 + n, err
+			return 61 + n, err
 		}
 
 		buffer = uncompressed
@@ -348,22 +377,10 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 		remain: recordsLength,
 	}
 
-	numRecords := lastOffsetDelta
-	if numRecords > 1e6 {
-		// Set a hard limit at 1M records in case the wire representation is
-		// malformed and the offset delta was invalid.
-		numRecords = 1e6
-	}
+	records := make([]Record, numRecords)
 
-	records := make([]Record, 0, numRecords)
-	defer func() {
-		for _, r := range records {
-			unref(r.Key)
-			unref(r.Value)
-		}
-	}()
-
-	for d.remain > 0 {
+	for i := range records {
+		fmt.Println("read record", i)
 		_ = d.readVarInt() // useless length of the record
 		_ = d.readInt8()   // record attributes (unused)
 		timestampDelta := d.readVarInt()
@@ -408,28 +425,36 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 			v = buffer.ref(valueOffset, valueOffset+valueLength)
 		}
 
-		records = append(records, Record{
+		records[i] = Record{
 			Offset:  int64(baseOffset) + offsetDelta,
 			Time:    makeTime(int64(firstTimestamp) + timestampDelta),
 			Key:     k,
 			Value:   v,
 			Headers: headers,
-		})
+		}
 	}
 
-	*rs = RecordSet{
-		Version:              int8(magicByte),
-		Attributes:           Attributes(attributes),
-		PartitionLeaderEpoch: int32(partitionLeaderEpoch),
-		BaseOffset:           int64(baseOffset),
-		ProducerID:           int64(producerID),
-		ProducerEpoch:        int16(producerEpoch),
-		BaseSequence:         int32(baseSequence),
-		Records:              records,
+	fmt.Println("done reading records", d.remain, d.err)
+
+	if d.err != nil {
+		for _, r := range records {
+			unref(r.Key)
+			unref(r.Value)
+		}
+	} else {
+		*rs = RecordSet{
+			Version:              int8(magicByte),
+			Attributes:           Attributes(attributes),
+			PartitionLeaderEpoch: int32(partitionLeaderEpoch),
+			BaseOffset:           int64(baseOffset),
+			ProducerID:           int64(producerID),
+			ProducerEpoch:        int16(producerEpoch),
+			BaseSequence:         int32(baseSequence),
+			Records:              records,
+		}
 	}
 
-	records = nil
-	return 57 + n, d.err
+	return 61 + n, d.err
 }
 
 // WriteTo writes the representation of rs into w. The value of rs.Version
@@ -439,41 +464,88 @@ func (rs *RecordSet) readFromVersion2(r *bufio.Reader) (int64, error) {
 // method never produces messages in version 0. If rs.Version is zero, the
 // method defaults to producing messages in version 1.
 func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
+	// This optimization avoids rendering the record set in an intermediary
+	// buffer when the writer is already a pageBuffer, which is a common case
+	// due to the way WriteRequest and WriteResponse are implemented.
+	buffer, _ := w.(*pageBuffer)
+	bufferOffset := int64(0)
+
+	if buffer != nil {
+		bufferOffset = buffer.Size()
+	} else {
+		buffer = newPageBuffer()
+		defer buffer.unref()
+	}
+
+	size := packUint32(0)
+	buffer.Write(size[:]) // size placeholder
+
+	var err error
 	switch rs.Version {
 	case 0, 1:
-		return rs.writeToVersion1(w)
+		err = rs.writeToVersion1(buffer, bufferOffset+4)
 	case 2:
-		return rs.writeToVersion2(w)
+		err = rs.writeToVersion2(buffer, bufferOffset+4)
 	default:
-		return 0, fmt.Errorf("unsupported record set version %d", rs.Version)
+		err = fmt.Errorf("unsupported record set version %d", rs.Version)
 	}
+	if err != nil {
+		return 0, err
+	}
+
+	n := buffer.Size() - bufferOffset
+	fmt.Println("buffer size =", n)
+	if n == 0 {
+		size = packUint32(^uint32(0))
+	} else {
+		size = packUint32(uint32(n) - 4)
+	}
+	buffer.WriteAt(size[:], bufferOffset)
+
+	if buffer != w {
+		return buffer.WriteTo(w)
+	}
+
+	return n, nil
 }
 
-func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
-	buffer := newPageBuffer()
-	defer buffer.unref()
-
+func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) error {
 	attributes := rs.Attributes
 	records := rs.Records
 
+	if len(records) == 0 {
+		return nil
+	}
+
 	if compression := attributes.Compression(); compression != 0 && len(records) != 0 {
 		if codec := compression.Codec(); codec != nil {
+			subset := *rs
+			subset.Attributes &= ^7 // erase compression
+
+			if err := subset.writeToVersion1(buffer, bufferOffset); err != nil {
+				return err
+			}
+
 			compressed := newPageBuffer()
 			defer compressed.unref()
 
 			compressor := codec.NewWriter(compressed)
 			defer compressor.Close()
 
-			subset := *rs
-			subset.Attributes &= ^7 // erase compression
-
-			_, err := subset.writeToVersion1(compressor)
+			var err error
+			buffer.pages.scan(bufferOffset, buffer.Size(), func(b []byte) bool {
+				_, err = compressor.Write(b)
+				return err != nil
+			})
 			if err != nil {
-				return 0, err
+				return err
 			}
+
 			if err := compressor.Close(); err != nil {
-				return 0, err
+				return err
 			}
+
+			buffer.Truncate(int(bufferOffset))
 
 			records = []Record{{
 				Offset: records[0].Offset,
@@ -485,13 +557,15 @@ func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
 
 	e := encoder{writer: buffer}
 
-	for _, r := range records {
-		if buffer.Len() == 0 {
+	for i := range records {
+		r := &records[i]
+
+		if i == 0 {
 			e.writeInt64(r.Offset)
 			e.writeInt32(0) // message set size placeholder
 		}
 
-		i := buffer.Len()
+		recordOffset := buffer.Size()
 		attributes := int8(attributes)
 		timestamp := timestamp(r.Time)
 		e.writeInt32(0) // crc32 placeholder
@@ -500,12 +574,18 @@ func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
 		e.writeInt64(timestamp)
 
 		if err := e.writeNullBytesFrom(r.Key); err != nil {
-			return 0, err
+			return err
 		}
 
 		if err := e.writeNullBytesFrom(r.Value); err != nil {
-			return 0, err
+			return err
 		}
+
+		fmt.Println("magic Bytes =", 1)
+		fmt.Println("attributes =", attributes)
+		fmt.Println("timestamp =", timestamp)
+		fmt.Println(r.Key)
+		fmt.Println(r.Value)
 
 		rs.crc.reset()
 		rs.crc.writeInt8(1)
@@ -514,38 +594,49 @@ func (rs *RecordSet) writeToVersion1(w io.Writer) (int64, error) {
 		rs.crc.writeNullBytes(r.Key)
 		rs.crc.writeNullBytes(r.Value)
 
+		fmt.Println("write crc32:", rs.crc.sum)
 		b := packUint32(rs.crc.sum)
-		buffer.WriteAt(b[:], int64(i))
+		buffer.WriteAt(b[:], recordOffset)
 	}
 
-	if n := buffer.Len(); n == 0 {
-		e.writeInt64(0) // offset
-		e.writeInt32(0) // message set size
-	} else {
-		b := packUint32(uint32(n) - headerSize)
-		buffer.WriteAt(b[:], messageSizeOffset)
-	}
-
-	return buffer.WriteTo(w)
+	totalLength := buffer.Size() - bufferOffset
+	b := packUint32(uint32(totalLength) - 12)
+	buffer.WriteAt(b[:], bufferOffset+8)
+	return nil
 }
 
-func (rs *RecordSet) writeToVersion2(w io.Writer) (int64, error) {
-	buffer := newPageBuffer()
-	defer buffer.unref()
-
+func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) error {
+	records := rs.Records
 	baseOffset := rs.BaseOffset
 	lastOffsetDelta := int32(0)
 	firstTimestamp := int64(0)
 	maxTimestamp := int64(0)
+	numRecords := int32(len(records))
 
-	if records := rs.Records; len(records) != 0 {
-		last := len(records) - 1
-		lastOffsetDelta = int32(records[last].Offset - baseOffset)
-		firstTimestamp = timestamp(records[0].Time)
-		maxTimestamp = timestamp(records[last].Time)
+	if numRecords == 0 {
+		return nil
 	}
 
-	b := [57]byte{}
+	if numRecords > 0 {
+		r0, r1 := &records[0], &records[numRecords-1]
+		lastOffsetDelta = int32(r1.Offset - r0.Offset)
+		firstTimestamp = timestamp(r0.Time)
+		maxTimestamp = timestamp(r1.Time)
+	}
+
+	fmt.Println("writing", numRecords, "records")
+	fmt.Println("baseOffset =", baseOffset)
+	fmt.Println("partitionLeaderEpoch =", rs.PartitionLeaderEpoch)
+	fmt.Println("attributes =", rs.Attributes)
+	fmt.Println("lastOffsetDelta =", lastOffsetDelta)
+	fmt.Println("firstTimestamp =", firstTimestamp)
+	fmt.Println("maxTimestamp =", maxTimestamp)
+	fmt.Println("producerID =", rs.ProducerID)
+	fmt.Println("producerEpoch =", rs.ProducerEpoch)
+	fmt.Println("baseSequence =", rs.BaseSequence)
+	fmt.Println("numRecords =", numRecords)
+
+	var b [61]byte
 	writeInt64(b[0:], baseOffset)
 	writeInt32(b[8:], 0) // placeholder for record batch length
 	writeInt32(b[12:], rs.PartitionLeaderEpoch)
@@ -558,6 +649,7 @@ func (rs *RecordSet) writeToVersion2(w io.Writer) (int64, error) {
 	writeInt64(b[43:], rs.ProducerID)
 	writeInt16(b[51:], rs.ProducerEpoch)
 	writeInt32(b[53:], rs.BaseSequence)
+	writeInt32(b[57:], numRecords)
 	buffer.Write(b[:])
 
 	var e = encoder{writer: buffer}
@@ -571,7 +663,9 @@ func (rs *RecordSet) writeToVersion2(w io.Writer) (int64, error) {
 		}
 	}
 
-	for _, r := range rs.Records {
+	for i := range records {
+		r := &records[i]
+		fmt.Println("writing record:", r)
 		timestampDelta := timestamp(r.Time) - firstTimestamp
 		offsetDelta := r.Offset - baseOffset
 		keyLength := byteSequenceLength(r.Key)
@@ -596,11 +690,11 @@ func (rs *RecordSet) writeToVersion2(w io.Writer) (int64, error) {
 		e.writeVarInt(offsetDelta)
 
 		if err := e.writeCompactNullBytesFrom(r.Key); err != nil {
-			return 0, err
+			return err
 		}
 
 		if err := e.writeCompactNullBytesFrom(r.Value); err != nil {
-			return 0, err
+			return err
 		}
 
 		e.writeVarInt(int64(len(r.Headers)))
@@ -613,26 +707,30 @@ func (rs *RecordSet) writeToVersion2(w io.Writer) (int64, error) {
 
 	if compressor != nil {
 		if err := compressor.Close(); err != nil {
-			return 0, err
+			return err
 		}
 	}
 
-	bufferLength := buffer.Len()
-	batchLength := bufferLength - 12
+	totalLength := buffer.Size() - bufferOffset
+	batchLength := totalLength - 12
 
 	rs.crc.reset()
-	buffer.pages.scan(21, int64(bufferLength), func(b []byte) bool {
+	buffer.pages.scan(bufferOffset+21, bufferOffset+totalLength, func(b []byte) bool {
 		rs.crc.write(b)
 		return true
 	})
 
+	fmt.Println("total length =", totalLength)
+	fmt.Println("batch length =", batchLength)
+
 	length := packUint32(uint32(batchLength))
-	buffer.WriteAt(length[:], 8)
+	buffer.WriteAt(length[:], bufferOffset+8)
 
 	checksum := packUint32(rs.crc.sum)
-	buffer.WriteAt(checksum[:], 17)
+	buffer.WriteAt(checksum[:], bufferOffset+17)
 
-	return buffer.WriteTo(w)
+	fmt.Println("optimized buffer write of", totalLength)
+	return nil
 }
 
 func timestamp(t time.Time) int64 {
@@ -688,4 +786,15 @@ func writeInt32(b []byte, i int32) {
 
 func writeInt64(b []byte, i int64) {
 	binary.BigEndian.PutUint64(b, uint64(i))
+}
+
+func dontExpectEOF(err error) error {
+	switch err {
+	case nil:
+		return nil
+	case io.EOF:
+		return io.ErrUnexpectedEOF
+	default:
+		return err
+	}
 }

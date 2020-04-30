@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bufio"
+	"fmt"
 )
 
 func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
@@ -28,8 +29,11 @@ func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int3
 	}
 
 	if size, err = readMessageSize(r); err != nil {
+		fmt.Println("error reading response size:", err)
 		return
 	}
+
+	fmt.Println("read response of size", size)
 
 	d := &decoder{reader: r, remain: int(size)}
 	defer d.discardAll()
@@ -38,6 +42,9 @@ func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int3
 	res := &t.responses[apiVersion-minVersion]
 	msg = res.new()
 	res.decode(d, valueOf(msg))
+	fmt.Printf("message: %+v\n", msg)
+	fmt.Println("remain:", d.remain)
+	fmt.Println(">>>", d.err)
 	err = d.err
 	return
 }
@@ -62,17 +69,19 @@ func WriteResponse(w *bufio.Writer, apiVersion int16, correlationID int32, msg M
 			ApiKey(apiKey), apiVersion, minVersion, maxVersion)
 	}
 
-	const (
-		sizeOfCorrelationID = 4
-	)
-
 	r := &t.responses[apiVersion-minVersion]
 	v := valueOf(msg)
-	n := sizeOfCorrelationID + r.size(v)
+	b := newPageBuffer()
+	defer b.unref()
 
-	e := &encoder{writer: w}
-	e.writeInt32(int32(n))
+	e := &encoder{writer: b}
+	e.writeInt32(0) // placeholder
 	e.writeInt32(correlationID)
 	r.encode(e, v)
+
+	size := packUint32(uint32(b.Size()) - 4)
+	b.WriteAt(size[:], 0)
+	b.WriteTo(w)
+
 	return w.Flush()
 }
