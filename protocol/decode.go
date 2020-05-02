@@ -1,22 +1,40 @@
 package protocol
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"reflect"
 )
 
+type discarder interface {
+	Discard(int) (int, error)
+}
+
 type decoder struct {
-	reader *bufio.Reader
+	reader io.Reader
 	remain int
+	buffer [8]byte
 	err    error
-	limit  io.LimitedReader
+}
+
+func (d *decoder) Read(b []byte) (int, error) {
+	if d.err != nil {
+		return 0, d.err
+	}
+	if d.remain == 0 {
+		return 0, io.EOF
+	}
+	if len(b) > d.remain {
+		b = b[:d.remain]
+	}
+	n, err := d.reader.Read(b)
+	d.remain -= n
+	return n, err
 }
 
 func (d *decoder) decodeBool(v value) {
-	v.setBool(d.readInt8() != 0)
+	v.setBool(d.readBool())
 }
 
 func (d *decoder) decodeInt8(v value) {
@@ -48,7 +66,7 @@ func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeF
 		v.setArray(array{})
 	} else {
 		a := makeArray(elemType, int(n))
-		for i := 0; i < int(n); i++ {
+		for i := 0; i < int(n) && d.remain > 0; i++ {
 			decodeElem(d, a.index(i))
 		}
 		v.setArray(a)
@@ -56,48 +74,28 @@ func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeF
 }
 
 func (d *decoder) discardAll() {
-	if d.remain > 0 {
-		d.limit.R = d.reader
-		d.limit.N = int64(d.remain)
-		n, err := io.Copy(ioutil.Discard, &d.limit)
-		d.remain -= int(n)
-		d.setError(err)
-	}
+	d.discard(d.remain)
 }
 
 func (d *decoder) discard(n int) {
-	d.reader.Discard(n)
-	d.remain -= n
-}
-
-func (d *decoder) peek(n int) []byte {
 	if n > d.remain {
-		d.setError(io.ErrUnexpectedEOF)
-		return nil
+		n = d.remain
 	}
-	b, err := d.reader.Peek(n)
-	if err != nil {
-		if err == io.EOF {
-			err = io.ErrUnexpectedEOF
-		}
-		d.setError(err)
-		return nil
+	var err error
+	if r, _ := d.reader.(discarder); r != nil {
+		n, err = r.Discard(n)
+		d.remain -= n
+	} else {
+		_, err = io.Copy(ioutil.Discard, d)
 	}
-	return b
+	d.setError(err)
 }
 
 func (d *decoder) read(n int) []byte {
-	if n > d.remain {
-		d.setError(io.ErrUnexpectedEOF)
-		return nil
-	}
 	b := make([]byte, n)
-	n, err := io.ReadFull(d.reader, b)
-	d.remain -= n
-	if err != nil {
-		b = b[:n]
-		d.setError(err)
-	}
+	n, err := io.ReadFull(d, b)
+	b = b[:n]
+	d.setError(err)
 	return b
 }
 
@@ -105,10 +103,15 @@ func (d *decoder) writeTo(w io.Writer, n int) {
 	if int(n) > d.remain {
 		d.setError(io.ErrUnexpectedEOF)
 	} else {
-		d.limit.R = d.reader
-		d.limit.N = int64(n)
-		n, err := io.Copy(w, &d.limit)
-		d.remain -= int(n)
+		remain := d.remain
+		if n < remain {
+			d.remain = n
+		}
+		c, err := io.Copy(w, d)
+		if c < int64(n) && err == nil {
+			err = io.ErrUnexpectedEOF
+		}
+		d.remain = remain - int(n)
 		d.setError(err)
 	}
 }
@@ -116,42 +119,48 @@ func (d *decoder) writeTo(w io.Writer, n int) {
 func (d *decoder) setError(err error) {
 	if d.err == nil && err != nil {
 		d.err = err
-		d.discard(d.remain)
+		d.discardAll()
 	}
 }
 
-func (d *decoder) readInt8() int8 {
-	if b := d.peek(1); len(b) == 1 {
-		u := b[0]
-		d.discard(1)
-		return int8(u)
+func (d *decoder) readFull(b []byte) bool {
+	n, err := io.ReadFull(d, b)
+	d.setError(err)
+	return n == len(b)
+}
+
+func (d *decoder) readByte() byte {
+	if d.readFull(d.buffer[:1]) {
+		return d.buffer[0]
 	}
 	return 0
 }
 
+func (d *decoder) readBool() bool {
+	return d.readByte() != 0
+}
+
+func (d *decoder) readInt8() int8 {
+	return int8(d.readByte())
+}
+
 func (d *decoder) readInt16() int16 {
-	if b := d.peek(2); len(b) == 2 {
-		i := readInt16(b)
-		d.discard(2)
-		return i
+	if d.readFull(d.buffer[:2]) {
+		return readInt16(d.buffer[:2])
 	}
 	return 0
 }
 
 func (d *decoder) readInt32() int32 {
-	if b := d.peek(4); len(b) == 4 {
-		i := readInt32(b)
-		d.discard(4)
-		return i
+	if d.readFull(d.buffer[:4]) {
+		return readInt32(d.buffer[:4])
 	}
 	return 0
 }
 
 func (d *decoder) readInt64() int64 {
-	if b := d.peek(8); len(b) == 8 {
-		i := readInt64(b)
-		d.discard(8)
-		return i
+	if d.readFull(d.buffer[:8]) {
+		return readInt64(d.buffer[:8])
 	}
 	return 0
 }
@@ -213,24 +222,23 @@ func (d *decoder) readVarInt() int64 {
 		n = d.remain
 	}
 
-	if b := d.peek(n); len(b) == n {
-		x := uint64(0)
-		s := uint(0)
+	x := uint64(0)
+	s := uint(0)
 
-		for i, c := range b {
-			if (c & 0x80) == 0 {
-				x |= uint64(c) << s
-				v := int64(x>>1) ^ -(int64(x) & 1)
-				d.discard(i + 1)
-				return v
-			}
-			x |= uint64(c&0x7f) << s
-			s += 7
+	for n > 0 {
+		b := d.readByte()
+
+		if (b & 0x80) == 0 {
+			x |= uint64(b) << s
+			return int64(x>>1) ^ -(int64(x) & 1)
 		}
 
-		d.setError(fmt.Errorf("cannot decode varint from %#x", b))
+		x |= uint64(b&0x7f) << s
+		s += 7
+		n--
 	}
 
+	d.setError(fmt.Errorf("cannot decode varint from input stream"))
 	return 0
 }
 

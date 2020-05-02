@@ -758,7 +758,7 @@ func (c *conn) synchronized(f func()) {
 type debug string
 
 func (d debug) Write(b []byte) (int, error) {
-	fmt.Println(hex.Dump(b))
+	fmt.Printf("%s\n%s", d, hex.Dump(b))
 	return len(b), nil
 }
 
@@ -840,7 +840,6 @@ func (c *conn) dispatch(conn net.Conn, done chan<- error, rb *bufio.Reader) {
 		}
 
 		_, res, err := protocol.ReadResponse(rb, int16(r.req.ApiKey()), r.version)
-		fmt.Println("read response >>>", err)
 
 		r.res <- connResponse{
 			res: res,

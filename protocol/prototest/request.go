@@ -22,7 +22,7 @@ func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 			t.Fatal(err)
 		}
 
-		t.Logf("\n%s", hex.Dump(b.Bytes()))
+		t.Logf("\n%s\n", hex.Dump(b.Bytes()))
 
 		apiVersion, correlationID, clientID, req, err := protocol.ReadRequest(r)
 		if err != nil {

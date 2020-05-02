@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"bufio"
-	"fmt"
 )
 
 func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
@@ -29,11 +28,8 @@ func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int3
 	}
 
 	if size, err = readMessageSize(r); err != nil {
-		fmt.Println("error reading response size:", err)
 		return
 	}
-
-	fmt.Println("read response of size", size)
 
 	d := &decoder{reader: r, remain: int(size)}
 	defer d.discardAll()
@@ -42,9 +38,6 @@ func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int3
 	res := &t.responses[apiVersion-minVersion]
 	msg = res.new()
 	res.decode(d, valueOf(msg))
-	fmt.Printf("message: %+v\n", msg)
-	fmt.Println("remain:", d.remain)
-	fmt.Println(">>>", d.err)
 	err = d.err
 	return
 }

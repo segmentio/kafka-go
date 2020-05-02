@@ -25,31 +25,30 @@ func TestProduceRequest(t *testing.T) {
 		Acks:    1,
 		Timeout: 500,
 		Topics: []produce.RequestTopic{
-			/*
-				{
-					Topic: "topic-1",
-					Partitions: []produce.RequestPartition{
-						{
-							Partition: 0,
-							RecordSet: protocol.RecordSet{
-								Version: 0,
-								Records: nil,
-							},
+			{
+				Topic: "topic-1",
+				Partitions: []produce.RequestPartition{
+					{
+						Partition: 0,
+						RecordSet: protocol.RecordSet{
+							Version: 0,
+							Records: nil,
 						},
-						{
-							Partition: 1,
-							RecordSet: protocol.RecordSet{
-								Version: 1,
-								Records: []protocol.Record{
-									{Offset: 0, Time: t0, Key: nil, Value: protocol.String("msg-0")},
-									{Offset: 1, Time: t1, Key: nil, Value: protocol.String("msg-1")},
-									{Offset: 2, Time: t2, Key: protocol.Bytes([]byte{1}), Value: protocol.String("msg-2")},
-								},
+					},
+					{
+						Partition: 1,
+						RecordSet: protocol.RecordSet{
+							Version: 1,
+							Records: []protocol.Record{
+								{Offset: 0, Time: t0, Key: nil, Value: protocol.String("msg-0")},
+								{Offset: 1, Time: t1, Key: nil, Value: protocol.String("msg-1")},
+								{Offset: 2, Time: t2, Key: protocol.Bytes([]byte{1}), Value: protocol.String("msg-2")},
 							},
 						},
 					},
 				},
-			*/
+			},
+
 			{
 				Topic: "topic-2",
 				Partitions: []produce.RequestPartition{
@@ -80,9 +79,7 @@ func TestProduceRequest(t *testing.T) {
 				Partitions: []produce.RequestPartition{
 					{
 						Partition: 0,
-						RecordSet: protocol.RecordSet{
-							Version: 1,
-						},
+						RecordSet: protocol.RecordSet{},
 					},
 					{
 						Partition: 1,

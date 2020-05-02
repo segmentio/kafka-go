@@ -118,6 +118,12 @@ func (p *page) Len() int { return p.length }
 
 func (p *page) Size() int64 { return int64(p.length) }
 
+func (p *page) Truncate(n int) {
+	if n < p.length {
+		p.length = n
+	}
+}
+
 func (p *page) ReadAt(b []byte, off int64) (int, error) {
 	if off -= p.offset; off < 0 || off > pageSize {
 		panic("offset out of range")
@@ -219,12 +225,40 @@ func (pb *pageBuffer) Size() int64 {
 	return int64(pb.length)
 }
 
+func (pb *pageBuffer) Discard(n int) (int, error) {
+	remain := pb.length - pb.cursor
+	if remain < n {
+		n = remain
+	}
+	pb.cursor += n
+	return n, nil
+}
+
 func (pb *pageBuffer) Truncate(n int) {
 	if n < pb.length {
 		pb.length = n
-	}
-	if n < pb.cursor {
-		pb.cursor = n
+
+		if n < pb.cursor {
+			pb.cursor = n
+		}
+
+		for i := range pb.pages {
+			if p := pb.pages[i]; p.length <= n {
+				n -= p.length
+			} else {
+				if n > 0 {
+					pb.pages[i].Truncate(n)
+					i++
+				}
+				for j := i; j < len(pb.pages); j++ {
+					pb.pages[j].unref()
+				}
+				for j := i; j < len(pb.pages); j++ {
+					pb.pages[j] = nil
+				}
+				break
+			}
+		}
 	}
 }
 
@@ -235,6 +269,12 @@ func (pb *pageBuffer) Seek(offset int64, whence int) (int64, error) {
 	}
 	pb.cursor = int(c)
 	return c, nil
+}
+
+func (pb *pageBuffer) ReadByte() (byte, error) {
+	b := [1]byte{}
+	_, err := pb.Read(b[:])
+	return b[0], err
 }
 
 func (pb *pageBuffer) Read(b []byte) (int, error) {
@@ -432,6 +472,10 @@ func (ref *pageRef) unref() {
 func (ref *pageRef) Size() int64 { return int64(ref.length) }
 
 func (ref *pageRef) Close() error { ref.unref(); return nil }
+
+func (ref *pageRef) String() string {
+	return fmt.Sprintf("[offset=%d cursor=%d length=%d]", ref.offset, ref.cursor, ref.length)
+}
 
 func (ref *pageRef) Seek(offset int64, whence int) (int64, error) {
 	c, err := seek(ref.cursor, int64(ref.length), offset, whence)
