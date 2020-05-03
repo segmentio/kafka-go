@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"encoding/binary"
+	"hash/crc32"
 	"io"
 	"reflect"
 )
@@ -8,6 +10,28 @@ import (
 type encoder struct {
 	writer io.Writer
 	buffer [16]byte
+	table  *crc32.Table
+	crc32  uint32
+}
+
+func (e *encoder) Write(b []byte) (int, error) {
+	n, err := e.writer.Write(b)
+	if n > 0 && e.table != nil {
+		e.crc32 = crc32.Update(e.crc32, e.table, b[:n])
+	}
+	return n, err
+}
+
+func (e *encoder) WriteString(s string) (int, error) {
+	n, err := io.WriteString(e.writer, s)
+	if n > 0 && e.table != nil {
+		e.crc32 = crc32.Update(e.crc32, e.table, []byte(s[:n]))
+	}
+	return n, err
+}
+
+func (e *encoder) setCRC(table *crc32.Table) {
+	e.table, e.crc32 = table, 0
 }
 
 func (e *encoder) encodeBool(v value) {
@@ -77,27 +101,27 @@ func (e *encoder) encodeNullArray(v value, elemType reflect.Type, encodeElem enc
 
 func (e *encoder) writeInt8(i int8) {
 	writeInt8(e.buffer[:1], i)
-	e.writer.Write(e.buffer[:1])
+	e.Write(e.buffer[:1])
 }
 
 func (e *encoder) writeInt16(i int16) {
 	writeInt16(e.buffer[:2], i)
-	e.writer.Write(e.buffer[:2])
+	e.Write(e.buffer[:2])
 }
 
 func (e *encoder) writeInt32(i int32) {
 	writeInt32(e.buffer[:4], i)
-	e.writer.Write(e.buffer[:4])
+	e.Write(e.buffer[:4])
 }
 
 func (e *encoder) writeInt64(i int64) {
 	writeInt64(e.buffer[:8], i)
-	e.writer.Write(e.buffer[:8])
+	e.Write(e.buffer[:8])
 }
 
 func (e *encoder) writeString(s string) {
 	e.writeInt16(int16(len(s)))
-	io.WriteString(e.writer, s)
+	e.WriteString(s)
 }
 
 func (e *encoder) writeNullString(s string) {
@@ -105,13 +129,13 @@ func (e *encoder) writeNullString(s string) {
 		e.writeInt16(-1)
 	} else {
 		e.writeInt16(int16(len(s)))
-		io.WriteString(e.writer, s)
+		e.WriteString(s)
 	}
 }
 
 func (e *encoder) writeCompactString(s string) {
 	e.writeVarInt(int64(len(s)))
-	io.WriteString(e.writer, s)
+	e.WriteString(s)
 }
 
 func (e *encoder) writeCompactNullString(s string) {
@@ -119,13 +143,13 @@ func (e *encoder) writeCompactNullString(s string) {
 		e.writeVarInt(-1)
 	} else {
 		e.writeVarInt(int64(len(s)))
-		io.WriteString(e.writer, s)
+		e.WriteString(s)
 	}
 }
 
 func (e *encoder) writeBytes(b []byte) {
 	e.writeInt32(int32(len(b)))
-	e.writer.Write(b)
+	e.Write(b)
 }
 
 func (e *encoder) writeNullBytes(b []byte) {
@@ -133,13 +157,13 @@ func (e *encoder) writeNullBytes(b []byte) {
 		e.writeInt32(-1)
 	} else {
 		e.writeInt32(int32(len(b)))
-		e.writer.Write(b)
+		e.Write(b)
 	}
 }
 
 func (e *encoder) writeCompactBytes(b []byte) {
 	e.writeVarInt(int64(len(b)))
-	e.writer.Write(b)
+	e.Write(b)
 }
 
 func (e *encoder) writeCompactNullBytes(b []byte) {
@@ -147,13 +171,13 @@ func (e *encoder) writeCompactNullBytes(b []byte) {
 		e.writeVarInt(-1)
 	} else {
 		e.writeVarInt(int64(len(b)))
-		e.writer.Write(b)
+		e.Write(b)
 	}
 }
 
 func (e *encoder) writeBytesFrom(b ByteSequence) error {
 	e.writeInt32(int32(b.Size()))
-	_, err := copyBytes(e.writer, b)
+	_, err := copyBytes(e, b)
 	return err
 }
 
@@ -163,7 +187,7 @@ func (e *encoder) writeNullBytesFrom(b ByteSequence) error {
 		return nil
 	} else {
 		e.writeInt32(int32(b.Size()))
-		_, err := copyBytes(e.writer, b)
+		_, err := copyBytes(e, b)
 		return err
 	}
 }
@@ -174,7 +198,7 @@ func (e *encoder) writeCompactNullBytesFrom(b ByteSequence) error {
 		return nil
 	} else {
 		e.writeVarInt(b.Size())
-		_, err := copyBytes(e.writer, b)
+		_, err := copyBytes(e, b)
 		return err
 	}
 }
@@ -195,7 +219,7 @@ func (e *encoder) writeVarInt(i int64) {
 		n++
 	}
 
-	e.writer.Write(b[:n])
+	e.Write(b[:n])
 }
 
 type encodeFunc func(*encoder, value)
@@ -294,5 +318,21 @@ func arrayEncodeFuncOf(typ reflect.Type, version int16, tag structTag) encodeFun
 
 func writerEncodeFuncOf(typ reflect.Type) encodeFunc {
 	typ = reflect.PtrTo(typ)
-	return func(e *encoder, v value) { v.iface(typ).(io.WriterTo).WriteTo(e.writer) }
+	return func(e *encoder, v value) { v.iface(typ).(io.WriterTo).WriteTo(e) }
+}
+
+func writeInt8(b []byte, i int8) {
+	b[0] = byte(i)
+}
+
+func writeInt16(b []byte, i int16) {
+	binary.BigEndian.PutUint16(b, uint16(i))
+}
+
+func writeInt32(b []byte, i int32) {
+	binary.BigEndian.PutUint32(b, uint32(i))
+}
+
+func writeInt64(b []byte, i int64) {
+	binary.BigEndian.PutUint64(b, uint64(i))
 }

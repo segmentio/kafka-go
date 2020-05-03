@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"math/rand"
@@ -374,11 +373,8 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 	case <-canceled:
 		return nil, ctx.Err()
 	}
-	if r.err != nil {
-		return nil, r.err
-	}
 
-	if refreshMetadata {
+	if r.err == nil && refreshMetadata {
 		notify := make(event)
 		select {
 		case <-canceled:
@@ -390,7 +386,7 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 		}
 	}
 
-	return r.res, nil
+	return r.res, r.err
 }
 
 func (p *connPool) setReady() {
@@ -641,10 +637,10 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 func (p *connPool) connect(network, address string) *conn {
 	reqs := make(chan connRequest)
 	conn := &conn{
-		refc:     1,
-		pool:     p,
-		reqs:     reqs,
-		recycled: make(map[int32]struct{}),
+		refc: 1,
+		pool: p,
+		reqs: reqs,
+		//recycled: make(map[int32]struct{}),
 		inflight: make(map[int32]connRequest),
 	}
 	go conn.run(reqs)
@@ -693,9 +689,9 @@ type conn struct {
 	// Shared state of the connection, this is synchronized on the mutex through
 	// calls to the synchronized method. Both goroutines of the connection share
 	// the state maintained in these fields.
-	mutex    sync.Mutex
-	idgen    int32                 // generates new correlation ids
-	recycled map[int32]struct{}    // correlation ids available for reuse
+	mutex sync.Mutex
+	idgen int32 // generates new correlation ids
+	//recycled map[int32]struct{}    // correlation ids available for reuse
 	inflight map[int32]connRequest // set of inflight requests on the connection
 }
 
@@ -711,17 +707,23 @@ func (c *conn) unref() {
 
 func (c *conn) register(r connRequest) (id int32) {
 	c.synchronized(func() {
-		var ok bool
+		/*
+			var ok bool
 
-		for id = range c.recycled {
-			ok = true
-			break
-		}
+			for id = range c.recycled {
+				ok = true
+				break
+			}
 
-		if !ok {
-			c.idgen++
-			id = c.idgen
-		}
+			if !ok {
+				c.idgen++
+				id = c.idgen
+			}
+
+		*/
+
+		c.idgen++
+		id = c.idgen
 
 		c.inflight[id] = r
 	})
@@ -733,7 +735,7 @@ func (c *conn) unregister(id int32) (r connRequest, ok bool) {
 		r, ok = c.inflight[id]
 		if ok {
 			delete(c.inflight, id)
-			c.recycled[id] = struct{}{}
+			//c.recycled[id] = struct{}{}
 		}
 	})
 	return
@@ -744,7 +746,7 @@ func (c *conn) cancel(err error) {
 		for id, r := range c.inflight {
 			r.res <- connResponse{err: err}
 			delete(c.inflight, id)
-			c.recycled[id] = struct{}{}
+			//c.recycled[id] = struct{}{}
 		}
 	})
 }
@@ -753,13 +755,6 @@ func (c *conn) synchronized(f func()) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	f()
-}
-
-type debug string
-
-func (d debug) Write(b []byte) (int, error) {
-	fmt.Printf("%s\n%s", d, hex.Dump(b))
-	return len(b), nil
 }
 
 func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16, error) {
@@ -784,8 +779,8 @@ func (c *conn) connect() (net.Conn, *bufio.ReadWriter, map[protocol.ApiKey]int16
 
 	nc := netConn
 	rw := &bufio.ReadWriter{
-		Reader: bufio.NewReaderSize(io.TeeReader(netConn, debug("<")), bufferSize),
-		Writer: bufio.NewWriterSize(io.MultiWriter(netConn, debug(">")), bufferSize),
+		Reader: bufio.NewReaderSize(netConn, bufferSize),
+		Writer: bufio.NewWriterSize(netConn, bufferSize),
 	}
 
 	if err := nc.SetDeadline(deadline); err != nil {
@@ -826,7 +821,7 @@ func (c *conn) dispatch(conn net.Conn, done chan<- error, rb *bufio.Reader) {
 	for {
 		_, id, err := peekResponseSizeAndID(rb)
 		if err != nil {
-			done <- err
+			done <- dontExpectEOF(err)
 			return
 		}
 
@@ -901,8 +896,11 @@ func (c *conn) run(reqs <-chan connRequest) {
 			id := c.register(r)
 			conn.SetDeadline(time.Now().Add(c.pool.readTimeout))
 
+			if p, _ := r.req.(protocol.PreparedMessage); p != nil {
+				p.Prepare(r.version)
+			}
+
 			if err := protocol.WriteRequest(wb, r.version, id, c.pool.clientID, r.req); err != nil {
-				fmt.Println("error writing request:", err)
 				closeConn(err)
 			}
 

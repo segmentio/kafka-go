@@ -1,7 +1,9 @@
 package protocol
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"reflect"
@@ -16,6 +18,8 @@ type decoder struct {
 	remain int
 	buffer [8]byte
 	err    error
+	table  *crc32.Table
+	crc32  uint32
 }
 
 func (d *decoder) Read(b []byte) (int, error) {
@@ -29,8 +33,15 @@ func (d *decoder) Read(b []byte) (int, error) {
 		b = b[:d.remain]
 	}
 	n, err := d.reader.Read(b)
+	if n > 0 && d.table != nil {
+		d.crc32 = crc32.Update(d.crc32, d.table, b[:n])
+	}
 	d.remain -= n
 	return n, err
+}
+
+func (d *decoder) setCRC(table *crc32.Table) {
+	d.table, d.crc32 = table, 0
 }
 
 func (d *decoder) decodeBool(v value) {
@@ -141,7 +152,10 @@ func (d *decoder) readBool() bool {
 }
 
 func (d *decoder) readInt8() int8 {
-	return int8(d.readByte())
+	if d.readFull(d.buffer[:1]) {
+		return readInt8(d.buffer[:1])
+	}
+	return 0
 }
 
 func (d *decoder) readInt16() int16 {
@@ -323,7 +337,25 @@ func readerDecodeFuncOf(typ reflect.Type) decodeFunc {
 	typ = reflect.PtrTo(typ)
 	return func(d *decoder, v value) {
 		if d.err == nil {
-			_, d.err = v.iface(typ).(io.ReaderFrom).ReadFrom(d.reader)
+			var n int64
+			n, d.err = v.iface(typ).(io.ReaderFrom).ReadFrom(d.reader)
+			d.remain -= int(n)
 		}
 	}
+}
+
+func readInt8(b []byte) int8 {
+	return int8(b[0])
+}
+
+func readInt16(b []byte) int16 {
+	return int16(binary.BigEndian.Uint16(b))
+}
+
+func readInt32(b []byte) int32 {
+	return int32(binary.BigEndian.Uint32(b))
+}
+
+func readInt64(b []byte) int64 {
+	return int64(binary.BigEndian.Uint64(b))
 }

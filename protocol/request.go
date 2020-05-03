@@ -77,7 +77,7 @@ func WriteRequest(w *bufio.Writer, apiVersion int16, correlationID int32, client
 	defer b.unref()
 
 	e := &encoder{writer: b}
-	e.writeInt32(0) // placeholder
+	e.writeInt32(0) // placeholder for the request size
 	e.writeInt16(int16(apiKey))
 	e.writeInt16(apiVersion)
 	e.writeInt32(correlationID)

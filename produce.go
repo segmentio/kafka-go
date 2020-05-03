@@ -10,7 +10,7 @@ import (
 
 	"github.com/segmentio/kafka-go/compress"
 	"github.com/segmentio/kafka-go/protocol"
-	prod "github.com/segmentio/kafka-go/protocol/produce"
+	produceAPI "github.com/segmentio/kafka-go/protocol/produce"
 )
 
 // ProduceRequest represents a request sent to a kafka broker to produce records
@@ -28,6 +28,12 @@ type ProduceRequest struct {
 	// The level of required acknowledgements to ask the kafka broker for.
 	RequiredAcks int
 
+	// The message format version used when encoding the records.
+	//
+	// By default, the client automatically determine which version should be
+	// used based on the version of the Produce API supported by the server.
+	MessageVersion int
+
 	// An optional transaction id when producing to the kafka broker is part of
 	// a transaction.
 	TransactionalID string
@@ -38,11 +44,6 @@ type ProduceRequest struct {
 	// An optional compression algorithm to apply to the batch of records sent
 	// to the kafka broker.
 	Compression compress.Compression
-
-	// When set to true, produce requests sent by this client will use message
-	// sets instead of record sets (messages v1). This is required if publishing
-	// to a kafka broker in version 0.10.x.x.
-	MessageSet bool
 }
 
 // ProduceResponse represents a response from a kafka broker to a produce
@@ -79,8 +80,8 @@ type ProduceResponse struct {
 	// If errors occured writing specific records, they will be reported in this
 	// map.
 	//
-	// This field will be zero if the kafka broker did no support the Produce
-	// API in version 8 or above.
+	// This field will always be empty if the kafka broker did no support the
+	// Produce API in version 8 or above.
 	RecordErrors map[int]error
 }
 
@@ -89,41 +90,30 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 	defer req.Records.Close()
 
 	records := make([]protocol.Record, 0, 100)
+	offset := int64(0)
+
 	for rec := req.Records.Next(); rec != nil; rec = req.Records.Next() {
 		records = append(records, protocol.Record{
+			Offset:  offset,
 			Time:    rec.Time(),
 			Key:     rec.Key(),
 			Value:   rec.Value(),
 			Headers: rec.Headers(),
 		})
-	}
-
-	for i := range records {
-		r := &records[i]
-		r.Offset = int64(i)
-	}
-
-	for _, r := range records {
-		fmt.Println(r)
-	}
-
-	version := int8(2)
-	if req.MessageSet {
-		version = 1
+		offset++
 	}
 
 	attributes := protocol.Attributes(req.Compression) & 0x7
 
-	m, err := c.roundTrip(ctx, req.Addr, &prod.Request{
+	m, err := c.roundTrip(ctx, req.Addr, &produceAPI.Request{
 		TransactionalID: req.TransactionalID,
 		Acks:            int16(req.RequiredAcks),
 		Timeout:         c.timeoutMs(ctx),
-		Topics: []prod.RequestTopic{{
+		Topics: []produceAPI.RequestTopic{{
 			Topic: req.Topic,
-			Partitions: []prod.RequestPartition{{
+			Partitions: []produceAPI.RequestPartition{{
 				Partition: int32(req.Partition),
 				RecordSet: protocol.RecordSet{
-					Version:              version,
 					Attributes:           attributes,
 					PartitionLeaderEpoch: -1,
 					BaseOffset:           0,
@@ -140,7 +130,7 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", err)
 	}
 
-	res := m.(*prod.Response)
+	res := m.(*produceAPI.Response)
 	if len(res.Topics) == 0 {
 		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", errNoTopics)
 	}
@@ -148,31 +138,26 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 	if len(topic.Partitions) == 0 {
 		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", errNoPartitions)
 	}
-	part := &topic.Partitions[0]
+	partition := &topic.Partitions[0]
 
 	ret := &ProduceResponse{
 		Throttle:       duration(res.ThrottleTimeMs),
-		Error:          makeError(part.ErrorCode, part.ErrorMessage),
-		BaseOffset:     part.BaseOffset,
-		LogAppendTime:  timestampToTime(part.LogAppendTime),
-		LogStartOffset: part.LogStartOffset,
+		Error:          makeError(partition.ErrorCode, partition.ErrorMessage),
+		BaseOffset:     partition.BaseOffset,
+		LogAppendTime:  timestampToTime(partition.LogAppendTime),
+		LogStartOffset: partition.LogStartOffset,
 	}
 
-	if len(part.RecordErrors) != 0 {
-		ret.RecordErrors = make(map[int]error, len(part.RecordErrors))
+	if len(partition.RecordErrors) != 0 {
+		ret.RecordErrors = make(map[int]error, len(partition.RecordErrors))
 
-		for _, recErr := range part.RecordErrors {
+		for _, recErr := range partition.RecordErrors {
 			ret.RecordErrors[int(recErr.BatchIndex)] = errors.New(recErr.BatchIndexErrorMessage)
 		}
 	}
 
 	return ret, nil
 }
-
-var (
-	errNoTopics     = errors.New("the kafka broker returned no topics in the produce response")
-	errNoPartitions = errors.New("the kafka broker returned no partitions in the produce response")
-)
 
 type produceRequestV2 struct {
 	RequiredAcks int16

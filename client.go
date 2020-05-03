@@ -80,5 +80,7 @@ func (c *Client) timeoutMs(ctx context.Context) int32 {
 }
 
 var (
-	errNoAddr = errors.New("no address was given for the kafka cluster in the request or on the client")
+	errNoAddr       = errors.New("no address was given for the kafka cluster in the request or on the client")
+	errNoTopics     = errors.New("the kafka broker returned no topics in the response")
+	errNoPartitions = errors.New("the kafka broker returned no partitions in the response")
 )

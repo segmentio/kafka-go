@@ -16,11 +16,10 @@ func TestClientProduce(t *testing.T) {
 		Topic:        topic,
 		Partition:    0,
 		RequiredAcks: -1,
-		MessageSet:   true,
 		Records: NewRecordSet(
 			NewRecord(0, now, nil, []byte(`hello-1`)),
-			//NewRecord(0, now, nil, []byte(`hello-2`)),
-			//NewRecord(0, now, nil, []byte(`hello-3`)),
+			NewRecord(0, now, nil, []byte(`hello-2`)),
+			NewRecord(0, now, nil, []byte(`hello-3`)),
 		),
 	})
 

@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"hash/crc32"
 	"io"
 	"math"
@@ -80,9 +80,6 @@ type RecordSet struct {
 	BaseSequence         int32
 	// The list of records contained in this set.
 	Records []Record
-	// This unexported field is used internally to compute crc32 hashes of the
-	// record set during serialization and deserialization.
-	//crc crc32Hash
 }
 
 // Close closes all records of rs.
@@ -171,31 +168,20 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
-	crcReader := &crc32Reader{}
-	crcReader.reset(r, crc32.IEEETable)
-
-	d := &decoder{
-		reader: crcReader,
+	d := decoder{
+		reader: r,
 		remain: size,
 	}
 
 	version := int8(0)
 	baseOffset := d.readInt64()
 	messageSize := d.readInt32()
-	fmt.Println("READ: message size =", messageSize, "/", size)
 
 	if d.err != nil {
 		return int64(size - d.remain), d.err
 	}
 
 	records := make([]Record, 0, 100)
-	defer func() {
-		for _, r := range records {
-			unref(r.Key)
-			unref(r.Value)
-		}
-	}()
-
 	buffer := newPageBuffer()
 	defer buffer.unref()
 
@@ -204,7 +190,7 @@ func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
 
 	for offset := baseOffset; d.remain > 0; offset++ {
 		crc := uint32(d.readInt32())
-		crcReader.reset(crcReader.reader, crc32.IEEETable)
+		d.setCRC(crc32.IEEETable)
 		magicByte := d.readInt8()
 		attributes := d.readInt8()
 		timestamp := int64(0)
@@ -248,7 +234,7 @@ func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
 				d.writeTo(buffer, int(valueLength))
 				v = buffer.ref(valueOffset, buffer.Size())
 			} else {
-				decompressor := codec.NewReader(d)
+				decompressor := codec.NewReader(&d)
 
 				subset := RecordSet{}
 				_, d.err = subset.readFromVersion1(decompressor, math.MaxInt32)
@@ -273,15 +259,20 @@ func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
 			})
 		}
 
-		if crcReader.sum != crc {
-			d.err = errorf("crc32 checksum mismatch (computed=%d found=%d)", crcReader.sum, crc)
+		if d.crc32 != crc {
+			d.err = errorf("crc32 checksum mismatch (computed=%d found=%d)", d.crc32, crc)
 			break
 		}
 	}
 
 	rn := 12 + int64(int(messageSize)-d.remain)
-
-	if d.err != nil {
+	// Ignore io.ErrUnexpectedEOF which occurs when the broker truncates the
+	// response.
+	if d.err != nil && !errors.Is(d.err, io.ErrUnexpectedEOF) {
+		for _, r := range records {
+			unref(r.Key)
+			unref(r.Value)
+		}
 		return rn, d.err
 	}
 
@@ -310,9 +301,7 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 		crc                  = d.readInt32()
 	)
 
-	crcReader := &crc32Reader{}
-	crcReader.reset(d.reader, crc32.MakeTable(crc32.Castagnoli))
-	d.reader = crcReader
+	d.setCRC(crc32.MakeTable(crc32.Castagnoli))
 
 	var (
 		attributes      = d.readInt16()
@@ -349,9 +338,8 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 		return n, err
 	}
 
-	fmt.Println("READ: crc =", crcReader.sum)
-	if crcReader.sum != uint32(crc) {
-		return n, errorf("crc32 checksum mismatch (computed=%d found=%d)", crcReader.sum, uint32(crc))
+	if d.crc32 != uint32(crc) {
+		return n, errorf("crc32 checksum mismatch (computed=%d found=%d)", d.crc32, uint32(crc))
 	}
 
 	recordsLength := buffer.Len()
@@ -364,7 +352,7 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 	records := make([]Record, numRecords)
 
 	for i := range records {
-		_ = d.readVarInt() // useless length of the record
+		_ = d.readVarInt() // record length (unused)
 		_ = d.readInt8()   // record attributes (unused)
 		timestampDelta := d.readVarInt()
 		offsetDelta := d.readVarInt()
@@ -417,26 +405,29 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 		}
 	}
 
-	if d.err != nil {
+	// Ignore io.ErrUnexpectedEOF which occurs when the broker truncates the
+	// response.
+	if d.err != nil && !errors.Is(d.err, io.ErrUnexpectedEOF) {
 		for _, r := range records {
 			unref(r.Key)
 			unref(r.Value)
 		}
-	} else {
-		*rs = RecordSet{
-			Version:              int8(magicByte),
-			Attributes:           Attributes(attributes),
-			PartitionLeaderEpoch: int32(partitionLeaderEpoch),
-			BaseOffset:           int64(baseOffset),
-			ProducerID:           int64(producerID),
-			ProducerEpoch:        int16(producerEpoch),
-			BaseSequence:         int32(baseSequence),
-			Records:              records,
-		}
+		return n, d.err
+	}
+
+	*rs = RecordSet{
+		Version:              int8(magicByte),
+		Attributes:           Attributes(attributes),
+		PartitionLeaderEpoch: int32(partitionLeaderEpoch),
+		BaseOffset:           int64(baseOffset),
+		ProducerID:           int64(producerID),
+		ProducerEpoch:        int16(producerEpoch),
+		BaseSequence:         int32(baseSequence),
+		Records:              records,
 	}
 
 	d.discardAll()
-	return n, d.err
+	return n, nil
 }
 
 // WriteTo writes the representation of rs into w. The value of rs.Version
@@ -499,7 +490,6 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 	}
 
 	if compression := attributes.Compression(); compression != 0 && len(records) != 0 {
-		fmt.Println("COMPRESS")
 		if codec := compression.Codec(); codec != nil {
 			subset := *rs
 			subset.Attributes &= ^7 // erase compression
@@ -522,7 +512,6 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 			if err != nil {
 				return err
 			}
-
 			if err := compressor.Close(); err != nil {
 				return err
 			}
@@ -537,10 +526,7 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 		}
 	}
 
-	crcWriter := &crc32Writer{}
-	crcWriter.reset(buffer, crc32.IEEETable)
-
-	e := encoder{writer: crcWriter}
+	e := encoder{writer: buffer}
 	e.writeInt64(records[0].Offset)
 	e.writeInt32(0) // message set size placeholder
 
@@ -549,7 +535,7 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 
 		recordOffset := buffer.Size()
 		e.writeInt32(0) // crc32 placeholder
-		crcWriter.reset(crcWriter.writer, crc32.IEEETable)
+		e.setCRC(crc32.IEEETable)
 		e.writeInt8(1) // magic byte: version 1
 		e.writeInt8(int8(attributes))
 		e.writeInt64(timestamp(r.Time))
@@ -562,13 +548,11 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 			return err
 		}
 
-		fmt.Printf("WRITE: crc32 (v1) = %#08x @%d\n", crcWriter.sum, recordOffset)
-		b := packUint32(crcWriter.sum)
+		b := packUint32(e.crc32)
 		buffer.WriteAt(b[:], recordOffset)
 	}
 
 	totalLength := buffer.Size() - bufferOffset
-	fmt.Println("WRITE: message size (v1) =", totalLength-12)
 	b := packUint32(uint32(totalLength) - 12)
 	buffer.WriteAt(b[:], bufferOffset+8)
 	return nil
@@ -588,17 +572,13 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 	firstTimestamp := timestamp(r0.Time)
 	maxTimestamp := timestamp(r1.Time)
 
-	e := encoder{writer: buffer}
+	e := &encoder{writer: buffer}
 	e.writeInt64(baseOffset)
 	e.writeInt32(0) // placeholder for record batch length
 	e.writeInt32(rs.PartitionLeaderEpoch)
 	e.writeInt8(2)  // magic byte
 	e.writeInt32(0) // placeholder for crc32 checksum
-
-	crcWriter := &crc32Writer{}
-	crcWriter.reset(e.writer, crc32.MakeTable(crc32.Castagnoli))
-	e.writer = crcWriter
-
+	e.setCRC(crc32.MakeTable(crc32.Castagnoli))
 	e.writeInt16(int16(rs.Attributes))
 	e.writeInt32(lastOffsetDelta)
 	e.writeInt64(firstTimestamp)
@@ -608,12 +588,13 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 	e.writeInt32(rs.BaseSequence)
 	e.writeInt32(numRecords)
 
+	var crc = &e.crc32
 	var compressor io.WriteCloser
+
 	if compression := rs.Attributes.Compression(); compression != 0 {
 		if codec := compression.Codec(); codec != nil {
-			compressor = codec.NewWriter(e.writer)
-			defer compressor.Close()
-			e.writer = compressor
+			compressor = codec.NewWriter(e)
+			e = &encoder{writer: compressor}
 		}
 	}
 
@@ -621,17 +602,13 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		r := &records[i]
 		timestampDelta := timestamp(r.Time) - firstTimestamp
 		offsetDelta := r.Offset - baseOffset
-		keyLength := byteSequenceLength(r.Key)
-		valueLength := byteSequenceLength(r.Value)
 
 		length := 1 + // attributes
 			sizeOfVarInt(timestampDelta) +
 			sizeOfVarInt(offsetDelta) +
-			sizeOfVarInt(keyLength) +
-			sizeOfVarInt(valueLength) +
-			sizeOfVarInt(int64(len(r.Headers))) +
-			int(keyLength) +
-			int(valueLength)
+			sizeOfVarBytes(r.Key) +
+			sizeOfVarBytes(r.Value) +
+			sizeOfVarInt(int64(len(r.Headers)))
 
 		for _, h := range r.Headers {
 			length += sizeOfCompactString(h.Key) + sizeOfCompactNullBytes(h.Value)
@@ -670,8 +647,7 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 	length := packUint32(uint32(batchLength))
 	buffer.WriteAt(length[:], bufferOffset+8)
 
-	fmt.Println("WRITE: crc =", crcWriter.sum)
-	checksum := packUint32(crcWriter.sum)
+	checksum := packUint32(*crc)
 	buffer.WriteAt(checksum[:], bufferOffset+17)
 	return nil
 }
@@ -687,57 +663,7 @@ func makeTime(t int64) time.Time {
 	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
 }
 
-func byteSequenceLength(b ByteSequence) int64 {
-	if b == nil {
-		return -1
-	}
-	return b.Size()
-}
-
 func packUint32(u uint32) (b [4]byte) {
 	binary.BigEndian.PutUint32(b[:], u)
 	return
-}
-
-func readInt8(b []byte) int8 {
-	return int8(b[0])
-}
-
-func readInt16(b []byte) int16 {
-	return int16(binary.BigEndian.Uint16(b))
-}
-
-func readInt32(b []byte) int32 {
-	return int32(binary.BigEndian.Uint32(b))
-}
-
-func readInt64(b []byte) int64 {
-	return int64(binary.BigEndian.Uint64(b))
-}
-
-func writeInt8(b []byte, i int8) {
-	b[0] = byte(i)
-}
-
-func writeInt16(b []byte, i int16) {
-	binary.BigEndian.PutUint16(b, uint16(i))
-}
-
-func writeInt32(b []byte, i int32) {
-	binary.BigEndian.PutUint32(b, uint32(i))
-}
-
-func writeInt64(b []byte, i int64) {
-	binary.BigEndian.PutUint64(b, uint64(i))
-}
-
-func dontExpectEOF(err error) error {
-	switch err {
-	case nil:
-		return nil
-	case io.EOF:
-		return io.ErrUnexpectedEOF
-	default:
-		return err
-	}
 }

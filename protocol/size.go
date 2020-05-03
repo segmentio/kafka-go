@@ -4,8 +4,6 @@ import (
 	"reflect"
 )
 
-type sizeFunc func(value) int
-
 func sizeOf(typ reflect.Type) int {
 	switch typ.Kind() {
 	case reflect.Bool, reflect.Int8:
@@ -65,84 +63,11 @@ func sizeOfVarInt(i int64) int {
 	return n + 1
 }
 
-func sizeFuncOf(typ reflect.Type, version int16, tag structTag) sizeFunc {
-	switch typ.Kind() {
-	case reflect.String:
-		return stringSizeFuncOf(tag)
-	case reflect.Struct:
-		return structSizeFuncOf(typ, version)
-	case reflect.Slice:
-		if typ.Elem().Kind() == reflect.Uint8 { // []byte
-			return bytesSizeFuncOf(tag)
-		}
-		return arraySizeFuncOf(typ, version, tag)
-	default:
-		panic("unsupported type: " + typ.String())
-	}
-}
-
-func stringSizeFuncOf(tag structTag) sizeFunc {
-	return func(v value) int { return sizeOfString(v.string()) }
-}
-
-func bytesSizeFuncOf(tag structTag) sizeFunc {
-	return func(v value) int { return sizeOfBytes(v.bytes()) }
-}
-
-func structSizeFuncOf(typ reflect.Type, version int16) sizeFunc {
-	type field struct {
-		size  sizeFunc
-		index index
-	}
-
-	var fields []field
-	var fixedSize int
-	forEachStructField(typ, func(typ reflect.Type, index index, tag string) {
-		forEachStructTag(tag, func(tag structTag) bool {
-			if tag.MinVersion <= version && version <= tag.MaxVersion {
-				if size := sizeOf(typ); size != 0 {
-					fixedSize += size
-				} else {
-					fields = append(fields, field{
-						size:  sizeFuncOf(typ, version, tag),
-						index: index,
-					})
-				}
-				return false
-			}
-			return true
-		})
-	})
-
-	return func(v value) int {
-		size := fixedSize
-
-		for i := range fields {
-			f := &fields[i]
-			size += f.size(v.fieldByIndex(f.index))
-		}
-
-		return size
-	}
-}
-
-func arraySizeFuncOf(typ reflect.Type, version int16, tag structTag) sizeFunc {
-	elemType := typ.Elem()
-	elemSize := sizeOf(elemType)
-	if elemSize != 0 {
-		// array of fixed-size elements
-		return func(v value) int { return 4 + v.array(elemType).length()*elemSize }
-	}
-	elemFunc := sizeFuncOf(elemType, version, tag)
-	return func(v value) int {
-		size := 4
-		a := v.array(elemType)
-		n := a.length()
-
-		for i := 0; i < n; i++ {
-			size += elemFunc(a.index(i))
-		}
-
-		return size
+func sizeOfVarBytes(b ByteSequence) int {
+	if b == nil {
+		return sizeOfVarInt(-1)
+	} else {
+		n := b.Size()
+		return sizeOfVarInt(n) + int(n)
 	}
 }

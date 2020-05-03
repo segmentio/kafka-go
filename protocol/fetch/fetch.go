@@ -62,8 +62,6 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 
 type RequestTopic struct {
 	Topic      string             `kafka:"min=v0,max=v11"`
-	ErrorCode  int16              `kafka:"min=v7,max=v11"`
-	SessionID  int32              `kafka:"min=v7,max=v11"`
 	Partitions []RequestPartition `kafka:"min=v0,max=v11"`
 }
 
@@ -82,6 +80,8 @@ type RequestForgottenTopic struct {
 
 type Response struct {
 	ThrottleTimeMs int32           `kafka:"min=v1,max=v11"`
+	ErrorCode      int16           `kafka:"min=v7,max=v11"`
+	SessionID      int32           `kafka:"min=v7,max=v11"`
 	Topics         []ResponseTopic `kafka:"min=v0,max=v11"`
 }
 

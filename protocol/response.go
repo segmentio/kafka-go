@@ -38,7 +38,7 @@ func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int3
 	res := &t.responses[apiVersion-minVersion]
 	msg = res.new()
 	res.decode(d, valueOf(msg))
-	err = d.err
+	err = dontExpectEOF(d.err)
 	return
 }
 
@@ -68,7 +68,7 @@ func WriteResponse(w *bufio.Writer, apiVersion int16, correlationID int32, msg M
 	defer b.unref()
 
 	e := &encoder{writer: b}
-	e.writeInt32(0) // placeholder
+	e.writeInt32(0) // placeholder for the response size
 	e.writeInt32(correlationID)
 	r.encode(e, v)
 

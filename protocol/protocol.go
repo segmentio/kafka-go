@@ -3,6 +3,7 @@ package protocol
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"reflect"
 	"strconv"
@@ -160,7 +161,6 @@ type messageType struct {
 	gotype  reflect.Type
 	decode  decodeFunc
 	encode  encodeFunc
-	size    sizeFunc
 }
 
 func (t *messageType) new() Message {
@@ -232,7 +232,6 @@ func makeTypes(t reflect.Type) []messageType {
 			gotype:  t,
 			decode:  decodeFuncOf(t, v, structTag{}),
 			encode:  encodeFuncOf(t, v, structTag{}),
-			size:    sizeFuncOf(t, v, structTag{}),
 		})
 	}
 
@@ -342,9 +341,20 @@ func readMessageSize(r *bufio.Reader) (size int32, err error) {
 	if size = d.readInt32(); size < 0 {
 		err = ErrCorrupted
 	} else if d.err != nil {
-		err = d.err
+		err = dontExpectEOF(d.err)
 	}
 	return
+}
+
+func dontExpectEOF(err error) error {
+	switch err {
+	case nil:
+		return nil
+	case io.EOF:
+		return io.ErrUnexpectedEOF
+	default:
+		return err
+	}
 }
 
 type Broker struct {
@@ -390,4 +400,10 @@ type BrokerMessage interface {
 	Message
 
 	Broker(Cluster) (Broker, error)
+}
+
+type PreparedMessage interface {
+	Message
+
+	Prepare(apiVersion int16)
 }
