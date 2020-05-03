@@ -23,10 +23,16 @@ type RequestPartition struct {
 	Partition          int32 `kafka:"min=v1,max=v5"`
 	CurrentLeaderEpoch int32 `kafka:"min=v4,max=v5"`
 	Timestamp          int64 `kafka:"min=v1,max=v5"`
+	// v0 of the API predates kafka 0.10, and doesn't make much sense to
+	// use so we chose not to support it. It had this extra field to limit
+	// the number of offsets returned, which has been removed in v1.
+	//
+	// MaxNumOffsets int32 `kafka:"min=v0,max=v0"`
 }
 
 type Response struct {
-	Topics []ResponseTopic `kafka:"min=v1,max=v5"`
+	ThrottleTimeMs int32           `kafka:"min=v2,max=v5"`
+	Topics         []ResponseTopic `kafka:"min=v1,max=v5"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.ListOffsets }
@@ -37,10 +43,9 @@ type ResponseTopic struct {
 }
 
 type ResponsePartition struct {
-	ThrottleTimeMs int32 `kafka:"min=v2,max=v5"`
-	Partition      int32 `kafka:"min=v1,max=v5"`
-	ErrorCode      int16 `kafka:"min=v1,max=v5"`
-	Timestamp      int64 `kafka:"min=v1,max=v5"`
-	Offset         int64 `kafka:"min=v1,max=v5"`
-	LeaderEpoch    int32 `kafka:"min=v4,max=v5"`
+	Partition   int32 `kafka:"min=v1,max=v5"`
+	ErrorCode   int16 `kafka:"min=v1,max=v5"`
+	Timestamp   int64 `kafka:"min=v1,max=v5"`
+	Offset      int64 `kafka:"min=v1,max=v5"`
+	LeaderEpoch int32 `kafka:"min=v4,max=v5"`
 }

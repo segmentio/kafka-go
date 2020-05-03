@@ -69,17 +69,17 @@ func TestListOffsetsResponse(t *testing.T) {
 	})
 
 	prototest.TestResponse(t, v4, &listoffsets.Response{
+		ThrottleTimeMs: 1234,
 		Topics: []listoffsets.ResponseTopic{
 			{
 				Topic: "topic-1",
 				Partitions: []listoffsets.ResponsePartition{
 					{
-						ThrottleTimeMs: 1234,
-						Partition:      0,
-						ErrorCode:      0,
-						Timestamp:      1e9,
-						Offset:         1234567890,
-						LeaderEpoch:    10,
+						Partition:   0,
+						ErrorCode:   0,
+						Timestamp:   1e9,
+						Offset:      1234567890,
+						LeaderEpoch: 10,
 					},
 				},
 			},
@@ -87,17 +87,15 @@ func TestListOffsetsResponse(t *testing.T) {
 				Topic: "topic-2",
 				Partitions: []listoffsets.ResponsePartition{
 					{
-						ThrottleTimeMs: 1234,
-						Partition:      0,
-						ErrorCode:      0,
-						Timestamp:      1e9,
-						Offset:         1234567890,
-						LeaderEpoch:    10,
+						Partition:   0,
+						ErrorCode:   0,
+						Timestamp:   1e9,
+						Offset:      1234567890,
+						LeaderEpoch: 10,
 					},
 					{
-						ThrottleTimeMs: 1234,
-						Partition:      1,
-						ErrorCode:      2,
+						Partition: 1,
+						ErrorCode: 2,
 					},
 				},
 			},

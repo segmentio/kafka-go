@@ -101,7 +101,7 @@ func (c *Client) CreateTopics(ctx context.Context, req *CreateTopicsRequest) (*C
 
 	res := m.(*createtopics.Response)
 	ret := &CreateTopicsResponse{
-		Throttle: duration(res.ThrottleTimeMs),
+		Throttle: makeDuration(res.ThrottleTimeMs),
 		Topics:   make([]CreateTopicStatus, len(res.Topics)),
 	}
 

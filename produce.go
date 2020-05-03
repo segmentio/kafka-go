@@ -141,10 +141,10 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 	partition := &topic.Partitions[0]
 
 	ret := &ProduceResponse{
-		Throttle:       duration(res.ThrottleTimeMs),
+		Throttle:       makeDuration(res.ThrottleTimeMs),
 		Error:          makeError(partition.ErrorCode, partition.ErrorMessage),
 		BaseOffset:     partition.BaseOffset,
-		LogAppendTime:  timestampToTime(partition.LogAppendTime),
+		LogAppendTime:  makeTime(partition.LogAppendTime),
 		LogStartOffset: partition.LogStartOffset,
 	}
 

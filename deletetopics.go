@@ -51,7 +51,7 @@ func (c *Client) DeleteTopics(ctx context.Context, req *DeleteTopicsRequest) (*D
 
 	res := m.(*deletetopics.Response)
 	ret := &DeleteTopicsResponse{
-		Throttle: duration(res.ThrottleTimeMs),
+		Throttle: makeDuration(res.ThrottleTimeMs),
 		Errors:   make(map[string]error, len(res.Responses)),
 	}
 

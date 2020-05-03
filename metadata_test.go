@@ -32,8 +32,8 @@ func TestClientMetadata(t *testing.T) {
 	} else {
 		topicMetadata := metadata.Topics[0]
 
-		if topicMetadata.Topic != topic {
-			t.Error("invalid topic name:", topicMetadata.Topic)
+		if topicMetadata.Name != topic {
+			t.Error("invalid topic name:", topicMetadata.Name)
 		}
 
 		if len(topicMetadata.Partitions) == 0 {

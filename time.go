@@ -11,6 +11,10 @@ const (
 	defaultRTT = 1 * time.Second
 )
 
+func makeTime(t int64) time.Time {
+	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
+}
+
 func timestamp(t time.Time) int64 {
 	if t.IsZero() {
 		return 0
@@ -18,11 +22,7 @@ func timestamp(t time.Time) int64 {
 	return t.UnixNano() / int64(time.Millisecond)
 }
 
-func timestampToTime(t int64) time.Time {
-	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
-}
-
-func duration(ms int32) time.Duration {
+func makeDuration(ms int32) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 

@@ -26,10 +26,10 @@ func TestMetadataRequest(t *testing.T) {
 	})
 
 	prototest.TestRequest(t, v8, &metadata.Request{
-		TopicNames:                          []string{"hello", "world"},
-		AllowAutoTopicCreation:              true,
-		IncludeCustomerAuthorizedOperations: true,
-		IncludeTopicAuthorizedOperations:    true,
+		TopicNames:                         []string{"hello", "world"},
+		AllowAutoTopicCreation:             true,
+		IncludeClusterAuthorizedOperations: true,
+		IncludeTopicAuthorizedOperations:   true,
 	})
 }
 
@@ -146,10 +146,10 @@ func TestMetadataResponse(t *testing.T) {
 
 func BenchmarkMetadataRequest(b *testing.B) {
 	prototest.BenchmarkRequest(b, v8, &metadata.Request{
-		TopicNames:                          []string{"hello", "world"},
-		AllowAutoTopicCreation:              true,
-		IncludeCustomerAuthorizedOperations: true,
-		IncludeTopicAuthorizedOperations:    true,
+		TopicNames:                         []string{"hello", "world"},
+		AllowAutoTopicCreation:             true,
+		IncludeClusterAuthorizedOperations: true,
+		IncludeTopicAuthorizedOperations:   true,
 	})
 }
 

@@ -113,7 +113,7 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	partition := &topic.Partitions[0]
 
 	ret := &FetchResponse{
-		Throttle:      duration(res.ThrottleTimeMs),
+		Throttle:      makeDuration(res.ThrottleTimeMs),
 		Topic:         topic.Topic,
 		Partition:     int(partition.Partition),
 		Error:         makeError(res.ErrorCode, ""),

@@ -637,10 +637,9 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 func (p *connPool) connect(network, address string) *conn {
 	reqs := make(chan connRequest)
 	conn := &conn{
-		refc: 1,
-		pool: p,
-		reqs: reqs,
-		//recycled: make(map[int32]struct{}),
+		refc:     1,
+		pool:     p,
+		reqs:     reqs,
 		inflight: make(map[int32]connRequest),
 	}
 	go conn.run(reqs)
@@ -689,9 +688,8 @@ type conn struct {
 	// Shared state of the connection, this is synchronized on the mutex through
 	// calls to the synchronized method. Both goroutines of the connection share
 	// the state maintained in these fields.
-	mutex sync.Mutex
-	idgen int32 // generates new correlation ids
-	//recycled map[int32]struct{}    // correlation ids available for reuse
+	mutex    sync.Mutex
+	idgen    int32                 // generates new correlation ids
 	inflight map[int32]connRequest // set of inflight requests on the connection
 }
 
@@ -707,24 +705,8 @@ func (c *conn) unref() {
 
 func (c *conn) register(r connRequest) (id int32) {
 	c.synchronized(func() {
-		/*
-			var ok bool
-
-			for id = range c.recycled {
-				ok = true
-				break
-			}
-
-			if !ok {
-				c.idgen++
-				id = c.idgen
-			}
-
-		*/
-
 		c.idgen++
 		id = c.idgen
-
 		c.inflight[id] = r
 	})
 	return
@@ -735,7 +717,6 @@ func (c *conn) unregister(id int32) (r connRequest, ok bool) {
 		r, ok = c.inflight[id]
 		if ok {
 			delete(c.inflight, id)
-			//c.recycled[id] = struct{}{}
 		}
 	})
 	return
@@ -746,7 +727,6 @@ func (c *conn) cancel(err error) {
 		for id, r := range c.inflight {
 			r.res <- connResponse{err: err}
 			delete(c.inflight, id)
-			//c.recycled[id] = struct{}{}
 		}
 	})
 }

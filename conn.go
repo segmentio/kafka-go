@@ -852,7 +852,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		conn:          c,
 		msgs:          msgs,
 		deadline:      adjustedDeadline,
-		throttle:      duration(throttle),
+		throttle:      makeDuration(throttle),
 		lock:          lock,
 		topic:         c.topic,          // topic is copied to Batch to prevent race with Batch.close
 		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
