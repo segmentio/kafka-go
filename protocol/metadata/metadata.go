@@ -7,10 +7,10 @@ func init() {
 }
 
 type Request struct {
-	TopicNames                          []string `kafka:"min=v0,max=v8,nullable|min=v9,max=v9,compact,nullable"`
-	AllowAutoTopicCreation              bool     `kafka:"min=v4,max=v9"`
-	IncludeCustomerAuthorizedOperations bool     `kafka:"min=v8,max=v9"`
-	IncludeTopicAuthorizedOperations    bool     `kafka:"min=v8,max=v9"`
+	TopicNames                         []string `kafka:"min=v0,max=v8,nullable|min=v9,max=v9,compact,nullable"`
+	AllowAutoTopicCreation             bool     `kafka:"min=v4,max=v9"`
+	IncludeClusterAuthorizedOperations bool     `kafka:"min=v8,max=v9"`
+	IncludeTopicAuthorizedOperations   bool     `kafka:"min=v8,max=v9"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.Metadata }

@@ -1,5 +1,148 @@
 package kafka
 
+import (
+	"context"
+	"fmt"
+	"net"
+	"time"
+
+	metadataAPI "github.com/segmentio/kafka-go/protocol/metadata"
+)
+
+// Broker represents a kafka broker in a kafka cluster.
+type Broker struct {
+	Host string
+	Port int
+	ID   int
+	Rack string
+}
+
+// Topic represents a topic in a kafka cluster.
+type Topic struct {
+	// Name of the topic.
+	Topic string
+
+	// True if the topic is internal.
+	Internal bool
+
+	// The list of partition currently available on this topic.
+	Partitions []Partition
+
+	// An error that may have occured while attempting to read the topic
+	// metadata.
+	//
+	// The error contains both the kafka error code, and an error message
+	// returned by the kafka broker. Programs may use the standard errors.Is
+	// function to test the error against kafka error codes.
+	Error error
+}
+
+// Partition carries the metadata associated with a kafka partition.
+type Partition struct {
+	// Name of the topic that the partition belongs to, and its index in the
+	// topic.
+	Topic string
+	ID    int
+
+	// Leader, replicas, and ISR for the partition.
+	Leader   Broker
+	Replicas []Broker
+	Isr      []Broker
+
+	// An error that may have occured while attempting to read the partition
+	// metadata.
+	//
+	// The error contains both the kafka error code, and an error message
+	// returned by the kafka broker. Programs may use the standard errors.Is
+	// function to test the error against kafka error codes.
+	Error error
+}
+
+// MetadataRequest represents a request sent to a kafka broker to retrieve its
+// cluster metadata.
+type MetadataRequest struct {
+	// Address of the kafka broker to send the request to.
+	Addr net.Addr
+
+	// The list of topics to retrieve metadata for.
+	Topics []string
+}
+
+// MetadatResponse represents a response from a kafka broker to a metadata
+// request.
+type MetadataResponse struct {
+	// The amount of time that the broker throttled the request.
+	Throttle time.Duration
+
+	// The list of brokers registered to the cluster.
+	Brokers []Broker
+
+	// The list of topics available on the cluster.
+	Topics []Topic
+}
+
+// Metadata sends a metadata request to a kafka broker and returns the response.
+func (c *Client) Metadata(ctx context.Context, req *MetadataRequest) (*MetadataResponse, error) {
+	m, err := c.roundTrip(ctx, req.Addr, &metadataAPI.Request{
+		TopicNames: req.Topics,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).Metadata: %w", err)
+	}
+
+	res := m.(*metadataAPI.Response)
+	ret := &MetadataResponse{
+		Throttle: duration(res.ThrottleTimeMs),
+		Brokers:  make([]Broker, len(res.Brokers)),
+		Topics:   make([]Topic, len(res.Topics)),
+	}
+
+	brokers := make(map[int32]Broker, len(res.Brokers))
+
+	for i, b := range res.Brokers {
+		ret.Brokers[i] = Broker{
+			Host: b.Host,
+			Port: int(b.Port),
+			ID:   int(b.NodeID),
+			Rack: b.Rack,
+		}
+		brokers[b.NodeID] = ret.Brokers[i]
+	}
+
+	for i, t := range res.Topics {
+		ret.Topics[i] = Topic{
+			Topic:      t.Name,
+			Internal:   t.IsInternal,
+			Partitions: make([]Partition, len(t.Partitions)),
+			Error:      makeError(t.ErrorCode, ""),
+		}
+
+		for j, p := range t.Partitions {
+			partition := Partition{
+				Topic:    t.Name,
+				ID:       int(p.PartitionIndex),
+				Leader:   brokers[p.LeaderID],
+				Replicas: make([]Broker, len(p.ReplicaNodes)),
+				Isr:      make([]Broker, len(p.IsrNodes)),
+				Error:    makeError(p.ErrorCode, ""),
+			}
+
+			for i, id := range p.ReplicaNodes {
+				partition.Replicas[i] = brokers[id]
+			}
+
+			for i, id := range p.IsrNodes {
+				partition.Isr[i] = brokers[id]
+			}
+
+			ret.Topics[i].Partitions[j] = partition
+		}
+	}
+
+	return ret, nil
+}
+
 type topicMetadataRequestV1 []string
 
 func (r topicMetadataRequestV1) size() int32 {

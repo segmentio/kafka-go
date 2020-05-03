@@ -10,7 +10,7 @@ import (
 	fetchAPI "github.com/segmentio/kafka-go/protocol/fetch"
 )
 
-// FetchRequest represents a request setn to a kafka broker to retrieve records
+// FetchRequest represents a request sent to a kafka broker to retrieve records
 // from a topic partition.
 type FetchRequest struct {
 	// Address of the kafka broker to send the request to.
@@ -56,7 +56,7 @@ type FetchResponse struct {
 	LastStableOffset int64
 	LogStartOffset   int64
 
-	// An error that may have occured while attempting to produce the records.
+	// An error that may have occured while attempting to fetch the records.
 	//
 	// The error contains both the kafka error code, and an error message
 	// returned by the kafka broker. Programs may use the standard errors.Is

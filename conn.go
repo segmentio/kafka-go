@@ -20,23 +20,6 @@ var (
 	errInvalidWritePartition = errors.New("writes must NOT set Partition on kafka.Message")
 )
 
-// Broker carries the metadata associated with a kafka broker.
-type Broker struct {
-	Host string
-	Port int
-	ID   int
-	Rack string
-}
-
-// Partition carries the metadata associated with a kafka partition.
-type Partition struct {
-	Topic    string
-	Leader   Broker
-	Replicas []Broker
-	Isr      []Broker
-	ID       int
-}
-
 // Conn represents a connection to a kafka broker.
 //
 // Instances of Conn are safe to use concurrently from multiple goroutines.

@@ -503,8 +503,8 @@ func (p *connPool) discover(conn *conn, wake <-chan event, done <-chan struct{})
 
 	res := make(chan connResponse, 1)
 	req := &meta.Request{
-		IncludeCustomerAuthorizedOperations: true,
-		IncludeTopicAuthorizedOperations:    true,
+		IncludeClusterAuthorizedOperations: true,
+		IncludeTopicAuthorizedOperations:   true,
 	}
 
 	var notify event
@@ -546,7 +546,7 @@ func (p *connPool) discover(conn *conn, wake <-chan event, done <-chan struct{})
 func filterMetadataResponse(req *meta.Request, res *meta.Response) *meta.Response {
 	ret := *res
 
-	if len(req.TopicNames) != 0 {
+	if req.TopicNames != nil {
 		ret.Topics = make([]meta.ResponseTopic, len(req.TopicNames))
 
 		for i, topicName := range req.TopicNames {
