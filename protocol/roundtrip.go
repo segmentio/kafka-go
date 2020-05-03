@@ -3,18 +3,19 @@ package protocol
 import (
 	"bufio"
 	"fmt"
+	"io"
 )
 
 // RoundTrip sends a request to a kafka broker and returns the response.
 //
 // The function expects that there were no other concurrent requests served by
 // the connection wrapped by rw, and therefore uses a zero correlation ID.
-func RoundTrip(rw *bufio.ReadWriter, apiVersion int16, clientID string, msg Message) (Message, error) {
+func RoundTrip(w io.Writer, r *bufio.Reader, apiVersion int16, clientID string, msg Message) (Message, error) {
 	const correlationID = 0
-	if err := WriteRequest(rw.Writer, apiVersion, correlationID, clientID, msg); err != nil {
+	if err := WriteRequest(w, apiVersion, correlationID, clientID, msg); err != nil {
 		return nil, err
 	}
-	id, res, err := ReadResponse(rw.Reader, int16(msg.ApiKey()), apiVersion)
+	id, res, err := ReadResponse(r, int16(msg.ApiKey()), apiVersion)
 	if err != nil {
 		return nil, err
 	}

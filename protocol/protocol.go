@@ -396,14 +396,30 @@ type Partition struct {
 	// TODO: add ISR to allow consuming from followers with kafka 2.3+
 }
 
+// BrokerMessage is an extension of the Message interface implemented by some
+// request types to customize the broker assignment logic.
 type BrokerMessage interface {
 	Message
-
+	// Given a representation of the kafka cluster state as argument, returns
+	// the broker that the message should be routed to.
 	Broker(Cluster) (Broker, error)
 }
 
+// PreparedMessage is an extension of the Message interface implemented by some
+// request types which may need to run some pre-processing on their state before
+// being sent.
 type PreparedMessage interface {
 	Message
-
+	// Prepares the message before being sent to a kafka broker using the API
+	// version passed as argument.
 	Prepare(apiVersion int16)
+}
+
+// GroupMessage is an extension of the Message interface implemented by some
+// request types to inform the program that they should be routed to a group
+// coordinator.
+type GroupMessage interface {
+	Message
+	// Returns the group configured on the message.
+	Group() string
 }

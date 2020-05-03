@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bufio"
+	"io"
 )
 
 func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
@@ -42,7 +43,7 @@ func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int3
 	return
 }
 
-func WriteResponse(w *bufio.Writer, apiVersion int16, correlationID int32, msg Message) error {
+func WriteResponse(w io.Writer, apiVersion int16, correlationID int32, msg Message) error {
 	apiKey := msg.ApiKey()
 
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
@@ -74,7 +75,7 @@ func WriteResponse(w *bufio.Writer, apiVersion int16, correlationID int32, msg M
 
 	size := packUint32(uint32(b.Size()) - 4)
 	b.WriteAt(size[:], 0)
-	b.WriteTo(w)
 
-	return w.Flush()
+	_, err := b.WriteTo(w)
+	return err
 }

@@ -9,9 +9,9 @@ import (
 
 type encoder struct {
 	writer io.Writer
-	buffer [16]byte
 	table  *crc32.Table
 	crc32  uint32
+	buffer [32]byte
 }
 
 func (e *encoder) Write(b []byte) (int, error) {
@@ -23,11 +23,28 @@ func (e *encoder) Write(b []byte) (int, error) {
 }
 
 func (e *encoder) WriteString(s string) (int, error) {
-	n, err := io.WriteString(e.writer, s)
-	if n > 0 && e.table != nil {
-		e.crc32 = crc32.Update(e.crc32, e.table, []byte(s[:n]))
+	// This implementation is an optimization to avoid the heap allocation that
+	// would occur when converting the string to a []byte to call crc32.Update.
+	//
+	// Strings are rarely long in the kafka protocol, so the use of a 32 byte
+	// buffer is a good comprise between keeping the encoder value small and
+	// limiting the number of calls to Write.
+	//
+	// We introduced this optimization because memory profiles on the benchmarks
+	// showed that most heap allocations were caused by this code path.
+	n := 0
+
+	for len(s) != 0 {
+		c := copy(e.buffer[:], s)
+		w, err := e.Write(e.buffer[:c])
+		n += w
+		if err != nil {
+			return n, err
+		}
+		s = s[c:]
 	}
-	return n, err
+
+	return n, nil
 }
 
 func (e *encoder) setCRC(table *crc32.Table) {
@@ -318,7 +335,15 @@ func arrayEncodeFuncOf(typ reflect.Type, version int16, tag structTag) encodeFun
 
 func writerEncodeFuncOf(typ reflect.Type) encodeFunc {
 	typ = reflect.PtrTo(typ)
-	return func(e *encoder, v value) { v.iface(typ).(io.WriterTo).WriteTo(e) }
+	return func(e *encoder, v value) {
+		// Optimization to write directly into the buffer when the encoder
+		// does no need to compute a crc32 checksum.
+		w := io.Writer(e)
+		if e.table == nil {
+			w = e.writer
+		}
+		v.iface(typ).(io.WriterTo).WriteTo(w)
+	}
 }
 
 func writeInt8(b []byte, i int8) {

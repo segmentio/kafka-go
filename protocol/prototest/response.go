@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -16,7 +17,7 @@ func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 		b := &bytes.Buffer{}
 		r := bufio.NewReader(b)
-		w := bufio.NewWriter(b)
+		w := io.Writer(b)
 
 		if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
 			t.Fatal(err)
@@ -49,7 +50,7 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 		buffer.Grow(1024)
 
 		b.Run("read", func(b *testing.B) {
-			w := bufio.NewWriter(buffer)
+			w := io.Writer(buffer)
 
 			if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
 				b.Fatal(err)
@@ -74,7 +75,7 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 		})
 
 		b.Run("write", func(b *testing.B) {
-			w := bufio.NewWriter(buffer)
+			w := io.Writer(buffer)
 			n := int64(0)
 
 			for i := 0; i < b.N; i++ {
