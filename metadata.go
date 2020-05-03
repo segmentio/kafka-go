@@ -25,6 +25,12 @@ type MetadataResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration
 
+	// Name of the kafka cluster that client retrieved metadata from.
+	ClusterID string
+
+	// The broker which is currently the controller for the cluster.
+	Controller Broker
+
 	// The list of brokers registered to the cluster.
 	Brokers []Broker
 
@@ -44,21 +50,28 @@ func (c *Client) Metadata(ctx context.Context, req *MetadataRequest) (*MetadataR
 
 	res := m.(*metadataAPI.Response)
 	ret := &MetadataResponse{
-		Throttle: makeDuration(res.ThrottleTimeMs),
-		Brokers:  make([]Broker, len(res.Brokers)),
-		Topics:   make([]Topic, len(res.Topics)),
+		Throttle:  makeDuration(res.ThrottleTimeMs),
+		Brokers:   make([]Broker, len(res.Brokers)),
+		Topics:    make([]Topic, len(res.Topics)),
+		ClusterID: res.ClusterID,
 	}
 
 	brokers := make(map[int32]Broker, len(res.Brokers))
 
 	for i, b := range res.Brokers {
-		ret.Brokers[i] = Broker{
+		broker := Broker{
 			Host: b.Host,
 			Port: int(b.Port),
 			ID:   int(b.NodeID),
 			Rack: b.Rack,
 		}
-		brokers[b.NodeID] = ret.Brokers[i]
+
+		ret.Brokers[i] = broker
+		brokers[b.NodeID] = broker
+
+		if b.NodeID == res.ControllerID {
+			ret.Controller = broker
+		}
 	}
 
 	for i, t := range res.Topics {
