@@ -42,6 +42,14 @@ compressed messages from kafka. All compression codecs are supported by default.
 * Programs that used the compression codecs direction must be adapted.
 Compression codecs are now exposed in the `compress` sub-package.
 
+* The experimental `kafka.Client` API has been updated and slightly modified:
+the `kafka.NewClient` function and `kafka.ClientConfig` type were removed.
+Programs now configure the client values directly through exported fields.
+
+* The `kafka.(*Client).ConsumerOffsets` method is now deprecated (along with the
+`kafka.TopicAndGroup` type, and will be removed when we release version 1.0.
+Programs should use the `kafka.(*Client).OffsetFetch` API instead.
+
 With 0.4, we know that we are starting to introduce a bit more complexity in the
 code, but the plan is to eventually converge towards a simpler and more effective
 API, allowing us to keep up with Kafka's ever growing feature set, and bringing

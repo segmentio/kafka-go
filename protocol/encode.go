@@ -193,8 +193,12 @@ func (e *encoder) writeCompactNullBytes(b []byte) {
 }
 
 func (e *encoder) writeBytesFrom(b ByteSequence) error {
-	e.writeInt32(int32(b.Size()))
-	_, err := copyBytes(e, b)
+	size := b.Size()
+	e.writeInt32(int32(size))
+	n, err := copyBytes(e, b)
+	if err == nil && n != size {
+		err = errorf("size of bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
+	}
 	return err
 }
 
@@ -203,8 +207,12 @@ func (e *encoder) writeNullBytesFrom(b ByteSequence) error {
 		e.writeInt32(-1)
 		return nil
 	} else {
-		e.writeInt32(int32(b.Size()))
-		_, err := copyBytes(e, b)
+		size := b.Size()
+		e.writeInt32(int32(size))
+		n, err := copyBytes(e, b)
+		if err == nil && n != size {
+			err = errorf("size of nullable bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
+		}
 		return err
 	}
 }
@@ -214,8 +222,12 @@ func (e *encoder) writeCompactNullBytesFrom(b ByteSequence) error {
 		e.writeVarInt(-1)
 		return nil
 	} else {
-		e.writeVarInt(b.Size())
-		_, err := copyBytes(e, b)
+		size := b.Size()
+		e.writeVarInt(size)
+		n, err := copyBytes(e, b)
+		if err == nil && n != size {
+			err = errorf("size of compact nullable bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
+		}
 		return err
 	}
 }

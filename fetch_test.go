@@ -1,31 +1,54 @@
 package kafka
 
 import (
-	"bytes"
 	"context"
 	"io/ioutil"
 	"net"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/compress"
 )
 
-func TestClientFetch(t *testing.T) {
-	client, topic, shutdown := newLocalClientAndTopic()
-	defer shutdown()
+func produceRecords(t *testing.T, n int, addr net.Addr, topic string, compression compress.Codec) []Record {
+	network := addr.Network()
+	address := net.JoinHostPort(addr.String(), "9092")
 
-	msgs := makeTestSequence(10)
 	conn, err := (&Dialer{
 		Resolver: &net.Resolver{},
-	}).DialLeader(context.Background(), "tcp", "localhost:9092", topic, 0)
+	}).DialLeader(context.Background(), network, address, topic, 0)
+
 	if err != nil {
 		t.Fatal("failed to open a new kafka connection:", err)
 	}
 	defer conn.Close()
 
-	if _, err := conn.WriteMessages(msgs...); err != nil {
+	msgs := makeTestSequence(n)
+	if compression == nil {
+		_, err = conn.WriteMessages(msgs...)
+	} else {
+		_, err = conn.WriteCompressedMessages(compression, msgs...)
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
+
+	records := make([]Record, len(msgs))
+	for offset, msg := range msgs {
+		records[offset] = NewRecord(
+			int64(offset), time.Time{}, msg.Key, msg.Value, msg.Headers...,
+		)
+	}
+
+	return records
+}
+
+func TestClientFetch(t *testing.T) {
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
+
+	records := produceRecords(t, 10, client.Addr, topic, nil)
 
 	res, err := client.Fetch(context.Background(), &FetchRequest{
 		Topic:     topic,
@@ -40,73 +63,136 @@ func TestClientFetch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if res.Topic != topic {
-		t.Error("invalid topic found in response:", res.Topic)
+	assertFetchResponse(t, res, &FetchResponse{
+		Topic:         topic,
+		Partition:     0,
+		HighWatermark: 10,
+		Records:       NewRecordSet(records...),
+	})
+}
+
+func TestClientFetchCompressed(t *testing.T) {
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
+
+	records := produceRecords(t, 10, client.Addr, topic, &compress.GzipCodec)
+
+	res, err := client.Fetch(context.Background(), &FetchRequest{
+		Topic:     topic,
+		Partition: 0,
+		Offset:    0,
+		MinBytes:  1,
+		MaxBytes:  64 * 1024,
+		MaxWait:   100 * time.Millisecond,
+	})
+
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if res.Partition != 0 {
-		t.Error("invalid partition found in response:", res.Partition)
+	assertFetchResponse(t, res, &FetchResponse{
+		Topic:         topic,
+		Partition:     0,
+		HighWatermark: 10,
+		Records:       NewRecordSet(records...),
+	})
+}
+
+func assertFetchResponse(t *testing.T, found, expected *FetchResponse) {
+	t.Helper()
+
+	if found.Topic != expected.Topic {
+		t.Error("invalid topic found in response:", found.Topic)
 	}
 
-	if res.HighWatermark != 10 {
-		t.Error("invalid high watermark found in response:", res.HighWatermark)
+	if found.Partition != expected.Partition {
+		t.Error("invalid partition found in response:", found.Partition)
 	}
 
-	if res.Error != nil {
-		t.Error("unexpected error found in response:", res.Error)
+	if found.HighWatermark != expected.HighWatermark {
+		t.Error("invalid high watermark found in response:", found.HighWatermark)
 	}
 
+	if found.Error != nil {
+		t.Error("unexpected error found in response:", found.Error)
+	}
+
+	records1, err := readRecords(found.Records)
+	if err != nil {
+		t.Error("error reading records:", err)
+	}
+
+	records2, err := readRecords(expected.Records)
+	if err != nil {
+		t.Error("error reading records:", err)
+	}
+
+	assertRecords(t, records1, records2)
+}
+
+type inMemoryRecord struct {
+	offset  int64
+	key     []byte
+	value   []byte
+	headers []Header
+}
+
+func assertRecords(t *testing.T, found, expected []inMemoryRecord) {
+	t.Helper()
 	i := 0
 
-	for r := res.Records.Next(); r != nil; r = res.Records.Next() {
-		m := &msgs[i]
+	for i < len(found) && i < len(expected) {
+		r1 := found[i]
+		r2 := expected[i]
 
-		if r.Offset() != int64(i) {
-			t.Errorf("invalid record offset at index %d: offset=%d", i, r.Offset())
-		}
-
-		if r.Key() == nil {
-			if m.Key != nil {
-				t.Errorf("unexpected nil record key at index %d", i)
-			}
-		} else {
-			k, err := ioutil.ReadAll(r.Key())
-			if err != nil {
-				t.Errorf("unexpected error reading record key at index %d: %v", i, err)
-			}
-			if !bytes.Equal(k, m.Key) {
-				t.Errorf("invalid record key found at index %d: %q", i, k)
-			}
-		}
-
-		if r.Value() == nil {
-			if m.Value != nil {
-				t.Errorf("unexpected nil record value at index %d", i)
-			}
-		} else {
-			v, err := ioutil.ReadAll(r.Value())
-			if err != nil {
-				t.Errorf("unexpected error reading record value at index %d: %v", i, err)
-			}
-			if !bytes.Equal(v, m.Value) {
-				t.Errorf("invalid record value found at index %d: %q", i, v)
-			}
-		}
-
-		if !reflect.DeepEqual(r.Headers(), m.Headers) {
-			t.Errorf("invalid record headers at index %d", i)
-			t.Log("expected:", m.Headers)
-			t.Log("found:   ", r.Headers())
+		if !reflect.DeepEqual(r1, r2) {
+			t.Errorf("records at index %d don't match", i)
+			t.Logf("expected:\n%+v", r2)
+			t.Logf("found:\n%+v", r1)
 		}
 
 		i++
 	}
 
-	if i != len(msgs) {
-		t.Errorf("fetch response only returned %d records even tho %d were produced to the partition", i, len(msgs))
+	for i < len(found) {
+		t.Errorf("unexpected record at index %d:\n%+v", i, found[i])
+		i++
 	}
 
-	if err := res.Records.Close(); err != nil {
-		t.Error("unexpected error closing the record set:", err)
+	for i < len(expected) {
+		t.Errorf("missing record at index %d:\n%+v", i, expected[i])
+		i++
 	}
+}
+
+func readRecords(records RecordSet) ([]inMemoryRecord, error) {
+	list := []inMemoryRecord{}
+
+	for rec := records.Next(); rec != nil; rec = records.Next() {
+		var (
+			offset      = rec.Offset()
+			key         = rec.Key()
+			value       = rec.Value()
+			headers     = rec.Headers()
+			bytesKey    []byte
+			bytesValues []byte
+		)
+
+		if key != nil {
+			bytesKey, _ = ioutil.ReadAll(key)
+		}
+
+		if value != nil {
+			bytesValues, _ = ioutil.ReadAll(value)
+		}
+
+		list = append(list, inMemoryRecord{
+			offset:  offset,
+			key:     bytesKey,
+			value:   bytesValues,
+			headers: headers,
+		})
+	}
+
+	return list, records.Close()
 }

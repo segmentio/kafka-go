@@ -39,7 +39,7 @@ type Client struct {
 // clarity when passing to the Client as a function argument
 //
 // N.B TopicAndGroup is currently experimental! Therefore, it is subject to
-//change, including breaking changes between MINOR and PATCH releases.
+// change, including breaking changes between MINOR and PATCH releases.
 //
 // DEPRECATED: this type will be removed in version 1.0, programs should
 // migrate to use kafka.(*Client).OffsetFetch instead.

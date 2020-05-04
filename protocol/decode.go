@@ -40,6 +40,10 @@ func (d *decoder) Read(b []byte) (int, error) {
 	return n, err
 }
 
+func (d *decoder) done() bool {
+	return d.remain == 0 || d.err != nil
+}
+
 func (d *decoder) setCRC(table *crc32.Table) {
 	d.table, d.crc32 = table, 0
 }
@@ -111,20 +115,16 @@ func (d *decoder) read(n int) []byte {
 }
 
 func (d *decoder) writeTo(w io.Writer, n int) {
-	if int(n) > d.remain {
-		d.setError(io.ErrUnexpectedEOF)
-	} else {
-		remain := d.remain
-		if n < remain {
-			d.remain = n
-		}
-		c, err := io.Copy(w, d)
-		if c < int64(n) && err == nil {
-			err = io.ErrUnexpectedEOF
-		}
-		d.remain = remain - int(n)
-		d.setError(err)
+	limit := d.remain
+	if n < limit {
+		d.remain = n
 	}
+	c, err := io.Copy(w, d)
+	if int(c) < n && err == nil {
+		err = io.ErrUnexpectedEOF
+	}
+	d.remain = limit - int(c)
+	d.setError(err)
 }
 
 func (d *decoder) setError(err error) {

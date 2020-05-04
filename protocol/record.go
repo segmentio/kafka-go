@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"io"
+	"math"
 	"time"
 
 	"github.com/segmentio/kafka-go/compress"
@@ -181,50 +182,45 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (rs *RecordSet) readFromVersion1(d *decoder) error {
-	var (
-		err         error
-		version     int8
-		baseOffset  = d.readInt64()
-		messageSize = d.readInt32()
-	)
-
-	if err = d.err; err != nil {
-		return err
-	}
-
 	records := make([]Record, 0, 100)
+	defer func() {
+		for _, r := range records {
+			unref(r.Key)
+			unref(r.Value)
+		}
+	}()
+
 	buffer := newPageBuffer()
 	defer buffer.unref()
 
 	baseAttributes := int8(0)
-	limit := d.remain
-	d.remain = int(messageSize)
+	md := decoder{reader: d}
 
-	for offset := baseOffset; d.remain > 0; offset++ {
-		crc := uint32(d.readInt32())
-		d.setCRC(crc32.IEEETable)
-		magicByte := d.readInt8()
-		attributes := d.readInt8()
+	for !d.done() {
+		md.remain = 12
+		offset := md.readInt64()
+		md.remain = int(md.readInt32())
+
+		if md.remain == 0 {
+			break
+		}
+
+		crc := uint32(md.readInt32())
+		md.setCRC(crc32.IEEETable)
+		magicByte := md.readInt8()
+		attributes := md.readInt8()
 		timestamp := int64(0)
 
 		if magicByte != 0 {
-			timestamp = d.readInt64()
+			timestamp = md.readInt64()
 		}
 
-		if version == 0 {
-			version = magicByte
-		}
-
-		if offset == baseOffset {
-			baseAttributes = attributes
-		}
-
+		baseAttributes |= attributes
 		var compression = Attributes(attributes).Compression()
 		var codec compress.Codec
 		if compression != 0 {
 			if codec = compression.Codec(); codec == nil {
-				err = errorf("unsupported compression codec: %d", compression)
-				break
+				return errorf("unsupported compression codec: %d", compression)
 			}
 		}
 
@@ -232,32 +228,35 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 		var v ByteSequence
 
 		keyOffset := buffer.Size()
-		hasKey := d.readBytesTo(buffer)
+		keyLength := int(md.readInt32())
+		hasKey := keyLength >= 0
+
 		if hasKey {
+			md.writeTo(buffer, keyLength)
 			k = buffer.ref(keyOffset, buffer.Size())
 		}
 
 		valueOffset := buffer.Size()
-		valueLength := d.readInt32()
+		valueLength := int(md.readInt32())
 		hasValue := valueLength >= 0
 
 		if hasValue {
 			if codec == nil {
-				d.writeTo(buffer, int(valueLength))
+				md.writeTo(buffer, valueLength)
 				v = buffer.ref(valueOffset, buffer.Size())
 			} else {
-				decompressor := codec.NewReader(d)
 				subset := RecordSet{}
+				decompressor := codec.NewReader(&md)
 
-				err = subset.readFromVersion1(&decoder{
+				err := subset.readFromVersion1(&decoder{
 					reader: decompressor,
-					remain: 12,
+					remain: math.MaxInt32,
 				})
 
 				decompressor.Close()
 
-				if err != nil {
-					break
+				if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+					return err
 				}
 
 				unref(k) // is it valid to have a non-nil key on the root message?
@@ -265,7 +264,7 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 			}
 		}
 
-		if compression == 0 {
+		if compression == 0 && md.err == nil {
 			records = append(records, Record{
 				Offset: offset,
 				Time:   makeTime(timestamp),
@@ -274,30 +273,30 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 			})
 		}
 
-		if d.crc32 != crc {
-			err = errorf("crc32 checksum mismatch (computed=%d found=%d)", d.crc32, crc)
-			break
+		if !md.done() {
+			md.discardAll()
 		}
-	}
 
-	rn := int(messageSize) - d.remain
-	d.remain = limit - rn
-
-	// Ignore io.ErrUnexpectedEOF which occurs when the broker truncates the
-	// response.
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
-		for _, r := range records {
-			unref(r.Key)
-			unref(r.Value)
+		if md.err != nil {
+			if errors.Is(md.err, io.ErrUnexpectedEOF) {
+				break
+			}
+			return md.err
 		}
-		return err
+
+		if md.crc32 != crc {
+			return errorf("crc32 checksum mismatch (computed=%d found=%d)", md.crc32, crc)
+		}
 	}
 
 	*rs = RecordSet{
-		Version:    version,
-		BaseOffset: baseOffset,
+		Version:    1,
 		Records:    records,
 		Attributes: Attributes(baseAttributes),
+	}
+
+	if len(records) != 0 {
+		rs.BaseOffset = records[0].Offset
 	}
 
 	records = nil
@@ -536,13 +535,13 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 	}
 
 	e := encoder{writer: buffer}
-	e.writeInt64(records[0].Offset)
-	e.writeInt32(0) // message set size placeholder
 
 	for i := range records {
 		r := &records[i]
 
-		recordOffset := buffer.Size()
+		messageOffset := buffer.Size()
+		e.writeInt64(r.Offset)
+		e.writeInt32(0) // message size placeholder
 		e.writeInt32(0) // crc32 placeholder
 		e.setCRC(crc32.IEEETable)
 		e.writeInt8(1) // magic byte: version 1
@@ -557,13 +556,13 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 			return err
 		}
 
-		b := packUint32(e.crc32)
-		buffer.WriteAt(b[:], recordOffset)
+		b0 := packUint32(uint32(buffer.Size() - (messageOffset + 12)))
+		b1 := packUint32(e.crc32)
+
+		buffer.WriteAt(b0[:], messageOffset+8)
+		buffer.WriteAt(b1[:], messageOffset+12)
 	}
 
-	totalLength := buffer.Size() - bufferOffset
-	b := packUint32(uint32(totalLength) - 12)
-	buffer.WriteAt(b[:], bufferOffset+8)
 	return nil
 }
 
@@ -653,11 +652,11 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 	totalLength := buffer.Size() - bufferOffset
 	batchLength := totalLength - 12
 
-	length := packUint32(uint32(batchLength))
-	buffer.WriteAt(length[:], bufferOffset+8)
+	b0 := packUint32(uint32(batchLength))
+	b1 := packUint32(*crc)
 
-	checksum := packUint32(*crc)
-	buffer.WriteAt(checksum[:], bufferOffset+17)
+	buffer.WriteAt(b0[:], bufferOffset+8)
+	buffer.WriteAt(b1[:], bufferOffset+17)
 	return nil
 }
 
