@@ -155,11 +155,8 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		}
 		d.remain -= len(b)
 		version = b[magicByteOffset]
-		// Reconstruct the prefix that we just had to consume from the reader
-		// to pass the data to the right read method based on the magic number
-		// that we got. Note that we offset the buffer by 4 bytes to skip the
-		// size because the readFromVersion* methods expect to be positioned at
-		// the beginning of the message set or record batch.
+		// Reconstruct the prefix that we had to read to determine the version
+		// of the record set from the magic byte.
 		d.reader = io.MultiReader(bytes.NewReader(b), d.reader)
 	}
 
