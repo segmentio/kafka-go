@@ -84,7 +84,7 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	e.writeInt32(correlationID)
 	// Technically, recent versions of kafka interpret this field as a nullable
 	// string, however kafka 0.10 expected a non-nullable string and fails with
-	// a NullPointerExecption when sent a null client id.
+	// a NullPointerException when it receives a null client id.
 	e.writeString(clientID)
 	r.encode(e, v)
 

@@ -38,8 +38,7 @@ type RoundTripper interface {
 // Transport is an implementation of the RoundTripper interface.
 //
 // Transport values manage a pool of connections and automatically discovers the
-// clusters layout to manage to dispatch produce and fetch requests to the
-// appropriate brokers.
+// clusters layout to route requests to the appropriate brokers.
 //
 // Transport values are safe to use concurrently from multiple goroutines.
 //
@@ -137,11 +136,11 @@ func (t *Transport) CloseIdleConnections() {
 // This example illustrates the way this method is expected to be used:
 //
 //	r, err := transport.RoundTrip(ctx, addr, &fetch.Request{ ... })
-//  if err != nil {
+//	if err != nil {
 //		...
 //	} else {
-//	    res := r.(*fetch.Response)
-//	    ...
+//		res := r.(*fetch.Response)
+//		...
 //	}
 //
 // The transport automatically selects the highest version of the API that is

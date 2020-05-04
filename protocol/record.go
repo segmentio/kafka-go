@@ -261,6 +261,10 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 			}
 		}
 
+		// When a compression algorithm was configured on the attributes, there
+		// is no actual value in this loop iterator, instead the decompressed
+		// records have been loaded by calling readFromVersion1 recursively and
+		// already added to the `records` list.
 		if compression == 0 && md.err == nil {
 			records = append(records, Record{
 				Offset: offset,
@@ -270,10 +274,17 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 			})
 		}
 
+		// When we reach this point, we should already have consumed all the
+		// bytes in the message. If that's not the case for any reason, discard
+		// whatever is left so we position the stream properly to read the next
+		// message.
 		if !md.done() {
 			md.discardAll()
 		}
 
+		// io.ErrUnexpectedEOF could bubble up here if the kafka broker has
+		// truncated the response. We can safely handle this error and assume
+		// that we have reached the end of the message set.
 		if md.err != nil {
 			if errors.Is(md.err, io.ErrUnexpectedEOF) {
 				break
@@ -413,6 +424,10 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 
 	// Ignore io.ErrUnexpectedEOF which occurs when the broker truncates the
 	// response.
+	//
+	// Note: it's unclear whether kafka 0.11+ still truncates the responses,
+	// all attempts I made at constructing a test to trigger a truncation have
+	// failed. I kept this code here as a safeguard but it may never execute.
 	if d.err != nil && !errors.Is(d.err, io.ErrUnexpectedEOF) {
 		for _, r := range records {
 			unref(r.Key)
@@ -479,6 +494,9 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	}
 	buffer.WriteAt(size[:], bufferOffset)
 
+	// This condition indicates that the output writer received by `WriteTo` was
+	// not a *pageBuffer, in which case we need to flush the buffered records
+	// data into it.
 	if buffer != w {
 		return buffer.WriteTo(w)
 	}
@@ -496,6 +514,9 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 
 	if compression := attributes.Compression(); compression != 0 && len(records) != 0 {
 		if codec := compression.Codec(); codec != nil {
+			// In the message format version 1, compression is acheived by
+			// compressing the value of a message which recursively contains
+			// the representation of the compressed message set.
 			subset := *rs
 			subset.Attributes &= ^7 // erase compression
 
@@ -558,6 +579,7 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 
 		buffer.WriteAt(b0[:], messageOffset+8)
 		buffer.WriteAt(b1[:], messageOffset+12)
+		e.setCRC(nil)
 	}
 
 	return nil
@@ -593,6 +615,9 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 	e.writeInt32(rs.BaseSequence)
 	e.writeInt32(numRecords)
 
+	// The encoder `e` may be assigned to a new value if compression is enabled.
+	// Capture the address of its crc32 field which will contain the checksum of
+	// the serialized record set after all records have been written.
 	var crc = &e.crc32
 	var compressor io.WriteCloser
 
