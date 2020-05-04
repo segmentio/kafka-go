@@ -700,14 +700,6 @@ type connResponse struct {
 	err error
 }
 
-const (
-	// Size of the read and write buffers on the connection. We use a larger
-	// value than the default 8KB of the bufio package to reduce the number of
-	// syscalls needed to exchange the (often large) kafka messages with the
-	// kernel.
-	bufferSize = 64 * 1024
-)
-
 var (
 	// Default dialer used by the transport connections when no Dial function
 	// was configured by the program.
@@ -798,7 +790,7 @@ func (c *conn) connect() (*bufferedConn, map[protocol.ApiKey]int16, error) {
 		netConn = tls.Client(netConn, c.pool.tls)
 	}
 
-	nc := newBufferedConn(netConn, bufferSize)
+	nc := newBufferedConn(netConn)
 
 	if err := nc.SetDeadline(deadline); err != nil {
 		return nil, nil, err
@@ -1013,9 +1005,9 @@ type bufferedConn struct {
 	net.Conn
 }
 
-func newBufferedConn(conn net.Conn, bufferSize int) *bufferedConn {
+func newBufferedConn(conn net.Conn) *bufferedConn {
 	return &bufferedConn{
-		Reader: bufio.NewReaderSize(conn, bufferSize),
+		Reader: bufio.NewReader(conn),
 		Conn:   conn,
 	}
 }
