@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -586,45 +585,4 @@ func copyBytes(w io.Writer, b ByteSequence) (int64, error) {
 
 	_, err = b.Seek(s, io.SeekStart)
 	return n, err
-}
-
-type bufferedReader struct {
-	*bufio.Reader
-	limit io.LimitedReader
-}
-
-func (b *bufferedReader) reset(r io.Reader, n int64) {
-	switch {
-	case r == nil:
-		b.limit.R = nil
-		b.limit.N = 0
-		b.Reader.Reset(nil)
-	case n < 0:
-		b.limit.R = nil
-		b.limit.N = 0
-		b.Reader.Reset(r)
-	default:
-		b.limit.R = r
-		b.limit.N = n
-		b.Reader.Reset(&b.limit)
-	}
-}
-
-var bufferedReaderPool = sync.Pool{
-	New: func() interface{} { return newBufferedReader() },
-}
-
-func newBufferedReader() *bufferedReader {
-	return &bufferedReader{Reader: bufio.NewReaderSize(nil, 1024)}
-}
-
-func acquireBufferedReader(r io.Reader, n int64) *bufferedReader {
-	b := bufferedReaderPool.Get().(*bufferedReader)
-	b.reset(r, n)
-	return b
-}
-
-func releaseBufferedReader(b *bufferedReader) {
-	b.reset(nil, 0)
-	bufferedReaderPool.Put(b)
 }

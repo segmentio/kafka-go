@@ -16,16 +16,14 @@ func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 
 	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 		b := &bytes.Buffer{}
-		r := bufio.NewReader(b)
-		w := io.Writer(b)
 
-		if err := protocol.WriteRequest(w, version, 1234, "me", msg); err != nil {
+		if err := protocol.WriteRequest(b, version, 1234, "me", msg); err != nil {
 			t.Fatal(err)
 		}
 
 		t.Logf("\n%s\n", hex.Dump(b.Bytes()))
 
-		apiVersion, correlationID, clientID, req, err := protocol.ReadRequest(r)
+		apiVersion, correlationID, clientID, req, err := protocol.ReadRequest(b)
 		if err != nil {
 			t.Fatal(err)
 		}

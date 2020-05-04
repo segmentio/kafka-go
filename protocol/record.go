@@ -1,13 +1,11 @@
 package protocol
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
 	"hash/crc32"
 	"io"
-	"math"
 	"time"
 
 	"github.com/segmentio/kafka-go/compress"
@@ -91,94 +89,107 @@ func (rs *RecordSet) Close() error {
 	return nil
 }
 
+// bufferedReader is an interface implemented by types like bufio.Reader, which
+// we use to optimize prefix reads by accessing the internal buffer directly
+// through calls to Peek.
+type bufferedReader interface {
+	Discard(int) (int, error)
+	Peek(int) ([]byte, error)
+}
+
+// bytesBuffer is an interface implemented by types like bytes.Buffer, which we
+// use to optimize prefix reads by accessing the internal buffer directly
+// through calls to Bytes.
+type bytesBuffer interface {
+	Bytes() []byte
+}
+
+// magicByteOffset is the postion of the magic byte in all versions of record
+// sets in the kafka protocol.
 const magicByteOffset = 16
 
 // ReadFrom reads the representation of a record set from r into rs, returning
 // the number of bytes consumed from r, and an non-nil error if the record set
 // could not be read.
 func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
-	var size int32
-	var magic byte
-	var rn int64
+	d, _ := r.(*decoder)
+	if d == nil {
+		d = &decoder{
+			reader: r,
+			remain: 4,
+		}
+	}
 
-	if rb, _ := r.(*bufio.Reader); rb != nil {
-		// This is an optimized code path for the common case where we're
-		// reading from a bufio.Reader, we use the Peek method to get a pointer
-		// to the internal buffer of the reader and avoid allocating a temporary
-		// area to store the data.
-		b, err := rb.Peek(4)
-		// We need to consume the size, because the readFromVersion* methods
-		// expect to be positionned at the beginning of the message set or
-		// record batch.
-		n, _ := rb.Discard(len(b))
+	limit := d.remain
+	size := d.readInt32()
+
+	if d.err != nil {
+		return int64(limit - d.remain), d.err
+	}
+
+	if size <= 0 {
+		*rs = RecordSet{}
+		return 4, nil
+	}
+
+	if size < (magicByteOffset + 1) {
+		return 4, errorf("impossible record set shorter than %d bytes", magicByteOffset+1)
+	}
+
+	var version byte
+	switch r := d.reader.(type) {
+	case bufferedReader:
+		b, err := r.Peek(magicByteOffset + 1)
 		if err != nil {
-			return int64(n), dontExpectEOF(err)
-		}
-
-		if size = readInt32(b); size <= 0 {
-			*rs = RecordSet{}
-			return int64(n), nil
-		}
-
-		c, err := rb.Peek(magicByteOffset + 1)
-		if err != nil {
-			rb.Discard(len(c))
-			return int64(n + len(c)), dontExpectEOF(err)
-		}
-		magic = c[magicByteOffset]
-		rn = int64(n)
-	} else {
-		// Less optimal code path, we need to allocate a temporary buffer to
-		// read the size and magic byte from the reader.
-		b := make([]byte, 4+magicByteOffset+1)
-
-		if n, err := io.ReadFull(r, b[:4]); err != nil {
-			return int64(n), dontExpectEOF(err)
-		}
-
-		if size = readInt32(b[:4]); size <= 0 {
-			*rs = RecordSet{}
-			return 4, nil
-		}
-
-		if n, err := io.ReadFull(r, b[4:]); err != nil {
+			n, _ := r.Discard(len(b))
 			return 4 + int64(n), dontExpectEOF(err)
 		}
-		magic = b[magicByteOffset]
+		version = b[magicByteOffset]
+	case bytesBuffer:
+		version = r.Bytes()[magicByteOffset]
+	default:
+		b := make([]byte, magicByteOffset+1)
+		if n, err := io.ReadFull(d.reader, b); err != nil {
+			return 4 + int64(n), dontExpectEOF(err)
+		}
+		d.remain -= len(b)
+		version = b[magicByteOffset]
 		// Reconstruct the prefix that we just had to consume from the reader
 		// to pass the data to the right read method based on the magic number
 		// that we got. Note that we offset the buffer by 4 bytes to skip the
 		// size because the readFromVersion* methods expect to be positioned at
 		// the beginning of the message set or record batch.
-		r = io.MultiReader(bytes.NewReader(b[4:]), r)
-		rn = int64(len(b))
+		d.reader = io.MultiReader(bytes.NewReader(b), d.reader)
 	}
 
-	var n int64
+	d.remain = int(size)
+
 	var err error
-	switch magic {
+	switch version {
 	case 0, 1:
-		n, err = rs.readFromVersion1(r, int(size))
+		err = rs.readFromVersion1(d)
 	case 2:
-		n, err = rs.readFromVersion2(r, int(size))
+		err = rs.readFromVersion2(d)
 	default:
-		return rn, errorf("unsupported message version %d for message of size %d", magic, size)
+		err = errorf("unsupported message version %d for message of size %d", version, size)
 	}
-	return 4 + n, dontExpectEOF(err)
+
+	rn := 4 + (int(size) - d.remain)
+	d.discardAll()
+	d.remain = limit - rn
+	return int64(rn), err
 }
 
-func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
-	d := decoder{
-		reader: r,
-		remain: size,
-	}
+func (rs *RecordSet) readFromVersion1(d *decoder) error {
+	var (
+		err         error
+		version     int8
+		baseOffset  = d.readInt64()
+		messageSize = d.readInt32()
+	)
 
-	version := int8(0)
-	baseOffset := d.readInt64()
-	messageSize := d.readInt32()
-
-	if d.err != nil {
-		return int64(size - d.remain), d.err
+	if err = d.err; err != nil {
+		return err
 	}
 
 	records := make([]Record, 0, 100)
@@ -186,6 +197,7 @@ func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
 	defer buffer.unref()
 
 	baseAttributes := int8(0)
+	limit := d.remain
 	d.remain = int(messageSize)
 
 	for offset := baseOffset; d.remain > 0; offset++ {
@@ -211,7 +223,7 @@ func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
 		var codec compress.Codec
 		if compression != 0 {
 			if codec = compression.Codec(); codec == nil {
-				d.err = errorf("unsupported compression codec: %d", compression)
+				err = errorf("unsupported compression codec: %d", compression)
 				break
 			}
 		}
@@ -234,14 +246,17 @@ func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
 				d.writeTo(buffer, int(valueLength))
 				v = buffer.ref(valueOffset, buffer.Size())
 			} else {
-				decompressor := codec.NewReader(&d)
-
+				decompressor := codec.NewReader(d)
 				subset := RecordSet{}
-				_, d.err = subset.readFromVersion1(decompressor, math.MaxInt32)
+
+				err = subset.readFromVersion1(&decoder{
+					reader: decompressor,
+					remain: 12,
+				})
 
 				decompressor.Close()
 
-				if d.err != nil {
+				if err != nil {
 					break
 				}
 
@@ -260,20 +275,22 @@ func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
 		}
 
 		if d.crc32 != crc {
-			d.err = errorf("crc32 checksum mismatch (computed=%d found=%d)", d.crc32, crc)
+			err = errorf("crc32 checksum mismatch (computed=%d found=%d)", d.crc32, crc)
 			break
 		}
 	}
 
-	rn := 12 + int64(int(messageSize)-d.remain)
+	rn := int(messageSize) - d.remain
+	d.remain = limit - rn
+
 	// Ignore io.ErrUnexpectedEOF which occurs when the broker truncates the
 	// response.
-	if d.err != nil && !errors.Is(d.err, io.ErrUnexpectedEOF) {
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		for _, r := range records {
 			unref(r.Key)
 			unref(r.Value)
 		}
-		return rn, d.err
+		return err
 	}
 
 	*rs = RecordSet{
@@ -284,15 +301,10 @@ func (rs *RecordSet) readFromVersion1(r io.Reader, size int) (int64, error) {
 	}
 
 	records = nil
-	return rn, nil
+	return nil
 }
 
-func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
-	d := decoder{
-		reader: r,
-		remain: size,
-	}
-
+func (rs *RecordSet) readFromVersion2(d *decoder) error {
 	var (
 		baseOffset           = d.readInt64()
 		batchLength          = d.readInt32()
@@ -312,7 +324,7 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 		producerEpoch   = d.readInt16()
 		baseSequence    = d.readInt32()
 		numRecords      = d.readInt32()
-		reader          = io.Reader(&d)
+		reader          = io.Reader(d)
 	)
 
 	_ = batchLength     // batch ends when we reach `size`
@@ -322,7 +334,7 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 	if compression := Attributes(attributes).Compression(); compression != 0 {
 		codec := compression.Codec()
 		if codec == nil {
-			return int64(size - d.remain), errorf("unsupported compression codec (%d)", compression)
+			return errorf("unsupported compression codec (%d)", compression)
 		}
 		decompressor := codec.NewReader(reader)
 		defer decompressor.Close()
@@ -333,18 +345,16 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 	defer buffer.unref()
 
 	_, err := buffer.ReadFrom(reader)
-	n := int64(size - d.remain)
 	if err != nil {
-		return n, err
+		return err
 	}
-
 	if d.crc32 != uint32(crc) {
-		return n, errorf("crc32 checksum mismatch (computed=%d found=%d)", d.crc32, uint32(crc))
+		return errorf("crc32 checksum mismatch (computed=%d found=%d)", d.crc32, uint32(crc))
 	}
 
 	recordsLength := buffer.Len()
 
-	d = decoder{
+	d = &decoder{
 		reader: buffer,
 		remain: recordsLength,
 	}
@@ -412,7 +422,7 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 			unref(r.Key)
 			unref(r.Value)
 		}
-		return n, d.err
+		return d.err
 	}
 
 	*rs = RecordSet{
@@ -426,8 +436,7 @@ func (rs *RecordSet) readFromVersion2(r io.Reader, size int) (int64, error) {
 		Records:              records,
 	}
 
-	d.discardAll()
-	return n, nil
+	return nil
 }
 
 // WriteTo writes the representation of rs into w. The value of rs.Version

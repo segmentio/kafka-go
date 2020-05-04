@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net"
@@ -334,16 +333,6 @@ func parseVersion(s string) (int16, error) {
 		return 0, fmt.Errorf("invalid negative version number: %q", s)
 	}
 	return int16(i), nil
-}
-
-func readMessageSize(r *bufio.Reader) (size int32, err error) {
-	d := &decoder{reader: r, remain: 4}
-	if size = d.readInt32(); size < 0 {
-		err = ErrCorrupted
-	} else if d.err != nil {
-		err = dontExpectEOF(d.err)
-	}
-	return
 }
 
 func dontExpectEOF(err error) error {

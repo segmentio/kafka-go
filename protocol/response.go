@@ -1,13 +1,10 @@
 package protocol
 
 import (
-	"bufio"
 	"io"
 )
 
-func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
-	var size int32
-
+func ReadResponse(r io.Reader, apiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
 		err = errorf("unsupported api key: %d", i)
 		return
@@ -28,11 +25,14 @@ func ReadResponse(r *bufio.Reader, apiKey, apiVersion int16) (correlationID int3
 		return
 	}
 
-	if size, err = readMessageSize(r); err != nil {
+	d := &decoder{reader: r, remain: 4}
+	size := d.readInt32()
+
+	if err = d.err; err != nil {
 		return
 	}
 
-	d := &decoder{reader: r, remain: int(size)}
+	d.remain = int(size)
 	defer d.discardAll()
 
 	correlationID = d.readInt32()

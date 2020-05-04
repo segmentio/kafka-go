@@ -1,18 +1,18 @@
 package protocol
 
 import (
-	"bufio"
 	"io"
 )
 
-func ReadRequest(r *bufio.Reader) (apiVersion int16, correlationID int32, clientID string, msg Message, err error) {
-	var size int32
+func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID string, msg Message, err error) {
+	d := &decoder{reader: r, remain: 4}
+	size := d.readInt32()
 
-	if size, err = readMessageSize(r); err != nil {
+	if err = d.err; err != nil {
 		return
 	}
 
-	d := &decoder{reader: r, remain: int(size)}
+	d.remain = int(size)
 	defer d.discardAll()
 
 	apiKey := d.readInt16()

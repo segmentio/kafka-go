@@ -337,9 +337,10 @@ func readerDecodeFuncOf(typ reflect.Type) decodeFunc {
 	typ = reflect.PtrTo(typ)
 	return func(d *decoder, v value) {
 		if d.err == nil {
-			var n int64
-			n, d.err = v.iface(typ).(io.ReaderFrom).ReadFrom(d.reader)
-			d.remain -= int(n)
+			_, err := v.iface(typ).(io.ReaderFrom).ReadFrom(d)
+			if err != nil {
+				d.setError(err)
+			}
 		}
 	}
 }

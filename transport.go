@@ -664,7 +664,7 @@ const (
 	// value than the default 8KB of the bufio package to reduce the number of
 	// syscalls needed to exchange the (often large) kafka messages with the
 	// kernel.
-	bufferSize = 32 * 1024
+	bufferSize = 64 * 1024
 )
 
 var (
@@ -737,7 +737,7 @@ func (c *conn) synchronized(f func()) {
 	f()
 }
 
-func (c *conn) connect() (net.Conn, *bufio.Reader, map[protocol.ApiKey]int16, error) {
+func (c *conn) connect() (*bufferedConn, map[protocol.ApiKey]int16, error) {
 	deadline := time.Now().Add(c.pool.dialTimeout)
 
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
@@ -745,7 +745,7 @@ func (c *conn) connect() (net.Conn, *bufio.Reader, map[protocol.ApiKey]int16, er
 
 	netConn, err := c.pool.dial(ctx, c.pool.network, c.pool.address)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	defer func() {
 		if netConn != nil {
@@ -757,28 +757,27 @@ func (c *conn) connect() (net.Conn, *bufio.Reader, map[protocol.ApiKey]int16, er
 		netConn = tls.Client(netConn, c.pool.tls)
 	}
 
-	nc := netConn
-	rb := bufio.NewReaderSize(netConn, bufferSize)
+	nc := newBufferedConn(netConn, bufferSize)
 
 	if err := nc.SetDeadline(deadline); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	if c.pool.sasl != nil {
-		if err := c.authenticateSASL(ctx, netConn, rb, c.pool.sasl); err != nil {
-			return nil, nil, nil, err
+		if err := c.authenticateSASL(ctx, nc, c.pool.sasl); err != nil {
+			return nil, nil, err
 		}
 	}
 
-	r, err := protocol.RoundTrip(netConn, rb, v0, c.pool.clientID, new(apiversions.Request))
+	r, err := protocol.RoundTrip(nc, v0, c.pool.clientID, new(apiversions.Request))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	res := r.(*apiversions.Response)
 	ver := make(map[protocol.ApiKey]int16, len(res.ApiKeys))
 
 	if res.ErrorCode != 0 {
-		return nil, nil, nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", c.pool.address, Error(res.ErrorCode))
+		return nil, nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", c.pool.address, Error(res.ErrorCode))
 	}
 
 	for _, r := range res.ApiKeys {
@@ -787,16 +786,16 @@ func (c *conn) connect() (net.Conn, *bufio.Reader, map[protocol.ApiKey]int16, er
 	}
 
 	if err := nc.SetDeadline(time.Now().Add(c.pool.idleTimeout)); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	netConn = nil
-	return nc, rb, ver, nil
+	return nc, ver, nil
 }
 
-func (c *conn) dispatch(conn net.Conn, done chan<- error, rb *bufio.Reader) {
+func (c *conn) dispatch(conn *bufferedConn, done chan<- error) {
 	for {
-		_, id, err := peekResponseSizeAndID(rb)
+		_, id, err := conn.peekResponseSizeAndID()
 		if err != nil {
 			done <- dontExpectEOF(err)
 			return
@@ -811,7 +810,7 @@ func (c *conn) dispatch(conn net.Conn, done chan<- error, rb *bufio.Reader) {
 			return
 		}
 
-		_, res, err := protocol.ReadResponse(rb, int16(r.req.ApiKey()), r.version)
+		_, res, err := protocol.ReadResponse(conn, int16(r.req.ApiKey()), r.version)
 
 		r.res <- connResponse{
 			res: res,
@@ -832,7 +831,7 @@ func (c *conn) dispatch(conn net.Conn, done chan<- error, rb *bufio.Reader) {
 }
 
 func (c *conn) run(reqs <-chan connRequest) {
-	var conn net.Conn
+	var conn *bufferedConn
 	var done chan error
 	var versions map[protocol.ApiKey]int16
 
@@ -854,17 +853,16 @@ func (c *conn) run(reqs <-chan connRequest) {
 			}
 
 			if conn == nil {
-				var rb *bufio.Reader
 				var err error
 
-				conn, rb, versions, err = c.connect()
+				conn, versions, err = c.connect()
 				if err != nil {
 					r.res <- connResponse{err: err}
 					continue
 				}
 
 				done = make(chan error, 1)
-				go c.dispatch(conn, done, rb)
+				go c.dispatch(conn, done)
 			}
 
 			r.version = versions[r.req.ApiKey()]
@@ -885,23 +883,14 @@ func (c *conn) run(reqs <-chan connRequest) {
 	}
 }
 
-func peekResponseSizeAndID(rb *bufio.Reader) (int32, int32, error) {
-	b, err := rb.Peek(8)
-	if err != nil {
-		return 0, 0, err
-	}
-	size, id := makeInt32(b[:4]), makeInt32(b[4:])
-	return size, id, nil
-}
-
 // authenticateSASL performs all of the required requests to authenticate this
 // connection.  If any step fails, this function returns with an error.  A nil
 // error indicates successful authentication.
 //
 // In case of error, this function *does not* close the connection.  That is the
 // responsibility of the caller.
-func (c *conn) authenticateSASL(ctx context.Context, w io.Writer, r *bufio.Reader, mechanism sasl.Mechanism) error {
-	if err := c.saslHandshake(w, r, mechanism.Name()); err != nil {
+func (c *conn) authenticateSASL(ctx context.Context, rw io.ReadWriter, mechanism sasl.Mechanism) error {
+	if err := c.saslHandshake(rw, mechanism.Name()); err != nil {
 		return err
 	}
 
@@ -911,7 +900,7 @@ func (c *conn) authenticateSASL(ctx context.Context, w io.Writer, r *bufio.Reade
 	}
 
 	for completed := false; !completed; {
-		challenge, err := c.saslAuthenticate(w, r, state)
+		challenge, err := c.saslAuthenticate(rw, state)
 		switch err {
 		case nil:
 		case io.EOF:
@@ -943,8 +932,8 @@ func (c *conn) authenticateSASL(ctx context.Context, w io.Writer, r *bufio.Reade
 // therefore the client should already know which mechanisms are supported.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslHandshake
-func (c *conn) saslHandshake(w io.Writer, r *bufio.Reader, mechanism string) error {
-	msg, err := protocol.RoundTrip(w, r, v0, c.pool.clientID, &saslhandshake.Request{
+func (c *conn) saslHandshake(rw io.ReadWriter, mechanism string) error {
+	msg, err := protocol.RoundTrip(rw, v0, c.pool.clientID, &saslhandshake.Request{
 		Mechanism: mechanism,
 	})
 	if err != nil {
@@ -961,8 +950,8 @@ func (c *conn) saslHandshake(w io.Writer, r *bufio.Reader, mechanism string) err
 // be immediately preceded by a successful saslHandshake.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
-func (c *conn) saslAuthenticate(w io.Writer, r *bufio.Reader, data []byte) ([]byte, error) {
-	msg, err := protocol.RoundTrip(w, r, v1, c.pool.clientID, &saslauthenticate.Request{
+func (c *conn) saslAuthenticate(rw io.ReadWriter, data []byte) ([]byte, error) {
+	msg, err := protocol.RoundTrip(rw, v1, c.pool.clientID, &saslauthenticate.Request{
 		AuthBytes: data,
 	})
 	if err != nil {
@@ -973,6 +962,34 @@ func (c *conn) saslAuthenticate(w io.Writer, r *bufio.Reader, data []byte) ([]by
 		err = makeError(res.ErrorCode, res.ErrorMessage)
 	}
 	return res.AuthBytes, err
+}
+
+// bufferedConn pairs a network connection and a read buffer. The protocol
+// sub-package leverages the methods exposed by the bufio.Reader to optimize
+// decoding of messages received on the connection.
+type bufferedConn struct {
+	*bufio.Reader
+	net.Conn
+}
+
+func newBufferedConn(conn net.Conn, bufferSize int) *bufferedConn {
+	return &bufferedConn{
+		Reader: bufio.NewReaderSize(conn, bufferSize),
+		Conn:   conn,
+	}
+}
+
+func (c *bufferedConn) Read(b []byte) (int, error) {
+	return c.Reader.Read(b)
+}
+
+func (c *bufferedConn) peekResponseSizeAndID() (int32, int32, error) {
+	b, err := c.Peek(8)
+	if err != nil {
+		return 0, 0, err
+	}
+	size, id := makeInt32(b[:4]), makeInt32(b[4:])
+	return size, id, nil
 }
 
 var (
