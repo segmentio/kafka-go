@@ -35,6 +35,61 @@ type Client struct {
 	Transport RoundTripper
 }
 
+// A ConsumerGroup and Topic as these are both strings we define a type for
+// clarity when passing to the Client as a function argument
+//
+// N.B TopicAndGroup is currently experimental! Therefore, it is subject to
+//change, including breaking changes between MINOR and PATCH releases.
+//
+// DEPRECATED: this type will be removed in version 1.0, programs should
+// migrate to use kafka.(*Client).OffsetFetch instead.
+type TopicAndGroup struct {
+	Topic   string
+	GroupId string
+}
+
+// ConsumerOffsets returns a map[int]int64 of partition to committed offset for
+// a consumer group id and topic.
+//
+// DEPRECATED: this method will be removed in version 1.0, programs should
+// migrate to use kafka.(*Client).OffsetFetch instead.
+func (c *Client) ConsumerOffsets(ctx context.Context, tg TopicAndGroup) (map[int]int64, error) {
+	metadata, err := c.Metadata(ctx, &MetadataRequest{
+		Topics: []string{tg.Topic},
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	topic := metadata.Topics[0]
+	partitions := make([]int, len(topic.Partitions))
+
+	for i := range topic.Partitions {
+		partitions[i] = topic.Partitions[i].ID
+	}
+
+	offsets, err := c.OffsetFetch(ctx, &OffsetFetchRequest{
+		GroupID: tg.GroupId,
+		Topics: map[string][]int{
+			tg.Topic: partitions,
+		},
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	topicOffsets := offsets.Topics[topic.Name]
+	partitionOffsets := make(map[int]int64, len(topicOffsets))
+
+	for _, off := range topicOffsets {
+		partitionOffsets[off.Partition] = off.CommittedOffset
+	}
+
+	return partitionOffsets, nil
+}
+
 func (c *Client) roundTrip(ctx context.Context, addr net.Addr, msg protocol.Message) (protocol.Message, error) {
 	if c.Timeout > 0 {
 		var cancel context.CancelFunc

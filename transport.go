@@ -17,6 +17,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/apiversions"
 	"github.com/segmentio/kafka-go/protocol/createtopics"
 	"github.com/segmentio/kafka-go/protocol/deletetopics"
+	"github.com/segmentio/kafka-go/protocol/findcoordinator"
 	meta "github.com/segmentio/kafka-go/protocol/metadata"
 	"github.com/segmentio/kafka-go/protocol/saslauthenticate"
 	"github.com/segmentio/kafka-go/protocol/saslhandshake"
@@ -316,9 +317,15 @@ func (p *connPool) closeIdleConnections() {
 	}
 }
 
+func (p *connPool) cachedLayout() (protocol.Cluster, error) {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	return p.layout, p.err
+}
+
 func (p *connPool) cachedMetadata() (*meta.Response, error) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
 	return p.metadata, p.err
 }
 
@@ -332,7 +339,9 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 		return nil, ctx.Err()
 	}
 
+	var brokerID = -1
 	var refreshMetadata bool
+
 	switch m := req.(type) {
 	case *meta.Request:
 		// We serve metadata requests directly from the transport cache.
@@ -344,13 +353,48 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 			return nil, err
 		}
 		return filterMetadataResponse(m, r), nil
+
 	case *createtopics.Request, *deletetopics.Request:
 		// Force an update of the metadata when adding or removing topics,
 		// otherwise the cached state would get out of sync.
 		refreshMetadata = true
+
+	case protocol.BrokerMessage:
+		// Some requests are supposed to be sent to specific brokers (e.g. the
+		// partition leaders). They implement the BrokerMessage interface to
+		// delegate the routing decision to each message type.
+		layout, err := p.cachedLayout()
+		if err != nil {
+			return nil, err
+		}
+		broker, err := m.Broker(layout)
+		if err != nil {
+			return nil, err
+		}
+		brokerID = broker.ID
+
+	case protocol.GroupMessage:
+		// Some requests are supposed to be sent to a group coordinator,
+		// look up which broker is currently the coordinator for the group
+		// so we can get a connection to that broker.
+		//
+		// TODO: should we cache the coordinator info?
+		r, err := p.roundTrip(ctx, &findcoordinator.Request{
+			Key: m.Group(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		brokerID = int(r.(*findcoordinator.Response).NodeID)
 	}
 
-	c, err := p.grabConn(req)
+	var c *conn
+	var err error
+	if brokerID >= 0 {
+		c, err = p.grabBrokerConn(brokerID)
+	} else {
+		c, err = p.grabClusterConn()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -393,8 +437,22 @@ func (p *connPool) setReady() {
 	p.once.Do(p.ready.trigger)
 }
 
-// grabConn returns the connection which should serve the request passed as
-// argument. If no connections were available, an error is returned.
+// grabBrokerConn returns a connection to a specific broker represented by the
+// broker id passed as argument. If the broker id was not known, an error is
+// returned.
+func (p *connPool) grabBrokerConn(brokerID int) (*conn, error) {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	c := p.conns[brokerID]
+	if c == nil {
+		return nil, BrokerNotAvailable
+	}
+	c.ref()
+	return c, nil
+}
+
+// grabClusterConn returns the connection to the kafka cluster that the pool is
+// configured to connect to.
 //
 // The transport uses a shared `control` connection to the cluster for any
 // requests that aren't supposed to be sent to specific brokers (e.g. Fetch or
@@ -406,26 +464,10 @@ func (p *connPool) setReady() {
 //
 // In either cases, the requests are multiplexed so we can keep a minimal number
 // of connections open (N+1, where N is the number of brokers in the cluster).
-func (p *connPool) grabConn(req protocol.Message) (*conn, error) {
+func (p *connPool) grabClusterConn() (*conn, error) {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-
-	var c *conn
-	switch m := req.(type) {
-	case protocol.BrokerMessage:
-		layout, err := p.layout, p.err
-		if err != nil {
-			return nil, err
-		}
-		broker, err := m.Broker(layout)
-		if err != nil {
-			return nil, err
-		}
-		c = p.conns[broker.ID]
-	default:
-		c = p.ctrl
-	}
-
+	c := p.ctrl
 	c.ref()
 	return c, nil
 }

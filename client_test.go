@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"testing"
 	"time"
 )
 
@@ -77,7 +78,6 @@ func (c *groupConn) Close() error {
 	return c.Conn.Close()
 }
 
-/*
 func TestClient(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -98,7 +98,7 @@ func TestClient(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			c := NewClient("localhost:9092")
+			c := &Client{Addr: TCP("localhost:9092")}
 			testFunc(t, ctx, c)
 		})
 	}
@@ -161,4 +161,3 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 		}
 	}
 }
-*/
