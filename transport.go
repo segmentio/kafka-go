@@ -120,8 +120,8 @@ func (t *Transport) CloseIdleConnections() {
 	}
 }
 
-// RoundTrip sends a request to the kafka broker that c is connected to, and
-// returns the response, or an error if no response could be received.
+// RoundTrip sends a request to a kafka cluster and returns the response, or an
+// error if no responses were received.
 //
 // Message types are available in sub-packages of the protocol package. Each
 // kafka API is implemented in a different sub-package. For example, the request
@@ -299,12 +299,28 @@ type connPool struct {
 	wake   chan event // used to force metadata updates
 	cancel context.CancelFunc
 	// Mutable fields of the connection pool, access must be synchronized.
-	mutex    sync.RWMutex
-	conns    map[int]*conn    // data connections used for produce/fetch/etc...
-	ctrl     *conn            // control connection used for metadata requests
+	mutex sync.RWMutex
+	conns map[int]*conn // data connections used for produce/fetch/etc...
+	ctrl  *conn         // control connection used for metadata requests
+	state atomic.Value  // *connPoolState
+}
+
+type connPoolState struct {
 	metadata *meta.Response   // last metadata response seen by the pool
 	err      error            // last error from metadata requests
 	layout   protocol.Cluster // cluster layout built from metadata response
+}
+
+func (p *connPool) grabState() connPoolState {
+	state, _ := p.state.Load().(*connPoolState)
+	if state != nil {
+		return *state
+	}
+	return connPoolState{}
+}
+
+func (p *connPool) setState(state connPoolState) {
+	p.state.Store(&state)
 }
 
 func (p *connPool) ref() {
@@ -337,14 +353,16 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
 
+	var state = p.grabState()
 	var response promise
+
 	switch m := req.(type) {
 	case *meta.Request:
 		// We serve metadata requests directly from the transport cache.
 		//
 		// This reduces the number of round trips to kafka brokers while keeping
 		// the logic simple when applying partitioning strategies.
-		return filterMetadataResponse(m, p.metadata), nil
+		return filterMetadataResponse(m, state.metadata), nil
 
 	case *createtopics.Request, *deletetopics.Request:
 		// Force an update of the metadata when adding or removing topics,
@@ -355,19 +373,19 @@ func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protoco
 		// Messages that implement the Mapper interface trigger the creation of
 		// multiple requests that are all merged back into a single results by
 		// a reducer.
-		messages, reducer, err := m.Map(p.layout)
+		messages, reducer, err := m.Map(state.layout)
 		if err != nil {
 			return nil, err
 		}
 		promises := make([]promise, len(messages))
 		for i, m := range messages {
-			promises[i] = p.sendRequest(ctx, m)
+			promises[i] = p.sendRequest(ctx, m, state)
 		}
 		response = join(promises, messages, reducer)
 	}
 
 	if response == nil {
-		response = p.sendRequest(ctx, req)
+		response = p.sendRequest(ctx, req, state)
 	}
 
 	return response.await(ctx)
@@ -411,44 +429,58 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 		layout = makeLayout(metadata)
 	}
 
-	p.mutex.Lock()
-	defer p.setReady()
-	defer p.mutex.Unlock()
+	state := p.grabState()
+	addBrokers := make(map[int]struct{})
+	delBrokers := make(map[int]struct{})
 
-	if ctx.Err() != nil {
-		return // the pool has been closed, no need to update
+	for id := range layout.Brokers {
+		if _, ok := state.layout.Brokers[id]; !ok {
+			addBrokers[id] = struct{}{}
+		}
+	}
+
+	for id := range state.layout.Brokers {
+		if _, ok := layout.Brokers[id]; !ok {
+			delBrokers[id] = struct{}{}
+		}
 	}
 
 	if err != nil {
 		// Only update the error on the transport if the cluster layout was
 		// unknown. This ensures that we prioritize a previously known state
 		// of the cluster to reduce the impact of transient failures.
-		if p.metadata == nil {
-			p.err = err
+		if state.metadata == nil {
+			state.err = err
 		}
-		return
+	} else {
+		state.metadata, state.layout = metadata, layout
 	}
 
-	for id, broker := range layout.Brokers {
-		if _, ok := p.conns[id]; !ok {
+	p.setState(state)
+	p.setReady()
+
+	if len(addBrokers) != 0 || len(delBrokers) != 0 {
+		// Only acquire the lock when there is a change of layout. This is an
+		// infrequent event so we don't risk introducing regular contention on
+		// the mutex if we were to lock it on every update.
+		p.mutex.Lock()
+		defer p.mutex.Unlock()
+
+		if ctx.Err() != nil {
+			return // the pool has been closed, no need to update
+		}
+
+		for id := range addBrokers {
+			broker := layout.Brokers[id]
 			p.conns[id] = p.connect(ctx, broker.Network(), broker.String())
 		}
-	}
 
-	for id, conn := range p.conns {
-		if _, ok := layout.Brokers[id]; !ok {
+		for id := range delBrokers {
+			conn := p.conns[id]
 			close(conn.reqs)
 			delete(p.conns, id)
 		}
 	}
-
-	// We got a successful update, we will be using this state from now on,
-	// and won't report errors seen trying to refresh the cluster layout
-	// state. If the state gets out of sync, some requests may fail
-	// (e.g. Produce requests going to brokers that are not leading a
-	// partition), the program is expected to handle these errors and retry
-	// accordingly.
-	p.metadata, p.layout, p.err = metadata, layout, nil
 }
 
 // discover is the entry point of an internal goroutine for the transport which
@@ -532,7 +564,7 @@ func (p *connPool) grabClusterConn() (*conn, error) {
 	return p.ctrl, nil
 }
 
-func (p *connPool) sendRequest(ctx context.Context, req protocol.Message) promise {
+func (p *connPool) sendRequest(ctx context.Context, req protocol.Message, state connPoolState) promise {
 	brokerID := -1
 
 	switch m := req.(type) {
@@ -540,7 +572,7 @@ func (p *connPool) sendRequest(ctx context.Context, req protocol.Message) promis
 		// Some requests are supposed to be sent to specific brokers (e.g. the
 		// partition leaders). They implement the BrokerMessage interface to
 		// delegate the routing decision to each message type.
-		broker, err := m.Broker(p.layout)
+		broker, err := m.Broker(state.layout)
 		if err != nil {
 			return reject(err)
 		}
@@ -552,7 +584,7 @@ func (p *connPool) sendRequest(ctx context.Context, req protocol.Message) promis
 		// so we can get a connection to that broker.
 		//
 		// TODO: should we cache the coordinator info?
-		p := p.sendRequest(ctx, &findcoordinator.Request{Key: m.Group()})
+		p := p.sendRequest(ctx, &findcoordinator.Request{Key: m.Group()}, state)
 		r, err := p.await(ctx)
 		if err != nil {
 			return reject(err)
@@ -814,8 +846,10 @@ func (c *conn) unregister(id int32) (r connRequest, ok bool) {
 
 func (c *conn) cancel(err error) {
 	c.synchronized(func() {
-		for id, r := range c.inflight {
+		for _, r := range c.inflight {
 			r.res.reject(err)
+		}
+		for id := range c.inflight {
 			delete(c.inflight, id)
 		}
 	})
