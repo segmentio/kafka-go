@@ -302,7 +302,7 @@ type connPool struct {
 	mutex sync.RWMutex
 	conns map[int]*conn // data connections used for produce/fetch/etc...
 	ctrl  *conn         // control connection used for metadata requests
-	state atomic.Value  // *connPoolState
+	state atomic.Value  // cached cluster state
 }
 
 type connPoolState struct {
@@ -312,15 +312,12 @@ type connPoolState struct {
 }
 
 func (p *connPool) grabState() connPoolState {
-	state, _ := p.state.Load().(*connPoolState)
-	if state != nil {
-		return *state
-	}
-	return connPoolState{}
+	state, _ := p.state.Load().(connPoolState)
+	return state
 }
 
 func (p *connPool) setState(state connPoolState) {
-	p.state.Store(&state)
+	p.state.Store(state)
 }
 
 func (p *connPool) ref() {
