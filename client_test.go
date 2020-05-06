@@ -46,8 +46,9 @@ func newClient(addr net.Addr) (*Client, func()) {
 	}
 
 	client := &Client{
-		Addr:    addr,
-		Timeout: 5 * time.Second,
+		Addr:      addr,
+		Timeout:   5 * time.Second,
+		Transport: transport,
 	}
 
 	return client, func() { transport.CloseIdleConnections(); conns.Wait() }
@@ -79,7 +80,6 @@ func (c *groupConn) Close() error {
 }
 
 func TestClient(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *Client)
@@ -93,8 +93,6 @@ func TestClient(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 

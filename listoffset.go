@@ -3,9 +3,8 @@ package kafka
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
-	"sort"
-	"sync"
 	"time"
 
 	"github.com/segmentio/kafka-go/protocol/listoffsets"
@@ -37,7 +36,7 @@ func TimeOffsetOf(partition int, at time.Time) OffsetRequest {
 
 // PartitionOffsets carries information about offsets available in a topic
 // partition.
-type PartitionOffset struct {
+type PartitionOffsets struct {
 	Partition   int
 	FirstOffset int64
 	LastOffset  int64
@@ -72,175 +71,113 @@ type ListOffsetsResponse struct {
 
 	// Mappings of topics names to partition offsets, there will be one entry
 	// for each topic in the request.
-	Topics map[string][]PartitionOffset
+	Topics map[string][]PartitionOffsets
 }
 
 // ListOffsets sends an offset request to a kafka broker and returns the
 // response.
 func (c *Client) ListOffsets(ctx context.Context, req *ListOffsetsRequest) (*ListOffsetsResponse, error) {
-	// Because kafka refuses to answer ListOffsets requests containing multiple
-	// entries of unique topic/partition pairs, we submit multiple requests on
-	// the wire and merge their results back.
-	//
-	// The code is a bit verbose but shouldn't be too hard to follow, the idea
-	// is to group requests respecting the requirement to have each instance of
-	// a topic/partition pair exist only once in each request.
-	//
-	// Really the idea here is to shield applications from having to deal with
-	// the limitation of the kafka server, so they can request any combinations
-	// of topic/partition/offsets.
 	type topicPartition struct {
 		topic     string
 		partition int
 	}
 
-	type topicResponse struct {
-		topic     string
-		partition int
-		index     int
-		offset    int64
-		time      time.Time
-		throttle  time.Duration
-		err       error
-	}
+	partitionOffsets := make(map[topicPartition]PartitionOffsets)
 
-	var (
-		partitionRequests = make(map[topicPartition][]int64)
-		topicRequests     = make(map[string][]listoffsets.RequestPartition)
-		responses         = make(chan topicResponse)
-		numRequests       int
-		waitGroup         sync.WaitGroup
-	)
-
-	for topicName, offsetRequests := range req.Topics {
-		for _, offsetRequest := range offsetRequests {
-			key := topicPartition{topicName, offsetRequest.Partition}
-			partitionRequests[key] = append(partitionRequests[key], offsetRequest.Timestamp)
-		}
-	}
-
-	for _, timestamps := range partitionRequests {
-		if len(timestamps) > numRequests {
-			numRequests = len(timestamps)
-		}
-	}
-
-	for i := 0; i < numRequests; i++ {
-		for key, timestamps := range partitionRequests {
-			topicRequests[key.topic] = append(topicRequests[key.topic], listoffsets.RequestPartition{
-				Partition:          int32(key.partition),
-				CurrentLeaderEpoch: -1,
-				Timestamp:          timestamps[i],
-			})
-		}
-
-		r := &listoffsets.Request{
-			ReplicaID:      -1,
-			IsolationLevel: int8(req.IsolationLevel),
-			Topics:         make([]listoffsets.RequestTopic, 0, len(topicRequests)),
-		}
-
-		for topicName, partitions := range topicRequests {
-			r.Topics = append(r.Topics, listoffsets.RequestTopic{
-				Topic:      topicName,
-				Partitions: partitions,
-			})
-		}
-
-		for topicName := range topicRequests {
-			delete(topicRequests, topicName)
-		}
-
-		waitGroup.Add(1)
-		go func(index int, addr net.Addr, req *listoffsets.Request) {
-			defer waitGroup.Done()
-			m, err := c.roundTrip(ctx, addr, req)
-
-			if err != nil {
-				for _, t := range req.Topics {
-					for _, p := range t.Partitions {
-						responses <- topicResponse{
-							topic:     t.Topic,
-							partition: int(p.Partition),
-							index:     index,
-							offset:    -1,
-							err:       err,
-						}
-					}
-				}
-				return
+	for topicName, requests := range req.Topics {
+		for _, r := range requests {
+			key := topicPartition{
+				topic:     topicName,
+				partition: r.Partition,
 			}
 
-			res := m.(*listoffsets.Response)
-			for _, t := range res.Topics {
-				for _, p := range t.Partitions {
-					responses <- topicResponse{
-						topic:     t.Topic,
-						partition: int(p.Partition),
-						index:     index,
-						offset:    p.Offset,
-						time:      makeTime(p.Timestamp),
-						throttle:  makeDuration(res.ThrottleTimeMs),
-						err:       makeError(p.ErrorCode, ""),
-					}
+			partition, ok := partitionOffsets[key]
+			if !ok {
+				partition = PartitionOffsets{
+					Partition:   r.Partition,
+					FirstOffset: -1,
+					LastOffset:  -1,
+					Offsets:     make(map[int64]time.Time),
 				}
 			}
-		}(i, req.Addr, r)
-	}
 
-	go func() {
-		waitGroup.Wait()
-		close(responses)
-	}()
-
-	ret := &ListOffsetsResponse{
-		Topics: make(map[string][]PartitionOffset),
-	}
-
-	results := make(map[topicPartition]PartitionOffset)
-	for res := range responses {
-		key := topicPartition{res.topic, res.partition}
-
-		partition, ok := results[key]
-		if !ok {
-			partition = PartitionOffset{
-				Partition:   res.partition,
-				FirstOffset: -1,
-				LastOffset:  -1,
-				Offsets:     make(map[int64]time.Time),
-			}
-		}
-
-		if res.offset >= 0 {
-			switch partitionRequests[key][res.index] {
+			switch r.Timestamp {
 			case FirstOffset:
-				partition.FirstOffset = res.offset
+				partition.FirstOffset = 0
 			case LastOffset:
-				partition.LastOffset = res.offset
+				partition.LastOffset = 0
 			}
-			partition.Offsets[res.offset] = res.time
-		}
 
-		partition.Error = res.err
-		results[key] = partition
-
-		if res.throttle > ret.Throttle {
-			ret.Throttle = res.throttle
+			partitionOffsets[topicPartition{
+				topic:     topicName,
+				partition: r.Partition,
+			}] = partition
 		}
 	}
 
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+	topics := make([]listoffsets.RequestTopic, 0, len(req.Topics))
 
-	for key, res := range results {
-		ret.Topics[key.topic] = append(ret.Topics[key.topic], res)
-	}
+	for topicName, requests := range req.Topics {
+		partitions := make([]listoffsets.RequestPartition, len(requests))
 
-	for _, partitions := range ret.Topics {
-		sort.Slice(partitions, func(i, j int) bool {
-			return partitions[i].Partition < partitions[j].Partition
+		for i, r := range requests {
+			partitions[i] = listoffsets.RequestPartition{
+				Partition:          int32(r.Partition),
+				CurrentLeaderEpoch: -1,
+				Timestamp:          r.Timestamp,
+			}
+		}
+
+		topics = append(topics, listoffsets.RequestTopic{
+			Topic:      topicName,
+			Partitions: partitions,
 		})
+	}
+
+	m, err := c.roundTrip(ctx, req.Addr, &listoffsets.Request{
+		ReplicaID:      -1,
+		IsolationLevel: int8(req.IsolationLevel),
+		Topics:         topics,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).ListOffsets: %w", err)
+	}
+
+	res := m.(*listoffsets.Response)
+	ret := &ListOffsetsResponse{
+		Throttle: makeDuration(res.ThrottleTimeMs),
+		Topics:   make(map[string][]PartitionOffsets, len(res.Topics)),
+	}
+
+	for _, t := range res.Topics {
+		for _, p := range t.Partitions {
+			key := topicPartition{
+				topic:     t.Topic,
+				partition: int(p.Partition),
+			}
+
+			partition := partitionOffsets[key]
+			partition.Offsets[p.Offset] = makeTime(p.Timestamp)
+
+			if partition.FirstOffset >= 0 && p.Offset < partition.FirstOffset {
+				partition.FirstOffset = p.Offset
+			}
+
+			if partition.LastOffset >= 0 && p.Offset > partition.LastOffset {
+				partition.LastOffset = p.Offset
+			}
+
+			if p.ErrorCode != 0 {
+				partition.Error = Error(p.ErrorCode)
+			}
+
+			partitionOffsets[key] = partition
+		}
+	}
+
+	for key, partition := range partitionOffsets {
+		ret.Topics[key.topic] = append(ret.Topics[key.topic], partition)
 	}
 
 	return ret, nil

@@ -388,27 +388,56 @@ type Partition struct {
 // BrokerMessage is an extension of the Message interface implemented by some
 // request types to customize the broker assignment logic.
 type BrokerMessage interface {
-	Message
 	// Given a representation of the kafka cluster state as argument, returns
 	// the broker that the message should be routed to.
 	Broker(Cluster) (Broker, error)
-}
-
-// PreparedMessage is an extension of the Message interface implemented by some
-// request types which may need to run some pre-processing on their state before
-// being sent.
-type PreparedMessage interface {
-	Message
-	// Prepares the message before being sent to a kafka broker using the API
-	// version passed as argument.
-	Prepare(apiVersion int16)
 }
 
 // GroupMessage is an extension of the Message interface implemented by some
 // request types to inform the program that they should be routed to a group
 // coordinator.
 type GroupMessage interface {
-	Message
 	// Returns the group configured on the message.
 	Group() string
+}
+
+// PreparedMessage is an extension of the Message interface implemented by some
+// request types which may need to run some pre-processing on their state before
+// being sent.
+type PreparedMessage interface {
+	// Prepares the message before being sent to a kafka broker using the API
+	// version passed as argument.
+	Prepare(apiVersion int16)
+}
+
+// Mapper is an interface implemented by messages that can be split into
+// multiple requests and have their results merged back by a Reducer.
+type Mapper interface {
+	// For a given cluster layout, returns the list of messages constructed
+	// from the receiver for each requests that should be sent to the cluster.
+	// The second return value is a Reducer which can be used to merge back the
+	// results of each request into a single message (or an error).
+	Map(Cluster) ([]Message, Reducer, error)
+}
+
+// Reducer is an interface implemented by messages which can merge multiple
+// results into one response.
+type Reducer interface {
+	// Given a list of message and associated results, merge them back into a
+	// response (or an error). The results must be either Message or error
+	// values, other types should trigger a panic.
+	Reduce(messages []Message, results []interface{}) (Message, error)
+}
+
+// Result converts r to a Message or and error, or panics if r could be be
+// converted to these types.
+func Result(r interface{}) (Message, error) {
+	switch v := r.(type) {
+	case Message:
+		return v, nil
+	case error:
+		return nil, v
+	default:
+		panic(fmt.Errorf("BUG: result must be a message or an error but not %T", v))
+	}
 }

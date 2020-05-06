@@ -112,7 +112,7 @@ func (t *Transport) CloseIdleConnections() {
 	defer t.mutex.Unlock()
 
 	for _, pool := range t.pools {
-		pool.closeIdleConnections()
+		pool.unref()
 	}
 
 	for k := range t.pools {
@@ -151,7 +151,9 @@ func (t *Transport) CloseIdleConnections() {
 // features of the kafka protocol, but also provide a more efficient way of
 // managing connections to kafka brokers.
 func (t *Transport) RoundTrip(ctx context.Context, addr net.Addr, req protocol.Message) (protocol.Message, error) {
-	return t.grabPool(addr).roundTrip(ctx, req)
+	p := t.grabPool(addr)
+	defer p.unref()
+	return p.roundTrip(ctx, req)
 }
 
 func (t *Transport) dial() func(context.Context, string, string) (net.Conn, error) {
@@ -197,6 +199,9 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 
 	t.mutex.RLock()
 	p := t.pools[k]
+	if p != nil {
+		p.ref()
+	}
 	t.mutex.RUnlock()
 
 	if p != nil {
@@ -232,10 +237,15 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	defer t.mutex.Unlock()
 
 	if p := t.pools[k]; p != nil {
+		p.ref()
 		return p
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	p = &connPool{
+		refc: 2,
+
 		network:     network,
 		address:     address,
 		dial:        t.dial(),
@@ -247,20 +257,19 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		tls:         tlsConfig,
 		sasl:        t.SASL,
 
-		ready: make(event),
-		done:  make(event),
-		wake:  make(chan event),
-		conns: make(map[int]*conn),
+		ready:  make(event),
+		wake:   make(chan event),
+		conns:  make(map[int]*conn),
+		cancel: cancel,
 	}
+
+	p.ctrl = p.connect(ctx, k.network, k.address)
+	go p.discover(ctx, p.ctrl, p.wake)
 
 	if t.pools == nil {
-		t.pools = map[networkAddress]*connPool{k: p}
-	} else {
-		t.pools[k] = p
+		t.pools = make(map[networkAddress]*connPool)
 	}
-
-	p.ctrl = p.connect(k.network, k.address)
-	go p.discover(p.ctrl, p.wake, p.done)
+	t.pools[k] = p
 	return p
 }
 
@@ -269,6 +278,7 @@ type event chan struct{}
 func (e event) trigger() { close(e) }
 
 type connPool struct {
+	refc uintptr
 	// Immutable fields of the connection pool. Connections access these field
 	// on their parent pool in a ready-only fashion, so no synchronization is
 	// required.
@@ -284,10 +294,10 @@ type connPool struct {
 	sasl        sasl.Mechanism
 	// Signaling mechanisms to orchestrate communications between the pool and
 	// the rest of the program.
-	once  sync.Once  // ensure that `ready` is triggered only once
-	ready event      // triggered after the first metadata update
-	done  event      // triggered when the connection pool is closed
-	wake  chan event // used to force metadata updates
+	once   sync.Once  // ensure that `ready` is triggered only once
+	ready  event      // triggered after the first metadata update
+	wake   chan event // used to force metadata updates
+	cancel context.CancelFunc
 	// Mutable fields of the connection pool, access must be synchronized.
 	mutex    sync.RWMutex
 	conns    map[int]*conn    // data connections used for produce/fetch/etc...
@@ -297,184 +307,93 @@ type connPool struct {
 	layout   protocol.Cluster // cluster layout built from metadata response
 }
 
-func (p *connPool) closeIdleConnections() {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-
-	for _, conn := range p.conns {
-		conn.unref()
-	}
-
-	for id := range p.conns {
-		delete(p.conns, id)
-	}
-
-	if p.done != nil {
-		p.done.trigger()
-		p.ctrl = nil
-		p.done = nil
-	}
+func (p *connPool) ref() {
+	atomic.AddUintptr(&p.refc, +1)
 }
 
-func (p *connPool) cachedLayout() (protocol.Cluster, error) {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
-	return p.layout, p.err
-}
-
-func (p *connPool) cachedMetadata() (*meta.Response, error) {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
-	return p.metadata, p.err
+func (p *connPool) unref() {
+	if atomic.AddUintptr(&p.refc, ^uintptr(0)) == 0 {
+		p.cancel()
+	}
 }
 
 func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protocol.Message, error) {
-	canceled := ctx.Done()
+	cancel := ctx.Done()
 	// This first select should never block after the first metadata response
 	// that would mark the pool as `ready`.
 	select {
 	case <-p.ready:
-	case <-canceled:
+	case <-cancel:
 		return nil, ctx.Err()
 	}
 
-	var brokerID = -1
 	var refreshMetadata bool
+	defer func() {
+		if refreshMetadata && ctx.Err() == nil {
+			p.refreshMetadata(ctx)
+		}
+	}()
 
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+
+	var response promise
 	switch m := req.(type) {
 	case *meta.Request:
 		// We serve metadata requests directly from the transport cache.
 		//
 		// This reduces the number of round trips to kafka brokers while keeping
 		// the logic simple when applying partitioning strategies.
-		r, err := p.cachedMetadata()
-		if err != nil {
-			return nil, err
-		}
-		return filterMetadataResponse(m, r), nil
+		return filterMetadataResponse(m, p.metadata), nil
 
 	case *createtopics.Request, *deletetopics.Request:
 		// Force an update of the metadata when adding or removing topics,
 		// otherwise the cached state would get out of sync.
 		refreshMetadata = true
 
-	case protocol.BrokerMessage:
-		// Some requests are supposed to be sent to specific brokers (e.g. the
-		// partition leaders). They implement the BrokerMessage interface to
-		// delegate the routing decision to each message type.
-		layout, err := p.cachedLayout()
+	case protocol.Mapper:
+		// Messages that implement the Mapper interface trigger the creation of
+		// multiple requests that are all merged back into a single results by
+		// a reducer.
+		messages, reducer, err := m.Map(p.layout)
 		if err != nil {
 			return nil, err
 		}
-		broker, err := m.Broker(layout)
-		if err != nil {
-			return nil, err
+		promises := make([]promise, len(messages))
+		for i, m := range messages {
+			promises[i] = p.sendRequest(ctx, m)
 		}
-		brokerID = broker.ID
-
-	case protocol.GroupMessage:
-		// Some requests are supposed to be sent to a group coordinator,
-		// look up which broker is currently the coordinator for the group
-		// so we can get a connection to that broker.
-		//
-		// TODO: should we cache the coordinator info?
-		r, err := p.roundTrip(ctx, &findcoordinator.Request{
-			Key: m.Group(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		brokerID = int(r.(*findcoordinator.Response).NodeID)
+		response = join(promises, messages, reducer)
 	}
 
-	var c *conn
-	var err error
-	if brokerID >= 0 {
-		c, err = p.grabBrokerConn(brokerID)
-	} else {
-		c, err = p.grabClusterConn()
-	}
-	if err != nil {
-		return nil, err
+	if response == nil {
+		response = p.sendRequest(ctx, req)
 	}
 
-	defer c.unref()
-	res := make(chan connResponse, 1)
+	return response.await(ctx)
+}
 
+func (p *connPool) refreshMetadata(ctx context.Context) {
+	cancel := ctx.Done()
+	notify := make(event)
 	select {
-	case c.reqs <- connRequest{
-		req: req,
-		res: res,
-	}:
-	case <-canceled:
-		return nil, ctx.Err()
-	}
-
-	var r connResponse
-	select {
-	case r = <-res:
-	case <-canceled:
-		return nil, ctx.Err()
-	}
-
-	if r.err == nil && refreshMetadata {
-		notify := make(event)
+	case <-cancel:
+	case p.wake <- notify:
 		select {
-		case <-canceled:
-		case p.wake <- notify:
-			select {
-			case <-notify:
-			case <-canceled:
-			}
+		case <-notify:
+		case <-cancel:
 		}
 	}
-
-	return r.res, r.err
 }
 
 func (p *connPool) setReady() {
 	p.once.Do(p.ready.trigger)
 }
 
-// grabBrokerConn returns a connection to a specific broker represented by the
-// broker id passed as argument. If the broker id was not known, an error is
-// returned.
-func (p *connPool) grabBrokerConn(brokerID int) (*conn, error) {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
-	c := p.conns[brokerID]
-	if c == nil {
-		return nil, BrokerNotAvailable
-	}
-	c.ref()
-	return c, nil
-}
-
-// grabClusterConn returns the connection to the kafka cluster that the pool is
-// configured to connect to.
-//
-// The transport uses a shared `control` connection to the cluster for any
-// requests that aren't supposed to be sent to specific brokers (e.g. Fetch or
-// Produce requests). Requests intended to be routed to specific brokers are
-// dispatched on a separate pool of connections that the transport maintains.
-// This split help avoid head-of-line blocking situations where control requests
-// like Metadata would be queued behind large responses from Fetch requests for
-// example.
-//
-// In either cases, the requests are multiplexed so we can keep a minimal number
-// of connections open (N+1, where N is the number of brokers in the cluster).
-func (p *connPool) grabClusterConn() (*conn, error) {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
-	c := p.ctrl
-	c.ref()
-	return c, nil
-}
-
 // update is called periodically by the goroutine running the discover method
 // to refresh the cluster layout information used by the transport to route
 // requests to brokers.
-func (p *connPool) update(metadata *meta.Response, err error) {
+func (p *connPool) update(ctx context.Context, metadata *meta.Response, err error) {
 	var layout protocol.Cluster
 
 	if metadata != nil {
@@ -496,6 +415,10 @@ func (p *connPool) update(metadata *meta.Response, err error) {
 	defer p.setReady()
 	defer p.mutex.Unlock()
 
+	if ctx.Err() != nil {
+		return // the pool has been closed, no need to update
+	}
+
 	if err != nil {
 		// Only update the error on the transport if the cluster layout was
 		// unknown. This ensures that we prioritize a previously known state
@@ -506,6 +429,19 @@ func (p *connPool) update(metadata *meta.Response, err error) {
 		return
 	}
 
+	for id, broker := range layout.Brokers {
+		if _, ok := p.conns[id]; !ok {
+			p.conns[id] = p.connect(ctx, broker.Network(), broker.String())
+		}
+	}
+
+	for id, conn := range p.conns {
+		if _, ok := layout.Brokers[id]; !ok {
+			close(conn.reqs)
+			delete(p.conns, id)
+		}
+	}
+
 	// We got a successful update, we will be using this state from now on,
 	// and won't report errors seen trying to refresh the cluster layout
 	// state. If the state gets out of sync, some requests may fail
@@ -513,27 +449,12 @@ func (p *connPool) update(metadata *meta.Response, err error) {
 	// partition), the program is expected to handle these errors and retry
 	// accordingly.
 	p.metadata, p.layout, p.err = metadata, layout, nil
-
-	for id, broker := range p.layout.Brokers {
-		if _, ok := p.conns[id]; !ok {
-			p.conns[id] = p.connect(broker.Network(), broker.String())
-		}
-	}
-
-	for id, conn := range p.conns {
-		if _, ok := p.layout.Brokers[id]; !ok {
-			conn.unref()
-			delete(p.conns, id)
-		}
-	}
 }
 
 // discover is the entry point of an internal goroutine for the transport which
 // periodically requests updates of the cluster metadata and refreshes the
 // transport cached cluster layout.
-func (p *connPool) discover(conn *conn, wake <-chan event, done <-chan struct{}) {
-	defer conn.unref()
-
+func (p *connPool) discover(ctx context.Context, conn *conn, wake <-chan event) {
 	prng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	metadataTTL := func() time.Duration {
 		return time.Duration(prng.Int63n(int64(p.metadataTTL)))
@@ -542,13 +463,14 @@ func (p *connPool) discover(conn *conn, wake <-chan event, done <-chan struct{})
 	timer := time.NewTimer(metadataTTL())
 	defer timer.Stop()
 
-	res := make(chan connResponse, 1)
+	res := make(async, 1)
 	req := &meta.Request{
 		IncludeClusterAuthorizedOperations: true,
 		IncludeTopicAuthorizedOperations:   true,
 	}
 
 	var notify event
+	var done = ctx.Done()
 	for {
 		select {
 		case conn.reqs <- connRequest{
@@ -559,15 +481,13 @@ func (p *connPool) discover(conn *conn, wake <-chan event, done <-chan struct{})
 			return
 		}
 
-		var r connResponse
-		select {
-		case r = <-res:
-		case <-done:
+		r, err := res.await(ctx)
+		if err != nil && err == ctx.Err() {
 			return
 		}
 
-		res, _ := r.res.(*meta.Response)
-		p.update(res, r.err)
+		res, _ := r.(*meta.Response)
+		p.update(ctx, res, err)
 
 		if notify != nil {
 			notify.trigger()
@@ -582,6 +502,87 @@ func (p *connPool) discover(conn *conn, wake <-chan event, done <-chan struct{})
 		case notify = <-wake:
 		}
 	}
+}
+
+// grabBrokerConn returns a connection to a specific broker represented by the
+// broker id passed as argument. If the broker id was not known, an error is
+// returned.
+func (p *connPool) grabBrokerConn(brokerID int) (*conn, error) {
+	c := p.conns[brokerID]
+	if c == nil {
+		return nil, BrokerNotAvailable
+	}
+	return c, nil
+}
+
+// grabClusterConn returns the connection to the kafka cluster that the pool is
+// configured to connect to.
+//
+// The transport uses a shared `control` connection to the cluster for any
+// requests that aren't supposed to be sent to specific brokers (e.g. Fetch or
+// Produce requests). Requests intended to be routed to specific brokers are
+// dispatched on a separate pool of connections that the transport maintains.
+// This split help avoid head-of-line blocking situations where control requests
+// like Metadata would be queued behind large responses from Fetch requests for
+// example.
+//
+// In either cases, the requests are multiplexed so we can keep a minimal number
+// of connections open (N+1, where N is the number of brokers in the cluster).
+func (p *connPool) grabClusterConn() (*conn, error) {
+	return p.ctrl, nil
+}
+
+func (p *connPool) sendRequest(ctx context.Context, req protocol.Message) promise {
+	brokerID := -1
+
+	switch m := req.(type) {
+	case protocol.BrokerMessage:
+		// Some requests are supposed to be sent to specific brokers (e.g. the
+		// partition leaders). They implement the BrokerMessage interface to
+		// delegate the routing decision to each message type.
+		broker, err := m.Broker(p.layout)
+		if err != nil {
+			return reject(err)
+		}
+		brokerID = broker.ID
+
+	case protocol.GroupMessage:
+		// Some requests are supposed to be sent to a group coordinator,
+		// look up which broker is currently the coordinator for the group
+		// so we can get a connection to that broker.
+		//
+		// TODO: should we cache the coordinator info?
+		p := p.sendRequest(ctx, &findcoordinator.Request{Key: m.Group()})
+		r, err := p.await(ctx)
+		if err != nil {
+			return reject(err)
+		}
+		brokerID = int(r.(*findcoordinator.Response).NodeID)
+	}
+
+	var c *conn
+	var err error
+	if brokerID >= 0 {
+		c, err = p.grabBrokerConn(brokerID)
+	} else {
+		c, err = p.grabClusterConn()
+	}
+	if err != nil {
+		return reject(err)
+	}
+
+	res := make(async, 1)
+
+	select {
+	case c.reqs <- connRequest{
+		req: req,
+		res: res,
+	}:
+	case <-ctx.Done():
+		return reject(ctx.Err())
+	}
+
+	return res
 }
 
 func filterMetadataResponse(req *meta.Request, res *meta.Response) *meta.Response {
@@ -675,7 +676,7 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 	return protocolPartitions
 }
 
-func (p *connPool) connect(network, address string) *conn {
+func (p *connPool) connect(ctx context.Context, network, address string) *conn {
 	reqs := make(chan connRequest)
 	conn := &conn{
 		refc:     1,
@@ -683,31 +684,97 @@ func (p *connPool) connect(network, address string) *conn {
 		reqs:     reqs,
 		inflight: make(map[int32]connRequest),
 	}
-	go conn.run(reqs)
+	go conn.run(ctx, reqs)
 	return conn
 }
 
 type connRequest struct {
 	req protocol.Message
-	res chan<- connResponse
+	res async
 	// Lazily negotiated when writing the request, then reused to determine the
 	// version of the message we're reading in the response.
 	version int16
 }
 
-type connResponse struct {
-	res protocol.Message
-	err error
+// The promise interface is used as a message passing abstraction to coordinate
+// between goroutines that handle requests and responses.
+type promise interface {
+	// Waits until the promise is resolved, rejected, or the context canceled.
+	await(context.Context) (protocol.Message, error)
 }
 
-var (
-	// Default dialer used by the transport connections when no Dial function
-	// was configured by the program.
-	defaultDialer = net.Dialer{
-		Timeout:   3 * time.Second,
-		DualStack: true,
+// async is an implementation of the promise interface which supports resolving
+// or rejecting the await call asynchronously.
+type async chan interface{}
+
+func (p async) await(ctx context.Context) (protocol.Message, error) {
+	select {
+	case x := <-p:
+		switch v := x.(type) {
+		case protocol.Message:
+			return v, nil
+		case error:
+			return nil, v
+		default:
+			panic(fmt.Errorf("BUG: promise resolved with impossible value of type %T", v))
+		}
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-)
+}
+
+func (p async) resolve(msg protocol.Message) { p <- msg }
+
+func (p async) reject(err error) { p <- err }
+
+// rejected is an implementation of the promise interface which is always
+// returns an error. Values of this type are constructed using the reject
+// function.
+type rejected struct{ err error }
+
+func reject(err error) promise { return &rejected{err: err} }
+
+func (p *rejected) await(ctx context.Context) (protocol.Message, error) {
+	return nil, p.err
+}
+
+// joined is an implementation of the promise interface which merges results
+// from multiple promises into one await call using a reducer.
+type joined struct {
+	promises []promise
+	requests []protocol.Message
+	reducer  protocol.Reducer
+}
+
+func join(promises []promise, requests []protocol.Message, reducer protocol.Reducer) promise {
+	return &joined{
+		promises: promises,
+		requests: requests,
+		reducer:  reducer,
+	}
+}
+
+func (p *joined) await(ctx context.Context) (protocol.Message, error) {
+	results := make([]interface{}, len(p.promises))
+
+	for i, p := range p.promises {
+		m, err := p.await(ctx)
+		if err != nil {
+			results[i] = err
+		} else {
+			results[i] = m
+		}
+	}
+
+	return p.reducer.Reduce(p.requests, results)
+}
+
+// Default dialer used by the transport connections when no Dial function
+// was configured by the program.
+var defaultDialer = net.Dialer{
+	Timeout:   3 * time.Second,
+	DualStack: true,
+}
 
 // conn represents a logical connection to a kafka broker. The actual network
 // connections are lazily open before sending requests, and closed if they are
@@ -724,16 +791,6 @@ type conn struct {
 	mutex    sync.Mutex
 	idgen    int32                 // generates new correlation ids
 	inflight map[int32]connRequest // set of inflight requests on the connection
-}
-
-func (c *conn) ref() {
-	atomic.AddUintptr(&c.refc, 1)
-}
-
-func (c *conn) unref() {
-	if atomic.AddUintptr(&c.refc, ^uintptr(0)) == 0 {
-		close(c.reqs)
-	}
 }
 
 func (c *conn) register(r connRequest) (id int32) {
@@ -758,7 +815,7 @@ func (c *conn) unregister(id int32) (r connRequest, ok bool) {
 func (c *conn) cancel(err error) {
 	c.synchronized(func() {
 		for id, r := range c.inflight {
-			r.res <- connResponse{err: err}
+			r.res.reject(err)
 			delete(c.inflight, id)
 		}
 	})
@@ -844,17 +901,13 @@ func (c *conn) dispatch(conn *bufferedConn, done chan<- error) {
 		}
 
 		_, res, err := protocol.ReadResponse(conn, int16(r.req.ApiKey()), r.version)
-
-		r.res <- connResponse{
-			res: res,
-			err: err,
-		}
-
 		if err != nil {
+			r.res.reject(err)
 			done <- err
 			return
 		}
 
+		r.res.resolve(res)
 		c.synchronized(func() {
 			if len(c.inflight) == 0 {
 				conn.SetDeadline(time.Now().Add(c.pool.idleTimeout))
@@ -863,9 +916,10 @@ func (c *conn) dispatch(conn *bufferedConn, done chan<- error) {
 	}
 }
 
-func (c *conn) run(reqs <-chan connRequest) {
+func (c *conn) run(ctx context.Context, reqs <-chan connRequest) {
 	var conn *bufferedConn
 	var done chan error
+	var cancel = ctx.Done()
 	var versions map[protocol.ApiKey]int16
 
 	closeConn := func(err error) {
@@ -890,7 +944,7 @@ func (c *conn) run(reqs <-chan connRequest) {
 
 				conn, versions, err = c.connect()
 				if err != nil {
-					r.res <- connResponse{err: err}
+					r.res.reject(err)
 					continue
 				}
 
@@ -912,6 +966,9 @@ func (c *conn) run(reqs <-chan connRequest) {
 
 		case err := <-done:
 			closeConn(err)
+
+		case <-cancel:
+			return
 		}
 	}
 }
