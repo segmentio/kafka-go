@@ -1042,7 +1042,7 @@ func (r *Reader) readLag(ctx context.Context) {
 		if err != nil {
 			r.stats.errors.observe(1)
 			r.withErrorLogger(func(log Logger) {
-				log.Printf("kafka reader failed to read lag of partition %d of %s", r.config.Partition, r.config.Topic)
+				log.Printf("kafka reader failed to read lag of partition %d of %s, err: %v", r.config.Partition, r.config.Topic, err)
 			})
 		} else {
 			r.stats.lag.observe(lag)
@@ -1234,7 +1234,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 
 				if err != nil {
 					r.withErrorLogger(func(log Logger) {
-						log.Printf("the kafka reader got an error while attempting to determine whether it was reading before the first offset or after the last offset of partition %d of %s: %s", r.partition, r.topic, err)
+						log.Printf("the kafka reader got an error while attempting to determine whether it was reading before the first offset or after the last offset of partition %d of %s, err: %v", r.partition, r.topic, err)
 					})
 					conn.Close()
 					break readLoop
