@@ -122,12 +122,7 @@ func (c *Client) timeout(ctx context.Context) time.Duration {
 		}
 	}
 
-	buffer := timeout / 4
-	if buffer > time.Second {
-		buffer = time.Second
-	}
-
-	return timeout - buffer
+	return timeout / 2
 }
 
 func (c *Client) timeoutMs(ctx context.Context) int32 {

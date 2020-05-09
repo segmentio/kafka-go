@@ -98,6 +98,136 @@ func TestClientFetchCompressed(t *testing.T) {
 	})
 }
 
+func TestClientMultiFetch(t *testing.T) {
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
+
+	records := produceRecords(t, 10, client.Addr, topic, nil)
+
+	res, err := client.MultiFetch(context.Background(), &MultiFetchRequest{
+		Requests: map[string][]FetchPartitionRequest{
+			topic: {
+				FetchPartitionRequest{
+					Partition: 0,
+					Offset:    0,
+				},
+				FetchPartitionRequest{
+					Partition: 0,
+					Offset:    1,
+				},
+				FetchPartitionRequest{
+					Partition: 0,
+					Offset:    2,
+				},
+			},
+		},
+		MinBytes: 1,
+		MaxBytes: 64 * 1024,
+		MaxWait:  100 * time.Millisecond,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.Error != nil {
+		t.Error(res.Error)
+	}
+
+	for i, p := range res.Responses[topic] {
+		r1 := &FetchResponse{
+			Topic:            topic,
+			Partition:        p.Partition,
+			Error:            p.Error,
+			HighWatermark:    p.HighWatermark,
+			LastStableOffset: p.LastStableOffset,
+			LogStartOffset:   p.LogStartOffset,
+			Records:          p.Records,
+			Transactional:    p.Transactional,
+			ControlBatch:     p.ControlBatch,
+		}
+
+		r2 := &FetchResponse{
+			Topic:            topic,
+			Partition:        0,
+			Error:            nil,
+			HighWatermark:    10,
+			LastStableOffset: 10,
+			LogStartOffset:   0,
+			Records:          NewRecordSet(records[i:]...),
+			Transactional:    false,
+			ControlBatch:     false,
+		}
+
+		assertFetchResponse(t, r1, r2)
+	}
+}
+
+func TestClientMultiFetchCompressed(t *testing.T) {
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
+
+	records := produceRecords(t, 10, client.Addr, topic, &compress.ZstdCodec)
+
+	res, err := client.MultiFetch(context.Background(), &MultiFetchRequest{
+		Requests: map[string][]FetchPartitionRequest{
+			topic: {
+				FetchPartitionRequest{
+					Partition: 0,
+					Offset:    0,
+				},
+				FetchPartitionRequest{
+					Partition: 0,
+					Offset:    1,
+				},
+				FetchPartitionRequest{
+					Partition: 0,
+					Offset:    2,
+				},
+			},
+		},
+		MinBytes: 1,
+		MaxBytes: 64 * 1024,
+		MaxWait:  100 * time.Millisecond,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.Error != nil {
+		t.Error(res.Error)
+	}
+
+	for i, p := range res.Responses[topic] {
+		r1 := &FetchResponse{
+			Topic:            topic,
+			Partition:        p.Partition,
+			Error:            p.Error,
+			HighWatermark:    p.HighWatermark,
+			LastStableOffset: p.LastStableOffset,
+			LogStartOffset:   p.LogStartOffset,
+			Records:          p.Records,
+			Transactional:    p.Transactional,
+			ControlBatch:     p.ControlBatch,
+		}
+
+		r2 := &FetchResponse{
+			Topic:            topic,
+			Partition:        0,
+			Error:            nil,
+			HighWatermark:    10,
+			LastStableOffset: 10,
+			LogStartOffset:   0,
+			Records:          NewRecordSet(records[i:]...),
+			Transactional:    false,
+			ControlBatch:     false,
+		}
+
+		assertFetchResponse(t, r1, r2)
+	}
+}
+
 func assertFetchResponse(t *testing.T, found, expected *FetchResponse) {
 	t.Helper()
 

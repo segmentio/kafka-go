@@ -91,9 +91,11 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 		Topics: []fetchAPI.RequestTopic{{
 			Topic: req.Topic,
 			Partitions: []fetchAPI.RequestPartition{{
-				Partition:         int32(req.Partition),
-				FetchOffset:       req.Offset,
-				PartitionMaxBytes: int32(req.MaxBytes),
+				Partition:          int32(req.Partition),
+				CurrentLeaderEpoch: -1,
+				FetchOffset:        req.Offset,
+				LogStartOffset:     -1,
+				PartitionMaxBytes:  int32(req.MaxBytes),
 			}},
 		}},
 	})
@@ -113,11 +115,13 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	partition := &topic.Partitions[0]
 
 	ret := &FetchResponse{
-		Throttle:      makeDuration(res.ThrottleTimeMs),
-		Topic:         topic.Topic,
-		Partition:     int(partition.Partition),
-		Error:         makeError(res.ErrorCode, ""),
-		HighWatermark: partition.HighWatermark,
+		Throttle:         makeDuration(res.ThrottleTimeMs),
+		Topic:            topic.Topic,
+		Partition:        int(partition.Partition),
+		Error:            makeError(res.ErrorCode, ""),
+		HighWatermark:    partition.HighWatermark,
+		LastStableOffset: partition.LastStableOffset,
+		LogStartOffset:   partition.LogStartOffset,
 		Records: &fetchRecords{
 			RecordSet: &partition.RecordSet,
 		},
@@ -158,6 +162,151 @@ func (r *fetchRecord) Key() Bytes { return r.Record.Key }
 func (r *fetchRecord) Value() Bytes { return r.Record.Value }
 
 func (r *fetchRecord) Headers() []Header { return r.Record.Headers }
+
+// FetchPartitionRequest represents a request to fetch a partition offset in a
+// MultiFetchRequest.
+type FetchPartitionRequest struct {
+	Partition int
+	Offset    int64
+	MaxBytes  int64
+}
+
+// FetchPartitionResponse represents a response from fetching a partition offset
+// in a MultiFetchResponse.
+type FetchPartitionResponse struct {
+	Partition        int
+	Error            error
+	HighWatermark    int64
+	LastStableOffset int64
+	LogStartOffset   int64
+	Records          RecordSet
+	Transactional    bool
+	ControlBatch     bool
+}
+
+// MultiFetchRequest represents a request sent to a kafka broker to fetch
+// records from multipl topic partition offsets.
+type MultiFetchRequest struct {
+	// Address of the kafka broker to send the request to.
+	Addr net.Addr
+
+	// Indexed by topic name, the lists of partition offsets to fetch records
+	// from.
+	//
+	// Note: currently the implementation is limited to fetching records from
+	// a single broker.
+	Requests map[string][]FetchPartitionRequest
+
+	// Size and time limits of the response returned by the broker.
+	MinBytes int64
+	MaxBytes int64
+	MaxWait  time.Duration
+
+	// The isolation level for the request.
+	//
+	// Defaults to ReadUncommitted.
+	//
+	// This field requires the kafka broker to support the Fetch API in version
+	// 4 or above (otherwise the value is ignored).
+	IsolationLevel IsolationLevel
+}
+
+// MultiFetchResponse represents a response from a kafka broker to a request to
+// fetch records from multiple topic partition offsets.
+type MultiFetchResponse struct {
+	// The amount of time that the broker throttled the request.
+	Throttle time.Duration
+
+	// Indexed by topic name, the lists of records returned by the kafka broker.
+	Responses map[string][]FetchPartitionResponse
+
+	// An error that may have occured while attempting to fetch the records.
+	//
+	// The error contains both the kafka error code, and an error message
+	// returned by the kafka broker. Programs may use the standard errors.Is
+	// function to test the error against kafka error codes.
+	Error error
+}
+
+func (c *Client) MultiFetch(ctx context.Context, req *MultiFetchRequest) (*MultiFetchResponse, error) {
+	topics := make([]fetchAPI.RequestTopic, 0, 2*len(req.Requests))
+
+	for topicName, partitions := range req.Requests {
+		topic := fetchAPI.RequestTopic{
+			Topic:      topicName,
+			Partitions: make([]fetchAPI.RequestPartition, len(partitions)),
+		}
+
+		for i, partition := range partitions {
+			topic.Partitions[i] = fetchAPI.RequestPartition{
+				Partition:          int32(partition.Partition),
+				CurrentLeaderEpoch: -1,
+				FetchOffset:        partition.Offset,
+				LogStartOffset:     -1,
+				PartitionMaxBytes:  int32(partition.MaxBytes),
+			}
+		}
+
+		topics = append(topics, topic)
+	}
+
+	if len(topics) == 0 {
+		return nil, fmt.Errorf("kafka.(*Client).MultiFetch: %w", errNoTopics)
+	}
+
+	timeout := c.timeout(ctx)
+	if req.MaxWait > 0 && req.MaxWait < timeout {
+		timeout = req.MaxWait
+	}
+
+	m, err := c.roundTrip(ctx, req.Addr, &fetchAPI.Request{
+		ReplicaID:      -1,
+		MaxWaitTime:    milliseconds(timeout),
+		MinBytes:       int32(req.MinBytes),
+		MaxBytes:       int32(req.MaxBytes),
+		IsolationLevel: int8(req.IsolationLevel),
+		Topics:         topics,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).MultiFetch: %w", err)
+	}
+
+	res := m.(*fetchAPI.Response)
+	ret := &MultiFetchResponse{
+		Throttle: makeDuration(res.ThrottleTimeMs),
+		Error:    makeError(res.ErrorCode, ""),
+	}
+
+	if res.Topics != nil {
+		ret.Responses = make(map[string][]FetchPartitionResponse, len(res.Topics))
+	}
+
+	for _, t := range res.Topics {
+		partitions := make([]FetchPartitionResponse, len(t.Partitions))
+
+		for i := range t.Partitions {
+			p := &t.Partitions[i]
+
+			partitions[i] = FetchPartitionResponse{
+				Partition:        int(p.Partition),
+				Error:            makeError(p.ErrorCode, ""),
+				HighWatermark:    p.HighWatermark,
+				LastStableOffset: p.LastStableOffset,
+				LogStartOffset:   p.LogStartOffset,
+				Records: &fetchRecords{
+					RecordSet: &p.RecordSet,
+				},
+				Transactional: p.RecordSet.Attributes.Transactional(),
+				ControlBatch:  p.RecordSet.Attributes.ControlBatch(),
+			}
+		}
+
+		ret.Responses[t.Topic] = partitions
+	}
+
+	return ret, nil
+}
 
 type fetchRequestV2 struct {
 	ReplicaID   int32
