@@ -87,8 +87,6 @@ type ProduceResponse struct {
 
 // Produce sends a produce request to a kafka broker and returns the response.
 func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResponse, error) {
-	defer req.Records.Close()
-
 	records := make([]protocol.Record, 0, 100)
 	offset := int64(0)
 
@@ -101,6 +99,10 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 			Headers: rec.Headers(),
 		})
 		offset++
+	}
+
+	if err := req.Records.Close(); err != nil {
+		return nil, err
 	}
 
 	attributes := protocol.Attributes(req.Compression) & 0x7
