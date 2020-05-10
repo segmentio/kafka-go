@@ -525,12 +525,6 @@ var (
 	_ io.WriterTo = (*pageRef)(nil)
 )
 
-func reset(x interface{}) {
-	if r, _ := x.(interface{ Reset() }); r != nil {
-		r.Reset()
-	}
-}
-
 func unref(x interface{}) {
 	if r, _ := x.(interface{ unref() }); r != nil {
 		r.unref()
@@ -555,4 +549,16 @@ func seek(cursor, limit, offset int64, whence int) (int64, error) {
 		offset = limit
 	}
 	return offset, nil
+}
+
+func closeBytes(b Bytes) {
+	if b != nil {
+		b.Close()
+	}
+}
+
+func resetBytes(b Bytes) {
+	if r, _ := b.(interface{ Reset() }); r != nil {
+		r.Reset()
+	}
 }

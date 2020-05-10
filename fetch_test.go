@@ -308,7 +308,7 @@ func readRecords(records RecordBatch) ([]inMemoryRecord, error) {
 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return list, records.Close()
+				return list, nil
 			}
 			return nil, err
 		}

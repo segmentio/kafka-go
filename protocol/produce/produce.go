@@ -19,23 +19,6 @@ type Request struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
 
-func (r *Request) Close() error {
-	for i := range r.Topics {
-		t := &r.Topics[i]
-
-		for j := range t.Partitions {
-			p := &t.Partitions[j]
-			r := p.RecordSet.Records
-
-			if r != nil {
-				r.Close()
-			}
-		}
-	}
-
-	return nil
-}
-
 func (r *Request) Reset() {
 	for i := range r.Topics {
 		t := &r.Topics[i]

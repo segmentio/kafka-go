@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/segmentio/kafka-go/protocol"
 )
@@ -93,11 +94,7 @@ func (r *Response) Close() error {
 
 		for j := range t.Partitions {
 			p := &t.Partitions[j]
-			r := p.RecordSet.Records
-
-			if r != nil {
-				r.Close()
-			}
+			closeRecordBatch(p.RecordSet.Records)
 		}
 	}
 
@@ -110,11 +107,20 @@ func (r *Response) Reset() {
 
 		for j := range t.Partitions {
 			p := &t.Partitions[j]
-
-			if r, _ := p.RecordSet.Records.(interface{ Reset() }); r != nil {
-				r.Reset()
-			}
+			resetRecordBatch(p.RecordSet.Records)
 		}
+	}
+}
+
+func closeRecordBatch(rb protocol.RecordBatch) {
+	if r, _ := rb.(io.Closer); r != nil {
+		r.Close()
+	}
+}
+
+func resetRecordBatch(rb protocol.RecordBatch) {
+	if r, _ := rb.(interface{ Reset() }); r != nil {
+		r.Reset()
 	}
 }
 

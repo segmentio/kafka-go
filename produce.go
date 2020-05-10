@@ -92,10 +92,6 @@ type ProduceResponse struct {
 func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResponse, error) {
 	attributes := protocol.Attributes(req.Compression) & 0x7
 
-	if req.Records != nil {
-		defer req.Records.Close()
-	}
-
 	m, err := c.roundTrip(ctx, req.Addr, &produceAPI.Request{
 		TransactionalID: req.TransactionalID,
 		Acks:            int16(req.RequiredAcks),

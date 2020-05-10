@@ -78,7 +78,6 @@ type Record struct {
 //
 // RecordSet values are not safe to use concurrently from multiple goroutines.
 type RecordBatch interface {
-	io.Closer
 	// Returns the next record in the set, or io.EOF if the end of the sequence
 	// has been reached.
 	//
@@ -90,14 +89,12 @@ type RecordBatch interface {
 
 // NewRecordBatch constructs a reader exposing the records passed as arguments.
 func NewRecordBatch(records ...Record) RecordBatch {
-	r := &recordReader{records: make([]Record, len(records))}
+	r := &recordBatch{records: make([]Record, len(records))}
 	copy(r.records, records)
 	return r
 }
 
 func forEachRecord(r RecordBatch, f func(int, *Record) error) error {
-	defer r.Close()
-
 	for i := 0; ; i++ {
 		rec, err := r.ReadRecord()
 
@@ -315,7 +312,7 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 				}
 
 				unref(k) // is it valid to have a non-nil key on the root message?
-				records = append(records, subset.Records.(*recordReader).records...)
+				records = append(records, subset.Records.(*recordBatch).records...)
 			}
 		}
 
@@ -358,7 +355,7 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 	*rs = RecordSet{
 		Version:    1,
 		Attributes: Attributes(baseAttributes),
-		Records: &recordReader{
+		Records: &recordBatch{
 			records: records,
 		},
 	}
@@ -483,8 +480,7 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 	// failed. I kept this code here as a safeguard but it may never execute.
 	if d.err != nil && !errors.Is(d.err, io.ErrUnexpectedEOF) {
 		for i := range records {
-			r := &records[i]
-			r.unref()
+			records[i].unref()
 		}
 		return d.err
 	}
@@ -598,7 +594,7 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 
 			buffer.Truncate(int(bufferOffset))
 
-			records = &recordReader{
+			records = &recordBatch{
 				records: []Record{{
 					Value: compressed,
 				}},
@@ -782,35 +778,30 @@ func packUint64(u uint64) (b [8]byte) {
 	return
 }
 
-type recordReader struct {
+type recordBatch struct {
 	records []Record
 	index   int
 }
 
-func (r *recordReader) Close() error {
-	for _, rec := range r.records[r.index:] {
-		if rec.Key != nil {
-			rec.Key.Close()
-		}
-		if rec.Value != nil {
-			rec.Value.Close()
-		}
+func (r *recordBatch) Close() error {
+	for i := range r.records {
+		closeBytes(r.records[i].Key)
+		closeBytes(r.records[i].Value)
 	}
-	r.index = len(r.records)
 	return nil
 }
 
-func (r *recordReader) Reset() {
+func (r *recordBatch) Reset() {
 	r.index = 0
 
 	for i := range r.records {
 		r := &r.records[i]
-		reset(r.Key)
-		reset(r.Value)
+		resetBytes(r.Key)
+		resetBytes(r.Value)
 	}
 }
 
-func (r *recordReader) ReadRecord() (*Record, error) {
+func (r *recordBatch) ReadRecord() (*Record, error) {
 	if i := r.index; i >= 0 && i < len(r.records) {
 		r.index++
 		return &r.records[i], nil
