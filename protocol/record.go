@@ -185,6 +185,7 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 
 	if size <= 0 {
 		*rs = RecordSet{}
+		rs.Records = &rs.records // empty, non-nil
 		return 4, nil
 	}
 
