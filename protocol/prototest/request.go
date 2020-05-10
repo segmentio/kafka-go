@@ -21,6 +21,8 @@ func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 			t.Fatal(err)
 		}
 
+		reset(msg)
+
 		t.Logf("\n%s\n", hex.Dump(b.Bytes()))
 
 		apiVersion, correlationID, clientID, req, err := protocol.ReadRequest(b)
@@ -59,6 +61,8 @@ func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
 				b.Fatal(err)
 			}
 
+			reset(msg)
+
 			p := buffer.Bytes()
 			x := bytes.NewReader(p)
 			r := bufio.NewReader(x)
@@ -85,6 +89,7 @@ func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
 				if err := protocol.WriteRequest(w, version, 1234, "client", msg); err != nil {
 					b.Fatal(err)
 				}
+				reset(msg)
 				n = int64(buffer.Len())
 				buffer.Reset()
 			}

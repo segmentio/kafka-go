@@ -18,10 +18,10 @@ func TestClientProduce(t *testing.T) {
 		Topic:        topic,
 		Partition:    0,
 		RequiredAcks: -1,
-		Records: NewRecordSet(
-			NewRecord(0, now, nil, []byte(`hello-1`)),
-			NewRecord(0, now, nil, []byte(`hello-2`)),
-			NewRecord(0, now, nil, []byte(`hello-3`)),
+		Records: NewRecordBatch(
+			Record{Time: now, Value: NewBytes([]byte(`hello-1`))},
+			Record{Time: now, Value: NewBytes([]byte(`hello-2`))},
+			Record{Time: now, Value: NewBytes([]byte(`hello-3`))},
 		),
 	})
 
@@ -49,10 +49,10 @@ func TestClientProduceCompressed(t *testing.T) {
 		Partition:    0,
 		RequiredAcks: -1,
 		Compression:  compress.Gzip,
-		Records: NewRecordSet(
-			NewRecord(0, now, nil, []byte(`hello-1`)),
-			NewRecord(0, now, nil, []byte(`hello-2`)),
-			NewRecord(0, now, nil, []byte(`hello-3`)),
+		Records: NewRecordBatch(
+			Record{Time: now, Value: NewBytes([]byte(`hello-1`))},
+			Record{Time: now, Value: NewBytes([]byte(`hello-2`))},
+			Record{Time: now, Value: NewBytes([]byte(`hello-3`))},
 		),
 	})
 

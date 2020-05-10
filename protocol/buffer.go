@@ -1,55 +1,31 @@
 package protocol
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 )
 
-// ByteSequence is an interface implemented by types that represent immutable
+// Bytes is an interface implemented by types that represent immutable
 // sequences of bytes.
 //
-// ByteSequence values are used to abstract the location where record keys and
+// Bytes values are used to abstract the location where record keys and
 // values are read from (e.g. in-memory buffers, network sockets, files).
 //
-// The Close method should be called to release resources held by the sequence
+// The Close method should be called to release resources held by the object
 // when the program is done with it.
 //
-// ByteSequence values are generally not safe to use concurrently from multiple
+// Bytes values are generally not safe to use concurrently from multiple
 // goroutines.
-type ByteSequence interface {
+type Bytes interface {
 	Size() int64
 	io.Closer
 	io.Seeker
 	io.Reader
 	io.ReaderAt
 }
-
-// Bytes constructs a ByteSequence which exposes the content of b.
-func Bytes(b []byte) ByteSequence {
-	r := &bytesReader{}
-	r.Reset(b)
-	return r
-}
-
-type bytesReader struct{ bytes.Reader }
-
-func (r *bytesReader) Close() error { r.Reset(nil); return nil }
-
-// String constructs a ByteSequence which exposes the content of s.
-func String(s string) ByteSequence {
-	r := &stringReader{}
-	r.Reset(s)
-	return r
-}
-
-type stringReader struct{ strings.Reader }
-
-func (r *stringReader) Close() error { r.Reset(""); return nil }
 
 type refCount uintptr
 
@@ -184,14 +160,18 @@ func newPageBuffer() *pageBuffer {
 	return b
 }
 
-func (pb *pageBuffer) ref(begin, end int64) *pageRef {
+func (pb *pageBuffer) refTo(ref *pageRef, begin, end int64) {
 	pb.refc.ref()
-	return &pageRef{
-		buffer: pb,
-		pages:  pb.pages.slice(begin, end),
-		offset: begin,
-		length: int(end - begin),
-	}
+	ref.buffer = pb
+	ref.pages = pb.pages.slice(begin, end)
+	ref.offset = begin
+	ref.length = int(end - begin)
+}
+
+func (pb *pageBuffer) ref(begin, end int64) *pageRef {
+	ref := new(pageRef)
+	pb.refTo(ref, begin, end)
+	return ref
 }
 
 func (pb *pageBuffer) unref() {
@@ -545,6 +525,12 @@ var (
 	_ io.WriterTo = (*pageRef)(nil)
 )
 
+func reset(x interface{}) {
+	if r, _ := x.(interface{ Reset() }); r != nil {
+		r.Reset()
+	}
+}
+
 func unref(x interface{}) {
 	if r, _ := x.(interface{ unref() }); r != nil {
 		r.unref()
@@ -569,20 +555,4 @@ func seek(cursor, limit, offset int64, whence int) (int64, error) {
 		offset = limit
 	}
 	return offset, nil
-}
-
-func copyBytes(w io.Writer, b ByteSequence) (int64, error) {
-	s, err := b.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return 0, err
-	}
-
-	n, err := io.Copy(w, b)
-	if err != nil {
-		b.Seek(s, io.SeekStart) // best effort repositioning
-		return n, err
-	}
-
-	_, err = b.Seek(s, io.SeekStart)
-	return n, err
 }

@@ -91,7 +91,7 @@ func (c *Client) CreateTopics(ctx context.Context, req *CreateTopicsRequest) (*C
 
 	m, err := c.roundTrip(ctx, req.Addr, &createtopics.Request{
 		Topics:       topics,
-		TimeoutMs:    c.timeoutMs(ctx),
+		TimeoutMs:    c.timeoutMs(ctx, defaultCreateTopicsTimeout),
 		ValidateOnly: req.ValidateOnly,
 	})
 

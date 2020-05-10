@@ -39,7 +39,7 @@ type ProduceRequest struct {
 	TransactionalID string
 
 	// The sequence of records to produce to the topic partition.
-	Records RecordSet
+	Records RecordBatch
 
 	// An optional compression algorithm to apply to the batch of records sent
 	// to the kafka broker.
@@ -86,31 +86,20 @@ type ProduceResponse struct {
 }
 
 // Produce sends a produce request to a kafka broker and returns the response.
+//
+// If the request contained no records, an error wrapping ErrNoRecords is
+// returned.
 func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResponse, error) {
-	records := make([]protocol.Record, 0, 100)
-	offset := int64(0)
-
-	for rec := req.Records.Next(); rec != nil; rec = req.Records.Next() {
-		records = append(records, protocol.Record{
-			Offset:  offset,
-			Time:    rec.Time(),
-			Key:     rec.Key(),
-			Value:   rec.Value(),
-			Headers: rec.Headers(),
-		})
-		offset++
-	}
-
-	if err := req.Records.Close(); err != nil {
-		return nil, err
-	}
-
 	attributes := protocol.Attributes(req.Compression) & 0x7
+
+	if req.Records != nil {
+		defer req.Records.Close()
+	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &produceAPI.Request{
 		TransactionalID: req.TransactionalID,
 		Acks:            int16(req.RequiredAcks),
-		Timeout:         c.timeoutMs(ctx),
+		Timeout:         c.timeoutMs(ctx, defaultProduceTimeout),
 		Topics: []produceAPI.RequestTopic{{
 			Topic: req.Topic,
 			Partitions: []produceAPI.RequestPartition{{
@@ -118,11 +107,10 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 				RecordSet: protocol.RecordSet{
 					Attributes:           attributes,
 					PartitionLeaderEpoch: -1,
-					BaseOffset:           0,
 					ProducerID:           -1,
 					ProducerEpoch:        -1,
 					BaseSequence:         -1,
-					Records:              records,
+					Records:              req.Records,
 				},
 			}},
 		}},
@@ -134,11 +122,11 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 
 	res := m.(*produceAPI.Response)
 	if len(res.Topics) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", errNoTopics)
+		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", ErrNoTopics)
 	}
 	topic := &res.Topics[0]
 	if len(topic.Partitions) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", errNoPartitions)
+		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", ErrNoPartitions)
 	}
 	partition := &topic.Partitions[0]
 

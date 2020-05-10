@@ -90,12 +90,32 @@ func (r *Response) ApiKey() protocol.ApiKey { return protocol.Fetch }
 func (r *Response) Close() error {
 	for i := range r.Topics {
 		t := &r.Topics[i]
+
 		for j := range t.Partitions {
 			p := &t.Partitions[j]
-			p.RecordSet.Close()
+			r := p.RecordSet.Records
+
+			if r != nil {
+				r.Close()
+			}
 		}
 	}
+
 	return nil
+}
+
+func (r *Response) Reset() {
+	for i := range r.Topics {
+		t := &r.Topics[i]
+
+		for j := range t.Partitions {
+			p := &t.Partitions[j]
+
+			if r, _ := p.RecordSet.Records.(interface{ Reset() }); r != nil {
+				r.Reset()
+			}
+		}
+	}
 }
 
 type ResponseTopic struct {

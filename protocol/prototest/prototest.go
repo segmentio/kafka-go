@@ -19,9 +19,15 @@ func deepEqual(x1, x2 interface{}) bool {
 	if x1 == nil {
 		return x2 == nil
 	}
-	if b1, ok := x1.(protocol.ByteSequence); ok {
-		if b2, ok := x2.(protocol.ByteSequence); ok {
-			return deepEqualByteSequence(b1, b2)
+	if r1, ok := x1.(protocol.RecordBatch); ok {
+		if r2, ok := x2.(protocol.RecordBatch); ok {
+			return deepEqualRecords(r1, r2)
+		}
+		return false
+	}
+	if b1, ok := x1.(protocol.Bytes); ok {
+		if b2, ok := x2.(protocol.Bytes); ok {
+			return deepEqualBytes(b1, b2)
 		}
 		return false
 	}
@@ -116,7 +122,15 @@ func deepEqualSlice(v1, v2 reflect.Value) bool {
 	return true
 }
 
-func deepEqualByteSequence(s1, s2 protocol.ByteSequence) bool {
+func deepEqualBytes(s1, s2 protocol.Bytes) bool {
+	if s1 == nil {
+		return s2 == nil
+	}
+
+	if s2 == nil {
+		return false
+	}
+
 	n1 := s1.Size()
 	n2 := s2.Size()
 
@@ -136,4 +150,45 @@ func deepEqualByteSequence(s1, s2 protocol.ByteSequence) bool {
 	}
 
 	return bytes.Equal(b1, b2)
+}
+
+func deepEqualRecords(r1, r2 protocol.RecordBatch) bool {
+	for {
+		rec1, err1 := r1.ReadRecord()
+		rec2, err2 := r2.ReadRecord()
+
+		if err1 != nil || err2 != nil {
+			return err1 == err2
+		}
+
+		if !deepEqualRecord(rec1, rec2) {
+			return false
+		}
+	}
+}
+
+func deepEqualRecord(r1, r2 *protocol.Record) bool {
+	if r1.Offset != r2.Offset {
+		return false
+	}
+
+	if !r1.Time.Equal(r2.Time) {
+		return false
+	}
+
+	if !deepEqualBytes(r1.Key, r2.Key) {
+		return false
+	}
+
+	if !deepEqualBytes(r1.Value, r2.Value) {
+		return false
+	}
+
+	return deepEqual(r1.Headers, r2.Headers)
+}
+
+func reset(v interface{}) {
+	if r, _ := v.(interface{ Reset() }); r != nil {
+		r.Reset()
+	}
 }

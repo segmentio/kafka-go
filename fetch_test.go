@@ -2,6 +2,8 @@ package kafka
 
 import (
 	"context"
+	"errors"
+	"io"
 	"io/ioutil"
 	"net"
 	"reflect"
@@ -36,9 +38,12 @@ func produceRecords(t *testing.T, n int, addr net.Addr, topic string, compressio
 
 	records := make([]Record, len(msgs))
 	for offset, msg := range msgs {
-		records[offset] = NewRecord(
-			int64(offset), time.Time{}, msg.Key, msg.Value, msg.Headers...,
-		)
+		records[offset] = Record{
+			Offset:  int64(offset),
+			Key:     NewBytes(msg.Key),
+			Value:   NewBytes(msg.Value),
+			Headers: msg.Headers,
+		}
 	}
 
 	return records
@@ -67,7 +72,7 @@ func TestClientFetch(t *testing.T) {
 		Topic:         topic,
 		Partition:     0,
 		HighWatermark: 10,
-		Records:       NewRecordSet(records...),
+		Records:       NewRecordBatch(records...),
 	})
 }
 
@@ -94,7 +99,7 @@ func TestClientFetchCompressed(t *testing.T) {
 		Topic:         topic,
 		Partition:     0,
 		HighWatermark: 10,
-		Records:       NewRecordSet(records...),
+		Records:       NewRecordBatch(records...),
 	})
 }
 
@@ -154,7 +159,7 @@ func TestClientMultiFetch(t *testing.T) {
 			HighWatermark:    10,
 			LastStableOffset: 10,
 			LogStartOffset:   0,
-			Records:          NewRecordSet(records[i:]...),
+			Records:          NewRecordBatch(records[i:]...),
 			Transactional:    false,
 			ControlBatch:     false,
 		}
@@ -219,7 +224,7 @@ func TestClientMultiFetchCompressed(t *testing.T) {
 			HighWatermark:    10,
 			LastStableOffset: 10,
 			LogStartOffset:   0,
-			Records:          NewRecordSet(records[i:]...),
+			Records:          NewRecordBatch(records[i:]...),
 			Transactional:    false,
 			ControlBatch:     false,
 		}
@@ -277,8 +282,8 @@ func assertRecords(t *testing.T, found, expected []inMemoryRecord) {
 
 		if !reflect.DeepEqual(r1, r2) {
 			t.Errorf("records at index %d don't match", i)
-			t.Logf("expected:\n%+v", r2)
-			t.Logf("found:\n%+v", r1)
+			t.Logf("expected:\n%#v", r2)
+			t.Logf("found:\n%#v", r1)
 		}
 
 		i++
@@ -295,15 +300,24 @@ func assertRecords(t *testing.T, found, expected []inMemoryRecord) {
 	}
 }
 
-func readRecords(records RecordSet) ([]inMemoryRecord, error) {
+func readRecords(records RecordBatch) ([]inMemoryRecord, error) {
 	list := []inMemoryRecord{}
 
-	for rec := records.Next(); rec != nil; rec = records.Next() {
+	for {
+		rec, err := records.ReadRecord()
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return list, records.Close()
+			}
+			return nil, err
+		}
+
 		var (
-			offset      = rec.Offset()
-			key         = rec.Key()
-			value       = rec.Value()
-			headers     = rec.Headers()
+			offset      = rec.Offset
+			key         = rec.Key
+			value       = rec.Value
+			headers     = rec.Headers
 			bytesKey    []byte
 			bytesValues []byte
 		)
@@ -323,6 +337,4 @@ func readRecords(records RecordSet) ([]inMemoryRecord, error) {
 			headers: headers,
 		})
 	}
-
-	return list, records.Close()
 }

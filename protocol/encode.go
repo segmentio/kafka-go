@@ -14,10 +14,33 @@ type encoder struct {
 	buffer [32]byte
 }
 
+type encoderChecksum struct {
+	reader  io.Reader
+	encoder *encoder
+}
+
+func (e *encoderChecksum) Read(b []byte) (int, error) {
+	n, err := e.reader.Read(b)
+	if n > 0 {
+		e.encoder.update(b[:n])
+	}
+	return n, err
+}
+
+func (e *encoder) ReadFrom(r io.Reader) (int64, error) {
+	if e.table != nil {
+		r = &encoderChecksum{
+			reader:  r,
+			encoder: e,
+		}
+	}
+	return io.Copy(e.writer, r)
+}
+
 func (e *encoder) Write(b []byte) (int, error) {
 	n, err := e.writer.Write(b)
-	if n > 0 && e.table != nil {
-		e.crc32 = crc32.Update(e.crc32, e.table, b[:n])
+	if n > 0 {
+		e.update(b[:n])
 	}
 	return n, err
 }
@@ -49,6 +72,12 @@ func (e *encoder) WriteString(s string) (int, error) {
 
 func (e *encoder) setCRC(table *crc32.Table) {
 	e.table, e.crc32 = table, 0
+}
+
+func (e *encoder) update(b []byte) {
+	if e.table != nil {
+		e.crc32 = crc32.Update(e.crc32, e.table, b)
+	}
 }
 
 func (e *encoder) encodeBool(v value) {
@@ -192,24 +221,24 @@ func (e *encoder) writeCompactNullBytes(b []byte) {
 	}
 }
 
-func (e *encoder) writeBytesFrom(b ByteSequence) error {
+func (e *encoder) writeBytesFrom(b Bytes) error {
 	size := b.Size()
 	e.writeInt32(int32(size))
-	n, err := copyBytes(e, b)
+	n, err := io.Copy(e, b)
 	if err == nil && n != size {
 		err = errorf("size of bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
 	}
 	return err
 }
 
-func (e *encoder) writeNullBytesFrom(b ByteSequence) error {
+func (e *encoder) writeNullBytesFrom(b Bytes) error {
 	if b == nil {
 		e.writeInt32(-1)
 		return nil
 	} else {
 		size := b.Size()
 		e.writeInt32(int32(size))
-		n, err := copyBytes(e, b)
+		n, err := io.Copy(e, b)
 		if err == nil && n != size {
 			err = errorf("size of nullable bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
 		}
@@ -217,14 +246,14 @@ func (e *encoder) writeNullBytesFrom(b ByteSequence) error {
 	}
 }
 
-func (e *encoder) writeCompactNullBytesFrom(b ByteSequence) error {
+func (e *encoder) writeCompactNullBytesFrom(b Bytes) error {
 	if b == nil {
 		e.writeVarInt(-1)
 		return nil
 	} else {
 		size := b.Size()
 		e.writeVarInt(size)
-		n, err := copyBytes(e, b)
+		n, err := io.Copy(e, b)
 		if err == nil && n != size {
 			err = errorf("size of compact nullable bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
 		}
@@ -254,6 +283,10 @@ func (e *encoder) writeVarInt(i int64) {
 type encodeFunc func(*encoder, value)
 
 var (
+	_ io.ReaderFrom   = (*encoder)(nil)
+	_ io.Writer       = (*encoder)(nil)
+	_ io.StringWriter = (*encoder)(nil)
+
 	writerTo = reflect.TypeOf((*io.WriterTo)(nil)).Elem()
 )
 

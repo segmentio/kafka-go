@@ -21,6 +21,8 @@ func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 			t.Fatal(err)
 		}
 
+		reset(msg)
+
 		t.Logf("\n%s", hex.Dump(b.Bytes()))
 
 		correlationID, res, err := protocol.ReadResponse(b, int16(msg.ApiKey()), version)
@@ -54,6 +56,8 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 				b.Fatal(err)
 			}
 
+			reset(msg)
+
 			p := buffer.Bytes()
 			x := bytes.NewReader(p)
 			r := bufio.NewReader(x)
@@ -80,6 +84,7 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 				if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
 					b.Fatal(err)
 				}
+				reset(msg)
 				n = int64(buffer.Len())
 				buffer.Reset()
 			}

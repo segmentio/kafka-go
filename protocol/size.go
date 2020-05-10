@@ -63,7 +63,7 @@ func sizeOfVarInt(i int64) int {
 	return n + 1
 }
 
-func sizeOfVarBytes(b ByteSequence) int {
+func sizeOfVarBytes(b Bytes) int {
 	if b == nil {
 		return sizeOfVarInt(-1)
 	} else {

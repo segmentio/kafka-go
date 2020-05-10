@@ -22,12 +22,32 @@ func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
 func (r *Request) Close() error {
 	for i := range r.Topics {
 		t := &r.Topics[i]
+
 		for j := range t.Partitions {
 			p := &t.Partitions[j]
-			p.RecordSet.Close()
+			r := p.RecordSet.Records
+
+			if r != nil {
+				r.Close()
+			}
 		}
 	}
+
 	return nil
+}
+
+func (r *Request) Reset() {
+	for i := range r.Topics {
+		t := &r.Topics[i]
+
+		for j := range t.Partitions {
+			p := &t.Partitions[j]
+
+			if r, _ := p.RecordSet.Records.(interface{ Reset() }); r != nil {
+				r.Reset()
+			}
+		}
+	}
 }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {

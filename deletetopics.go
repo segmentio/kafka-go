@@ -42,7 +42,7 @@ type DeleteTopicsResponse struct {
 func (c *Client) DeleteTopics(ctx context.Context, req *DeleteTopicsRequest) (*DeleteTopicsResponse, error) {
 	m, err := c.roundTrip(ctx, req.Addr, &deletetopics.Request{
 		TopicNames: req.Topics,
-		TimeoutMs:  c.timeoutMs(ctx),
+		TimeoutMs:  c.timeoutMs(ctx, defaultDeleteTopicsTimeout),
 	})
 
 	if err != nil {

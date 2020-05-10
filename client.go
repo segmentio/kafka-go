@@ -9,6 +9,20 @@ import (
 	"github.com/segmentio/kafka-go/protocol"
 )
 
+const (
+	defaultCreateTopicsTimeout = 2 * time.Second
+	defaultDeleteTopicsTimeout = 2 * time.Second
+	defaultFetchTimeout        = 500 * time.Millisecond
+	defaultProduceTimeout      = 500 * time.Millisecond
+)
+
+var (
+	ErrNoAddr       = errors.New("no address was given for the kafka cluster in the request or on the client")
+	ErrNoTopics     = errors.New("the kafka broker returned no topics in the response")
+	ErrNoPartitions = errors.New("the kafka broker returned no partitions in the response")
+	ErrNoRecords    = errors.New("there were no records to send to the kafka broker")
+)
+
 // Client is a high-level API to interract with kafka brokers.
 //
 // All methods of the Client type accept a context as first argument, which may
@@ -22,6 +36,9 @@ type Client struct {
 	//
 	// This field is optional, the address may be provided in each request
 	// instead. The request address takes precedence if both were specified.
+	//
+	// Calling methods on a client with a nil Addr, passing requests with nil
+	// Addr fields as well returns an error wrapping ErrNoAddr.
 	Addr net.Addr
 
 	// Time limit for requests sent by this client.
@@ -99,7 +116,7 @@ func (c *Client) roundTrip(ctx context.Context, addr net.Addr, msg protocol.Mess
 
 	if addr == nil {
 		if addr = c.Addr; addr == nil {
-			return nil, errNoAddr
+			return nil, ErrNoAddr
 		}
 	}
 
@@ -113,7 +130,7 @@ func (c *Client) transport() RoundTripper {
 	return DefaultTransport
 }
 
-func (c *Client) timeout(ctx context.Context) time.Duration {
+func (c *Client) timeout(ctx context.Context, defaultTimeout time.Duration) time.Duration {
 	timeout := c.Timeout
 
 	if deadline, ok := ctx.Deadline(); ok {
@@ -122,15 +139,13 @@ func (c *Client) timeout(ctx context.Context) time.Duration {
 		}
 	}
 
-	return timeout / 2
+	if timeout > 0 {
+		return timeout / 2
+	}
+
+	return defaultTimeout
 }
 
-func (c *Client) timeoutMs(ctx context.Context) int32 {
-	return milliseconds(c.timeout(ctx))
+func (c *Client) timeoutMs(ctx context.Context, defaultTimeout time.Duration) int32 {
+	return milliseconds(c.timeout(ctx, defaultTimeout))
 }
-
-var (
-	errNoAddr       = errors.New("no address was given for the kafka cluster in the request or on the client")
-	errNoTopics     = errors.New("the kafka broker returned no topics in the response")
-	errNoPartitions = errors.New("the kafka broker returned no partitions in the response")
-)

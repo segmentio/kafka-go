@@ -6,7 +6,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/segmentio/kafka-go/protocol"
 	fetchAPI "github.com/segmentio/kafka-go/protocol/fetch"
 )
 
@@ -67,7 +66,7 @@ type FetchResponse struct {
 	//
 	// The program is expected to call the RecordSet's Close method when it
 	// finished reading the records.
-	Records RecordSet
+	Records RecordBatch
 
 	// Indicates whether the response returned by the broker was transactional
 	// or a control batch.
@@ -76,15 +75,22 @@ type FetchResponse struct {
 }
 
 // Fetch sends a fetch request to a kafka broker and returns the response.
+//
+// If the broker returned an invalid response with no topics, an error wrapping
+// ErrNoTopics is returned.
+//
+// If the broker returned an invalid response with no partitions, an error
+// wrapping ErrNoPartitions is returned.
 func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
-	timeout := c.timeout(ctx)
-	if req.MaxWait > 0 && req.MaxWait < timeout {
-		timeout = req.MaxWait
+	defaultTimeout := defaultFetchTimeout
+
+	if req.MaxWait > 0 {
+		defaultTimeout = req.MaxWait
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &fetchAPI.Request{
 		ReplicaID:      -1,
-		MaxWaitTime:    milliseconds(timeout),
+		MaxWaitTime:    milliseconds(c.timeout(ctx, defaultTimeout)),
 		MinBytes:       int32(req.MinBytes),
 		MaxBytes:       int32(req.MaxBytes),
 		IsolationLevel: int8(req.IsolationLevel),
@@ -106,11 +112,11 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 
 	res := m.(*fetchAPI.Response)
 	if len(res.Topics) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", errNoTopics)
+		return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", ErrNoTopics)
 	}
 	topic := &res.Topics[0]
 	if len(topic.Partitions) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", errNoPartitions)
+		return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", ErrNoPartitions)
 	}
 	partition := &topic.Partitions[0]
 
@@ -122,11 +128,9 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 		HighWatermark:    partition.HighWatermark,
 		LastStableOffset: partition.LastStableOffset,
 		LogStartOffset:   partition.LogStartOffset,
-		Records: &fetchRecords{
-			RecordSet: &partition.RecordSet,
-		},
-		Transactional: partition.RecordSet.Attributes.Transactional(),
-		ControlBatch:  partition.RecordSet.Attributes.ControlBatch(),
+		Records:          partition.RecordSet.Records,
+		Transactional:    partition.RecordSet.Attributes.Transactional(),
+		ControlBatch:     partition.RecordSet.Attributes.ControlBatch(),
 	}
 
 	if partition.ErrorCode != 0 {
@@ -135,33 +139,6 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 
 	return ret, nil
 }
-
-type fetchRecords struct {
-	*protocol.RecordSet
-	record fetchRecord
-	index  int
-}
-
-func (r *fetchRecords) Next() Record {
-	if r.index >= 0 && r.index < len(r.RecordSet.Records) {
-		r.record.Record = r.RecordSet.Records[r.index]
-		r.index++
-		return &r.record
-	}
-	return nil
-}
-
-type fetchRecord struct{ protocol.Record }
-
-func (r *fetchRecord) Offset() int64 { return r.Record.Offset }
-
-func (r *fetchRecord) Time() time.Time { return r.Record.Time }
-
-func (r *fetchRecord) Key() Bytes { return r.Record.Key }
-
-func (r *fetchRecord) Value() Bytes { return r.Record.Value }
-
-func (r *fetchRecord) Headers() []Header { return r.Record.Headers }
 
 // FetchPartitionRequest represents a request to fetch a partition offset in a
 // MultiFetchRequest.
@@ -179,7 +156,7 @@ type FetchPartitionResponse struct {
 	HighWatermark    int64
 	LastStableOffset int64
 	LogStartOffset   int64
-	Records          RecordSet
+	Records          RecordBatch
 	Transactional    bool
 	ControlBatch     bool
 }
@@ -251,17 +228,18 @@ func (c *Client) MultiFetch(ctx context.Context, req *MultiFetchRequest) (*Multi
 	}
 
 	if len(topics) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).MultiFetch: %w", errNoTopics)
+		return nil, fmt.Errorf("kafka.(*Client).MultiFetch: %w", ErrNoTopics)
 	}
 
-	timeout := c.timeout(ctx)
-	if req.MaxWait > 0 && req.MaxWait < timeout {
-		timeout = req.MaxWait
+	defaultTimeout := defaultFetchTimeout
+
+	if req.MaxWait > 0 {
+		defaultTimeout = req.MaxWait
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &fetchAPI.Request{
 		ReplicaID:      -1,
-		MaxWaitTime:    milliseconds(timeout),
+		MaxWaitTime:    milliseconds(c.timeout(ctx, defaultTimeout)),
 		MinBytes:       int32(req.MinBytes),
 		MaxBytes:       int32(req.MaxBytes),
 		IsolationLevel: int8(req.IsolationLevel),
@@ -294,11 +272,9 @@ func (c *Client) MultiFetch(ctx context.Context, req *MultiFetchRequest) (*Multi
 				HighWatermark:    p.HighWatermark,
 				LastStableOffset: p.LastStableOffset,
 				LogStartOffset:   p.LogStartOffset,
-				Records: &fetchRecords{
-					RecordSet: &p.RecordSet,
-				},
-				Transactional: p.RecordSet.Attributes.Transactional(),
-				ControlBatch:  p.RecordSet.Attributes.ControlBatch(),
+				Records:          p.RecordSet.Records,
+				Transactional:    p.RecordSet.Attributes.Transactional(),
+				ControlBatch:     p.RecordSet.Attributes.ControlBatch(),
 			}
 		}
 
