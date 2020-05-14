@@ -17,6 +17,9 @@ const Code = 4
 
 const DefaultCompressionLevel = 3
 
+// DefaultDecoderPoolMaxSize is the default max number of cached decoders for a decoderPool.
+const DefaultDecoderPoolMaxSize = 100
+
 type CompressionCodec struct{ level zstdlib.EncoderLevel }
 
 func NewCompressionCodec() *CompressionCodec {
@@ -39,13 +42,13 @@ func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 	if cached := decPool.Get(); cached == nil {
 		p.dec, p.err = zstdlib.NewReader(r)
 	} else {
-		p.dec = cached.(*zstdlib.Decoder)
+		p.dec = cached
 		p.err = p.dec.Reset(r)
 	}
 	return p
 }
 
-var decPool sync.Pool
+var decPool = newDecoderPool(DefaultDecoderPoolMaxSize)
 
 type reader struct {
 	dec *zstdlib.Decoder
