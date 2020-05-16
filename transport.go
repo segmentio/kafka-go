@@ -25,6 +25,14 @@ import (
 	"github.com/segmentio/kafka-go/sasl"
 )
 
+// Request is an interface implemented by types that represent messages sent
+// from kafka clients to brokers.
+type Request = protocol.Message
+
+// Response is an interface implemented by types that represent messages sent
+// from kafka brokers in response to client requests.
+type Response = protocol.Message
+
 // RoundTripper is an interface implemented by types which support interacting
 // with kafka brokers.
 type RoundTripper interface {
@@ -33,7 +41,7 @@ type RoundTripper interface {
 	//
 	// The context passed as first argument can be used to asynchronnously abort
 	// the call if needed.
-	RoundTrip(context.Context, net.Addr, protocol.Message) (protocol.Message, error)
+	RoundTrip(context.Context, net.Addr, Request) (Response, error)
 }
 
 // Transport is an implementation of the RoundTripper interface.
@@ -151,7 +159,7 @@ func (t *Transport) CloseIdleConnections() {
 // This API was introduced in version 0.4 as a way to leverage the lower-level
 // features of the kafka protocol, but also provide a more efficient way of
 // managing connections to kafka brokers.
-func (t *Transport) RoundTrip(ctx context.Context, addr net.Addr, req protocol.Message) (protocol.Message, error) {
+func (t *Transport) RoundTrip(ctx context.Context, addr net.Addr, req Request) (Response, error) {
 	p := t.grabPool(addr)
 	defer p.unref()
 	return p.roundTrip(ctx, req)
@@ -331,7 +339,7 @@ func (p *connPool) unref() {
 	}
 }
 
-func (p *connPool) roundTrip(ctx context.Context, req protocol.Message) (protocol.Message, error) {
+func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error) {
 	cancel := ctx.Done()
 	// This first select should never block after the first metadata response
 	// that would mark the pool as `ready`.
@@ -562,7 +570,7 @@ func (p *connPool) grabClusterConn() (*conn, error) {
 	return p.ctrl, nil
 }
 
-func (p *connPool) sendRequest(ctx context.Context, req protocol.Message, state connPoolState) promise {
+func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolState) promise {
 	brokerID := -1
 
 	switch m := req.(type) {
@@ -720,7 +728,7 @@ func (p *connPool) connect(ctx context.Context, network, address string, broker 
 }
 
 type connRequest struct {
-	req protocol.Message
+	req Request
 	res async
 	// Lazily negotiated when writing the request, then reused to determine the
 	// version of the message we're reading in the response.
@@ -731,18 +739,18 @@ type connRequest struct {
 // between goroutines that handle requests and responses.
 type promise interface {
 	// Waits until the promise is resolved, rejected, or the context canceled.
-	await(context.Context) (protocol.Message, error)
+	await(context.Context) (Response, error)
 }
 
 // async is an implementation of the promise interface which supports resolving
 // or rejecting the await call asynchronously.
 type async chan interface{}
 
-func (p async) await(ctx context.Context) (protocol.Message, error) {
+func (p async) await(ctx context.Context) (Response, error) {
 	select {
 	case x := <-p:
 		switch v := x.(type) {
-		case protocol.Message:
+		case Response:
 			return v, nil
 		case error:
 			return nil, v
@@ -754,7 +762,7 @@ func (p async) await(ctx context.Context) (protocol.Message, error) {
 	}
 }
 
-func (p async) resolve(msg protocol.Message) { p <- msg }
+func (p async) resolve(res Response) { p <- res }
 
 func (p async) reject(err error) { p <- err }
 
@@ -765,7 +773,7 @@ type rejected struct{ err error }
 
 func reject(err error) promise { return &rejected{err: err} }
 
-func (p *rejected) await(ctx context.Context) (protocol.Message, error) {
+func (p *rejected) await(ctx context.Context) (Response, error) {
 	return nil, p.err
 }
 
@@ -773,11 +781,11 @@ func (p *rejected) await(ctx context.Context) (protocol.Message, error) {
 // from multiple promises into one await call using a reducer.
 type joined struct {
 	promises []promise
-	requests []protocol.Message
+	requests []Request
 	reducer  protocol.Reducer
 }
 
-func join(promises []promise, requests []protocol.Message, reducer protocol.Reducer) promise {
+func join(promises []promise, requests []Request, reducer protocol.Reducer) promise {
 	return &joined{
 		promises: promises,
 		requests: requests,
@@ -785,7 +793,7 @@ func join(promises []promise, requests []protocol.Message, reducer protocol.Redu
 	}
 }
 
-func (p *joined) await(ctx context.Context) (protocol.Message, error) {
+func (p *joined) await(ctx context.Context) (Response, error) {
 	results := make([]interface{}, len(p.promises))
 
 	for i, p := range p.promises {
