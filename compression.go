@@ -8,6 +8,13 @@ import (
 
 type Compression = compress.Compression
 
+const (
+	Gzip   Compression = compress.Gzip
+	Snappy Compression = compress.Snappy
+	Lz4    Compression = compress.Lz4
+	Zstd   Compression = compress.Zstd
+)
+
 type CompressionCodec = compress.Codec
 
 // TODO: this file should probably go away once the internals of the package
