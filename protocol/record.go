@@ -240,9 +240,9 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		err = nil
 	}
 
+	d.discardAll()
 	rn := 4 + (int(size) - d.remain)
 	d.remain = limit - rn
-	d.discardAll()
 	return int64(rn), err
 }
 

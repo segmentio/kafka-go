@@ -31,8 +31,10 @@ func TestProduceRequest(t *testing.T) {
 					{
 						Partition: 0,
 						RecordSet: protocol.RecordSet{
-							Version: 0,
-							Records: nil,
+							Version: 1,
+							Records: protocol.NewRecordBatch(
+								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: nil},
+							),
 						},
 					},
 					{
@@ -79,7 +81,12 @@ func TestProduceRequest(t *testing.T) {
 				Partitions: []produce.RequestPartition{
 					{
 						Partition: 0,
-						RecordSet: protocol.RecordSet{},
+						RecordSet: protocol.RecordSet{
+							Version: 1,
+							Records: protocol.NewRecordBatch(
+								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: nil},
+							),
+						},
 					},
 					{
 						Partition: 1,
@@ -220,6 +227,9 @@ func BenchmarkProduceRequest(b *testing.B) {
 						Partition: 0,
 						RecordSet: protocol.RecordSet{
 							Version: 1,
+							Records: protocol.NewRecordBatch(
+								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: nil},
+							),
 						},
 					},
 					{

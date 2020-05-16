@@ -59,9 +59,13 @@ func CloseRecordBatch(rb RecordBatch) error {
 // ResetRecordBatch is a helper function to reset record batches that have a
 // `Reset()` method.
 func ResetRecordBatch(rb RecordBatch) {
-	if r, _ := rb.(interface{ Reset() }); r != nil {
+	if r, _ := rb.(resetter); r != nil {
 		r.Reset()
 	}
+}
+
+type resetter interface {
+	Reset()
 }
 
 func forEachRecord(r RecordBatch, f func(int, *Record) error) error {
@@ -125,9 +129,10 @@ func (r *recordBatch) ReadRecord() (*Record, error) {
 	return nil, io.EOF
 }
 
-type emptyRecordBatch struct{}
-
-func (emptyRecordBatch) ReadRecord() (*Record, error) { return nil, io.EOF }
+var (
+	_ io.Closer = (*recordBatch)(nil)
+	_ resetter  = (*recordBatch)(nil)
+)
 
 type multiRecordBatch struct {
 	batches []RecordBatch
@@ -165,6 +170,11 @@ func (m *multiRecordBatch) ReadRecord() (*Record, error) {
 	}
 }
 
+var (
+	_ io.Closer = (*multiRecordBatch)(nil)
+	_ resetter  = (*multiRecordBatch)(nil)
+)
+
 func concatRecordBatch(head RecordBatch, tail RecordBatch) RecordBatch {
 	if head == nil {
 		return tail
@@ -187,6 +197,13 @@ func (r *optimizedRecordBatch) Close() error {
 		r.records[i].unref()
 	}
 	return nil
+}
+
+func (r *optimizedRecordBatch) Reset() {
+	for i := range r.records {
+		resetBytes(r.records[i].key())
+		resetBytes(r.records[i].value())
+	}
 }
 
 func (r *optimizedRecordBatch) ReadRecord() (*Record, error) {
@@ -229,3 +246,12 @@ func (r *optimizedRecord) key() Bytes {
 func (r *optimizedRecord) value() Bytes {
 	return makeBytes(&r.valueRef)
 }
+
+var (
+	_ io.Closer = (*optimizedRecordBatch)(nil)
+	_ resetter  = (*optimizedRecordBatch)(nil)
+)
+
+type emptyRecordBatch struct{}
+
+func (emptyRecordBatch) ReadRecord() (*Record, error) { return nil, io.EOF }
