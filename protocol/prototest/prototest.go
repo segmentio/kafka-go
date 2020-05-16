@@ -141,11 +141,11 @@ func deepEqualBytes(s1, s2 protocol.Bytes) bool {
 	b1 := make([]byte, n1)
 	b2 := make([]byte, n2)
 
-	if _, err := s1.ReadAt(b1, 0); err != nil {
+	if _, err := s1.(io.ReaderAt).ReadAt(b1, 0); err != nil {
 		panic(err)
 	}
 
-	if _, err := s2.ReadAt(b2, 0); err != nil {
+	if _, err := s2.(io.ReaderAt).ReadAt(b2, 0); err != nil {
 		panic(err)
 	}
 

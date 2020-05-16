@@ -20,11 +20,11 @@ import (
 // Bytes values are generally not safe to use concurrently from multiple
 // goroutines.
 type Bytes interface {
+	io.ReadCloser
+	// Returns the number of bytes in the sequence. The value returned is the
+	// total size of the underlying byte sequence, not the number of bytes
+	// remaining to be read.
 	Size() int64
-	io.Closer
-	io.Seeker
-	io.Reader
-	io.ReaderAt
 }
 
 type refCount uintptr
