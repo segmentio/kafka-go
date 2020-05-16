@@ -12,8 +12,8 @@ import (
 const (
 	defaultCreateTopicsTimeout = 2 * time.Second
 	defaultDeleteTopicsTimeout = 2 * time.Second
-	defaultFetchTimeout        = 500 * time.Millisecond
 	defaultProduceTimeout      = 500 * time.Millisecond
+	defaultMaxWait             = 500 * time.Millisecond
 )
 
 var (

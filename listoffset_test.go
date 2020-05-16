@@ -62,12 +62,12 @@ func TestClientListOffsets(t *testing.T) {
 		t.Error("invalid last offset found in list offsets response:", partition.LastOffset)
 	}
 
-	if firstOffsetTime := partition.Offsets[partition.FirstOffset]; firstOffsetTime.IsZero() {
-		t.Error("missing first offset time in list offsets response:", partition.Offsets)
+	if firstOffsetTime := partition.Offsets[partition.FirstOffset]; !firstOffsetTime.IsZero() {
+		t.Error("unexpected first offset time in list offsets response:", partition.Offsets)
 	}
 
-	if lastOffsetTime := partition.Offsets[partition.LastOffset]; lastOffsetTime.IsZero() {
-		t.Error("missing last offset time in list offsets response:", partition.Offsets)
+	if lastOffsetTime := partition.Offsets[partition.LastOffset]; !lastOffsetTime.IsZero() {
+		t.Error("unexpected last offset time in list offsets response:", partition.Offsets)
 	}
 
 	if partition.Error != nil {

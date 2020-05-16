@@ -26,6 +26,13 @@ func (c Compression) Codec() Codec {
 	return nil
 }
 
+func (c Compression) String() string {
+	if codec := c.Codec(); codec != nil {
+		return codec.Name()
+	}
+	return "uncompressed"
+}
+
 // Codec represents a compression codec to encode and decode the messages.
 // See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
 //

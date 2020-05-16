@@ -4,7 +4,7 @@ import (
 	"io"
 )
 
-func ReadResponse(r io.Reader, apiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
+func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
 		err = errorf("unsupported api key: %d", i)
 		return
@@ -20,8 +20,7 @@ func ReadResponse(r io.Reader, apiKey, apiVersion int16) (correlationID int32, m
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		err = errorf("unsupported %s version: v%d not in range v%d-v%d",
-			ApiKey(apiKey), apiVersion, minVersion, maxVersion)
+		err = errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 		return
 	}
 
@@ -33,12 +32,11 @@ func ReadResponse(r io.Reader, apiKey, apiVersion int16) (correlationID int32, m
 	}
 
 	d.remain = int(size)
-	defer d.discardAll()
-
 	correlationID = d.readInt32()
 	res := &t.responses[apiVersion-minVersion]
 	msg = res.new()
 	res.decode(d, valueOf(msg))
+	d.discardAll()
 	err = dontExpectEOF(d.err)
 	return
 }
@@ -59,8 +57,7 @@ func WriteResponse(w io.Writer, apiVersion int16, correlationID int32, msg Messa
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		return errorf("unsupported %s version: v%d not in range v%d-v%d",
-			ApiKey(apiKey), apiVersion, minVersion, maxVersion)
+		return errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 	}
 
 	r := &t.responses[apiVersion-minVersion]
@@ -72,10 +69,13 @@ func WriteResponse(w io.Writer, apiVersion int16, correlationID int32, msg Messa
 	e.writeInt32(0) // placeholder for the response size
 	e.writeInt32(correlationID)
 	r.encode(e, v)
+	err := e.err
 
-	size := packUint32(uint32(b.Size()) - 4)
-	b.WriteAt(size[:], 0)
+	if err == nil {
+		size := packUint32(uint32(b.Size()) - 4)
+		b.WriteAt(size[:], 0)
+		_, err = b.WriteTo(w)
+	}
 
-	_, err := b.WriteTo(w)
 	return err
 }

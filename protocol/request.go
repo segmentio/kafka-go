@@ -13,9 +13,7 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	}
 
 	d.remain = int(size)
-	defer d.discardAll()
-
-	apiKey := d.readInt16()
+	apiKey := ApiKey(d.readInt16())
 	apiVersion = d.readInt16()
 	correlationID = d.readInt32()
 	clientID = d.readString()
@@ -40,15 +38,15 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		err = errorf("unsupported %s version: v%d not in range v%d-v%d",
-			ApiKey(apiKey), apiVersion, minVersion, maxVersion)
+		err = errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 		return
 	}
 
 	req := &t.requests[apiVersion-minVersion]
 	msg = req.new()
 	req.decode(d, valueOf(msg))
-	err = d.err
+	d.discardAll()
+	err = dontExpectEOF(d.err)
 	return
 }
 
@@ -68,8 +66,7 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		return errorf("unsupported %s version: v%d not in range v%d-v%d",
-			ApiKey(apiKey), apiVersion, minVersion, maxVersion)
+		return errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 	}
 
 	r := &t.requests[apiVersion-minVersion]
@@ -87,10 +84,13 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	// a NullPointerException when it receives a null client id.
 	e.writeString(clientID)
 	r.encode(e, v)
+	err := e.err
 
-	size := packUint32(uint32(b.Size()) - 4)
-	b.WriteAt(size[:], 0)
+	if err == nil {
+		size := packUint32(uint32(b.Size()) - 4)
+		b.WriteAt(size[:], 0)
+		_, err = b.WriteTo(w)
+	}
 
-	_, err := b.WriteTo(w)
 	return err
 }

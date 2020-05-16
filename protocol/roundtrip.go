@@ -14,7 +14,7 @@ func RoundTrip(rw io.ReadWriter, apiVersion int16, clientID string, msg Message)
 	if err := WriteRequest(rw, apiVersion, correlationID, clientID, msg); err != nil {
 		return nil, err
 	}
-	id, res, err := ReadResponse(rw, int16(msg.ApiKey()), apiVersion)
+	id, res, err := ReadResponse(rw, msg.ApiKey(), apiVersion)
 	if err != nil {
 		return nil, err
 	}

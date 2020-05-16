@@ -112,7 +112,11 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 		}},
 	})
 
-	if err != nil {
+	switch {
+	case err == nil:
+	case errors.Is(err, protocol.ErrNoRecords):
+		return new(ProduceResponse), nil
+	default:
 		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", err)
 	}
 

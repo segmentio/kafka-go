@@ -9,6 +9,7 @@ import (
 
 type encoder struct {
 	writer io.Writer
+	err    error
 	table  *crc32.Table
 	crc32  uint32
 	buffer [32]byte
@@ -38,9 +39,15 @@ func (e *encoder) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (e *encoder) Write(b []byte) (int, error) {
+	if e.err != nil {
+		return 0, e.err
+	}
 	n, err := e.writer.Write(b)
 	if n > 0 {
 		e.update(b[:n])
+	}
+	if err != nil {
+		e.err = err
 	}
 	return n, err
 }
@@ -387,7 +394,10 @@ func writerEncodeFuncOf(typ reflect.Type) encodeFunc {
 		if e.table == nil {
 			w = e.writer
 		}
-		v.iface(typ).(io.WriterTo).WriteTo(w)
+		_, err := v.iface(typ).(io.WriterTo).WriteTo(w)
+		if err != nil {
+			e.err = err
+		}
 	}
 }
 

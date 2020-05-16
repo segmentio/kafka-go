@@ -68,3 +68,35 @@ func TestClientProduceCompressed(t *testing.T) {
 		t.Errorf("record at index %d produced an error: %v", index, err)
 	}
 }
+
+func TestClientProduceNilRecords(t *testing.T) {
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
+
+	_, err := client.Produce(context.Background(), &ProduceRequest{
+		Topic:        topic,
+		Partition:    0,
+		RequiredAcks: -1,
+		Records:      nil,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClientProduceEmptyRecords(t *testing.T) {
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
+
+	_, err := client.Produce(context.Background(), &ProduceRequest{
+		Topic:        topic,
+		Partition:    0,
+		RequiredAcks: -1,
+		Records:      NewRecordBatch(),
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}

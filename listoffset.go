@@ -158,7 +158,10 @@ func (c *Client) ListOffsets(ctx context.Context, req *ListOffsetsRequest) (*Lis
 			}
 
 			partition := partitionOffsets[key]
-			partition.Offsets[p.Offset] = makeTime(p.Timestamp)
+
+			if p.Timestamp >= 0 {
+				partition.Offsets[p.Offset] = makeTime(p.Timestamp)
+			}
 
 			if partition.FirstOffset >= 0 && p.Offset < partition.FirstOffset {
 				partition.FirstOffset = p.Offset

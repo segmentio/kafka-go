@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"time"
 
@@ -66,6 +67,10 @@ type FetchResponse struct {
 	//
 	// The program is expected to call the RecordSet's Close method when it
 	// finished reading the records.
+	//
+	// Note that kafka may return record batches that start at an offset before
+	// the one that was requested. It is the program's responsibility to skip
+	// the offsets that it is not interested in.
 	Records RecordBatch
 
 	// Indicates whether the response returned by the broker was transactional
@@ -82,15 +87,16 @@ type FetchResponse struct {
 // If the broker returned an invalid response with no partitions, an error
 // wrapping ErrNoPartitions is returned.
 func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
-	defaultTimeout := defaultFetchTimeout
+	timeout := c.timeout(ctx, math.MaxInt64)
+	maxWait := req.maxWait()
 
-	if req.MaxWait > 0 {
-		defaultTimeout = req.MaxWait
+	if maxWait < timeout {
+		timeout = maxWait
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &fetchAPI.Request{
 		ReplicaID:      -1,
-		MaxWaitTime:    milliseconds(c.timeout(ctx, defaultTimeout)),
+		MaxWaitTime:    milliseconds(timeout),
 		MinBytes:       int32(req.MinBytes),
 		MaxBytes:       int32(req.MaxBytes),
 		IsolationLevel: int8(req.IsolationLevel),
@@ -137,7 +143,18 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 		ret.Error = makeError(partition.ErrorCode, "")
 	}
 
+	if ret.Records == nil {
+		ret.Records = emptyRecordBatch{}
+	}
+
 	return ret, nil
+}
+
+func (req *FetchRequest) maxWait() time.Duration {
+	if req.MaxWait > 0 {
+		return req.MaxWait
+	}
+	return defaultMaxWait
 }
 
 // FetchPartitionRequest represents a request to fetch a partition offset in a
@@ -231,15 +248,16 @@ func (c *Client) MultiFetch(ctx context.Context, req *MultiFetchRequest) (*Multi
 		return nil, fmt.Errorf("kafka.(*Client).MultiFetch: %w", ErrNoTopics)
 	}
 
-	defaultTimeout := defaultFetchTimeout
+	timeout := c.timeout(ctx, math.MaxInt64)
+	maxWait := req.maxWait()
 
-	if req.MaxWait > 0 {
-		defaultTimeout = req.MaxWait
+	if maxWait < timeout {
+		timeout = maxWait
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &fetchAPI.Request{
 		ReplicaID:      -1,
-		MaxWaitTime:    milliseconds(c.timeout(ctx, defaultTimeout)),
+		MaxWaitTime:    milliseconds(timeout),
 		MinBytes:       int32(req.MinBytes),
 		MaxBytes:       int32(req.MaxBytes),
 		IsolationLevel: int8(req.IsolationLevel),
@@ -276,12 +294,23 @@ func (c *Client) MultiFetch(ctx context.Context, req *MultiFetchRequest) (*Multi
 				Transactional:    p.RecordSet.Attributes.Transactional(),
 				ControlBatch:     p.RecordSet.Attributes.ControlBatch(),
 			}
+
+			if partitions[i].Records == nil {
+				partitions[i].Records = emptyRecordBatch{}
+			}
 		}
 
 		ret.Responses[t.Topic] = partitions
 	}
 
 	return ret, nil
+}
+
+func (req *MultiFetchRequest) maxWait() time.Duration {
+	if req.MaxWait > 0 {
+		return req.MaxWait
+	}
+	return defaultMaxWait
 }
 
 type fetchRequestV2 struct {

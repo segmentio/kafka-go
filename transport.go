@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -263,7 +264,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		cancel: cancel,
 	}
 
-	p.ctrl = p.connect(ctx, k.network, k.address)
+	p.ctrl = p.connect(ctx, k.network, k.address, -1)
 	go p.discover(ctx, p.ctrl, p.wake)
 
 	if t.pools == nil {
@@ -469,7 +470,7 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 
 		for id := range addBrokers {
 			broker := layout.Brokers[id]
-			p.conns[id] = p.connect(ctx, broker.Network(), broker.String())
+			p.conns[id] = p.connect(ctx, broker.Network(), broker.String(), id)
 		}
 
 		for id := range delBrokers {
@@ -705,9 +706,10 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 	return protocolPartitions
 }
 
-func (p *connPool) connect(ctx context.Context, network, address string) *conn {
+func (p *connPool) connect(ctx context.Context, network, address string, broker int) *conn {
 	reqs := make(chan connRequest)
 	conn := &conn{
+		broker:   broker,
 		refc:     1,
 		pool:     p,
 		reqs:     reqs,
@@ -809,6 +811,7 @@ var defaultDialer = net.Dialer{
 // connections are lazily open before sending requests, and closed if they are
 // unused for longer than the idle timeout.
 type conn struct {
+	broker int
 	// Reference counter used to orchestrate graceful shutdown.
 	refc uintptr
 	// Immutable state of the connection.
@@ -916,7 +919,7 @@ func (c *conn) connect() (*bufferedConn, map[protocol.ApiKey]int16, error) {
 
 func (c *conn) dispatch(conn *bufferedConn, done chan<- error) {
 	for {
-		_, id, err := conn.peekResponseSizeAndID()
+		size, id, err := conn.peekResponseSizeAndID()
 		if err != nil {
 			done <- dontExpectEOF(err)
 			return
@@ -931,7 +934,7 @@ func (c *conn) dispatch(conn *bufferedConn, done chan<- error) {
 			return
 		}
 
-		_, res, err := protocol.ReadResponse(conn, int16(r.req.ApiKey()), r.version)
+		_, res, err := protocol.ReadResponse(conn, r.req.ApiKey(), r.version)
 		if err != nil {
 			r.res.reject(err)
 			done <- err
@@ -991,7 +994,12 @@ func (c *conn) run(ctx context.Context, reqs <-chan connRequest) {
 				p.Prepare(r.version)
 			}
 
-			if err := protocol.WriteRequest(conn, r.version, id, c.pool.clientID, r.req); err != nil {
+			switch err := protocol.WriteRequest(conn, r.version, id, c.pool.clientID, r.req); {
+			case err == nil:
+			case errors.Is(err, protocol.ErrNoRecords):
+				c.unregister(id)
+				r.res.reject(err)
+			default:
 				closeConn(err)
 			}
 

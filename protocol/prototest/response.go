@@ -25,7 +25,7 @@ func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 
 		t.Logf("\n%s", hex.Dump(b.Bytes()))
 
-		correlationID, res, err := protocol.ReadResponse(b, int16(msg.ApiKey()), version)
+		correlationID, res, err := protocol.ReadResponse(b, msg.ApiKey(), version)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -45,7 +45,7 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 	defer closeMessage(msg)
 
 	b.Run(fmt.Sprintf("v%d", version), func(b *testing.B) {
-		apiKey := int16(msg.ApiKey())
+		apiKey := msg.ApiKey()
 		buffer := &bytes.Buffer{}
 		buffer.Grow(1024)
 

@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bytes"
+	"io"
 
 	"github.com/segmentio/kafka-go/protocol"
 )
@@ -53,3 +54,7 @@ type RecordBatch = protocol.RecordBatch
 func NewRecordBatch(records ...Record) RecordBatch {
 	return protocol.NewRecordBatch(records...)
 }
+
+type emptyRecordBatch struct{}
+
+func (emptyRecordBatch) ReadRecord() (*Record, error) { return nil, io.EOF }
