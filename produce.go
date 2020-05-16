@@ -8,7 +8,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/segmentio/kafka-go/compress"
 	"github.com/segmentio/kafka-go/protocol"
 	produceAPI "github.com/segmentio/kafka-go/protocol/produce"
 )
@@ -43,7 +42,7 @@ type ProduceRequest struct {
 
 	// An optional compression algorithm to apply to the batch of records sent
 	// to the kafka broker.
-	Compression compress.Compression
+	Compression Compression
 }
 
 // ProduceResponse represents a response from a kafka broker to a produce
