@@ -919,7 +919,7 @@ func (c *conn) connect() (*bufferedConn, map[protocol.ApiKey]int16, error) {
 
 func (c *conn) dispatch(conn *bufferedConn, done chan<- error) {
 	for {
-		size, id, err := conn.peekResponseSizeAndID()
+		_, id, err := conn.peekResponseSizeAndID()
 		if err != nil {
 			done <- dontExpectEOF(err)
 			return
