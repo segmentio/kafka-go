@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"fmt"
 	"hash/crc32"
 	"io"
 )
@@ -42,7 +43,7 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 	if compression := Attributes(attributes).Compression(); compression != 0 {
 		codec := compression.Codec()
 		if codec == nil {
-			return errorf("unsupported compression codec (%d)", compression)
+			return fmt.Errorf("unsupported compression codec (%d)", compression)
 		}
 		decompressor := codec.NewReader(reader)
 		defer decompressor.Close()
@@ -57,7 +58,7 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 		return err
 	}
 	if dec.crc32 != uint32(crc) {
-		return errorf("crc32 checksum mismatch (computed=%d found=%d)", dec.crc32, uint32(crc))
+		return fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", dec.crc32, uint32(crc))
 	}
 
 	recordsLength := buffer.Len()

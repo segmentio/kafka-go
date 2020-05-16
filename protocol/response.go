@@ -1,18 +1,19 @@
 package protocol
 
 import (
+	"fmt"
 	"io"
 )
 
 func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
-		err = errorf("unsupported api key: %d", i)
+		err = fmt.Errorf("unsupported api key: %d", i)
 		return
 	}
 
 	t := &apiTypes[apiKey]
 	if t == nil {
-		err = errorf("unsupported api: %s", apiNames[apiKey])
+		err = fmt.Errorf("unsupported api: %s", apiNames[apiKey])
 		return
 	}
 
@@ -20,7 +21,7 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		err = errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
+		err = fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 		return
 	}
 
@@ -45,19 +46,19 @@ func WriteResponse(w io.Writer, apiVersion int16, correlationID int32, msg Messa
 	apiKey := msg.ApiKey()
 
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
-		return errorf("unsupported api key: %d", i)
+		return fmt.Errorf("unsupported api key: %d", i)
 	}
 
 	t := &apiTypes[apiKey]
 	if t == nil {
-		return errorf("unsupported api: %s", apiNames[apiKey])
+		return fmt.Errorf("unsupported api: %s", apiNames[apiKey])
 	}
 
 	minVersion := t.minVersion()
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		return errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
+		return fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 	}
 
 	r := &t.responses[apiVersion-minVersion]

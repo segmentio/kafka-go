@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"math"
@@ -48,7 +49,7 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 		var codec compress.Codec
 		if compression != 0 {
 			if codec = compression.Codec(); codec == nil {
-				return errorf("unsupported compression codec: %d", compression)
+				return fmt.Errorf("unsupported compression codec: %d", compression)
 			}
 		}
 
@@ -124,7 +125,7 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 		}
 
 		if md.crc32 != crc {
-			return errorf("crc32 checksum mismatch (computed=%d found=%d)", md.crc32, crc)
+			return fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", md.crc32, crc)
 		}
 	}
 

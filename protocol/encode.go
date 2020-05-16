@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"reflect"
@@ -233,7 +234,7 @@ func (e *encoder) writeBytesFrom(b Bytes) error {
 	e.writeInt32(int32(size))
 	n, err := io.Copy(e, b)
 	if err == nil && n != size {
-		err = errorf("size of bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
+		err = fmt.Errorf("size of bytes does not match the number of bytes that were written (size=%d, written=%d): %w", size, n, io.ErrUnexpectedEOF)
 	}
 	return err
 }
@@ -247,7 +248,7 @@ func (e *encoder) writeNullBytesFrom(b Bytes) error {
 		e.writeInt32(int32(size))
 		n, err := io.Copy(e, b)
 		if err == nil && n != size {
-			err = errorf("size of nullable bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
+			err = fmt.Errorf("size of nullable bytes does not match the number of bytes that were written (size=%d, written=%d): %w", size, n, io.ErrUnexpectedEOF)
 		}
 		return err
 	}
@@ -262,7 +263,7 @@ func (e *encoder) writeCompactNullBytesFrom(b Bytes) error {
 		e.writeVarInt(size)
 		n, err := io.Copy(e, b)
 		if err == nil && n != size {
-			err = errorf("size of compact nullable bytes does not match the number of bytes that were written (size=%d, written=%d)", size, n)
+			err = fmt.Errorf("size of compact nullable bytes does not match the number of bytes that were written (size=%d, written=%d): %w", size, n, io.ErrUnexpectedEOF)
 		}
 		return err
 	}

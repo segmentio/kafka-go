@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -162,7 +163,7 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 			if rs.Records != nil {
 				break
 			}
-			return 4, errorf("impossible record set shorter than %d bytes", magicByteOffset+1)
+			return 4, fmt.Errorf("impossible record set shorter than %d bytes", magicByteOffset+1)
 		}
 
 		switch r := d.reader.(type) {
@@ -198,7 +199,7 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		case 2:
 			err = tmp.readFromVersion2(d)
 		default:
-			err = errorf("unsupported message version %d for message of size %d", version, size)
+			err = fmt.Errorf("unsupported message version %d for message of size %d", version, size)
 		}
 
 		if tmp.Records != nil {
@@ -280,7 +281,7 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	case 2:
 		err = rs.writeToVersion2(buffer, bufferOffset+4)
 	default:
-		err = errorf("unsupported record set version %d", rs.Version)
+		err = fmt.Errorf("unsupported record set version %d", rs.Version)
 	}
 	if err != nil {
 		return 0, err
