@@ -13,6 +13,10 @@ type Request struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.DeleteTopics }
 
+func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
+	return cluster.Brokers[cluster.Controller], nil
+}
+
 type Response struct {
 	ThrottleTimeMs int32           `kafka:"min=v1,max=v4"`
 	Responses      []ResponseTopic `kafka:"min=v0,max=v4"`
@@ -24,3 +28,7 @@ type ResponseTopic struct {
 	Name      string `kafka:"min=v0,max=v3|min=v4,max=v4,compact"`
 	ErrorCode int16  `kafka:"min=v0,max=v4"`
 }
+
+var (
+	_ protocol.BrokerMessage = (*Request)(nil)
+)

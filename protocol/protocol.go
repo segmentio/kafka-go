@@ -361,15 +361,21 @@ func (b Broker) String() string {
 	return net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
 }
 
-type Cluster struct {
-	ClusterID  string
-	Controller int
-	Brokers    map[int]Broker
-	Topics     map[string]Topic
-}
-
-func (c *Cluster) IsZero() bool {
-	return c.ClusterID == "" && c.Controller == 0 && len(c.Brokers) == 0 && len(c.Topics) == 0
+func (b Broker) Format(w fmt.State, v rune) {
+	switch v {
+	case 'd':
+		io.WriteString(w, strconv.Itoa(b.ID))
+	case 's':
+		io.WriteString(w, b.String())
+	case 'v':
+		io.WriteString(w, strconv.Itoa(b.ID))
+		io.WriteString(w, " ")
+		io.WriteString(w, b.String())
+		if b.Rack != "" {
+			io.WriteString(w, " ")
+			io.WriteString(w, b.Rack)
+		}
+	}
 }
 
 type Topic struct {
@@ -379,10 +385,12 @@ type Topic struct {
 }
 
 type Partition struct {
-	ID     int
-	Error  int
-	Leader int
-	// TODO: add ISR to allow consuming from followers with kafka 2.3+
+	ID       int
+	Error    int
+	Leader   int
+	Replicas []int
+	ISR      []int
+	Offline  []int
 }
 
 // BrokerMessage is an extension of the Message interface implemented by some

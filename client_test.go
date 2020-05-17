@@ -24,6 +24,29 @@ func newLocalClientAndTopic() (*Client, string, func()) {
 		panic(err)
 	}
 
+	// Topic creation seems to be asynchronous. Metadata for the topic partition
+	// layout in the cluster is available in the controller before being synced
+	// with the other brokers, which causes "Error:[3] Unknown Topic Or Partition"
+	// when sending requests to the partition leaders.
+	//
+	// This loop will wait up to 2 seconds polling the cluster until no errors
+	// are returned.
+	for i := 0; i < 20; i++ {
+		r, err := client.Fetch(context.Background(), &FetchRequest{
+			Topic:     topic,
+			Partition: 0,
+			Offset:    0,
+		})
+		if err != nil {
+			shutdown()
+			panic(err)
+		}
+		if r.Error == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	return client, topic, func() {
 		client.DeleteTopics(context.Background(), &DeleteTopicsRequest{
 			Topics: []string{topic},

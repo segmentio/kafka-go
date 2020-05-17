@@ -34,67 +34,57 @@ type RequestPartition struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.ListOffsets }
 
+func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
+	// Expects r to be a request that was returned by Map, will likely panic
+	// or produce the wrong result if that's not the case.
+	partition := r.Topics[0].Partitions[0].Partition
+	topic := r.Topics[0].Topic
+
+	for _, p := range cluster.Topics[topic].Partitions {
+		if p.ID == int(partition) {
+			return cluster.Brokers[p.Leader], nil
+		}
+	}
+
+	return protocol.Broker{ID: -1}, nil
+}
+
 func (r *Request) Map(cluster protocol.Cluster) ([]protocol.Message, protocol.Reducer, error) {
 	// Because kafka refuses to answer ListOffsets requests containing multiple
 	// entries of unique topic/partition pairs, we submit multiple requests on
 	// the wire and merge their results back.
 	//
-	// The code is a bit verbose but shouldn't be too hard to follow, the idea
-	// is to group requests respecting the requirement to have each instance of
-	// a topic/partition pair exist only once in each request.
+	// ListOffsets requests also need to be sent to partition leaders, to keep
+	// the logic simple we simply split each offset request into a single
+	// message. This may cause a bit more requests to be sent on the wire but
+	// it keeps the code sane, we can still optimize the aggregation mechanism
+	// later if it becomes a problem.
 	//
 	// Really the idea here is to shield applications from having to deal with
 	// the limitation of the kafka server, so they can request any combinations
 	// of topic/partition/offsets.
-	type topicPartition struct {
-		topic     string
-		partition int32
-	}
+	requests := make([]Request, 0, 2*len(r.Topics))
 
-	partitionRequests := make(map[topicPartition][]RequestPartition)
 	for _, t := range r.Topics {
 		for _, p := range t.Partitions {
-			key := topicPartition{t.Topic, p.Partition}
-			partitionRequests[key] = append(partitionRequests[key], p)
-		}
-	}
-
-	numRequests := 0
-	for _, partitions := range partitionRequests {
-		if len(partitions) > numRequests {
-			numRequests = len(partitions)
-		}
-	}
-
-	topicsRequests := make(map[string][]RequestPartition)
-	requests := make([]Request, numRequests)
-	messages := make([]protocol.Message, numRequests)
-
-	for i := range requests {
-		for key, partitions := range partitionRequests {
-			if i < len(partitions) {
-				topicsRequests[key.topic] = append(topicsRequests[key.topic], partitions[i])
-			}
-		}
-
-		topics := make([]RequestTopic, 0, len(topicsRequests))
-		for topicName, partitions := range topicsRequests {
-			topics = append(topics, RequestTopic{
-				Topic:      topicName,
-				Partitions: partitions,
+			requests = append(requests, Request{
+				ReplicaID:      r.ReplicaID,
+				IsolationLevel: r.IsolationLevel,
+				Topics: []RequestTopic{{
+					Topic: t.Topic,
+					Partitions: []RequestPartition{{
+						Partition:          p.Partition,
+						CurrentLeaderEpoch: p.CurrentLeaderEpoch,
+						Timestamp:          p.Timestamp,
+					}},
+				}},
 			})
 		}
+	}
 
-		for topicName := range topicsRequests {
-			delete(topicsRequests, topicName)
-		}
+	messages := make([]protocol.Message, len(requests))
 
-		requests[i] = Request{
-			ReplicaID:      r.ReplicaID,
-			IsolationLevel: r.IsolationLevel,
-			Topics:         topics,
-		}
-
+	for i := range requests {
 		messages[i] = &requests[i]
 	}
 
@@ -122,6 +112,38 @@ type ResponsePartition struct {
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.ListOffsets }
 
 func (r *Response) Reduce(requests []protocol.Message, results []interface{}) (protocol.Message, error) {
+	type topicPartition struct {
+		topic     string
+		partition int32
+	}
+
+	// Kafka doesn't always return the timestamp in the response, for example
+	// when the request sends -2 (for the first offset) it always returns -1,
+	// probably to indicate that the timestamp is unknown. This means that we
+	// can't correlate the requests and responses based on their timestamps,
+	// the primary key is the topic/partition pair.
+	//
+	// To make the API a bit friendly, we reconstructing an index of topic
+	// partitions to the timestamps that were requested, and override the
+	// timestamp value in the response.
+	timestamps := make([]map[topicPartition]int64, len(requests))
+
+	for i, m := range requests {
+		req := m.(*Request)
+		ts := make(map[topicPartition]int64, len(req.Topics))
+
+		for _, t := range req.Topics {
+			for _, p := range t.Partitions {
+				ts[topicPartition{
+					topic:     t.Topic,
+					partition: p.Partition,
+				}] = p.Timestamp
+			}
+		}
+
+		timestamps[i] = ts
+	}
+
 	topics := make(map[string][]ResponsePartition)
 	errors := 0
 
@@ -154,8 +176,17 @@ func (r *Response) Reduce(requests []protocol.Message, results []interface{}) (p
 		}
 
 		for _, t := range response.Topics {
-			topics[t.Topic] = append(topics[t.Topic], t.Partitions...)
+			for _, p := range t.Partitions {
+				if timestamp, ok := timestamps[i][topicPartition{
+					topic:     t.Topic,
+					partition: p.Partition,
+				}]; ok {
+					p.Timestamp = timestamp
+				}
+				topics[t.Topic] = append(topics[t.Topic], p)
+			}
 		}
+
 	}
 
 	if errors > 0 && errors == len(results) {
@@ -193,6 +224,7 @@ func (r *Response) Reduce(requests []protocol.Message, results []interface{}) (p
 }
 
 var (
-	_ protocol.Mapper  = (*Request)(nil)
-	_ protocol.Reducer = (*Response)(nil)
+	_ protocol.BrokerMessage = (*Request)(nil)
+	_ protocol.Mapper        = (*Request)(nil)
+	_ protocol.Reducer       = (*Response)(nil)
 )

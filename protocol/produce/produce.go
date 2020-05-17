@@ -34,7 +34,7 @@ func (r *Request) Reset() {
 }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
-	var broker protocol.Broker
+	broker := protocol.Broker{ID: -1}
 
 	for i := range r.Topics {
 		t := &r.Topics[i]
@@ -56,7 +56,7 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 			if b, ok := cluster.Brokers[partition.Leader]; !ok {
 				return protocol.Broker{}, fmt.Errorf("produce request partition leader not found in cluster metadata: topic=%q partition=%d broker=%d",
 					t.Topic, p.Partition, partition.Leader)
-			} else if broker == (protocol.Broker{}) {
+			} else if broker.ID < 0 {
 				broker = b
 			} else if b.ID != broker.ID {
 				return protocol.Broker{}, fmt.Errorf("produce request contained partitions with mismatching leaders: topic=%q partition=%d broker=%d",

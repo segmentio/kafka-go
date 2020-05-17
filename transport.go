@@ -272,7 +272,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		cancel: cancel,
 	}
 
-	p.ctrl = p.connect(ctx, k.network, k.address, -1)
+	p.ctrl = p.connect(ctx, network, address, -1)
 	go p.discover(ctx, p.ctrl, p.wake)
 
 	if t.pools == nil {
@@ -705,19 +705,32 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 
 	for _, p := range metadataPartitions {
 		protocolPartitions[int(p.PartitionIndex)] = protocol.Partition{
-			ID:     int(p.PartitionIndex),
-			Error:  int(p.ErrorCode),
-			Leader: int(p.LeaderID),
+			ID:       int(p.PartitionIndex),
+			Error:    int(p.ErrorCode),
+			Leader:   int(p.LeaderID),
+			Replicas: makeBrokerIDs(p.ReplicaNodes),
+			ISR:      makeBrokerIDs(p.IsrNodes),
+			Offline:  makeBrokerIDs(p.OfflineReplicas),
 		}
 	}
 
 	return protocolPartitions
 }
 
+func makeBrokerIDs(brokers []int32) []int {
+	ids := make([]int, len(brokers))
+	for i, id := range brokers {
+		ids[i] = int(id)
+	}
+	return ids
+}
+
 func (p *connPool) connect(ctx context.Context, network, address string, broker int) *conn {
 	reqs := make(chan connRequest)
 	conn := &conn{
 		broker:   broker,
+		network:  network,
+		address:  address,
 		refc:     1,
 		pool:     p,
 		reqs:     reqs,
@@ -796,8 +809,8 @@ func join(promises []promise, requests []Request, reducer protocol.Reducer) prom
 func (p *joined) await(ctx context.Context) (Response, error) {
 	results := make([]interface{}, len(p.promises))
 
-	for i, p := range p.promises {
-		m, err := p.await(ctx)
+	for i, sub := range p.promises {
+		m, err := sub.await(ctx)
 		if err != nil {
 			results[i] = err
 		} else {
@@ -819,7 +832,9 @@ var defaultDialer = net.Dialer{
 // connections are lazily open before sending requests, and closed if they are
 // unused for longer than the idle timeout.
 type conn struct {
-	broker int
+	broker  int
+	network string
+	address string
 	// Reference counter used to orchestrate graceful shutdown.
 	refc uintptr
 	// Immutable state of the connection.
@@ -875,7 +890,7 @@ func (c *conn) connect() (*bufferedConn, map[protocol.ApiKey]int16, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 
-	netConn, err := c.pool.dial(ctx, c.pool.network, c.pool.address)
+	netConn, err := c.pool.dial(ctx, c.network, c.address)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1002,13 +1017,14 @@ func (c *conn) run(ctx context.Context, reqs <-chan connRequest) {
 				p.Prepare(r.version)
 			}
 
-			switch err := protocol.WriteRequest(conn, r.version, id, c.pool.clientID, r.req); {
-			case err == nil:
-			case errors.Is(err, protocol.ErrNoRecords):
+			if err := protocol.WriteRequest(conn, r.version, id, c.pool.clientID, r.req); err != nil {
 				c.unregister(id)
-				r.res.reject(err)
-			default:
-				closeConn(err)
+				switch {
+				case errors.Is(err, protocol.ErrNoRecords):
+					r.res.reject(err)
+				default:
+					closeConn(err)
+				}
 			}
 
 		case err := <-done:

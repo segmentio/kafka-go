@@ -14,6 +14,10 @@ type Request struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.CreateTopics }
 
+func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
+	return cluster.Brokers[cluster.Controller], nil
+}
+
 type RequestTopic struct {
 	Name              string              `kafka:"min=v0,max=v4|min=v5,max=v5,compact"`
 	NumPartitions     int32               `kafka:"min=v0,max=v5"`
@@ -55,3 +59,7 @@ type ResponseConfig struct {
 	ConfigSource int8   `kafka:"min=v5,max=v5"`
 	IsSensitive  bool   `kafka:"min=v5,max=v5"`
 }
+
+var (
+	_ protocol.BrokerMessage = (*Request)(nil)
+)

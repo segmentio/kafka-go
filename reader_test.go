@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"net"
 	"reflect"
 	"strconv"
 	"sync"
@@ -268,10 +269,20 @@ func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Read
 func createTopic(t *testing.T, topic string, partitions int) {
 	conn, err := Dial("tcp", "localhost:9092")
 	if err != nil {
-		t.Error("bad conn")
-		return
+		t.Fatal(err)
 	}
 	defer conn.Close()
+
+	controller, err := conn.Controller()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err = Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	conn.SetDeadline(time.Now().Add(2 * time.Second))
 
 	_, err = conn.createTopics(createTopicsRequestV0{
@@ -290,7 +301,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	case TopicAlreadyExists:
 		// ok
 	default:
-		t.Error("bad createTopics", err)
+		t.Error(err)
 		t.FailNow()
 	}
 }
@@ -298,10 +309,20 @@ func createTopic(t *testing.T, topic string, partitions int) {
 func deleteTopic(t *testing.T, topic ...string) {
 	conn, err := Dial("tcp", "localhost:9092")
 	if err != nil {
-		t.Error("bad conn")
-		return
+		t.Fatal(err)
 	}
 	defer conn.Close()
+
+	controller, err := conn.Controller()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err = Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	conn.SetDeadline(time.Now().Add(2 * time.Second))
 
 	if err := conn.DeleteTopics(topic...); err != nil {
