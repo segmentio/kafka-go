@@ -37,11 +37,7 @@ func newLocalClientAndTopic() (*Client, string, func()) {
 			Partition: 0,
 			Offset:    0,
 		})
-		if err != nil {
-			shutdown()
-			panic(err)
-		}
-		if r.Error == nil {
+		if err == nil && r.Error == nil {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)

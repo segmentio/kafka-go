@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net"
 	"sort"
@@ -17,7 +18,6 @@ import (
 	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/apiversions"
 	"github.com/segmentio/kafka-go/protocol/createtopics"
-	"github.com/segmentio/kafka-go/protocol/deletetopics"
 	"github.com/segmentio/kafka-go/protocol/findcoordinator"
 	meta "github.com/segmentio/kafka-go/protocol/metadata"
 	"github.com/segmentio/kafka-go/protocol/saslauthenticate"
@@ -349,10 +349,10 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		return nil, ctx.Err()
 	}
 
-	var refreshMetadata bool
+	var expectTopics []string
 	defer func() {
-		if refreshMetadata && ctx.Err() == nil {
-			p.refreshMetadata(ctx)
+		if len(expectTopics) != 0 {
+			p.refreshMetadata(ctx, expectTopics)
 		}
 	}()
 
@@ -370,10 +370,13 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		// the logic simple when applying partitioning strategies.
 		return filterMetadataResponse(m, state.metadata), nil
 
-	case *createtopics.Request, *deletetopics.Request:
-		// Force an update of the metadata when adding or removing topics,
+	case *createtopics.Request:
+		// Force an update of the metadata when adding topics,
 		// otherwise the cached state would get out of sync.
-		refreshMetadata = true
+		expectTopics = make([]string, len(m.Topics))
+		for i := range m.Topics {
+			expectTopics[i] = m.Topics[i].Name
+		}
 
 	case protocol.Mapper:
 		// Messages that implement the Mapper interface trigger the creation of
@@ -397,15 +400,53 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 	return response.await(ctx)
 }
 
-func (p *connPool) refreshMetadata(ctx context.Context) {
+// refreshMetadata forces an update of the cached cluster metadata, and waits
+// for the given list of topics to appear. This waiting mechanism is necessary
+// to account for the fact that topic creation is asynchronous in kafka, and
+// causes subsequent requests to fail while the cluster state is propagated to
+// all the brokers.
+func (p *connPool) refreshMetadata(ctx context.Context, expectTopics []string) {
+	minBackoff := 100 * time.Millisecond
+	maxBackoff := 2 * time.Second
 	cancel := ctx.Done()
-	notify := make(event)
-	select {
-	case <-cancel:
-	case p.wake <- notify:
+
+	for ctx.Err() == nil {
+		notify := make(event)
 		select {
-		case <-notify:
 		case <-cancel:
+			return
+		case p.wake <- notify:
+			select {
+			case <-notify:
+			case <-cancel:
+				return
+			}
+		}
+
+		state := p.grabState()
+		found := 0
+
+		for _, topic := range expectTopics {
+			if _, ok := state.layout.Topics[topic]; ok {
+				found++
+			}
+		}
+
+		if found == len(expectTopics) {
+			return
+		}
+
+		if delay := time.Duration(rand.Int63n(int64(minBackoff))); delay > 0 {
+			timer := time.NewTimer(minBackoff)
+			select {
+			case <-cancel:
+			case <-timer.C:
+			}
+			timer.Stop()
+
+			if minBackoff *= 2; minBackoff > maxBackoff {
+				minBackoff = maxBackoff
+			}
 		}
 	}
 }
@@ -964,6 +1005,11 @@ func (c *conn) dispatch(conn *bufferedConn, done chan<- error) {
 			return
 		}
 
+		if r.req.ApiKey() != protocol.Metadata {
+			log.Println("READ RESPONSE:", r.req.ApiKey(), r.version, id)
+			log.Printf("%+v\n", res)
+		}
+
 		r.res.resolve(res)
 		c.synchronized(func() {
 			if len(c.inflight) == 0 {
@@ -1017,10 +1063,15 @@ func (c *conn) run(ctx context.Context, reqs <-chan connRequest) {
 				p.Prepare(r.version)
 			}
 
+			if r.req.ApiKey() != protocol.Metadata {
+				log.Println("WRITE REQUEST:", r.req.ApiKey(), r.version, id)
+				log.Printf("%+v\n", r.req)
+			}
+
 			if err := protocol.WriteRequest(conn, r.version, id, c.pool.clientID, r.req); err != nil {
-				c.unregister(id)
 				switch {
-				case errors.Is(err, protocol.ErrNoRecords):
+				case errors.Is(err, protocol.ErrNoRecord):
+					c.unregister(id)
 					r.res.reject(err)
 				default:
 					closeConn(err)

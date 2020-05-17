@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/segmentio/kafka-go/protocol"
 	fetchAPI "github.com/segmentio/kafka-go/protocol/fetch"
 )
 
@@ -82,7 +83,7 @@ type FetchResponse struct {
 // Fetch sends a fetch request to a kafka broker and returns the response.
 //
 // If the broker returned an invalid response with no topics, an error wrapping
-// ErrNoTopics is returned.
+// protocol.ErrNoTopic is returned.
 //
 // If the broker returned an invalid response with no partitions, an error
 // wrapping ErrNoPartitions is returned.
@@ -100,6 +101,8 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 		MinBytes:       int32(req.MinBytes),
 		MaxBytes:       int32(req.MaxBytes),
 		IsolationLevel: int8(req.IsolationLevel),
+		SessionID:      -1,
+		SessionEpoch:   -1,
 		Topics: []fetchAPI.RequestTopic{{
 			Topic: req.Topic,
 			Partitions: []fetchAPI.RequestPartition{{
@@ -118,11 +121,11 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 
 	res := m.(*fetchAPI.Response)
 	if len(res.Topics) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", ErrNoTopics)
+		return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", protocol.ErrNoTopic)
 	}
 	topic := &res.Topics[0]
 	if len(topic.Partitions) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", ErrNoPartitions)
+		return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", protocol.ErrNoPartition)
 	}
 	partition := &topic.Partitions[0]
 
@@ -245,7 +248,7 @@ func (c *Client) MultiFetch(ctx context.Context, req *MultiFetchRequest) (*Multi
 	}
 
 	if len(topics) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).MultiFetch: %w", ErrNoTopics)
+		return nil, fmt.Errorf("kafka.(*Client).MultiFetch: %w", protocol.ErrNoTopic)
 	}
 
 	timeout := c.timeout(ctx, math.MaxInt64)

@@ -86,8 +86,8 @@ type ProduceResponse struct {
 
 // Produce sends a produce request to a kafka broker and returns the response.
 //
-// If the request contained no records, an error wrapping ErrNoRecords is
-// returned.
+// If the request contained no records, an error wrapping protocol.ErrNoRecord
+// is returned.
 func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResponse, error) {
 	attributes := protocol.Attributes(req.Compression) & 0x7
 
@@ -113,7 +113,7 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 
 	switch {
 	case err == nil:
-	case errors.Is(err, protocol.ErrNoRecords):
+	case errors.Is(err, protocol.ErrNoRecord):
 		return new(ProduceResponse), nil
 	default:
 		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", err)
@@ -121,11 +121,11 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 
 	res := m.(*produceAPI.Response)
 	if len(res.Topics) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", ErrNoTopics)
+		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", protocol.ErrNoTopic)
 	}
 	topic := &res.Topics[0]
 	if len(topic.Partitions) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", ErrNoPartitions)
+		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", protocol.ErrNoPartition)
 	}
 	partition := &topic.Partitions[0]
 

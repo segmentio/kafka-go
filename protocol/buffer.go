@@ -474,24 +474,27 @@ func (ref *pageRef) Read(b []byte) (int, error) {
 	return n, err
 }
 
-func (ref *pageRef) ReadAt(b []byte, off int64) (n int, err error) {
+func (ref *pageRef) ReadAt(b []byte, off int64) (int, error) {
 	limit := ref.offset + int64(ref.length)
+	off += ref.offset
 
-	switch off += ref.offset; {
-	case off >= limit:
-		b, off = nil, limit
-	case off+int64(len(b)) > limit:
+	if off >= limit {
+		return 0, io.EOF
+	}
+
+	if off+int64(len(b)) > limit {
 		b = b[:limit-off]
 	}
 
-	if len(b) != 0 {
-		n, err = ref.pages.ReadAt(b, off)
-		if n == 0 && err == nil {
-			err = io.EOF
-		}
+	if len(b) == 0 {
+		return 0, nil
 	}
 
-	return
+	n, err := ref.pages.ReadAt(b, off)
+	if n == 0 && err == nil {
+		err = io.EOF
+	}
+	return n, err
 }
 
 func (ref *pageRef) WriteTo(w io.Writer) (wn int64, err error) {
@@ -520,6 +523,7 @@ func (ref *pageRef) scan(off int64, f func([]byte) bool) {
 
 var (
 	_ io.Closer   = (*pageRef)(nil)
+	_ io.Seeker   = (*pageRef)(nil)
 	_ io.Reader   = (*pageRef)(nil)
 	_ io.ReaderAt = (*pageRef)(nil)
 	_ io.WriterTo = (*pageRef)(nil)

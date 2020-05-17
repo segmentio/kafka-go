@@ -222,7 +222,7 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 	}
 
 	if numRecords == 0 {
-		return ErrNoRecords
+		return ErrNoRecord
 	}
 
 	b2 := packUint32(uint32(lastOffsetDelta))

@@ -1,9 +1,14 @@
 package produce
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/segmentio/kafka-go/protocol"
+)
+
+var (
+	ErrUnknownTopic = errors.New("produce request topci not found in cluster metadata")
 )
 
 func init() {
@@ -41,7 +46,7 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 
 		topic, ok := cluster.Topics[t.Topic]
 		if !ok {
-			return protocol.Broker{}, fmt.Errorf("produce request topic not found in cluster metadata: topic=%q", t.Topic)
+			return broker, NewError(protocol.NewErrNoTopic(t.Topic))
 		}
 
 		for j := range t.Partitions {
@@ -49,18 +54,15 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 
 			partition, ok := topic.Partitions[int(p.Partition)]
 			if !ok {
-				return protocol.Broker{}, fmt.Errorf("produce request topic partition not found in cluster metadata: topic=%q partition=%d",
-					t.Topic, p.Partition)
+				return broker, NewError(protocol.NewErrNoPartition(t.Topic, int(p.Partition)))
 			}
 
 			if b, ok := cluster.Brokers[partition.Leader]; !ok {
-				return protocol.Broker{}, fmt.Errorf("produce request partition leader not found in cluster metadata: topic=%q partition=%d broker=%d",
-					t.Topic, p.Partition, partition.Leader)
+				return broker, NewError(protocol.NewErrNoLeader(t.Topic, int(p.Partition)))
 			} else if broker.ID < 0 {
 				broker = b
 			} else if b.ID != broker.ID {
-				return protocol.Broker{}, fmt.Errorf("produce request contained partitions with mismatching leaders: topic=%q partition=%d broker=%d",
-					t.Topic, p.Partition, b.ID)
+				return broker, NewError(fmt.Errorf("mismatching leaders (%d!=%d)", b.ID, broker.ID))
 			}
 		}
 	}
@@ -142,3 +144,19 @@ var (
 	_ protocol.BrokerMessage   = (*Request)(nil)
 	_ protocol.PreparedMessage = (*Request)(nil)
 )
+
+type Error struct {
+	Err error
+}
+
+func NewError(err error) *Error {
+	return &Error{Err: err}
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("fetch request error: %v", e.Err)
+}
+
+func (e *Error) Unwrap() error {
+	return e.Err
+}

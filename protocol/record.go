@@ -3,22 +3,11 @@ package protocol
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/segmentio/kafka-go/compress"
-)
-
-var (
-	// ErrNoRecords is returned when attempting to write a message containing an
-	// empty record set (which kafka forbids).
-	//
-	// We handle this case client-side because kafka will close the connection
-	// that it received an empty produce request on, causing all concurrent
-	// requests to be aborted.
-	ErrNoRecords = errors.New("no records")
 )
 
 // Attributes is a bitset representing special attributes set on records.
@@ -250,12 +239,14 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 // WriteTo writes the representation of rs into w. The value of rs.Version
 // dictates which format that the record set will be represented as.
 //
+// The error will be ErrNoRecord if rs contained no records.
+//
 // Note: since this package is only compatible with kafka 0.10 and above, the
 // method never produces messages in version 0. If rs.Version is zero, the
 // method defaults to producing messages in version 1.
 func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	if rs.Records == nil {
-		return 0, ErrNoRecords
+		return 0, ErrNoRecord
 	}
 
 	// This optimization avoids rendering the record set in an intermediary

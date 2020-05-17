@@ -16,13 +16,6 @@ const (
 	defaultMaxWait             = 500 * time.Millisecond
 )
 
-var (
-	ErrNoAddr       = errors.New("no address was given for the kafka cluster in the request or on the client")
-	ErrNoTopics     = errors.New("the kafka broker returned no topics in the response")
-	ErrNoPartitions = errors.New("the kafka broker returned no partitions in the response")
-	ErrNoRecords    = errors.New("there were no records to send to the kafka broker")
-)
-
 // Client is a high-level API to interract with kafka brokers.
 //
 // All methods of the Client type accept a context as first argument, which may
@@ -36,9 +29,6 @@ type Client struct {
 	//
 	// This field is optional, the address may be provided in each request
 	// instead. The request address takes precedence if both were specified.
-	//
-	// Calling methods on a client with a nil Addr, passing requests with nil
-	// Addr fields as well returns an error wrapping ErrNoAddr.
 	Addr net.Addr
 
 	// Time limit for requests sent by this client.
@@ -116,7 +106,7 @@ func (c *Client) roundTrip(ctx context.Context, addr net.Addr, msg protocol.Mess
 
 	if addr == nil {
 		if addr = c.Addr; addr == nil {
-			return nil, ErrNoAddr
+			return nil, errors.New("no address was given for the kafka cluster in the request or on the client")
 		}
 	}
 
