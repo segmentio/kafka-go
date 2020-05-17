@@ -58,11 +58,11 @@ func TestClientCreateTopics(t *testing.T) {
 		topic3: {},
 	}
 
-	for _, topic := range res.Topics {
-		delete(expectTopics, topic.Topic)
+	for topic, error := range res.Errors {
+		delete(expectTopics, topic)
 
-		if topic.Error != nil {
-			t.Errorf("%s => %s", topic.Topic, topic.Error)
+		if error != nil {
+			t.Errorf("%s => %s", topic, error)
 		}
 	}
 

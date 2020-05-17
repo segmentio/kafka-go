@@ -36,42 +36,12 @@ type CreateTopicsResponse struct {
 	// CreateTopics API in version 2 or above.
 	Throttle time.Duration
 
-	// Details about the results of each topic creation request received by the
-	// kafka broker.
-	Topics []CreateTopicStatus
-}
-
-// CreateTopicStatus contains the detailed results of a topic creation request
-// for a specific topic.
-type CreateTopicStatus struct {
-	// Name of the topic that the status is being reported for.
-	Topic string
-
-	// An error that may have occured while attempting to create the topic.
+	// Mapping of topic names to errors that occured while attempting to create
+	// the topics.
 	//
-	// The error contains both the kafka error code, and an error message
-	// returned by the kafka broker. Programs may use the standard errors.Is
-	// function to test the error against kafka error codes.
-	Error error
-
-	// Number of partitions in the topic.
-	//
-	// This field will be zero if the kafka broker did not support the
-	// CreateTopics API in version 5 or above.
-	NumPartitions int
-
-	// Replication factor of the topic.
-	//
-	// This field will be zero if the kafka broker did not support the
-	// CreateTopics API in version 5 or above.
-	ReplicationFactor int
-
-	// Configuration of the topic, including read-only and potentially sensitive
-	// entries.
-	//
-	// This field will be zero if the kafka broker did not support the
-	// CreateTopics API in version 5 or above.
-	ConfigEntries []ConfigEntry
+	// The errors contain the kafka error code. Programs may use the standard
+	// errors.Is function to test the error against kafka error codes.
+	Errors map[string]error
 }
 
 // CreateTopics sends a topic creation request to a kafka broker and returns the
@@ -102,29 +72,11 @@ func (c *Client) CreateTopics(ctx context.Context, req *CreateTopicsRequest) (*C
 	res := m.(*createtopics.Response)
 	ret := &CreateTopicsResponse{
 		Throttle: makeDuration(res.ThrottleTimeMs),
-		Topics:   make([]CreateTopicStatus, len(res.Topics)),
+		Errors:   make(map[string]error, len(res.Topics)),
 	}
 
-	for i, t := range res.Topics {
-		ret.Topics[i] = CreateTopicStatus{
-			Topic:             t.Name,
-			Error:             makeError(t.ErrorCode, t.ErrorMessage),
-			NumPartitions:     int(t.NumPartitions),
-			ReplicationFactor: int(t.ReplicationFactor),
-		}
-
-		if len(t.Configs) != 0 {
-			ret.Topics[i].ConfigEntries = make([]ConfigEntry, len(t.Configs))
-
-			for j, c := range t.Configs {
-				ret.Topics[i].ConfigEntries[j] = ConfigEntry{
-					ConfigName:  c.Name,
-					ConfigValue: c.Value,
-					ReadOnly:    c.ReadOnly,
-					IsSensitive: c.IsSensitive,
-				}
-			}
-		}
+	for _, t := range res.Topics {
+		ret.Errors[t.Name] = makeError(t.ErrorCode, t.ErrorMessage)
 	}
 
 	return ret, nil
@@ -133,9 +85,6 @@ func (c *Client) CreateTopics(ctx context.Context, req *CreateTopicsRequest) (*C
 type ConfigEntry struct {
 	ConfigName  string
 	ConfigValue string
-	// Only used in CreateTopicResponse, ignored if set in request.
-	ReadOnly    bool
-	IsSensitive bool
 }
 
 func (c ConfigEntry) toCreateTopicsRequestV0ConfigEntry() createTopicsRequestV0ConfigEntry {
