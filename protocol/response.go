@@ -29,6 +29,7 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	size := d.readInt32()
 
 	if err = d.err; err != nil {
+		err = dontExpectEOF(err)
 		return
 	}
 
@@ -38,7 +39,11 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	msg = res.new()
 	res.decode(d, valueOf(msg))
 	d.discardAll()
-	err = dontExpectEOF(d.err)
+
+	if err = d.err; err != nil {
+		err = dontExpectEOF(err)
+	}
+
 	return
 }
 

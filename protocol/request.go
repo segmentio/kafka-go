@@ -10,6 +10,7 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	size := d.readInt32()
 
 	if err = d.err; err != nil {
+		err = dontExpectEOF(err)
 		return
 	}
 
@@ -24,8 +25,8 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 		return
 	}
 
-	if d.err != nil {
-		err = d.err
+	if err = d.err; err != nil {
+		err = dontExpectEOF(err)
 		return
 	}
 
@@ -47,7 +48,11 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	msg = req.new()
 	req.decode(d, valueOf(msg))
 	d.discardAll()
-	err = dontExpectEOF(d.err)
+
+	if err = d.err; err != nil {
+		err = dontExpectEOF(err)
+	}
+
 	return
 }
 
