@@ -49,7 +49,7 @@ func TestFetchResponse(t *testing.T) {
 						HighWatermark: 1000,
 						RecordSet: protocol.RecordSet{
 							Version: 1,
-							Records: protocol.NewRecordBatch(
+							Records: protocol.NewRecordReader(
 								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: prototest.String("msg-0")},
 								protocol.Record{Offset: 1, Time: t1, Key: nil, Value: prototest.String("msg-1")},
 								protocol.Record{Offset: 2, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
@@ -76,14 +76,8 @@ func TestFetchResponse(t *testing.T) {
 						Partition:     1,
 						HighWatermark: 1000,
 						RecordSet: protocol.RecordSet{
-							Version:              2,
-							PartitionLeaderEpoch: 42,
-							BaseOffset:           10,
-							ProducerID:           1234567890,
-							ProducerEpoch:        1234,
-							BaseSequence:         5678,
-
-							Records: protocol.NewRecordBatch(
+							Version: 2,
+							Records: protocol.NewRecordReader(
 								protocol.Record{Offset: 11, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
 								protocol.Record{Offset: 12, Time: t1, Key: nil, Value: prototest.String("msg-1")},
 								protocol.Record{Offset: 14, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
@@ -111,7 +105,7 @@ func BenchmarkFetchResponse(b *testing.B) {
 						HighWatermark: 1000,
 						RecordSet: protocol.RecordSet{
 							Version: 1,
-							Records: protocol.NewRecordBatch(
+							Records: protocol.NewRecordReader(
 								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: prototest.String("msg-0")},
 								protocol.Record{Offset: 1, Time: t1, Key: nil, Value: prototest.String("msg-1")},
 								protocol.Record{Offset: 2, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
@@ -138,14 +132,8 @@ func BenchmarkFetchResponse(b *testing.B) {
 						Partition:     1,
 						HighWatermark: 1000,
 						RecordSet: protocol.RecordSet{
-							Version:              2,
-							PartitionLeaderEpoch: 42,
-							BaseOffset:           10,
-							ProducerID:           1234567890,
-							ProducerEpoch:        1234,
-							BaseSequence:         5678,
-
-							Records: protocol.NewRecordBatch(
+							Version: 2,
+							Records: protocol.NewRecordReader(
 								protocol.Record{Offset: 11, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
 								protocol.Record{Offset: 12, Time: t1, Key: nil, Value: prototest.String("msg-1")},
 								protocol.Record{Offset: 14, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},

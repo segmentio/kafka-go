@@ -121,14 +121,31 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 	}
 
 	*rs = RecordSet{
-		Version:              magicByte,
-		Attributes:           Attributes(attributes),
-		PartitionLeaderEpoch: partitionLeaderEpoch,
-		BaseOffset:           baseOffset,
-		ProducerID:           producerID,
-		ProducerEpoch:        producerEpoch,
-		BaseSequence:         baseSequence,
-		Records:              &optimizedRecordBatch{records: records},
+		Version:    magicByte,
+		Attributes: Attributes(attributes),
+		Records:    &optimizedRecordReader{records: records},
+	}
+
+	if rs.Attributes.Control() {
+		rs.Records = &ControlBatch{
+			Attributes:           rs.Attributes,
+			PartitionLeaderEpoch: partitionLeaderEpoch,
+			BaseOffset:           baseOffset,
+			ProducerID:           producerID,
+			ProducerEpoch:        producerEpoch,
+			BaseSequence:         baseSequence,
+			Records:              rs.Records,
+		}
+	} else {
+		rs.Records = &RecordBatch{
+			Attributes:           rs.Attributes,
+			PartitionLeaderEpoch: partitionLeaderEpoch,
+			BaseOffset:           baseOffset,
+			ProducerID:           producerID,
+			ProducerEpoch:        producerEpoch,
+			BaseSequence:         baseSequence,
+			Records:              rs.Records,
+		}
 	}
 
 	return nil
@@ -136,23 +153,22 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 
 func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) error {
 	records := rs.Records
-	baseOffset := rs.BaseOffset
 	numRecords := int32(0)
 
 	e := &encoder{writer: buffer}
-	e.writeInt64(baseOffset)              //                                     |  0 +8
-	e.writeInt32(0)                       // placeholder for record batch length |  8 +4
-	e.writeInt32(rs.PartitionLeaderEpoch) //                                     | 12 +3
-	e.writeInt8(2)                        // magic byte                          | 16 +1
-	e.writeInt32(0)                       // placeholder for crc32 checksum      | 17 +4
-	e.writeInt16(int16(rs.Attributes))    //                                     | 21 +2
-	e.writeInt32(0)                       // placeholder for lastOffsetDelta     | 23 +4
-	e.writeInt64(0)                       // placeholder for firstTimestamp      | 27 +8
-	e.writeInt64(0)                       // placeholder for maxTimestamp        | 35 +8
-	e.writeInt64(rs.ProducerID)           //                                     | 43 +8
-	e.writeInt16(rs.ProducerEpoch)        //                                     | 51 +2
-	e.writeInt32(rs.BaseSequence)         //                                     | 53 +4
-	e.writeInt32(0)                       // placeholder for numRecords          | 57 +4
+	e.writeInt64(0)                    // base offset                         |  0 +8
+	e.writeInt32(0)                    // placeholder for record batch length |  8 +4
+	e.writeInt32(-1)                   // partition leader epoch              | 12 +3
+	e.writeInt8(2)                     // magic byte                          | 16 +1
+	e.writeInt32(0)                    // placeholder for crc32 checksum      | 17 +4
+	e.writeInt16(int16(rs.Attributes)) // attributes                          | 21 +2
+	e.writeInt32(0)                    // placeholder for lastOffsetDelta     | 23 +4
+	e.writeInt64(0)                    // placeholder for firstTimestamp      | 27 +8
+	e.writeInt64(0)                    // placeholder for maxTimestamp        | 35 +8
+	e.writeInt64(-1)                   // producer id                         | 43 +8
+	e.writeInt16(-1)                   // producer epoch                      | 51 +2
+	e.writeInt32(-1)                   // base sequence                       | 53 +4
+	e.writeInt32(0)                    // placeholder for numRecords          | 57 +4
 
 	var compressor io.WriteCloser
 	if compression := rs.Attributes.Compression(); compression != 0 {
@@ -173,7 +189,7 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		}
 
 		timestampDelta := maxTimestamp - firstTimestamp
-		offsetDelta := r.Offset - baseOffset
+		offsetDelta := r.Offset
 		lastOffsetDelta = int32(offsetDelta)
 
 		length := 1 + // attributes

@@ -72,12 +72,7 @@ type FetchResponse struct {
 	// Note that kafka may return record batches that start at an offset before
 	// the one that was requested. It is the program's responsibility to skip
 	// the offsets that it is not interested in.
-	Records RecordBatch
-
-	// Indicates whether the response returned by the broker was transactional
-	// or a control batch.
-	Transactional bool
-	ControlBatch  bool
+	Records RecordReader
 }
 
 // Fetch sends a fetch request to a kafka broker and returns the response.
@@ -138,8 +133,6 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 		LastStableOffset: partition.LastStableOffset,
 		LogStartOffset:   partition.LogStartOffset,
 		Records:          partition.RecordSet.Records,
-		Transactional:    partition.RecordSet.Attributes.Transactional(),
-		ControlBatch:     partition.RecordSet.Attributes.ControlBatch(),
 	}
 
 	if partition.ErrorCode != 0 {
@@ -147,7 +140,7 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	}
 
 	if ret.Records == nil {
-		ret.Records = emptyRecordBatch{}
+		ret.Records = NewRecordReader()
 	}
 
 	return ret, nil
@@ -176,9 +169,7 @@ type FetchPartitionResponse struct {
 	HighWatermark    int64
 	LastStableOffset int64
 	LogStartOffset   int64
-	Records          RecordBatch
-	Transactional    bool
-	ControlBatch     bool
+	Records          RecordReader
 }
 
 // MultiFetchRequest represents a request sent to a kafka broker to fetch
@@ -294,12 +285,10 @@ func (c *Client) MultiFetch(ctx context.Context, req *MultiFetchRequest) (*Multi
 				LastStableOffset: p.LastStableOffset,
 				LogStartOffset:   p.LogStartOffset,
 				Records:          p.RecordSet.Records,
-				Transactional:    p.RecordSet.Attributes.Transactional(),
-				ControlBatch:     p.RecordSet.Attributes.ControlBatch(),
 			}
 
 			if partitions[i].Records == nil {
-				partitions[i].Records = emptyRecordBatch{}
+				partitions[i].Records = NewRecordReader()
 			}
 		}
 

@@ -38,7 +38,7 @@ type ProduceRequest struct {
 	TransactionalID string
 
 	// The sequence of records to produce to the topic partition.
-	Records RecordBatch
+	Records RecordReader
 
 	// An optional compression algorithm to apply to the batch of records sent
 	// to the kafka broker.
@@ -100,12 +100,8 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 			Partitions: []produceAPI.RequestPartition{{
 				Partition: int32(req.Partition),
 				RecordSet: protocol.RecordSet{
-					Attributes:           attributes,
-					PartitionLeaderEpoch: -1,
-					ProducerID:           -1,
-					ProducerEpoch:        -1,
-					BaseSequence:         -1,
-					Records:              req.Records,
+					Attributes: attributes,
+					Records:    req.Records,
 				},
 			}},
 		}},

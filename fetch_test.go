@@ -72,7 +72,7 @@ func TestClientFetch(t *testing.T) {
 		Topic:         topic,
 		Partition:     0,
 		HighWatermark: 10,
-		Records:       NewRecordBatch(records...),
+		Records:       NewRecordReader(records...),
 	})
 }
 
@@ -99,7 +99,7 @@ func TestClientFetchCompressed(t *testing.T) {
 		Topic:         topic,
 		Partition:     0,
 		HighWatermark: 10,
-		Records:       NewRecordBatch(records...),
+		Records:       NewRecordReader(records...),
 	})
 }
 
@@ -148,8 +148,6 @@ func TestClientMultiFetch(t *testing.T) {
 			LastStableOffset: p.LastStableOffset,
 			LogStartOffset:   p.LogStartOffset,
 			Records:          p.Records,
-			Transactional:    p.Transactional,
-			ControlBatch:     p.ControlBatch,
 		}
 
 		r2 := &FetchResponse{
@@ -159,9 +157,7 @@ func TestClientMultiFetch(t *testing.T) {
 			HighWatermark:    10,
 			LastStableOffset: 10,
 			LogStartOffset:   0,
-			Records:          NewRecordBatch(records[i:]...),
-			Transactional:    false,
-			ControlBatch:     false,
+			Records:          NewRecordReader(records[i:]...),
 		}
 
 		assertFetchResponse(t, r1, r2)
@@ -213,8 +209,6 @@ func TestClientMultiFetchCompressed(t *testing.T) {
 			LastStableOffset: p.LastStableOffset,
 			LogStartOffset:   p.LogStartOffset,
 			Records:          p.Records,
-			Transactional:    p.Transactional,
-			ControlBatch:     p.ControlBatch,
 		}
 
 		r2 := &FetchResponse{
@@ -224,9 +218,7 @@ func TestClientMultiFetchCompressed(t *testing.T) {
 			HighWatermark:    10,
 			LastStableOffset: 10,
 			LogStartOffset:   0,
-			Records:          NewRecordBatch(records[i:]...),
-			Transactional:    false,
-			ControlBatch:     false,
+			Records:          NewRecordReader(records[i:]...),
 		}
 
 		assertFetchResponse(t, r1, r2)
@@ -265,14 +257,14 @@ func assertFetchResponse(t *testing.T, found, expected *FetchResponse) {
 	assertRecords(t, records1, records2)
 }
 
-type inMemoryRecord struct {
+type memoryRecord struct {
 	offset  int64
 	key     []byte
 	value   []byte
 	headers []Header
 }
 
-func assertRecords(t *testing.T, found, expected []inMemoryRecord) {
+func assertRecords(t *testing.T, found, expected []memoryRecord) {
 	t.Helper()
 	i := 0
 
@@ -300,8 +292,8 @@ func assertRecords(t *testing.T, found, expected []inMemoryRecord) {
 	}
 }
 
-func readRecords(records RecordBatch) ([]inMemoryRecord, error) {
-	list := []inMemoryRecord{}
+func readRecords(records RecordReader) ([]memoryRecord, error) {
+	list := []memoryRecord{}
 
 	for {
 		rec, err := records.ReadRecord()
@@ -330,7 +322,7 @@ func readRecords(records RecordBatch) ([]inMemoryRecord, error) {
 			bytesValues, _ = ioutil.ReadAll(value)
 		}
 
-		list = append(list, inMemoryRecord{
+		list = append(list, memoryRecord{
 			offset:  offset,
 			key:     bytesKey,
 			value:   bytesValues,

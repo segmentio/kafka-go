@@ -19,7 +19,7 @@ const (
 	Lz4           Attributes = Attributes(compress.Lz4)    // 3
 	Zstd          Attributes = Attributes(compress.Zstd)   // 4
 	Transactional Attributes = 1 << 4
-	ControlBatch  Attributes = 1 << 5
+	Control       Attributes = 1 << 5
 )
 
 func (a Attributes) Compression() compress.Compression {
@@ -30,8 +30,8 @@ func (a Attributes) Transactional() bool {
 	return (a & Transactional) != 0
 }
 
-func (a Attributes) ControlBatch() bool {
-	return (a & ControlBatch) != 0
+func (a Attributes) Control() bool {
+	return (a & Control) != 0
 }
 
 func (a Attributes) String() string {
@@ -39,8 +39,8 @@ func (a Attributes) String() string {
 	if a.Transactional() {
 		s += "+transactional"
 	}
-	if a.ControlBatch() {
-		s += "control-batch"
+	if a.Control() {
+		s += "+control"
 	}
 	return s
 }
@@ -86,17 +86,30 @@ type Record struct {
 type RecordSet struct {
 	// The message version that this record set will be represented as, valid
 	// values are 1, or 2.
+	//
+	// When reading, this is the value of the highest version used in the
+	// batches that compose the record set.
+	//
+	// When writing, this value dictates the format that the records will be
+	// encoded in.
 	Version int8
-	// The following fields carry properties used when representing the record
-	// batch in version 2.
-	Attributes           Attributes
-	PartitionLeaderEpoch int32
-	BaseOffset           int64
-	ProducerID           int64
-	ProducerEpoch        int16
-	BaseSequence         int32
+
+	// Attributes set on the record set.
+	//
+	// When reading, the attributes are the combination of all attributes in
+	// the batches that compose the record set.
+	//
+	// When writing, the attributes apply to the whole sequence of records in
+	// the set.
+	Attributes Attributes
+
 	// A reader exposing the sequence of records.
-	Records RecordBatch
+	//
+	// When reading a RecordSet from an io.Reader, the Records field will be a
+	// *RecordStream. If the program needs to access the details of each batch
+	// that compose the stream, it may use type assertions to access the
+	// underlying types of each batch.
+	Records RecordReader
 }
 
 // bufferedReader is an interface implemented by types like bufio.Reader, which
@@ -142,6 +155,10 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		return 4, nil
 	}
 
+	stream := &RecordStream{
+		Records: make([]RecordReader, 0, 4),
+	}
+
 	var err error
 	d.remain = int(size)
 
@@ -149,7 +166,7 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		var version byte
 
 		if d.remain < (magicByteOffset + 1) {
-			if rs.Records != nil {
+			if len(stream.Records) != 0 {
 				break
 			}
 			return 4, fmt.Errorf("impossible record set shorter than %d bytes", magicByteOffset+1)
@@ -191,41 +208,20 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 			err = fmt.Errorf("unsupported message version %d for message of size %d", version, size)
 		}
 
+		if tmp.Version > rs.Version {
+			rs.Version = tmp.Version
+		}
+
+		rs.Attributes |= tmp.Attributes
+
 		if tmp.Records != nil {
-			if rs.Records == nil {
-				*rs = tmp
-			} else {
-				// Here we merge the record batches read from kafka into a
-				// single stream. We prevent protocol details from being seen
-				// by the program (e.g. if subsequent batches had different
-				// compression formats), this may be mostly a problem if the
-				// program needs to know which batches were transactional.
-				//
-				// We could address this limitation by taking one of these
-				// approaches:
-				//
-				// * Manage to update the RecordSet as records get consumed by
-				//   the program. When a new batch starts it would update the
-				//   RecordSet fields.
-				//
-				// * Export the implementation of the RecordBatch interface,
-				//   so the program can type-assert the value to extract the
-				//   underlying structure of the batches read from kafka.
-				//
-				// * Change the RecordSet API to expose a list of RecordBatch
-				//   instead of one.
-				//
-				// I have a preference for the second option because it keeps
-				// the kafka protocol details abstracted away for the common
-				// stream processing use case, while allowing more specialized
-				// application to get access to more details.
-				rs.Records = concatRecordBatch(rs.Records, tmp.Records)
-			}
+			stream.Records = append(stream.Records, tmp.Records)
 		}
 	}
 
-	if rs.Records != nil {
-		// Ignore erorrs if we've successfully read records, so the
+	if len(stream.Records) != 0 {
+		rs.Records = stream
+		// Ignore errors if we've successfully read records, so the
 		// program can keep making progress.
 		err = nil
 	}

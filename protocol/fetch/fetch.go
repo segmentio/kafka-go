@@ -90,7 +90,19 @@ func (r *Response) Close() error {
 
 		for j := range t.Partitions {
 			p := &t.Partitions[j]
-			protocol.CloseRecordBatch(p.RecordSet.Records)
+
+			for {
+				r, err := p.RecordSet.Records.ReadRecord()
+				if err != nil {
+					break
+				}
+				if r.Key != nil {
+					r.Key.Close()
+				}
+				if r.Value != nil {
+					r.Value.Close()
+				}
+			}
 		}
 	}
 
@@ -103,7 +115,7 @@ func (r *Response) Reset() {
 
 		for j := range t.Partitions {
 			p := &t.Partitions[j]
-			protocol.ResetRecordBatch(p.RecordSet.Records)
+			protocol.ResetRecordReader(p.RecordSet.Records)
 		}
 	}
 }

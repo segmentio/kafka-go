@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -27,6 +28,36 @@ type Bytes interface {
 	// remaining to be read.
 	Size() int64
 }
+
+// NewBytes constructs a Bytes value from b.
+//
+// The returned value references b, it does not make a copy of the backing
+// array.
+//
+// If b is nil, nil is returned to represent a null BYTES value in the kafka
+// protocol.
+func NewBytes(b []byte) Bytes {
+	if b == nil {
+		return nil
+	}
+	r := new(bytesReader)
+	r.Reset(b)
+	return r
+}
+
+// ReadFull reads b in a byte slice.
+func ReadFull(b Bytes) ([]byte, error) {
+	if b == nil {
+		return nil, nil
+	}
+	s := make([]byte, b.Size())
+	_, err := io.ReadFull(b, s)
+	return s, err
+}
+
+type bytesReader struct{ bytes.Reader }
+
+func (*bytesReader) Close() error { return nil }
 
 type refCount uintptr
 

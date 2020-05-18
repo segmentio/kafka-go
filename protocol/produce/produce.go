@@ -19,16 +19,38 @@ type Request struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
 
-func (r *Request) Reset() {
+func (r *Request) Close() error {
 	for i := range r.Topics {
 		t := &r.Topics[i]
 
 		for j := range t.Partitions {
 			p := &t.Partitions[j]
 
-			if r, _ := p.RecordSet.Records.(interface{ Reset() }); r != nil {
-				r.Reset()
+			for {
+				r, err := p.RecordSet.Records.ReadRecord()
+				if err != nil {
+					break
+				}
+				if r.Key != nil {
+					r.Key.Close()
+				}
+				if r.Value != nil {
+					r.Value.Close()
+				}
 			}
+		}
+	}
+
+	return nil
+}
+
+func (r *Request) Reset() {
+	for i := range r.Topics {
+		t := &r.Topics[i]
+
+		for j := range t.Partitions {
+			p := &t.Partitions[j]
+			protocol.ResetRecordReader(p.RecordSet.Records)
 		}
 	}
 }

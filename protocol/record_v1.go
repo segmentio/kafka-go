@@ -2,146 +2,134 @@ package protocol
 
 import (
 	"errors"
-	"fmt"
 	"hash/crc32"
 	"io"
 	"math"
-
-	"github.com/segmentio/kafka-go/compress"
 )
 
+func readMessage(b *pageBuffer, d *decoder) (attributes int8, baseOffset, timestamp int64, key, value Bytes, err error) {
+	md := decoder{
+		reader: d,
+		remain: 12,
+	}
+
+	baseOffset = md.readInt64()
+	md.remain = int(md.readInt32())
+
+	crc := uint32(md.readInt32())
+	md.setCRC(crc32.IEEETable)
+	magicByte := md.readInt8()
+	attributes = md.readInt8()
+	timestamp = int64(0)
+
+	if magicByte != 0 {
+		timestamp = md.readInt64()
+	}
+
+	keyOffset := b.Size()
+	keyLength := int(md.readInt32())
+	hasKey := keyLength >= 0
+	if hasKey {
+		md.writeTo(b, keyLength)
+		key = b.ref(keyOffset, b.Size())
+	}
+
+	valueOffset := b.Size()
+	valueLength := int(md.readInt32())
+	hasValue := valueLength >= 0
+	if hasValue {
+		md.writeTo(b, valueLength)
+		value = b.ref(valueOffset, b.Size())
+	}
+
+	if md.crc32 != crc {
+		err = Errorf("crc32 checksum mismatch (computed=%d found=%d)", md.crc32, crc)
+	} else {
+		err = dontExpectEOF(md.err)
+	}
+
+	return
+}
+
 func (rs *RecordSet) readFromVersion1(d *decoder) error {
-	records := make([]Record, 0, 100)
-	defer func() {
-		for _, r := range records {
-			unref(r.Key)
-			unref(r.Value)
+	var records RecordReader
+
+	b := newPageBuffer()
+	defer b.unref()
+
+	attributes, baseOffset, timestamp, key, value, err := readMessage(b, d)
+	if err != nil {
+		return err
+	}
+
+	if compression := Attributes(attributes).Compression(); compression == 0 {
+		records = &message{
+			Record: Record{
+				Offset: baseOffset,
+				Time:   makeTime(timestamp),
+				Key:    key,
+				Value:  value,
+			},
 		}
-	}()
-
-	buffer := newPageBuffer()
-	defer buffer.unref()
-
-	baseAttributes := int8(0)
-	md := decoder{reader: d}
-
-	for !d.done() {
-		md.remain = 12
-		offset := md.readInt64()
-		md.remain = int(md.readInt32())
-
-		if md.remain == 0 {
-			break
+	} else {
+		// Can we have a non-nil key when reading a compressed message?
+		if key != nil {
+			key.Close()
 		}
+		if value == nil {
+			records = emptyRecordReader{}
+		} else {
+			defer value.Close()
 
-		crc := uint32(md.readInt32())
-		md.setCRC(crc32.IEEETable)
-		magicByte := md.readInt8()
-		attributes := md.readInt8()
-		timestamp := int64(0)
-
-		if magicByte != 0 {
-			timestamp = md.readInt64()
-		}
-
-		baseAttributes |= attributes
-		var compression = Attributes(attributes).Compression()
-		var codec compress.Codec
-		if compression != 0 {
-			if codec = compression.Codec(); codec == nil {
-				return fmt.Errorf("unsupported compression codec: %d", compression)
-			}
-		}
-
-		var k Bytes
-		var v Bytes
-
-		keyOffset := buffer.Size()
-		keyLength := int(md.readInt32())
-		hasKey := keyLength >= 0
-
-		if hasKey {
-			md.writeTo(buffer, keyLength)
-			k = buffer.ref(keyOffset, buffer.Size())
-		}
-
-		valueOffset := buffer.Size()
-		valueLength := int(md.readInt32())
-		hasValue := valueLength >= 0
-
-		if hasValue {
+			codec := compression.Codec()
 			if codec == nil {
-				md.writeTo(buffer, valueLength)
-				v = buffer.ref(valueOffset, buffer.Size())
-			} else {
-				subset := RecordSet{}
-				decompressor := codec.NewReader(&md)
+				return Errorf("unsupported compression codec: %d", compression)
+			}
+			decompressor := codec.NewReader(value)
+			defer decompressor.Close()
 
-				err := subset.readFromVersion1(&decoder{
-					reader: decompressor,
-					remain: math.MaxInt32,
-				})
+			b := newPageBuffer()
+			defer b.unref()
 
-				decompressor.Close()
+			d := &decoder{
+				reader: decompressor,
+				remain: math.MaxInt32,
+			}
 
-				if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+			r := &recordReader{
+				records: make([]Record, 0, 32),
+			}
+
+			for !d.done() {
+				_, offset, timestamp, key, value, err := readMessage(b, d)
+				if err != nil {
+					if errors.Is(err, io.ErrUnexpectedEOF) {
+						break
+					}
+					for _, rec := range r.records {
+						closeBytes(rec.Key)
+						closeBytes(rec.Value)
+					}
 					return err
 				}
-
-				unref(k) // is it valid to have a non-nil key on the root message?
-				records = append(records, subset.Records.(*recordBatch).records...)
+				r.records = append(r.records, Record{
+					Offset: offset,
+					Time:   makeTime(timestamp),
+					Key:    key,
+					Value:  value,
+				})
 			}
-		}
 
-		// When a compression algorithm was configured on the attributes, there
-		// is no actual value in this loop iterator, instead the decompressed
-		// records have been loaded by calling readFromVersion1 recursively and
-		// already added to the `records` list.
-		if compression == 0 && md.err == nil {
-			records = append(records, Record{
-				Offset: offset,
-				Time:   makeTime(timestamp),
-				Key:    k,
-				Value:  v,
-			})
-		}
-
-		// When we reach this point, we should already have consumed all the
-		// bytes in the message. If that's not the case for any reason, discard
-		// whatever is left so we position the stream properly to read the next
-		// message.
-		if !md.done() {
-			md.discardAll()
-		}
-
-		// io.ErrUnexpectedEOF could bubble up here if the kafka broker has
-		// truncated the response. We can safely handle this error and assume
-		// that we have reached the end of the message set.
-		if md.err != nil {
-			if errors.Is(md.err, io.ErrUnexpectedEOF) {
-				break
-			}
-			return md.err
-		}
-
-		if md.crc32 != crc {
-			return fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", md.crc32, crc)
+			records = r
 		}
 	}
 
 	*rs = RecordSet{
 		Version:    1,
-		Attributes: Attributes(baseAttributes),
-		Records: &recordBatch{
-			records: records,
-		},
+		Attributes: Attributes(attributes),
+		Records:    records,
 	}
 
-	if len(records) != 0 {
-		rs.BaseOffset = records[0].Offset
-	}
-
-	records = nil
 	return nil
 }
 
@@ -181,10 +169,10 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 
 			buffer.Truncate(int(bufferOffset))
 
-			records = &recordBatch{
-				records: []Record{{
+			records = &message{
+				Record: Record{
 					Value: compressed,
-				}},
+				},
 			}
 		}
 	}

@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"bytes"
-	"io"
 
 	"github.com/segmentio/kafka-go/protocol"
 )
@@ -47,14 +46,10 @@ type Record = protocol.Record
 // records that are sent to or receive from kafka brokers.
 //
 // RecordReader values are not safe to use concurrently from multiple goroutines.
-type RecordBatch = protocol.RecordBatch
+type RecordReader = protocol.RecordReader
 
-// NewRecordBatch constructs a RecordSet which exposes the sequence of records
+// NewRecordReade rconstructs a RecordSet which exposes the sequence of records
 // passed as arguments.
-func NewRecordBatch(records ...Record) RecordBatch {
-	return protocol.NewRecordBatch(records...)
+func NewRecordReader(records ...Record) RecordReader {
+	return protocol.NewRecordReader(records...)
 }
-
-type emptyRecordBatch struct{}
-
-func (emptyRecordBatch) ReadRecord() (*Record, error) { return nil, io.EOF }

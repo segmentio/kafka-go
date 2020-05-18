@@ -33,6 +33,10 @@ const (
 	// that it received an empty produce request on, causing all concurrent
 	// requests to be aborted.
 	ErrNoRecord Error = "record set contains no records"
+
+	// ErrNoReset is returned by ResetRecordReader when the record reader does
+	// not support being reset.
+	ErrNoReset Error = "record sequence does not support reset"
 )
 
 type TopicError struct {

@@ -9,6 +9,8 @@ import (
 	"github.com/segmentio/kafka-go/protocol"
 )
 
+var balast = make([]byte, 0, 512*1024*1024) // 512 MB
+
 func closeMessage(m protocol.Message) {
 	if c, ok := m.(io.Closer); ok {
 		c.Close()
@@ -19,8 +21,8 @@ func deepEqual(x1, x2 interface{}) bool {
 	if x1 == nil {
 		return x2 == nil
 	}
-	if r1, ok := x1.(protocol.RecordBatch); ok {
-		if r2, ok := x2.(protocol.RecordBatch); ok {
+	if r1, ok := x1.(protocol.RecordReader); ok {
+		if r2, ok := x2.(protocol.RecordReader); ok {
 			return deepEqualRecords(r1, r2)
 		}
 		return false
@@ -152,7 +154,7 @@ func deepEqualBytes(s1, s2 protocol.Bytes) bool {
 	return bytes.Equal(b1, b2)
 }
 
-func deepEqualRecords(r1, r2 protocol.RecordBatch) bool {
+func deepEqualRecords(r1, r2 protocol.RecordReader) bool {
 	for {
 		rec1, err1 := r1.ReadRecord()
 		rec2, err2 := r2.ReadRecord()
