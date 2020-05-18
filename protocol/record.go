@@ -297,7 +297,7 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 }
 
 func makeBytes(ref *pageRef) Bytes {
-	if ref.buffer == nil {
+	if ref.pages == nil {
 		return nil
 	}
 	return ref

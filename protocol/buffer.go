@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -161,11 +162,16 @@ func newPageBuffer() *pageBuffer {
 }
 
 func (pb *pageBuffer) refTo(ref *pageRef, begin, end int64) {
-	pb.refc.ref()
-	ref.buffer = pb
-	ref.pages = pb.pages.slice(begin, end)
+	length := end - begin
+
+	if length > math.MaxUint32 {
+		panic("reference to contiguous buffer pages exceeds the maximum size of 4 GB")
+	}
+
+	ref.pages = append(ref.buffer[:0], pb.pages.slice(begin, end)...)
+	ref.pages.ref()
 	ref.offset = begin
-	ref.length = int(end - begin)
+	ref.length = uint32(length)
 }
 
 func (pb *pageBuffer) ref(begin, end int64) *pageRef {
@@ -176,12 +182,8 @@ func (pb *pageBuffer) ref(begin, end int64) *pageRef {
 
 func (pb *pageBuffer) unref() {
 	pb.refc.unref(func() {
-		for _, p := range pb.pages {
-			p.unref()
-		}
-		for i := range pb.pages {
-			pb.pages[i] = nil
-		}
+		pb.pages.unref()
+		pb.pages.clear()
 		pb.pages = pb.pages[:0]
 		pb.length = 0
 		pageBufferPool.Put(pb)
@@ -229,12 +231,9 @@ func (pb *pageBuffer) Truncate(n int) {
 					pb.pages[i].Truncate(n)
 					i++
 				}
-				for j := i; j < len(pb.pages); j++ {
-					pb.pages[j].unref()
-				}
-				for j := i; j < len(pb.pages); j++ {
-					pb.pages[j] = nil
-				}
+				pb.pages[i:].unref()
+				pb.pages[i:].clear()
+				pb.pages = pb.pages[:i]
 				break
 			}
 		}
@@ -370,6 +369,24 @@ var (
 
 type contiguousPages []*page
 
+func (pages contiguousPages) ref() {
+	for _, p := range pages {
+		p.ref()
+	}
+}
+
+func (pages contiguousPages) unref() {
+	for _, p := range pages {
+		p.unref()
+	}
+}
+
+func (pages contiguousPages) clear() {
+	for i := range pages {
+		pages[i] = nil
+	}
+}
+
 func (pages contiguousPages) ReadAt(b []byte, off int64) (int, error) {
 	rn := 0
 
@@ -425,26 +442,22 @@ var (
 )
 
 type pageRef struct {
-	buffer *pageBuffer
+	buffer [2]*page
 	pages  contiguousPages
 	offset int64
 	cursor int64
-	length int
-	once   sync.Once
+	length uint32
+	once   uint32
 }
 
 func (ref *pageRef) unref() {
-	var buffer *pageBuffer
-	ref.once.Do(func() {
-		buffer = ref.buffer
-		ref.buffer = nil
+	if atomic.CompareAndSwapUint32(&ref.once, 0, 1) {
+		ref.pages.unref()
+		ref.pages.clear()
 		ref.pages = nil
 		ref.offset = 0
 		ref.cursor = 0
 		ref.length = 0
-	})
-	if buffer != nil {
-		buffer.unref()
 	}
 }
 
