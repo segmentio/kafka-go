@@ -1,13 +1,11 @@
 package kafka
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net"
 	"sort"
@@ -63,14 +61,6 @@ type Transport struct {
 	//
 	// Defaults to 5s.
 	DialTimeout time.Duration
-
-	// Maximum amount of time that the connections will wait for responses from
-	// the kafka cluster. Be mindful that this value should be longer than the
-	// duration comunicated in some messages (like the fetch MaxWait value for
-	// example).
-	//
-	// Default to 10s.
-	ReadTimeout time.Duration
 
 	// Maximum amount of time that connections will remain open and unused.
 	// The transport will manage to automatically close connections that have
@@ -179,13 +169,6 @@ func (t *Transport) dialTimeout() time.Duration {
 	return 5 * time.Second
 }
 
-func (t *Transport) readTimeout() time.Duration {
-	if t.ReadTimeout != 0 {
-		return t.ReadTimeout
-	}
-	return 10 * time.Second
-}
-
 func (t *Transport) idleTimeout() time.Duration {
 	if t.IdleTimeout > 0 {
 		return t.IdleTimeout
@@ -255,11 +238,8 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	p = &connPool{
 		refc: 2,
 
-		network:     network,
-		address:     address,
 		dial:        t.dial(),
 		dialTimeout: t.dialTimeout(),
-		readTimeout: t.readTimeout(),
 		idleTimeout: t.idleTimeout(),
 		metadataTTL: t.metadataTTL(),
 		clientID:    t.ClientID,
@@ -268,12 +248,12 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 
 		ready:  make(event),
 		wake:   make(chan event),
-		conns:  make(map[int]*conn),
+		conns:  make(map[int]*connGroup),
 		cancel: cancel,
 	}
 
-	p.ctrl = p.connect(ctx, network, address, -1)
-	go p.discover(ctx, p.ctrl, p.wake)
+	p.ctrl = p.newConnGroup(ctx, network, address)
+	go p.discover(ctx, p.wake)
 
 	if t.pools == nil {
 		t.pools = make(map[networkAddress]*connPool)
@@ -291,11 +271,8 @@ type connPool struct {
 	// Immutable fields of the connection pool. Connections access these field
 	// on their parent pool in a ready-only fashion, so no synchronization is
 	// required.
-	network     string
-	address     string
 	dial        func(context.Context, string, string) (net.Conn, error)
 	dialTimeout time.Duration
-	readTimeout time.Duration
 	idleTimeout time.Duration
 	metadataTTL time.Duration
 	clientID    string
@@ -309,9 +286,9 @@ type connPool struct {
 	cancel context.CancelFunc
 	// Mutable fields of the connection pool, access must be synchronized.
 	mutex sync.RWMutex
-	conns map[int]*conn // data connections used for produce/fetch/etc...
-	ctrl  *conn         // control connection used for metadata requests
-	state atomic.Value  // cached cluster state
+	conns map[int]*connGroup // data connections used for produce/fetch/etc...
+	ctrl  *connGroup         // control connections used for metadata requests
+	state atomic.Value       // cached cluster state
 }
 
 type connPoolState struct {
@@ -335,17 +312,24 @@ func (p *connPool) ref() {
 
 func (p *connPool) unref() {
 	if atomic.AddUintptr(&p.refc, ^uintptr(0)) == 0 {
+		p.mutex.Lock()
+		defer p.mutex.Unlock()
+
+		for _, conns := range p.conns {
+			conns.closeIdleConns()
+		}
+
+		p.ctrl.closeIdleConns()
 		p.cancel()
 	}
 }
 
 func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error) {
-	cancel := ctx.Done()
 	// This first select should never block after the first metadata response
 	// that would mark the pool as `ready`.
 	select {
 	case <-p.ready:
-	case <-cancel:
+	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 
@@ -355,9 +339,6 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 			p.refreshMetadata(ctx, expectTopics)
 		}
 	}()
-
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
 
 	var state = p.grabState()
 	var response promise
@@ -480,9 +461,12 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 	addBrokers := make(map[int]struct{})
 	delBrokers := make(map[int]struct{})
 
-	for id := range layout.Brokers {
-		if _, ok := state.layout.Brokers[id]; !ok {
+	for id, b2 := range layout.Brokers {
+		if b1, ok := state.layout.Brokers[id]; !ok {
 			addBrokers[id] = struct{}{}
+		} else if b1 != b2 {
+			addBrokers[id] = struct{}{}
+			delBrokers[id] = struct{}{}
 		}
 	}
 
@@ -503,8 +487,8 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 		state.metadata, state.layout = metadata, layout
 	}
 
-	p.setState(state)
-	p.setReady()
+	defer p.setReady()
+	defer p.setState(state)
 
 	if len(addBrokers) != 0 || len(delBrokers) != 0 {
 		// Only acquire the lock when there is a change of layout. This is an
@@ -517,15 +501,15 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 			return // the pool has been closed, no need to update
 		}
 
-		for id := range addBrokers {
-			broker := layout.Brokers[id]
-			p.conns[id] = p.connect(ctx, broker.Network(), broker.String(), id)
+		for id := range delBrokers {
+			bc := p.conns[id]
+			bc.closeIdleConns()
+			delete(p.conns, id)
 		}
 
-		for id := range delBrokers {
-			conn := p.conns[id]
-			close(conn.reqs)
-			delete(p.conns, id)
+		for id := range addBrokers {
+			broker := layout.Brokers[id]
+			p.conns[id] = p.newConnGroup(ctx, broker.Network(), broker.String())
 		}
 	}
 }
@@ -533,7 +517,7 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 // discover is the entry point of an internal goroutine for the transport which
 // periodically requests updates of the cluster metadata and refreshes the
 // transport cached cluster layout.
-func (p *connPool) discover(ctx context.Context, conn *conn, wake <-chan event) {
+func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 	prng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	metadataTTL := func() time.Duration {
 		return time.Duration(prng.Int63n(int64(p.metadataTTL)))
@@ -542,31 +526,32 @@ func (p *connPool) discover(ctx context.Context, conn *conn, wake <-chan event) 
 	timer := time.NewTimer(metadataTTL())
 	defer timer.Stop()
 
-	res := make(async, 1)
-	req := &meta.Request{
-		IncludeClusterAuthorizedOperations: true,
-		IncludeTopicAuthorizedOperations:   true,
-	}
-
 	var notify event
 	var done = ctx.Done()
+
 	for {
-		select {
-		case conn.reqs <- connRequest{
-			req: req,
-			res: res,
-		}:
-		case <-done:
-			return
-		}
+		c, err := p.grabClusterConn(ctx)
+		if err != nil {
+			p.update(ctx, nil, err)
+		} else {
+			res := make(async, 1)
+			req := &meta.Request{
+				IncludeClusterAuthorizedOperations: true,
+				IncludeTopicAuthorizedOperations:   true,
+			}
 
-		r, err := res.await(ctx)
-		if err != nil && err == ctx.Err() {
-			return
-		}
+			c.reqs <- connRequest{
+				req:      req,
+				res:      res,
+				deadline: time.Now().Add(p.metadataTTL),
+			}
 
-		res, _ := r.(*meta.Response)
-		p.update(ctx, res, err)
+			r, err := res.await(ctx)
+			if err != nil && err == ctx.Err() {
+				return
+			}
+			p.update(ctx, r.(*meta.Response), err)
+		}
 
 		if notify != nil {
 			notify.trigger()
@@ -586,12 +571,14 @@ func (p *connPool) discover(ctx context.Context, conn *conn, wake <-chan event) 
 // grabBrokerConn returns a connection to a specific broker represented by the
 // broker id passed as argument. If the broker id was not known, an error is
 // returned.
-func (p *connPool) grabBrokerConn(brokerID int) (*conn, error) {
+func (p *connPool) grabBrokerConn(ctx context.Context, brokerID int) (*conn, error) {
+	p.mutex.RLock()
 	c := p.conns[brokerID]
+	p.mutex.RUnlock()
 	if c == nil {
 		return nil, BrokerNotAvailable
 	}
-	return c, nil
+	return c.grabConnOrConnect(ctx)
 }
 
 // grabClusterConn returns the connection to the kafka cluster that the pool is
@@ -607,8 +594,8 @@ func (p *connPool) grabBrokerConn(brokerID int) (*conn, error) {
 //
 // In either cases, the requests are multiplexed so we can keep a minimal number
 // of connections open (N+1, where N is the number of brokers in the cluster).
-func (p *connPool) grabClusterConn() (*conn, error) {
-	return p.ctrl, nil
+func (p *connPool) grabClusterConn(ctx context.Context) (*conn, error) {
+	return p.ctrl.grabConnOrConnect(ctx)
 }
 
 func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolState) promise {
@@ -642,23 +629,21 @@ func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolS
 	var c *conn
 	var err error
 	if brokerID >= 0 {
-		c, err = p.grabBrokerConn(brokerID)
+		c, err = p.grabBrokerConn(ctx, brokerID)
 	} else {
-		c, err = p.grabClusterConn()
+		c, err = p.grabClusterConn(ctx)
 	}
 	if err != nil {
 		return reject(err)
 	}
 
+	deadline, _ := ctx.Deadline()
 	res := make(async, 1)
 
-	select {
-	case c.reqs <- connRequest{
-		req: req,
-		res: res,
-	}:
-	case <-ctx.Done():
-		return reject(ctx.Err())
+	c.reqs <- connRequest{
+		req:      req,
+		res:      res,
+		deadline: deadline,
 	}
 
 	return res
@@ -766,27 +751,18 @@ func makeBrokerIDs(brokers []int32) []int {
 	return ids
 }
 
-func (p *connPool) connect(ctx context.Context, network, address string, broker int) *conn {
-	reqs := make(chan connRequest)
-	conn := &conn{
-		broker:   broker,
-		network:  network,
-		address:  address,
-		refc:     1,
-		pool:     p,
-		reqs:     reqs,
-		inflight: make(map[int32]connRequest),
+func (p *connPool) newConnGroup(ctx context.Context, network, address string) *connGroup {
+	return &connGroup{
+		network: network,
+		address: address,
+		pool:    p,
 	}
-	go conn.run(ctx, reqs)
-	return conn
 }
 
 type connRequest struct {
-	req Request
-	res async
-	// Lazily negotiated when writing the request, then reused to determine the
-	// version of the message we're reading in the response.
-	version int16
+	req      Request
+	res      async
+	deadline time.Time
 }
 
 // The promise interface is used as a message passing abstraction to coordinate
@@ -869,71 +845,145 @@ var defaultDialer = net.Dialer{
 	DualStack: true,
 }
 
-// conn represents a logical connection to a kafka broker. The actual network
-// connections are lazily open before sending requests, and closed if they are
-// unused for longer than the idle timeout.
-type conn struct {
-	broker  int
+// connGroup represents a logical connection group to a kafka broker. The
+// actual network connections are lazily open before sending requests, and
+// closed if they are unused for longer than the idle timeout.
+type connGroup struct {
 	network string
 	address string
-	// Reference counter used to orchestrate graceful shutdown.
-	refc uintptr
 	// Immutable state of the connection.
 	pool *connPool
-	reqs chan<- connRequest
 	// Shared state of the connection, this is synchronized on the mutex through
 	// calls to the synchronized method. Both goroutines of the connection share
 	// the state maintained in these fields.
-	mutex    sync.Mutex
-	idgen    int32                 // generates new correlation ids
-	inflight map[int32]connRequest // set of inflight requests on the connection
+	mutex     sync.Mutex
+	closed    bool
+	idleConns []*conn // stack of idle connections
 }
 
-func (c *conn) register(r connRequest) (id int32) {
-	c.synchronized(func() {
-		c.idgen++
-		id = c.idgen
-		c.inflight[id] = r
-	})
-	return
+func (g *connGroup) closeIdleConns() {
+	g.mutex.Lock()
+	conns := g.idleConns
+	g.idleConns = nil
+	g.closed = true
+	g.mutex.Unlock()
+
+	for _, c := range conns {
+		c.close()
+	}
 }
 
-func (c *conn) unregister(id int32) (r connRequest, ok bool) {
-	c.synchronized(func() {
-		r, ok = c.inflight[id]
-		if ok {
-			delete(c.inflight, id)
+func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
+	c := g.grabConn()
+
+	if c == nil {
+		connChan := make(chan *conn)
+		errChan := make(chan error)
+
+		go func() {
+			c, err := g.connect()
+			if err != nil {
+				select {
+				case errChan <- err:
+				case <-ctx.Done():
+				}
+			} else {
+				select {
+				case connChan <- c:
+				case <-ctx.Done():
+					if !g.releaseConn(c) {
+						c.close()
+					}
+				}
+			}
+		}()
+
+		select {
+		case c = <-connChan:
+		case err := <-errChan:
+			return nil, err
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
-	})
-	return
+	}
+
+	return c, nil
 }
 
-func (c *conn) cancel(err error) {
-	c.synchronized(func() {
-		for _, r := range c.inflight {
-			r.res.reject(err)
+func (g *connGroup) grabConn() *conn {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+
+	if len(g.idleConns) == 0 {
+		return nil
+	}
+
+	n := len(g.idleConns) - 1
+	c := g.idleConns[n]
+	g.idleConns[n] = nil
+	g.idleConns = g.idleConns[:n]
+
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+
+	return c
+}
+
+func (g *connGroup) removeConn(c *conn) bool {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+
+	for i, x := range g.idleConns {
+		if x == c {
+			copy(g.idleConns[i:], g.idleConns[i+1:])
+			n := len(g.idleConns) - 1
+			g.idleConns[n] = nil
+			g.idleConns = g.idleConns[:n]
+			return true
 		}
-		for id := range c.inflight {
-			delete(c.inflight, id)
-		}
-	})
+	}
+
+	return false
 }
 
-func (c *conn) synchronized(f func()) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	f()
+func (g *connGroup) releaseConn(c *conn) bool {
+	idleTimeout := g.pool.idleTimeout
+
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+
+	if g.closed {
+		return false
+	}
+
+	if c.timer != nil {
+		c.timer.Reset(idleTimeout)
+	} else {
+		c.timer = time.AfterFunc(idleTimeout, func() {
+			if g.removeConn(c) {
+				c.close()
+			}
+		})
+	}
+
+	g.idleConns = append(g.idleConns, c)
+	return true
 }
 
-func (c *conn) connect() (*bufferedConn, map[protocol.ApiKey]int16, error) {
-	deadline := time.Now().Add(c.pool.dialTimeout)
+func (g *connGroup) connect() (*conn, error) {
+	deadline := time.Now().Add(g.pool.dialTimeout)
 
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 
-	netConn, err := c.pool.dial(ctx, c.network, c.address)
+	netConn, err := g.pool.dial(ctx, g.network, g.address)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer func() {
 		if netConn != nil {
@@ -941,31 +991,28 @@ func (c *conn) connect() (*bufferedConn, map[protocol.ApiKey]int16, error) {
 		}
 	}()
 
-	if c.pool.tls != nil {
-		netConn = tls.Client(netConn, c.pool.tls)
+	if g.pool.tls != nil {
+		netConn = tls.Client(netConn, g.pool.tls)
 	}
 
-	nc := newBufferedConn(netConn)
+	pc := protocol.NewConn(netConn, g.pool.clientID)
+	pc.SetDeadline(deadline)
 
-	if err := nc.SetDeadline(deadline); err != nil {
-		return nil, nil, err
-	}
-
-	if c.pool.sasl != nil {
-		if err := c.authenticateSASL(ctx, nc, c.pool.sasl); err != nil {
-			return nil, nil, err
+	if g.pool.sasl != nil {
+		if err := authenticateSASL(ctx, pc, g.pool.sasl); err != nil {
+			return nil, err
 		}
 	}
 
-	r, err := protocol.RoundTrip(nc, v0, c.pool.clientID, new(apiversions.Request))
+	r, err := pc.RoundTrip(new(apiversions.Request))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	res := r.(*apiversions.Response)
 	ver := make(map[protocol.ApiKey]int16, len(res.ApiKeys))
 
 	if res.ErrorCode != 0 {
-		return nil, nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", c.pool.address, Error(res.ErrorCode))
+		return nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", g.address, Error(res.ErrorCode))
 	}
 
 	for _, r := range res.ApiKeys {
@@ -973,116 +1020,48 @@ func (c *conn) connect() (*bufferedConn, map[protocol.ApiKey]int16, error) {
 		ver[apiKey] = apiKey.SelectVersion(r.MinVersion, r.MaxVersion)
 	}
 
-	if err := nc.SetDeadline(time.Now().Add(c.pool.idleTimeout)); err != nil {
-		return nil, nil, err
-	}
+	pc.SetVersions(ver)
+	pc.SetDeadline(time.Time{})
+
+	reqs := make(chan connRequest)
+	c := &conn{reqs: reqs, group: g}
+	go c.run(pc, reqs)
 
 	netConn = nil
-	return nc, ver, nil
+	return c, nil
 }
 
-func (c *conn) dispatch(conn *bufferedConn, done chan<- error) {
-	for {
-		_, id, err := conn.peekResponseSizeAndID()
-		if err != nil {
-			done <- dontExpectEOF(err)
-			return
-		}
-
-		r, ok := c.unregister(id)
-		if !ok {
-			// Technically we could just skip the number of bytes read by
-			// peekResponseSizeAndID, but that seems risky. If the server
-			// sent an unexpected message, just abort.
-			done <- fmt.Errorf("received response from %s for unknown correlation id %d", conn.RemoteAddr(), id)
-			return
-		}
-
-		_, res, err := protocol.ReadResponse(conn, r.req.ApiKey(), r.version)
-		if err != nil {
-			r.res.reject(err)
-			done <- err
-			return
-		}
-
-		if r.req.ApiKey() != protocol.Metadata {
-			log.Println("READ RESPONSE:", r.req.ApiKey(), r.version, id)
-			log.Printf("%+v\n", res)
-		}
-
-		r.res.resolve(res)
-		c.synchronized(func() {
-			if len(c.inflight) == 0 {
-				conn.SetDeadline(time.Now().Add(c.pool.idleTimeout))
-			}
-		})
-	}
+type conn struct {
+	reqs  chan<- connRequest
+	once  sync.Once
+	group *connGroup
+	timer *time.Timer
 }
 
-func (c *conn) run(ctx context.Context, reqs <-chan connRequest) {
-	var conn *bufferedConn
-	var done chan error
-	var cancel = ctx.Done()
-	var versions map[protocol.ApiKey]int16
+func (c *conn) close() {
+	c.once.Do(func() { close(c.reqs) })
+}
 
-	closeConn := func(err error) {
-		if conn != nil {
-			conn.Close()
-			conn = nil
+func (c *conn) run(pc *protocol.Conn, reqs <-chan connRequest) {
+	defer pc.Close()
+
+	for cr := range reqs {
+		pc.SetDeadline(cr.deadline)
+
+		r, err := pc.RoundTrip(cr.req)
+		if err != nil {
+			cr.res.reject(err)
+			if !errors.Is(err, protocol.ErrNoRecord) {
+				break
+			}
+		} else {
+			cr.res.resolve(r)
 		}
-		done = nil
-		c.cancel(err)
-	}
-	defer closeConn(io.ErrClosedPipe)
 
-	for {
-		select {
-		case r, ok := <-reqs:
-			if !ok {
-				return
-			}
+		pc.SetDeadline(time.Time{})
 
-			if conn == nil {
-				var err error
-
-				conn, versions, err = c.connect()
-				if err != nil {
-					r.res.reject(err)
-					continue
-				}
-
-				done = make(chan error, 1)
-				go c.dispatch(conn, done)
-			}
-
-			r.version = versions[r.req.ApiKey()]
-			id := c.register(r)
-			conn.SetDeadline(time.Now().Add(c.pool.readTimeout))
-
-			if p, _ := r.req.(protocol.PreparedMessage); p != nil {
-				p.Prepare(r.version)
-			}
-
-			if r.req.ApiKey() != protocol.Metadata {
-				log.Println("WRITE REQUEST:", r.req.ApiKey(), r.version, id)
-				log.Printf("%+v\n", r.req)
-			}
-
-			if err := protocol.WriteRequest(conn, r.version, id, c.pool.clientID, r.req); err != nil {
-				switch {
-				case errors.Is(err, protocol.ErrNoRecord):
-					c.unregister(id)
-					r.res.reject(err)
-				default:
-					closeConn(err)
-				}
-			}
-
-		case err := <-done:
-			closeConn(err)
-
-		case <-cancel:
-			return
+		if !c.group.releaseConn(c) {
+			break
 		}
 	}
 }
@@ -1090,11 +1069,8 @@ func (c *conn) run(ctx context.Context, reqs <-chan connRequest) {
 // authenticateSASL performs all of the required requests to authenticate this
 // connection.  If any step fails, this function returns with an error.  A nil
 // error indicates successful authentication.
-//
-// In case of error, this function *does not* close the connection.  That is the
-// responsibility of the caller.
-func (c *conn) authenticateSASL(ctx context.Context, rw io.ReadWriter, mechanism sasl.Mechanism) error {
-	if err := c.saslHandshake(rw, mechanism.Name()); err != nil {
+func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mechanism) error {
+	if err := saslHandshakeRoundTrip(pc, mechanism.Name()); err != nil {
 		return err
 	}
 
@@ -1104,7 +1080,7 @@ func (c *conn) authenticateSASL(ctx context.Context, rw io.ReadWriter, mechanism
 	}
 
 	for completed := false; !completed; {
-		challenge, err := c.saslAuthenticate(rw, state)
+		challenge, err := saslAuthenticateRoundTrip(pc, state)
 		switch err {
 		case nil:
 		case io.EOF:
@@ -1136,8 +1112,8 @@ func (c *conn) authenticateSASL(ctx context.Context, rw io.ReadWriter, mechanism
 // therefore the client should already know which mechanisms are supported.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslHandshake
-func (c *conn) saslHandshake(rw io.ReadWriter, mechanism string) error {
-	msg, err := protocol.RoundTrip(rw, v0, c.pool.clientID, &saslhandshake.Request{
+func saslHandshakeRoundTrip(pc *protocol.Conn, mechanism string) error {
+	msg, err := pc.RoundTrip(&saslhandshake.Request{
 		Mechanism: mechanism,
 	})
 	if err != nil {
@@ -1154,8 +1130,8 @@ func (c *conn) saslHandshake(rw io.ReadWriter, mechanism string) error {
 // be immediately preceded by a successful saslHandshake.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
-func (c *conn) saslAuthenticate(rw io.ReadWriter, data []byte) ([]byte, error) {
-	msg, err := protocol.RoundTrip(rw, v1, c.pool.clientID, &saslauthenticate.Request{
+func saslAuthenticateRoundTrip(pc *protocol.Conn, data []byte) ([]byte, error) {
+	msg, err := pc.RoundTrip(&saslauthenticate.Request{
 		AuthBytes: data,
 	})
 	if err != nil {
@@ -1166,34 +1142,6 @@ func (c *conn) saslAuthenticate(rw io.ReadWriter, data []byte) ([]byte, error) {
 		err = makeError(res.ErrorCode, res.ErrorMessage)
 	}
 	return res.AuthBytes, err
-}
-
-// bufferedConn pairs a network connection and a read buffer. The protocol
-// sub-package leverages the methods exposed by the bufio.Reader to optimize
-// decoding of messages received on the connection.
-type bufferedConn struct {
-	*bufio.Reader
-	net.Conn
-}
-
-func newBufferedConn(conn net.Conn) *bufferedConn {
-	return &bufferedConn{
-		Reader: bufio.NewReader(conn),
-		Conn:   conn,
-	}
-}
-
-func (c *bufferedConn) Read(b []byte) (int, error) {
-	return c.Reader.Read(b)
-}
-
-func (c *bufferedConn) peekResponseSizeAndID() (int32, int32, error) {
-	b, err := c.Peek(8)
-	if err != nil {
-		return 0, 0, err
-	}
-	size, id := makeInt32(b[:4]), makeInt32(b[4:])
-	return size, id, nil
 }
 
 var (

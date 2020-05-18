@@ -9,6 +9,10 @@ type Error string
 
 func (e Error) Error() string { return string(e) }
 
+func Errorf(msg string, args ...interface{}) Error {
+	return Error(fmt.Sprintf(msg, args...))
+}
+
 const (
 	// ErrNoTopic is returned when a request needs to be sent to a specific
 	ErrNoTopic Error = "topic not found"

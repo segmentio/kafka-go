@@ -56,7 +56,7 @@ func newLocalClient() (*Client, func()) {
 }
 
 func newClient(addr net.Addr) (*Client, func()) {
-	conns := &connGroup{
+	conns := &connWaitGroup{
 		dial: (&net.Dialer{}).DialContext,
 	}
 
@@ -73,12 +73,12 @@ func newClient(addr net.Addr) (*Client, func()) {
 	return client, func() { transport.CloseIdleConnections(); conns.Wait() }
 }
 
-type connGroup struct {
+type connWaitGroup struct {
 	dial func(context.Context, string, string) (net.Conn, error)
 	sync.WaitGroup
 }
 
-func (g *connGroup) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+func (g *connWaitGroup) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	c, err := g.dial(ctx, network, address)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (g *connGroup) Dial(ctx context.Context, network, address string) (net.Conn
 
 type groupConn struct {
 	net.Conn
-	group *connGroup
+	group *connWaitGroup
 	once  sync.Once
 }
 

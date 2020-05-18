@@ -1,14 +1,9 @@
 package produce
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/segmentio/kafka-go/protocol"
-)
-
-var (
-	ErrUnknownTopic = errors.New("produce request topci not found in cluster metadata")
 )
 
 func init() {
