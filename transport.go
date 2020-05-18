@@ -550,7 +550,8 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 			if err != nil && err == ctx.Err() {
 				return
 			}
-			p.update(ctx, r.(*meta.Response), err)
+			ret, _ := r.(*meta.Response)
+			p.update(ctx, ret, err)
 		}
 
 		if notify != nil {
