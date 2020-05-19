@@ -594,6 +594,22 @@ var (
 	_ io.WriterTo = (*pageRef)(nil)
 )
 
+type pageRefAllocator struct {
+	refs []pageRef
+	head int
+	size int
+}
+
+func (a *pageRefAllocator) newPageRef() *pageRef {
+	if a.head == len(a.refs) {
+		a.refs = make([]pageRef, a.size)
+		a.head = 0
+	}
+	ref := &a.refs[a.head]
+	a.head++
+	return ref
+}
+
 func unref(x interface{}) {
 	if r, _ := x.(interface{ unref() }); r != nil {
 		r.unref()

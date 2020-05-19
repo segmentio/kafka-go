@@ -150,10 +150,13 @@ func concatRecordReader(head RecordReader, tail RecordReader) RecordReader {
 	return MultiRecordReader(head, tail)
 }
 
+// optimizedRecordReader is an implementation of a RecordReader which exposes a
+// sequence
 type optimizedRecordReader struct {
 	records []optimizedRecord
 	index   int
 	buffer  Record
+	headers [][]Header
 }
 
 func (r *optimizedRecordReader) Reset() error {
@@ -173,7 +176,7 @@ func (r *optimizedRecordReader) ReadRecord() (*Record, error) {
 			Time:    rec.time(),
 			Key:     rec.key(),
 			Value:   rec.value(),
-			Headers: rec.headers,
+			Headers: r.headers[i],
 		}
 		return &r.buffer, nil
 	}
@@ -183,14 +186,8 @@ func (r *optimizedRecordReader) ReadRecord() (*Record, error) {
 type optimizedRecord struct {
 	offset    int64
 	timestamp int64
-	keyRef    pageRef
-	valueRef  pageRef
-	headers   []Header
-}
-
-func (r *optimizedRecord) unref() {
-	r.keyRef.unref()
-	r.valueRef.unref()
+	keyRef    *pageRef
+	valueRef  *pageRef
 }
 
 func (r *optimizedRecord) time() time.Time {
@@ -198,11 +195,18 @@ func (r *optimizedRecord) time() time.Time {
 }
 
 func (r *optimizedRecord) key() Bytes {
-	return makeBytes(&r.keyRef)
+	return makeBytes(r.keyRef)
 }
 
 func (r *optimizedRecord) value() Bytes {
-	return makeBytes(&r.valueRef)
+	return makeBytes(r.valueRef)
+}
+
+func makeBytes(ref *pageRef) Bytes {
+	if ref == nil {
+		return nil
+	}
+	return ref
 }
 
 type emptyRecordReader struct{}

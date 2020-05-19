@@ -64,7 +64,32 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 	recordsLength := buffer.Len()
 	dec.reader = buffer
 	dec.remain = recordsLength
+
 	records := make([]optimizedRecord, numRecords)
+	// These are two lazy allocators that will be used to optimize allocation of
+	// page references for keys and values.
+	//
+	// By default, no memory is allocated and on first use, numRecords page refs
+	// are allocated in a contiguous memory space, and the allocators return
+	// pointers into those arrays for each page ref that get requested.
+	//
+	// The reasoning is that kafka partitions typically have records of a single
+	// form, which either have no keys, no values, or both keys and values.
+	// Using lazy allocators adapts nicely to these patterns to only allocate
+	// the memory that is needed by the program, while still reducing the number
+	// of malloc calls made by the program.
+	//
+	// Using a single allocator for both keys and values keeps related values
+	// close by in memory, making access to the records more friendly to CPU
+	// caches.
+	alloc := pageRefAllocator{size: int(numRecords)}
+	// Following the same reasoning that kafka partitions will typically have
+	// records with repeating formats, we expect to either find records with
+	// no headers, or records which always contain headers.
+	//
+	// To reduce the memory footprint when records have no headers, the Header
+	// slices are lazily allocated in a separate array.
+	headers := ([][]Header)(nil)
 
 	for i := range records {
 		r := &records[i]
@@ -89,14 +114,20 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 		}
 
 		if numHeaders := dec.readVarInt(); numHeaders > 0 {
-			r.headers = make([]Header, numHeaders)
+			if headers == nil {
+				headers = make([][]Header, numRecords)
+			}
 
-			for i := range r.headers {
-				r.headers[i] = Header{
+			h := make([]Header, numHeaders)
+
+			for i := range h {
+				h[i] = Header{
 					Key:   dec.readCompactString(),
 					Value: dec.readCompactBytes(),
 				}
 			}
+
+			headers[i] = h
 		}
 
 		if dec.err != nil {
@@ -105,11 +136,13 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 		}
 
 		if keyLength >= 0 {
-			buffer.refTo(&r.keyRef, keyOffset, keyOffset+keyLength)
+			r.keyRef = alloc.newPageRef()
+			buffer.refTo(r.keyRef, keyOffset, keyOffset+keyLength)
 		}
 
 		if valueLength >= 0 {
-			buffer.refTo(&r.valueRef, valueOffset, valueOffset+valueLength)
+			r.valueRef = alloc.newPageRef()
+			buffer.refTo(r.valueRef, valueOffset, valueOffset+valueLength)
 		}
 	}
 
@@ -123,7 +156,10 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 	*rs = RecordSet{
 		Version:    magicByte,
 		Attributes: Attributes(attributes),
-		Records:    &optimizedRecordReader{records: records},
+		Records: &optimizedRecordReader{
+			records: records,
+			headers: headers,
+		},
 	}
 
 	if rs.Attributes.Control() {
