@@ -413,7 +413,6 @@ func (w *Writer) Close() (err error) {
 		w.closed = true
 		close(w.msgs)
 		close(w.done)
-		close(w.errChan)
 	}
 
 	w.mutex.Unlock()
