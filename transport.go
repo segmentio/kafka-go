@@ -729,27 +729,41 @@ func makeLayout(metadataResponse *meta.Response) protocol.Cluster {
 
 func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protocol.Partition {
 	protocolPartitions := make(map[int]protocol.Partition, len(metadataPartitions))
+	numBrokerIDs := 0
 
 	for _, p := range metadataPartitions {
+		numBrokerIDs += len(p.ReplicaNodes) + len(p.IsrNodes) + len(p.OfflineReplicas)
+	}
+
+	// Reduce the memory footprint a bit by allocating a single buffer to write
+	// all broker ids.
+	brokerIDs := make([]int, 0, numBrokerIDs)
+
+	for _, p := range metadataPartitions {
+		var rep, isr, off []int
+		brokerIDs, rep = appendBrokerIDs(brokerIDs, p.ReplicaNodes)
+		brokerIDs, isr = appendBrokerIDs(brokerIDs, p.IsrNodes)
+		brokerIDs, off = appendBrokerIDs(brokerIDs, p.OfflineReplicas)
+
 		protocolPartitions[int(p.PartitionIndex)] = protocol.Partition{
 			ID:       int(p.PartitionIndex),
 			Error:    int(p.ErrorCode),
 			Leader:   int(p.LeaderID),
-			Replicas: makeBrokerIDs(p.ReplicaNodes),
-			ISR:      makeBrokerIDs(p.IsrNodes),
-			Offline:  makeBrokerIDs(p.OfflineReplicas),
+			Replicas: rep,
+			ISR:      isr,
+			Offline:  off,
 		}
 	}
 
 	return protocolPartitions
 }
 
-func makeBrokerIDs(brokers []int32) []int {
-	ids := make([]int, len(brokers))
-	for i, id := range brokers {
-		ids[i] = int(id)
+func appendBrokerIDs(ids []int, brokers []int32) ([]int, []int) {
+	i := len(ids)
+	for _, id := range brokers {
+		ids = append(ids, int(id))
 	}
-	return ids
+	return ids, ids[i:]
 }
 
 func (p *connPool) newConnGroup(ctx context.Context, network, address string) *connGroup {
