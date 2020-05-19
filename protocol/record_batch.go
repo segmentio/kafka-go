@@ -172,11 +172,13 @@ func (r *optimizedRecordReader) ReadRecord() (*Record, error) {
 		rec := &r.records[i]
 		r.index++
 		r.buffer = Record{
-			Offset:  rec.offset,
-			Time:    rec.time(),
-			Key:     rec.key(),
-			Value:   rec.value(),
-			Headers: r.headers[i],
+			Offset: rec.offset,
+			Time:   rec.time(),
+			Key:    rec.key(),
+			Value:  rec.value(),
+		}
+		if i < len(r.headers) {
+			r.buffer.Headers = r.headers[i]
 		}
 		return &r.buffer, nil
 	}
