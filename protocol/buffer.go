@@ -86,10 +86,18 @@ type page struct {
 }
 
 func newPage(offset int64) *page {
-	p := pagePool.Get().(*page)
-	p.offset = offset
-	p.length = 0
-	p.ref()
+	p, _ := pagePool.Get().(*page)
+	if p != nil {
+		p.offset = offset
+		p.length = 0
+		p.ref()
+	} else {
+		p = &page{
+			refc:   1,
+			offset: offset,
+			buffer: &[pageSize]byte{},
+		}
+	}
 	return p
 }
 
@@ -165,12 +173,6 @@ func (p *page) Write(b []byte) (int, error) {
 	return p.WriteAt(b, p.offset+int64(p.length))
 }
 
-var pagePool = sync.Pool{
-	New: func() interface{} {
-		return &page{buffer: &[pageSize]byte{}}
-	},
-}
-
 var (
 	_ io.ReaderAt   = (*page)(nil)
 	_ io.ReaderFrom = (*page)(nil)
@@ -186,9 +188,16 @@ type pageBuffer struct {
 }
 
 func newPageBuffer() *pageBuffer {
-	b := pageBufferPool.Get().(*pageBuffer)
-	b.cursor = 0
-	b.refc.ref()
+	b, _ := pageBufferPool.Get().(*pageBuffer)
+	if b != nil {
+		b.cursor = 0
+		b.refc.ref()
+	} else {
+		b = &pageBuffer{
+			refc:  1,
+			pages: make(contiguousPages, 0, 16),
+		}
+	}
 	return b
 }
 
@@ -391,11 +400,8 @@ var (
 	_ io.WriterAt     = (*pageBuffer)(nil)
 	_ io.WriterTo     = (*pageBuffer)(nil)
 
-	pageBufferPool = sync.Pool{
-		New: func() interface{} {
-			return &pageBuffer{pages: make(contiguousPages, 0, 16)}
-		},
-	}
+	pagePool       sync.Pool
+	pageBufferPool sync.Pool
 )
 
 type contiguousPages []*page
@@ -506,6 +512,21 @@ func (ref *pageRef) Seek(offset int64, whence int) (int64, error) {
 		return -1, err
 	}
 	ref.cursor = c
+	return c, nil
+}
+
+func (ref *pageRef) ReadByte() (byte, error) {
+	var c byte
+	var ok bool
+	ref.scan(ref.cursor, func(b []byte) bool {
+		c, ok = b[0], true
+		return false
+	})
+	if ok {
+		ref.cursor++
+	} else {
+		return 0, io.EOF
+	}
 	return c, nil
 }
 

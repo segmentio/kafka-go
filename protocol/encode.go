@@ -53,6 +53,12 @@ func (e *encoder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+func (e *encoder) WriteByte(b byte) error {
+	e.buffer[0] = b
+	_, err := e.Write(e.buffer[:1])
+	return err
+}
+
 func (e *encoder) WriteString(s string) (int, error) {
 	// This implementation is an optimization to avoid the heap allocation that
 	// would occur when converting the string to a []byte to call crc32.Update.
@@ -293,6 +299,7 @@ type encodeFunc func(*encoder, value)
 var (
 	_ io.ReaderFrom   = (*encoder)(nil)
 	_ io.Writer       = (*encoder)(nil)
+	_ io.ByteWriter   = (*encoder)(nil)
 	_ io.StringWriter = (*encoder)(nil)
 
 	writerTo = reflect.TypeOf((*io.WriterTo)(nil)).Elem()

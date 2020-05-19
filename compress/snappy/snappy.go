@@ -16,6 +16,11 @@ const (
 	Unframed
 )
 
+var (
+	readerPool sync.Pool
+	writerPool sync.Pool
+)
+
 // Codec is the implementation of a compress.Codec which supports creating
 // readers and writers for kafka messages compressed with snappy.
 type Codec struct {
@@ -33,17 +38,31 @@ func (c *Codec) Name() string { return "snappy" }
 
 // NewReader implements the compress.Codec interface.
 func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
-	x := readerPool.Get().(*xerialReader)
-	x.Reset(r)
-	return &reader{x}
+	x, _ := readerPool.Get().(*xerialReader)
+	if x != nil {
+		x.Reset(r)
+	} else {
+		x = &xerialReader{
+			reader: r,
+			decode: snappy.Decode,
+		}
+	}
+	return &reader{xerialReader: x}
 }
 
 // NewWriter implements the compress.Codec interface.
 func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
-	x := writerPool.Get().(*xerialWriter)
-	x.Reset(w)
+	x, _ := writerPool.Get().(*xerialWriter)
+	if x != nil {
+		x.Reset(w)
+	} else {
+		x = &xerialWriter{
+			writer: w,
+			encode: snappy.Encode,
+		}
+	}
 	x.framed = c.Framing == Framed
-	return &writer{x}
+	return &writer{xerialWriter: x}
 }
 
 type reader struct{ *xerialReader }
@@ -67,16 +86,4 @@ func (w *writer) Close() (err error) {
 		writerPool.Put(x)
 	}
 	return
-}
-
-var readerPool = sync.Pool{
-	New: func() interface{} {
-		return &xerialReader{decode: snappy.Decode}
-	},
-}
-
-var writerPool = sync.Pool{
-	New: func() interface{} {
-		return &xerialWriter{encode: snappy.Encode}
-	},
 }

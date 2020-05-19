@@ -7,6 +7,11 @@ import (
 	"github.com/pierrec/lz4"
 )
 
+var (
+	readerPool sync.Pool
+	writerPool sync.Pool
+)
+
 // Codec is the implementation of a compress.Codec which supports creating
 // readers and writers for kafka messages compressed with lz4.
 type Codec struct{}
@@ -19,16 +24,24 @@ func (c *Codec) Name() string { return "lz4" }
 
 // NewReader implements the compress.Codec interface.
 func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
-	z := readerPool.Get().(*lz4.Reader)
-	z.Reset(r)
-	return &reader{z}
+	z, _ := readerPool.Get().(*lz4.Reader)
+	if z != nil {
+		z.Reset(r)
+	} else {
+		z = lz4.NewReader(r)
+	}
+	return &reader{Reader: z}
 }
 
 // NewWriter implements the compress.Codec interface.
 func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
-	z := writerPool.Get().(*lz4.Writer)
-	z.Reset(w)
-	return &writer{z}
+	z, _ := writerPool.Get().(*lz4.Writer)
+	if z != nil {
+		z.Reset(w)
+	} else {
+		z = lz4.NewWriter(w)
+	}
+	return &writer{Writer: z}
 }
 
 type reader struct{ *lz4.Reader }
@@ -52,12 +65,4 @@ func (w *writer) Close() (err error) {
 		writerPool.Put(z)
 	}
 	return
-}
-
-var readerPool = sync.Pool{
-	New: func() interface{} { return lz4.NewReader(nil) },
-}
-
-var writerPool = sync.Pool{
-	New: func() interface{} { return lz4.NewWriter(nil) },
 }

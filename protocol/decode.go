@@ -40,6 +40,11 @@ func (d *decoder) Read(b []byte) (int, error) {
 	return n, err
 }
 
+func (d *decoder) ReadByte() (byte, error) {
+	c := d.readByte()
+	return c, d.err
+}
+
 func (d *decoder) done() bool {
 	return d.remain == 0 || d.err != nil
 }
@@ -259,6 +264,9 @@ func (d *decoder) readVarInt() int64 {
 type decodeFunc func(*decoder, value)
 
 var (
+	_ io.Reader     = (*decoder)(nil)
+	_ io.ByteReader = (*decoder)(nil)
+
 	readerFrom = reflect.TypeOf((*io.ReaderFrom)(nil)).Elem()
 )
 

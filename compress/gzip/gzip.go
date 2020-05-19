@@ -1,44 +1,14 @@
 package gzip
 
 import (
-	"bytes"
 	"compress/gzip"
 	"io"
 	"sync"
 )
 
 var (
-	// emptyGzipBytes is the binary value for an empty file that has been
-	// gzipped.  It is used to initialize gzip.Reader before adding it to the
-	// readerPool.
-	emptyGzipBytes = [...]byte{
-		0x1f, 0x8b, 0x08, 0x08, 0x0d, 0x0c, 0x67, 0x5c, 0x00, 0x03, 0x66, 0x6f,
-		0x6f, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	}
-
-	readerPool = sync.Pool{
-		New: func() interface{} {
-			// if the reader doesn't get valid gzip at initialization time,
-			// it will not be valid and will fail on Reset.
-			reader := &gzipReader{}
-			reader.Reset(nil)
-			return reader
-		},
-	}
+	readerPool sync.Pool
 )
-
-type gzipReader struct {
-	gzip.Reader
-	emptyGzipFile bytes.Reader
-}
-
-func (z *gzipReader) Reset(r io.Reader) {
-	if r == nil {
-		z.emptyGzipFile.Reset(emptyGzipBytes[:])
-		r = &z.emptyGzipFile
-	}
-	z.Reader.Reset(r)
-}
 
 // Codec is the implementation of a compress.Codec which supports creating
 // readers and writers for kafka messages compressed with gzip.
@@ -60,9 +30,20 @@ func (c *Codec) Name() string { return "gzip" }
 
 // NewReader implements the compress.Codec interface.
 func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
-	z := readerPool.Get().(*gzipReader)
-	z.Reset(r)
-	return &reader{z}
+	var err error
+	z, _ := readerPool.Get().(*gzip.Reader)
+	if z != nil {
+		err = z.Reset(r)
+	} else {
+		z, err = gzip.NewReader(r)
+	}
+	if err != nil {
+		if z != nil {
+			readerPool.Put(z)
+		}
+		return &errorReader{err: err}
+	}
+	return &reader{Reader: z}
 }
 
 // NewWriter implements the compress.Codec interface.
@@ -72,13 +53,13 @@ func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 	if z == nil {
 		x, err := gzip.NewWriterLevel(w, c.level())
 		if err != nil {
-			return errorWriter{err}
+			return &errorWriter{err: err}
 		}
 		z = x
 	} else {
 		z.Reset(w)
 	}
-	return &writer{c, z}
+	return &writer{codec: c, Writer: z}
 }
 
 func (c *Codec) level() int {
@@ -88,20 +69,27 @@ func (c *Codec) level() int {
 	return gzip.DefaultCompression
 }
 
-type reader struct{ *gzipReader }
+type reader struct{ *gzip.Reader }
 
 func (r *reader) Close() (err error) {
-	if z := r.gzipReader; z != nil {
-		r.gzipReader = nil
+	if z := r.Reader; z != nil {
+		r.Reader = nil
 		err = z.Close()
-		z.Reset(nil)
+		// Pass it an empty reader, which is a zero-size value implementing the
+		// flate.Reader interface to avoid the construction of a bufio.Reader in
+		// the call to Reset.
+		//
+		// Note: we could also not reset the reader at all, but that would cause
+		// the underlying reader to be retained until the gzip.Reader is freed,
+		// which may not be desirable.
+		z.Reset(emptyReader{})
 		readerPool.Put(z)
 	}
 	return
 }
 
 type writer struct {
-	c *Codec
+	codec *Codec
 	*gzip.Writer
 }
 
@@ -110,13 +98,25 @@ func (w *writer) Close() (err error) {
 		w.Writer = nil
 		err = z.Close()
 		z.Reset(nil)
-		w.c.writerPool.Put(z)
+		w.codec.writerPool.Put(z)
 	}
 	return
 }
 
+type emptyReader struct{}
+
+func (emptyReader) ReadByte() (byte, error) { return 0, io.EOF }
+
+func (emptyReader) Read([]byte) (int, error) { return 0, io.EOF }
+
+type errorReader struct{ err error }
+
+func (r *errorReader) Close() error { return r.err }
+
+func (r *errorReader) Read([]byte) (int, error) { return 0, r.err }
+
 type errorWriter struct{ err error }
 
-func (w errorWriter) Close() error { return w.err }
+func (w *errorWriter) Close() error { return w.err }
 
-func (w errorWriter) Write(b []byte) (int, error) { return 0, w.err }
+func (w *errorWriter) Write([]byte) (int, error) { return 0, w.err }
