@@ -12,6 +12,10 @@ type value struct {
 	val reflect.Value
 }
 
+func nonAddressableValueOf(x interface{}) value {
+	return value{val: reflect.ValueOf(x)}
+}
+
 func valueOf(x interface{}) value {
 	return value{val: reflect.ValueOf(x).Elem()}
 }

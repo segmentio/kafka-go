@@ -24,6 +24,10 @@ type value struct {
 	ptr unsafe.Pointer
 }
 
+func nonAddressableValueOf(x interface{}) value {
+	return valueOf(x)
+}
+
 func valueOf(x interface{}) value {
 	return value{ptr: ((*iface)(unsafe.Pointer(&x))).ptr}
 }

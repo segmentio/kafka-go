@@ -1,12 +1,15 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"reflect"
+	"sync"
+	"sync/atomic"
 )
 
 type discarder interface {
@@ -20,6 +23,15 @@ type decoder struct {
 	err    error
 	table  *crc32.Table
 	crc32  uint32
+}
+
+func (d *decoder) Reset(r io.Reader, n int) {
+	d.reader = r
+	d.remain = n
+	d.buffer = [8]byte{}
+	d.err = nil
+	d.table = nil
+	d.crc32 = 0
 }
 
 func (d *decoder) Read(b []byte) (int, error) {
@@ -368,3 +380,50 @@ func readInt32(b []byte) int32 {
 func readInt64(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
 }
+
+func Unmarshal(data []byte, version int16, value interface{}) error {
+	typ := reflect.TypeOf(value).Elem()
+	cache, _ := unmarshalers.Load().(map[reflect.Type]decodeFunc)
+	decode := cache[typ]
+
+	if decode == nil {
+		decode = decodeFuncOf(typ, version, structTag{
+			MinVersion: -1,
+			MaxVersion: -1,
+			Compact:    true,
+			Nullable:   true,
+		})
+
+		newCache := make(map[reflect.Type]decodeFunc, len(cache)+1)
+		newCache[typ] = decode
+
+		for typ, fun := range cache {
+			newCache[typ] = fun
+		}
+
+		unmarshalers.Store(newCache)
+	}
+
+	d, _ := decoders.Get().(*decoder)
+	if d == nil {
+		d = &decoder{reader: bytes.NewReader(nil)}
+	}
+
+	d.remain = len(data)
+	r, _ := d.reader.(*bytes.Reader)
+	r.Reset(data)
+
+	defer func() {
+		r.Reset(nil)
+		d.Reset(r, 0)
+		decoders.Put(d)
+	}()
+
+	decode(d, valueOf(value))
+	return dontExpectEOF(d.err)
+}
+
+var (
+	decoders     sync.Pool    // *decoder
+	unmarshalers atomic.Value // map[reflect.Type]decodeFunc
+)

@@ -1,11 +1,14 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
 	"reflect"
+	"sync"
+	"sync/atomic"
 )
 
 type encoder struct {
@@ -27,6 +30,14 @@ func (e *encoderChecksum) Read(b []byte) (int, error) {
 		e.encoder.update(b[:n])
 	}
 	return n, err
+}
+
+func (e *encoder) Reset(w io.Writer) {
+	e.writer = w
+	e.err = nil
+	e.table = nil
+	e.crc32 = 0
+	e.buffer = [32]byte{}
 }
 
 func (e *encoder) ReadFrom(r io.Reader) (int64, error) {
@@ -424,3 +435,55 @@ func writeInt32(b []byte, i int32) {
 func writeInt64(b []byte, i int64) {
 	binary.BigEndian.PutUint64(b, uint64(i))
 }
+
+func Marshal(version int16, value interface{}) ([]byte, error) {
+	typ := reflect.TypeOf(value)
+	cache, _ := marshalers.Load().(map[reflect.Type]encodeFunc)
+	encode := cache[typ]
+
+	if encode == nil {
+		encode = encodeFuncOf(typ, version, structTag{
+			MinVersion: -1,
+			MaxVersion: -1,
+			Compact:    true,
+			Nullable:   true,
+		})
+
+		newCache := make(map[reflect.Type]encodeFunc, len(cache)+1)
+		newCache[typ] = encode
+
+		for typ, fun := range cache {
+			newCache[typ] = fun
+		}
+
+		marshalers.Store(newCache)
+	}
+
+	e, _ := encoders.Get().(*encoder)
+	if e == nil {
+		e = &encoder{writer: new(bytes.Buffer)}
+	}
+
+	b, _ := e.writer.(*bytes.Buffer)
+	defer func() {
+		b.Reset()
+		e.Reset(b)
+		encoders.Put(e)
+	}()
+
+	encode(e, nonAddressableValueOf(value))
+
+	if e.err != nil {
+		return nil, e.err
+	}
+
+	buf := b.Bytes()
+	out := make([]byte, len(buf))
+	copy(out, buf)
+	return out, nil
+}
+
+var (
+	encoders   sync.Pool    // *encoder
+	marshalers atomic.Value // map[reflect.Type]encodeFunc
+)

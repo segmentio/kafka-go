@@ -245,6 +245,10 @@ type structTag struct {
 }
 
 func forEachStructTag(tag string, do func(structTag) bool) {
+	if tag == "-" {
+		return // special case to ignore the field
+	}
+
 	forEach(tag, '|', func(s string) bool {
 		tag := structTag{
 			MinVersion: -1,
@@ -314,7 +318,7 @@ func forEachStructField(t reflect.Type, do func(reflect.Type, index, string)) {
 
 		kafkaTag, ok := f.Tag.Lookup("kafka")
 		if !ok {
-			continue
+			kafkaTag = "|"
 		}
 
 		do(f.Type, indexOf(f), kafkaTag)
