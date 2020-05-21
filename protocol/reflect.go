@@ -8,6 +8,20 @@ import (
 
 type index []int
 
+type _type struct{ typ reflect.Type }
+
+func typeOf(x interface{}) _type {
+	return makeType(reflect.TypeOf(x))
+}
+
+func elemTypeOf(x interface{}) _type {
+	return makeType(reflect.TypeOf(x).Elem())
+}
+
+func makeType(t reflect.Type) _type {
+	return _type{typ: t}
+}
+
 type value struct {
 	val reflect.Value
 }

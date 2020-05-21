@@ -382,19 +382,19 @@ func readInt64(b []byte) int64 {
 }
 
 func Unmarshal(data []byte, version int16, value interface{}) error {
-	typ := reflect.TypeOf(value).Elem()
-	cache, _ := unmarshalers.Load().(map[reflect.Type]decodeFunc)
+	typ := elemTypeOf(value)
+	cache, _ := unmarshalers.Load().(map[_type]decodeFunc)
 	decode := cache[typ]
 
 	if decode == nil {
-		decode = decodeFuncOf(typ, version, structTag{
+		decode = decodeFuncOf(reflect.TypeOf(value).Elem(), version, structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
 			Compact:    true,
 			Nullable:   true,
 		})
 
-		newCache := make(map[reflect.Type]decodeFunc, len(cache)+1)
+		newCache := make(map[_type]decodeFunc, len(cache)+1)
 		newCache[typ] = decode
 
 		for typ, fun := range cache {
@@ -425,5 +425,5 @@ func Unmarshal(data []byte, version int16, value interface{}) error {
 
 var (
 	decoders     sync.Pool    // *decoder
-	unmarshalers atomic.Value // map[reflect.Type]decodeFunc
+	unmarshalers atomic.Value // map[_type]decodeFunc
 )

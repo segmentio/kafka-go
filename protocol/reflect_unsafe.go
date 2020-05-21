@@ -20,6 +20,22 @@ type slice struct {
 
 type index uintptr
 
+type _type struct {
+	ptr unsafe.Pointer
+}
+
+func typeOf(x interface{}) _type {
+	return _type{ptr: ((*iface)(unsafe.Pointer(&x))).typ}
+}
+
+func elemTypeOf(x interface{}) _type {
+	return makeType(reflect.TypeOf(x).Elem())
+}
+
+func makeType(t reflect.Type) _type {
+	return _type{ptr: ((*iface)(unsafe.Pointer(&t))).ptr}
+}
+
 type value struct {
 	ptr unsafe.Pointer
 }

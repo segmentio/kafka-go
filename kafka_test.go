@@ -116,3 +116,58 @@ func TestVersionMarshalUnmarshal(t *testing.T) {
 	}
 
 }
+
+type Struct struct {
+	A int32
+	B int32
+	C int32
+}
+
+var benchmarkValues = []interface{}{
+	true,
+	int8(1),
+	int16(1),
+	int32(1),
+	int64(1),
+	"Hello World!",
+	[]byte("Hello World!"),
+	[]int32{1, 2, 3},
+	Struct{A: 1, B: 2, C: 3},
+}
+
+func BenchmarkMarshal(b *testing.B) {
+	for _, v := range benchmarkValues {
+		b.Run(fmt.Sprintf("%T", v), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := Marshal(v)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkUnmarshal(b *testing.B) {
+	for _, v := range benchmarkValues {
+		b.Run(fmt.Sprintf("%T", v), func(b *testing.B) {
+			data, err := Marshal(v)
+
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			value := reflect.New(reflect.TypeOf(v))
+			ptr := value.Interface()
+			elem := value.Elem()
+			zero := reflect.Zero(reflect.TypeOf(v))
+
+			for i := 0; i < b.N; i++ {
+				if err := Unmarshal(data, ptr); err != nil {
+					b.Fatal(err)
+				}
+				elem.Set(zero)
+			}
+		})
+	}
+}

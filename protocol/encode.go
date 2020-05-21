@@ -437,19 +437,19 @@ func writeInt64(b []byte, i int64) {
 }
 
 func Marshal(version int16, value interface{}) ([]byte, error) {
-	typ := reflect.TypeOf(value)
-	cache, _ := marshalers.Load().(map[reflect.Type]encodeFunc)
+	typ := typeOf(value)
+	cache, _ := marshalers.Load().(map[_type]encodeFunc)
 	encode := cache[typ]
 
 	if encode == nil {
-		encode = encodeFuncOf(typ, version, structTag{
+		encode = encodeFuncOf(reflect.TypeOf(value), version, structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
 			Compact:    true,
 			Nullable:   true,
 		})
 
-		newCache := make(map[reflect.Type]encodeFunc, len(cache)+1)
+		newCache := make(map[_type]encodeFunc, len(cache)+1)
 		newCache[typ] = encode
 
 		for typ, fun := range cache {
@@ -485,5 +485,5 @@ func Marshal(version int16, value interface{}) ([]byte, error) {
 
 var (
 	encoders   sync.Pool    // *encoder
-	marshalers atomic.Value // map[reflect.Type]encodeFunc
+	marshalers atomic.Value // map[_type]encodeFunc
 )
