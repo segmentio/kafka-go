@@ -719,20 +719,34 @@ func (w *writer) writeWithRetries(conn *Conn, batch []Message, resch [](chan<- e
 		w.stats.retries.observe(1)
 		time.Sleep(backoff(attempt+1, 100*time.Millisecond, 1*time.Second))
 	}
+
+	if err != nil {
+		for i, res := range resch {
+			res <- &writerError{msg: batch[i], err: err}
+		}
+	} else {
+		for _, res := range resch {
+			res <- nil
+		}
+		for _, m := range batch {
+			w.stats.messages.observe(1)
+			w.stats.bytes.observe(int64(len(m.Key) + len(m.Value)))
+		}
+		w.stats.batchSize.observe(int64(len(batch)))
+	}
+
 	return conn, err
 }
 
 func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
 	w.stats.writes.observe(1)
+
 	if conn == nil {
 		if conn, err = w.dial(); err != nil {
 			w.stats.errors.observe(1)
 			w.withErrorLogger(func(logger Logger) {
 				logger.Printf("error dialing kafka brokers for topic %s (partition %d): %s", w.topic, w.partition, err)
 			})
-			for i, res := range resch {
-				res <- &writerError{msg: batch[i], err: err}
-			}
 			return
 		}
 	}
@@ -744,21 +758,9 @@ func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret
 		w.withErrorLogger(func(logger Logger) {
 			logger.Printf("error writing messages to %s (partition %d): %s", w.topic, w.partition, err)
 		})
-		for i, res := range resch {
-			res <- &writerError{msg: batch[i], err: err}
-		}
-	} else {
-		for _, m := range batch {
-			w.stats.messages.observe(1)
-			w.stats.bytes.observe(int64(len(m.Key) + len(m.Value)))
-		}
-		for _, res := range resch {
-			res <- nil
-		}
 	}
 	t1 := time.Now()
 	w.stats.waitTime.observeDuration(t1.Sub(t0))
-	w.stats.batchSize.observe(int64(len(batch)))
 
 	ret = conn
 	return
