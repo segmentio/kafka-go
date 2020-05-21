@@ -198,7 +198,6 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 			d.reader = io.MultiReader(bytes.NewReader(b), d.reader)
 		}
 
-		fmt.Println("BEFORE:", d.remain)
 		var tmp RecordSet
 		switch version {
 		case 0, 1:
@@ -208,8 +207,6 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		default:
 			err = fmt.Errorf("unsupported message version %d for message of size %d", version, size)
 		}
-
-		fmt.Println("AFTER:", d.remain, err)
 
 		if tmp.Version > rs.Version {
 			rs.Version = tmp.Version
@@ -221,8 +218,6 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 			stream.Records = append(stream.Records, tmp.Records)
 		}
 	}
-
-	fmt.Println("done", len(stream.Records))
 
 	if len(stream.Records) != 0 {
 		rs.Records = stream
