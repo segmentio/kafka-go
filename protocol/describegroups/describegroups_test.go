@@ -115,5 +115,4 @@ func TestConsumerGroups(t *testing.T) {
 			t.Fatalf("mismatch after marshal/unmarshal: %v %v", meta, parsed)
 		}
 	})
-
 }

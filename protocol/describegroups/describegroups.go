@@ -23,11 +23,38 @@ type Request struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.DescribeGroups }
 
+func (r *Request) Group() string {
+	if len(r.GroupIDs) != 1 {
+		return ""
+	}
+	return r.GroupIDs[0]
+}
+
+func (r *Request) Map(cluster protocol.Cluster) ([]protocol.Message, protocol.Reducer, error) {
+	requests := make([]protocol.Message, len(r.GroupIDs))
+	for i, group := range r.GroupIDs {
+		requests[i] = &Request{GroupIDs: []string{group}}
+	}
+	return requests, new(Response), nil
+}
+
 type Response struct {
 	Groups []Group `kafka:"min=v0,max=v0"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.DescribeGroups }
+
+func (r *Response) Reduce(requests []protocol.Message, results []interface{}) (protocol.Message, error) {
+	var reduced Response
+	for _, result := range results {
+		m, err := protocol.Result(result)
+		if err != nil {
+			return nil, err // todo : handle better?
+		}
+		reduced.Groups = append(reduced.Groups, m.(*Response).Groups...)
+	}
+	return &reduced, nil
+}
 
 type Group struct {
 	ErrorCode    int16         `kafka:"min=v0,max=v0"`
