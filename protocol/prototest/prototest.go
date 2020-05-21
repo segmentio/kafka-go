@@ -9,14 +9,6 @@ import (
 	"github.com/segmentio/kafka-go/protocol"
 )
 
-var balast = make([]byte, 0, 512*1024*1024) // 512 MB
-
-func closeMessage(m protocol.Message) {
-	if c, ok := m.(io.Closer); ok {
-		c.Close()
-	}
-}
-
 func deepEqual(x1, x2 interface{}) bool {
 	if x1 == nil {
 		return x2 == nil

@@ -50,6 +50,7 @@ func ReadAll(b Bytes) ([]byte, error) {
 	if b == nil {
 		return nil, nil
 	}
+	defer b.Close()
 	s := make([]byte, b.Size())
 	_, err := io.ReadFull(b, s)
 	return s, err

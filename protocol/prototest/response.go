@@ -12,7 +12,7 @@ import (
 )
 
 func TestResponse(t *testing.T, version int16, msg protocol.Message) {
-	defer closeMessage(msg)
+	reset := load(msg)
 
 	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 		b := &bytes.Buffer{}
@@ -21,7 +21,7 @@ func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 			t.Fatal(err)
 		}
 
-		reset(msg)
+		reset()
 
 		t.Logf("\n%s", hex.Dump(b.Bytes()))
 
@@ -42,7 +42,7 @@ func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 }
 
 func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
-	defer closeMessage(msg)
+	reset := load(msg)
 
 	b.Run(fmt.Sprintf("v%d", version), func(b *testing.B) {
 		apiKey := msg.ApiKey()
@@ -56,7 +56,7 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 				b.Fatal(err)
 			}
 
-			reset(msg)
+			reset()
 
 			p := buffer.Bytes()
 			x := bytes.NewReader(p)
@@ -84,7 +84,7 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 				if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
 					b.Fatal(err)
 				}
-				reset(msg)
+				reset()
 				n = int64(buffer.Len())
 				buffer.Reset()
 			}

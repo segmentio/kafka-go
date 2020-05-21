@@ -47,19 +47,6 @@ func MultiRecordReader(batches ...RecordReader) RecordReader {
 	}
 }
 
-// ResetRecordReader is a helper function to reset record batches that have a
-// `Reset()` method.
-func ResetRecordReader(rb RecordReader) error {
-	if r, _ := rb.(resetter); r != nil {
-		return r.Reset()
-	}
-	return ErrNoReset
-}
-
-type resetter interface {
-	Reset() error
-}
-
 func forEachRecord(r RecordReader, f func(int, *Record) error) error {
 	for i := 0; ; i++ {
 		rec, err := r.ReadRecord()
@@ -103,16 +90,6 @@ func (r *recordReader) ReadRecord() (*Record, error) {
 	return nil, io.EOF
 }
 
-func (r *recordReader) Reset() error {
-	r.index = 0
-	for i := range r.records {
-		r := &r.records[i]
-		resetBytes(r.Key)
-		resetBytes(r.Value)
-	}
-	return nil
-}
-
 type multiRecordReader struct {
 	batches []RecordReader
 	index   int
@@ -134,11 +111,6 @@ func (m *multiRecordReader) ReadRecord() (*Record, error) {
 	}
 }
 
-func (m *multiRecordReader) Reset() (err error) {
-	m.index, err = resetRecordReaders(m.batches[:m.index])
-	return
-}
-
 func concatRecordReader(head RecordReader, tail RecordReader) RecordReader {
 	if head == nil {
 		return tail
@@ -157,14 +129,6 @@ type optimizedRecordReader struct {
 	index   int
 	buffer  Record
 	headers [][]Header
-}
-
-func (r *optimizedRecordReader) Reset() error {
-	for i := range r.records {
-		resetBytes(r.records[i].key())
-		resetBytes(r.records[i].value())
-	}
-	return nil
 }
 
 func (r *optimizedRecordReader) ReadRecord() (*Record, error) {
@@ -317,10 +281,6 @@ func (c *ControlBatch) ReadControlRecord() (*ControlRecord, error) {
 	return ReadControlRecord(r)
 }
 
-func (c *ControlBatch) Reset() error {
-	return ResetRecordReader(c.Records)
-}
-
 func (c *ControlBatch) Offset() int64 {
 	return c.BaseOffset
 }
@@ -345,10 +305,6 @@ func (r *RecordBatch) ReadRecord() (*Record, error) {
 	return r.Records.ReadRecord()
 }
 
-func (r *RecordBatch) Reset() error {
-	return ResetRecordReader(r.Records)
-}
-
 func (r *RecordBatch) Offset() int64 {
 	return r.BaseOffset
 }
@@ -367,10 +323,6 @@ type MessageSet struct {
 
 func (m *MessageSet) ReadRecord() (*Record, error) {
 	return m.Records.ReadRecord()
-}
-
-func (m *MessageSet) Reset() error {
-	return ResetRecordReader(m.Records)
 }
 
 func (m *MessageSet) Offset() int64 {
@@ -412,11 +364,6 @@ func (s *RecordStream) ReadRecord() (*Record, error) {
 	}
 }
 
-func (s *RecordStream) Reset() (err error) {
-	s.index, err = resetRecordReaders(s.Records[:s.index])
-	return
-}
-
 type message struct {
 	Record Record
 	read   bool
@@ -430,28 +377,10 @@ func (m *message) ReadRecord() (*Record, error) {
 	return &m.Record, nil
 }
 
-func (m *message) Reset() error {
-	m.read = false
-	return nil
-}
-
 func (m *message) Offset() int64 {
 	return m.Record.Offset
 }
 
 func (m *message) Version() int {
 	return 1
-}
-
-func resetRecordReaders(records []RecordReader) (int, error) {
-	i := len(records) - 1
-
-	for i >= 0 {
-		if err := ResetRecordReader(records[i]); err != nil {
-			return i + 1, err
-		}
-		i--
-	}
-
-	return i + 1, nil
 }

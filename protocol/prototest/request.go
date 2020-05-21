@@ -12,7 +12,7 @@ import (
 )
 
 func TestRequest(t *testing.T, version int16, msg protocol.Message) {
-	defer closeMessage(msg)
+	reset := load(msg)
 
 	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 		b := &bytes.Buffer{}
@@ -21,7 +21,7 @@ func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 			t.Fatal(err)
 		}
 
-		reset(msg)
+		reset()
 
 		t.Logf("\n%s\n", hex.Dump(b.Bytes()))
 
@@ -43,12 +43,11 @@ func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 			t.Logf("expected: %+v", msg)
 			t.Logf("found:    %+v", req)
 		}
-		closeMessage(req)
 	})
 }
 
 func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
-	defer closeMessage(msg)
+	reset := load(msg)
 
 	b.Run(fmt.Sprintf("v%d", version), func(b *testing.B) {
 		buffer := &bytes.Buffer{}
@@ -61,7 +60,7 @@ func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
 				b.Fatal(err)
 			}
 
-			reset(msg)
+			reset()
 
 			p := buffer.Bytes()
 			x := bytes.NewReader(p)
@@ -89,7 +88,7 @@ func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
 				if err := protocol.WriteRequest(w, version, 1234, "client", msg); err != nil {
 					b.Fatal(err)
 				}
-				reset(msg)
+				reset()
 				n = int64(buffer.Len())
 				buffer.Reset()
 			}

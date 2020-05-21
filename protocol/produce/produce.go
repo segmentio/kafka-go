@@ -19,42 +19,6 @@ type Request struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
 
-func (r *Request) Close() error {
-	for i := range r.Topics {
-		t := &r.Topics[i]
-
-		for j := range t.Partitions {
-			p := &t.Partitions[j]
-
-			for {
-				r, err := p.RecordSet.Records.ReadRecord()
-				if err != nil {
-					break
-				}
-				if r.Key != nil {
-					r.Key.Close()
-				}
-				if r.Value != nil {
-					r.Value.Close()
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func (r *Request) Reset() {
-	for i := range r.Topics {
-		t := &r.Topics[i]
-
-		for j := range t.Partitions {
-			p := &t.Partitions[j]
-			protocol.ResetRecordReader(p.RecordSet.Records)
-		}
-	}
-}
-
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	broker := protocol.Broker{ID: -1}
 

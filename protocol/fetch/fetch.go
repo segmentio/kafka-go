@@ -84,42 +84,6 @@ type Response struct {
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.Fetch }
 
-func (r *Response) Close() error {
-	for i := range r.Topics {
-		t := &r.Topics[i]
-
-		for j := range t.Partitions {
-			p := &t.Partitions[j]
-
-			for {
-				r, err := p.RecordSet.Records.ReadRecord()
-				if err != nil {
-					break
-				}
-				if r.Key != nil {
-					r.Key.Close()
-				}
-				if r.Value != nil {
-					r.Value.Close()
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func (r *Response) Reset() {
-	for i := range r.Topics {
-		t := &r.Topics[i]
-
-		for j := range t.Partitions {
-			p := &t.Partitions[j]
-			protocol.ResetRecordReader(p.RecordSet.Records)
-		}
-	}
-}
-
 type ResponseTopic struct {
 	Topic      string              `kafka:"min=v0,max=v11"`
 	Partitions []ResponsePartition `kafka:"min=v0,max=v11"`
