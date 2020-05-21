@@ -1,6 +1,20 @@
 package kafka
 
-import "bufio"
+import (
+	"bufio"
+	"context"
+
+	"github.com/segmentio/kafka-go/protocol/describegroups"
+)
+
+func (c *Client) DescribeGroups(ctx context.Context, groupIDs ...string) (*describegroups.Response, error) {
+	req := describegroups.Request{GroupIDs: groupIDs}
+	res, err := c.roundTrip(ctx, c.Addr, &req)
+	if err != nil {
+		return nil, err
+	}
+	return res.(*describegroups.Response), nil
+}
 
 // See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
 type describeGroupsRequestV0 struct {
