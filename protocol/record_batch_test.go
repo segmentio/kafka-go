@@ -171,15 +171,15 @@ func equalRecords(r1, r2 *Record) bool {
 		return false
 	}
 
-	k1, _ := ReadFull(r1.Key)
-	k2, _ := ReadFull(r2.Key)
+	k1, _ := ReadAll(r1.Key)
+	k2, _ := ReadAll(r2.Key)
 
 	if !reflect.DeepEqual(k1, k2) {
 		return false
 	}
 
-	v1, _ := ReadFull(r1.Value)
-	v2, _ := ReadFull(r2.Value)
+	v1, _ := ReadAll(r1.Value)
+	v2, _ := ReadAll(r2.Value)
 
 	if !reflect.DeepEqual(v1, v2) {
 		return false

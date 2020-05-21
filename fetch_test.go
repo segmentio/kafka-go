@@ -13,6 +13,23 @@ import (
 	"github.com/segmentio/kafka-go/compress"
 )
 
+func copyRecords(records []Record) []Record {
+	newRecords := make([]Record, len(records))
+
+	for i := range records {
+		k, _ := ReadAll(records[i].Key)
+		v, _ := ReadAll(records[i].Value)
+
+		records[i].Key = NewBytes(k)
+		records[i].Value = NewBytes(v)
+
+		newRecords[i].Key = NewBytes(k)
+		newRecords[i].Value = NewBytes(v)
+	}
+
+	return newRecords
+}
+
 func produceRecords(t *testing.T, n int, addr net.Addr, topic string, compression compress.Codec) []Record {
 	network := addr.Network()
 	address := net.JoinHostPort(addr.String(), "9092")
@@ -139,6 +156,14 @@ func TestClientMultiFetch(t *testing.T) {
 		t.Error(res.Error)
 	}
 
+	if len(res.Responses) != 1 {
+		t.Error("number of responses mismatch: expected 1 but found", len(res.Responses))
+	}
+
+	if len(res.Responses[topic]) != 3 {
+		t.Error("number of topic responses mismatch: expected 3 but found", len(res.Responses[topic]))
+	}
+
 	for i, p := range res.Responses[topic] {
 		r1 := &FetchResponse{
 			Topic:            topic,
@@ -157,9 +182,10 @@ func TestClientMultiFetch(t *testing.T) {
 			HighWatermark:    10,
 			LastStableOffset: 10,
 			LogStartOffset:   0,
-			Records:          NewRecordReader(records[i:]...),
+			Records:          NewRecordReader(copyRecords(records[i:])...),
 		}
 
+		t.Logf("checking response to fetch request #%d", i)
 		assertFetchResponse(t, r1, r2)
 	}
 }
@@ -168,7 +194,7 @@ func TestClientMultiFetchCompressed(t *testing.T) {
 	client, topic, shutdown := newLocalClientAndTopic()
 	defer shutdown()
 
-	records := produceRecords(t, 10, client.Addr, topic, &compress.ZstdCodec)
+	records := produceRecords(t, 10, client.Addr, topic, &compress.Lz4Codec)
 
 	res, err := client.MultiFetch(context.Background(), &MultiFetchRequest{
 		Requests: map[string][]FetchPartitionRequest{
@@ -218,7 +244,7 @@ func TestClientMultiFetchCompressed(t *testing.T) {
 			HighWatermark:    10,
 			LastStableOffset: 10,
 			LogStartOffset:   0,
-			Records:          NewRecordReader(records[i:]...),
+			Records:          NewRecordReader(copyRecords(records[i:])...),
 		}
 
 		assertFetchResponse(t, r1, r2)

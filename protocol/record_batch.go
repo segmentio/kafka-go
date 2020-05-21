@@ -226,7 +226,7 @@ type ControlRecord struct {
 }
 
 func ReadControlRecord(r *Record) (*ControlRecord, error) {
-	k, err := ReadFull(r.Key)
+	k, err := ReadAll(r.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func ReadControlRecord(r *Record) (*ControlRecord, error) {
 		return nil, Errorf("invalid control record with key of size %d", len(k))
 	}
 
-	v, err := ReadFull(r.Value)
+	v, err := ReadAll(r.Value)
 	if err != nil {
 		return nil, err
 	}

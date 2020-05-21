@@ -1,8 +1,6 @@
 package kafka
 
 import (
-	"bytes"
-
 	"github.com/segmentio/kafka-go/protocol"
 )
 
@@ -20,21 +18,10 @@ type Bytes = protocol.Bytes
 // NewBytes constructs a Bytes value from a byte slice.
 //
 // If b is nil, nil is returned.
-func NewBytes(b []byte) Bytes {
-	if b == nil {
-		return nil
-	}
-	r := new(bytesReader)
-	r.Reset(b)
-	return r
-}
+func NewBytes(b []byte) Bytes { return protocol.NewBytes(b) }
 
-type bytesReader struct{ bytes.Reader }
-
-func (r *bytesReader) Close() error {
-	r.Reset(nil)
-	return nil
-}
+// ReadAll reads b into a byte slice.
+func ReadAll(b Bytes) ([]byte, error) { return protocol.ReadAll(b) }
 
 // Record is an interface representing a single kafka record.
 //

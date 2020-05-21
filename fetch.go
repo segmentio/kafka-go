@@ -226,12 +226,16 @@ func (c *Client) MultiFetch(ctx context.Context, req *MultiFetchRequest) (*Multi
 		}
 
 		for i, partition := range partitions {
+			maxBytes := partition.MaxBytes
+			if maxBytes == 0 {
+				maxBytes = req.MaxBytes
+			}
 			topic.Partitions[i] = fetchAPI.RequestPartition{
 				Partition:          int32(partition.Partition),
 				CurrentLeaderEpoch: -1,
 				FetchOffset:        partition.Offset,
 				LogStartOffset:     -1,
-				PartitionMaxBytes:  int32(partition.MaxBytes),
+				PartitionMaxBytes:  int32(maxBytes),
 			}
 		}
 

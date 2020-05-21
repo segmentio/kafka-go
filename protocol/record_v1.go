@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"math"
@@ -15,6 +16,8 @@ func readMessage(b *pageBuffer, d *decoder) (attributes int8, baseOffset, timest
 
 	baseOffset = md.readInt64()
 	md.remain = int(md.readInt32())
+
+	fmt.Println("READ MESSAGE:", baseOffset, md.remain)
 
 	crc := uint32(md.readInt32())
 	md.setCRC(crc32.IEEETable)

@@ -45,8 +45,8 @@ func NewBytes(b []byte) Bytes {
 	return r
 }
 
-// ReadFull reads b in a byte slice.
-func ReadFull(b Bytes) ([]byte, error) {
+// ReadAll reads b in a byte slice.
+func ReadAll(b Bytes) ([]byte, error) {
 	if b == nil {
 		return nil, nil
 	}

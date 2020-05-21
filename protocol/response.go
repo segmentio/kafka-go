@@ -35,6 +35,9 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 
 	d.remain = int(size)
 	correlationID = d.readInt32()
+
+	fmt.Println("READ RESPONSE:", apiKey, apiVersion, correlationID, size, r)
+
 	res := &t.responses[apiVersion-minVersion]
 	msg = res.new()
 	res.decode(d, valueOf(msg))
