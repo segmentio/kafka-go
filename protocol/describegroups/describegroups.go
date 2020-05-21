@@ -68,6 +68,11 @@ type ConsumerGroupMetadata struct {
 // kafka.Unmarshal.
 type ConsumerGroupAssignment struct {
 	Version  int16
-	Topics   map[string][]int32
+	Topics   []ConsumerGroupTopic
 	UserData []byte
+}
+
+type ConsumerGroupTopic struct {
+	Topic      string
+	Partitions []int32
 }

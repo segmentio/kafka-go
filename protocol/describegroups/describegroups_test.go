@@ -68,9 +68,15 @@ func TestConsumerGroups(t *testing.T) {
 	t.Run("ConsumerGroupAssignment", func(t *testing.T) {
 		assignment := ConsumerGroupAssignment{
 			Version: 1,
-			Topics: map[string][]int32{
-				"foo": {1, 2, 3},
-				"bar": {4, 5, 6},
+			Topics: []ConsumerGroupTopic{
+				{
+					Topic:      "foo",
+					Partitions: []int32{1, 2, 3},
+				},
+				{
+					Topic:      "bar",
+					Partitions: []int32{4, 5, 6},
+				},
 			},
 			UserData: []byte("stuff"),
 		}

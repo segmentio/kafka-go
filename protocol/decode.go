@@ -105,21 +105,6 @@ func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeF
 	}
 }
 
-func (d *decoder) decodeMap(v value, typ reflect.Type, decodeVal decodeFunc) {
-	if n := d.readInt32(); n < 0 {
-		v.setArray(array{})
-	} else {
-		m := array{val: reflect.MakeMap(typ)}
-		for i := 0; i < int(n) && d.remain > 0; i++ {
-			k := reflect.ValueOf(d.readString())
-			v := reflect.New(typ.Elem()).Elem()
-			decodeVal(d, value{v})
-			m.val.SetMapIndex(k, v)
-		}
-		v.setArray(m)
-	}
-}
-
 func (d *decoder) discardAll() {
 	d.discard(d.remain)
 }
@@ -321,8 +306,6 @@ func decodeFuncOf(typ reflect.Type, version int16, tag structTag) decodeFunc {
 			return bytesDecodeFuncOf(tag)
 		}
 		return arrayDecodeFuncOf(typ, version, tag)
-	case reflect.Map:
-		return mapDecodeFuncOf(typ, version, tag)
 	default:
 		panic("unsupported type: " + typ.String())
 	}
@@ -368,14 +351,6 @@ func arrayDecodeFuncOf(typ reflect.Type, version int16, tag structTag) decodeFun
 	elemType := typ.Elem()
 	elemFunc := decodeFuncOf(elemType, version, tag)
 	return func(d *decoder, v value) { d.decodeArray(v, elemType, elemFunc) }
-}
-
-func mapDecodeFuncOf(typ reflect.Type, version int16, tag structTag) decodeFunc {
-	if typ.Key().Kind() != reflect.String {
-		panic("unsupported map key type: " + typ.Key().String())
-	}
-	valFunc := decodeFuncOf(typ.Elem(), version, tag)
-	return func(d *decoder, v value) { d.decodeMap(v, typ, valFunc) }
 }
 
 func readerDecodeFuncOf(typ reflect.Type) decodeFunc {
