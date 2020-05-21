@@ -2,7 +2,18 @@ package kafka
 
 import (
 	"bufio"
+	"context"
+
+	"github.com/segmentio/kafka-go/protocol/listgroups"
 )
+
+func (c *Client) ListGroups(ctx context.Context) (*listgroups.Response, error) {
+	res, err := c.roundTrip(ctx, c.Addr, &listgroups.Request{})
+	if err != nil {
+		return nil, err
+	}
+	return res.(*listgroups.Response), nil
+}
 
 type listGroupsRequestV1 struct {
 }
