@@ -317,7 +317,7 @@ import (
 w := kafka.NewWriter(kafka.WriterConfig{
 	Brokers: []string{"localhost:9092"},
 	Topic:   "topic-A",
-	CompressionCodec: snappy.NewCompressionCodec(),
+	CompressionCodec: new(snappy.Codec),
 })
 ```
 
