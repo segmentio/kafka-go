@@ -170,6 +170,21 @@ func (e *encoder) encodeNullArray(v value, elemType reflect.Type, encodeElem enc
 	}
 }
 
+func (e *encoder) encodeMap(v value, typ reflect.Type, encodeVal encodeFunc) {
+	if v.val.IsNil() {
+		e.writeInt32(-1)
+		return
+	}
+
+	n := v.val.Len()
+	e.writeInt32(int32(n))
+
+	for _, k := range v.val.MapKeys() {
+		e.writeString(k.String())
+		encodeVal(e, value{v.val.MapIndex(k)})
+	}
+}
+
 func (e *encoder) writeInt8(i int8) {
 	writeInt8(e.buffer[:1], i)
 	e.Write(e.buffer[:1])
@@ -340,6 +355,8 @@ func encodeFuncOf(typ reflect.Type, version int16, tag structTag) encodeFunc {
 			return bytesEncodeFuncOf(tag)
 		}
 		return arrayEncodeFuncOf(typ, version, tag)
+	case reflect.Map:
+		return mapEncodeFuncOf(typ, version, tag)
 	default:
 		panic("unsupported type: " + typ.String())
 	}
@@ -402,6 +419,15 @@ func arrayEncodeFuncOf(typ reflect.Type, version int16, tag structTag) encodeFun
 	default:
 		return func(e *encoder, v value) { e.encodeArray(v, elemType, elemFunc) }
 	}
+}
+
+func mapEncodeFuncOf(typ reflect.Type, version int16, tag structTag) encodeFunc {
+	if typ.Key().Kind() != reflect.String {
+		panic("unsupported map key type: " + typ.Key().String())
+	}
+	valFunc := encodeFuncOf(typ.Elem(), version, tag)
+	return func(e *encoder, v value) { e.encodeMap(v, typ, valFunc) }
+
 }
 
 func writerEncodeFuncOf(typ reflect.Type) encodeFunc {

@@ -57,7 +57,7 @@ type Transport struct {
 
 	// Time limit set for establishing connections to the kafka cluster. This
 	// limit includes all round trips done to establish the connections (TLS
-	// hadbhaske, SASL negotiation, etc...).
+	// handshake, SASL negotiation, etc...).
 	//
 	// Defaults to 5s.
 	DialTimeout time.Duration
