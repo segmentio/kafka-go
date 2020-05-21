@@ -36,10 +36,7 @@ func (c *counter) observe(v int64) {
 }
 
 func (c *counter) snapshot() int64 {
-	p := c.ptr()
-	v := atomic.LoadInt64(p)
-	atomic.AddInt64(p, -v)
-	return v
+	return atomic.SwapInt64(c.ptr(), 0)
 }
 
 // gauge is an atomic integer that may be set to any arbitrary value, the value
