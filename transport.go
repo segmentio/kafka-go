@@ -461,29 +461,29 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 	addBrokers := make(map[int]struct{})
 	delBrokers := make(map[int]struct{})
 
-	for id, b2 := range layout.Brokers {
-		if b1, ok := state.layout.Brokers[id]; !ok {
-			addBrokers[id] = struct{}{}
-		} else if b1 != b2 {
-			addBrokers[id] = struct{}{}
-			delBrokers[id] = struct{}{}
-		}
-	}
-
-	for id := range state.layout.Brokers {
-		if _, ok := layout.Brokers[id]; !ok {
-			delBrokers[id] = struct{}{}
-		}
-	}
-
 	if err != nil {
 		// Only update the error on the transport if the cluster layout was
 		// unknown. This ensures that we prioritize a previously known state
 		// of the cluster to reduce the impact of transient failures.
-		if state.metadata == nil {
-			state.err = err
+		if state.metadata != nil {
+			return
 		}
 	} else {
+		for id, b2 := range layout.Brokers {
+			if b1, ok := state.layout.Brokers[id]; !ok {
+				addBrokers[id] = struct{}{}
+			} else if b1 != b2 {
+				addBrokers[id] = struct{}{}
+				delBrokers[id] = struct{}{}
+			}
+		}
+
+		for id := range state.layout.Brokers {
+			if _, ok := layout.Brokers[id]; !ok {
+				delBrokers[id] = struct{}{}
+			}
+		}
+
 		state.metadata, state.layout = metadata, layout
 	}
 
@@ -502,9 +502,10 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 		}
 
 		for id := range delBrokers {
-			bc := p.conns[id]
-			bc.closeIdleConns()
-			delete(p.conns, id)
+			if broker := p.conns[id]; broker != nil {
+				broker.closeIdleConns()
+				delete(p.conns, id)
+			}
 		}
 
 		for id := range addBrokers {
