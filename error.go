@@ -474,7 +474,7 @@ func (e Error) Description() string {
 		return "the leader epoch in the request is newer than the epoch on the broker"
 	case UnsupportedCompressionType:
 		return "the requesting client does not support the compression type of given partition"
-	case ElectionNotNeeded:
+	case EligibleLeadersNotAvailable:
 		return "eligible topic partition leaders are not available"
 	case ElectionNotNeeded:
 		return "leader election not needed for topic partition"

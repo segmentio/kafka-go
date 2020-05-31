@@ -7,16 +7,16 @@ func init() {
 }
 
 type Request struct {
-	AuthBytes []byte `kafka:"min=v0,max=v1|min=v2,max=v2,compact"`
+	AuthBytes []byte `kafka:"min=v0,max=v1"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.SaslAuthenticate }
 
 type Response struct {
-	ErrorCode         int16  `kafka:"min=v0,max=v2"`
-	ErrorMessage      string `kafka:"min=v0,max=v1,nullable|min=v2,max=v2,compact,nullable"`
-	AuthBytes         []byte `kafka:"min=v0,max=v1|min=v2,max=v2,compact"`
-	SessionLifetimeMs int64  `kafka:"min=v1,max=v2"`
+	ErrorCode         int16  `kafka:"min=v0,max=v1"`
+	ErrorMessage      string `kafka:"min=v0,max=v1,nullable"`
+	AuthBytes         []byte `kafka:"min=v0,max=v1"`
+	SessionLifetimeMs int64  `kafka:"min=v1,max=v1"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.SaslAuthenticate }

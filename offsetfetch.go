@@ -21,12 +21,6 @@ type OffsetFetchRequest struct {
 
 	// Set of topic partitions to retrieve the offsets for.
 	Topics map[string][]int
-
-	// When set to true, the broker is allowed to return unstable offsets.
-	//
-	// This field requires the kafka broker to suppor the OffsetFetch API in
-	// version 7 or above (otherwise it is ignored).
-	RequireStable bool
 }
 
 // OffsetFetchResponse represents a response from a kafka broker to a offset
@@ -88,9 +82,8 @@ func (c *Client) OffsetFetch(ctx context.Context, req *OffsetFetchRequest) (*Off
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &offsetfetch.Request{
-		GroupID:       req.GroupID,
-		Topics:        topics,
-		RequireStable: req.RequireStable,
+		GroupID: req.GroupID,
+		Topics:  topics,
 	})
 
 	if err != nil {

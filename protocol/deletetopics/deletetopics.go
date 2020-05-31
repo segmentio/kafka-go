@@ -7,8 +7,8 @@ func init() {
 }
 
 type Request struct {
-	TopicNames []string `kafka:"min=v0,max=v3|min=v4,max=v4,compact"`
-	TimeoutMs  int32    `kafka:"min=v0,max=v4"`
+	TopicNames []string `kafka:"min=v0,max=v3"`
+	TimeoutMs  int32    `kafka:"min=v0,max=v3"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.DeleteTopics }
@@ -18,15 +18,15 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 }
 
 type Response struct {
-	ThrottleTimeMs int32           `kafka:"min=v1,max=v4"`
-	Responses      []ResponseTopic `kafka:"min=v0,max=v4"`
+	ThrottleTimeMs int32           `kafka:"min=v1,max=v3"`
+	Responses      []ResponseTopic `kafka:"min=v0,max=v3"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.DeleteTopics }
 
 type ResponseTopic struct {
-	Name      string `kafka:"min=v0,max=v3|min=v4,max=v4,compact"`
-	ErrorCode int16  `kafka:"min=v0,max=v4"`
+	Name      string `kafka:"min=v0,max=v3"`
+	ErrorCode int16  `kafka:"min=v0,max=v3"`
 }
 
 var (

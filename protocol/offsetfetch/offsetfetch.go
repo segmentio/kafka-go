@@ -7,9 +7,8 @@ func init() {
 }
 
 type Request struct {
-	GroupID       string         `kafka:"min=v0,max=v5|min=v6,max=v7,compact""`
-	Topics        []RequestTopic `kafka:"min=v0,max=v7"`
-	RequireStable bool           `kafka:"min=v7,max=v7"`
+	GroupID string         `kafka:"min=v0,max=v5"`
+	Topics  []RequestTopic `kafka:"min=v0,max=v5"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.OffsetFetch }
@@ -17,8 +16,8 @@ func (r *Request) ApiKey() protocol.ApiKey { return protocol.OffsetFetch }
 func (r *Request) Group() string { return r.GroupID }
 
 type RequestTopic struct {
-	Name             string  `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
-	PartitionIndexes []int32 `kafka:"min=v0,max=v7"`
+	Name             string  `kafka:"min=v0,max=v5"`
+	PartitionIndexes []int32 `kafka:"min=v0,max=v5"`
 }
 
 var (
@@ -26,22 +25,22 @@ var (
 )
 
 type Response struct {
-	ThrottleTimeMs int32           `kafka:"min=v3,max=v7"`
-	Topics         []ResponseTopic `kafka:"min=v0,max=v7"`
-	ErrorCode      int16           `kafka:"min=v2,max=v7"`
+	ThrottleTimeMs int32           `kafka:"min=v3,max=v5"`
+	Topics         []ResponseTopic `kafka:"min=v0,max=v5"`
+	ErrorCode      int16           `kafka:"min=v2,max=v5"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.OffsetFetch }
 
 type ResponseTopic struct {
-	Name       string              `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
-	Partitions []ResponsePartition `kafka:"min=v0,max=v7"`
+	Name       string              `kafka:"min=v0,max=v5"`
+	Partitions []ResponsePartition `kafka:"min=v0,max=v5"`
 }
 
 type ResponsePartition struct {
-	PartitionIndex      int32  `kafka:"min=v0,max=v7"`
-	CommittedOffset     int64  `kafka:"min=v0,max=v7"`
-	ComittedLeaderEpoch int32  `kafka:"min=v5,max=v7"`
-	Metadata            string `kafka:"min=v0,max=v5,nullable|min=v6,max=v7,compact,nullable"`
-	ErrorCode           int16  `kafka:"min=v0,max=v7"`
+	PartitionIndex      int32  `kafka:"min=v0,max=v5"`
+	CommittedOffset     int64  `kafka:"min=v0,max=v5"`
+	ComittedLeaderEpoch int32  `kafka:"min=v5,max=v5"`
+	Metadata            string `kafka:"min=v0,max=v5,nullable"`
+	ErrorCode           int16  `kafka:"min=v0,max=v5"`
 }
