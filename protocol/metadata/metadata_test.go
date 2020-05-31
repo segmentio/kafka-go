@@ -12,7 +12,6 @@ const (
 	v1 = 1
 	v4 = 4
 	v8 = 8
-	v9 = 9
 )
 
 func TestMetadataRequest(t *testing.T) {
@@ -100,7 +99,7 @@ func TestMetadataResponse(t *testing.T) {
 		},
 	})
 
-	prototest.TestResponse(t, v9, &metadata.Response{
+	prototest.TestResponse(t, v8, &metadata.Response{
 		ThrottleTimeMs:              123,
 		ClusterID:                   "test",
 		ControllerID:                1,
@@ -154,7 +153,7 @@ func BenchmarkMetadataRequest(b *testing.B) {
 }
 
 func BenchmarkMetadataResponse(b *testing.B) {
-	prototest.BenchmarkResponse(b, v9, &metadata.Response{
+	prototest.BenchmarkResponse(b, v8, &metadata.Response{
 		ThrottleTimeMs:              123,
 		ClusterID:                   "test",
 		ControllerID:                1,
