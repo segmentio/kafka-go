@@ -23,7 +23,7 @@ type OffsetFetchRequest struct {
 	Topics map[string][]int
 }
 
-// OffsetFetchResponse represents a response from a kafka broker to a offset
+// OffsetFetchResponse represents a response from a kafka broker to an offset
 // fetch request.
 type OffsetFetchResponse struct {
 	// The amount of time that the broker throttled the request.
