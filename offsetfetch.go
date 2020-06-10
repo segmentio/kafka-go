@@ -63,7 +63,7 @@ type OffsetFetchPartition struct {
 	Error error
 }
 
-// OffsetFetch sends a offset fetch request to a kafka broker and returns the
+// OffsetFetch sends an offset fetch request to a kafka broker and returns the
 // response.
 func (c *Client) OffsetFetch(ctx context.Context, req *OffsetFetchRequest) (*OffsetFetchResponse, error) {
 	topics := make([]offsetfetch.RequestTopic, 0, len(req.Topics))
