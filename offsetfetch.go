@@ -10,7 +10,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/offsetfetch"
 )
 
-// OffsetFetchRequest represents a request setnt to a kafka broker to read the
+// OffsetFetchRequest represents a request sent to a kafka broker to read the
 // currently committed offsets of topic partitions.
 type OffsetFetchRequest struct {
 	// Address of the kafka broker to send the request to.
