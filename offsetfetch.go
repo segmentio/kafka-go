@@ -32,7 +32,7 @@ type OffsetFetchResponse struct {
 	// Set of topic partitions that the kafka broker has returned offsets for.
 	Topics map[string][]OffsetFetchPartition
 
-	// An error that may have occured while attempting to retrieve consumer
+	// An error that may have occurred while attempting to retrieve consumer
 	// group offsets.
 	//
 	// The error contains both the kafka error code, and an error message
@@ -54,7 +54,7 @@ type OffsetFetchPartition struct {
 	// Consumer group metadata for this partition.
 	Metadata string
 
-	// An error that may have occured while attempting to retrieve consumer
+	// An error that may have occurred while attempting to retrieve consumer
 	// group offsets for this partition.
 	//
 	// The error contains both the kafka error code, and an error message

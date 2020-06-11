@@ -36,7 +36,7 @@ type CreateTopicsResponse struct {
 	// CreateTopics API in version 2 or above.
 	Throttle time.Duration
 
-	// Mapping of topic names to errors that occured while attempting to create
+	// Mapping of topic names to errors that occurred while attempting to create
 	// the topics.
 	//
 	// The errors contain the kafka error code. Programs may use the standard

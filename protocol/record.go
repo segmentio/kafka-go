@@ -127,7 +127,7 @@ type bytesBuffer interface {
 	Bytes() []byte
 }
 
-// magicByteOffset is the postion of the magic byte in all versions of record
+// magicByteOffset is the position of the magic byte in all versions of record
 // sets in the kafka protocol.
 const magicByteOffset = 16
 

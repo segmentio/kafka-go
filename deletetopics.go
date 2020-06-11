@@ -29,7 +29,7 @@ type DeleteTopicsResponse struct {
 	// DeleteTopics API in version 1 or above.
 	Throttle time.Duration
 
-	// Mapping of topic names to errors that occured while attempting to delete
+	// Mapping of topic names to errors that occurred while attempting to delete
 	// the topics.
 	//
 	// The errors contain the kafka error code. Programs may use the standard

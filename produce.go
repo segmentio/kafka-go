@@ -51,7 +51,7 @@ type ProduceResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration
 
-	// An error that may have occured while attempting to produce the records.
+	// An error that may have occurred while attempting to produce the records.
 	//
 	// The error contains both the kafka error code, and an error message
 	// returned by the kafka broker. Programs may use the standard errors.Is
@@ -76,8 +76,8 @@ type ProduceResponse struct {
 	// API in version 5 or above (or if the first offset is zero).
 	LogStartOffset int64
 
-	// If errors occured writing specific records, they will be reported in this
-	// map.
+	// If errors occurred writing specific records, they will be reported in
+	// this map.
 	//
 	// This field will always be empty if the kafka broker did no support the
 	// Produce API in version 8 or above.

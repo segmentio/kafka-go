@@ -153,7 +153,7 @@ func TestConn(t *testing.T) {
 		},
 
 		{
-			scenario: "unchecked seeks allow the connection to be positionned outside the boundaries of the partition",
+			scenario: "unchecked seeks allow the connection to be positioned outside the boundaries of the partition",
 			function: testConnSeekDontCheck,
 		},
 

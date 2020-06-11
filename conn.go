@@ -1366,7 +1366,7 @@ func (c *Conn) ApiVersions() ([]ApiVersion, error) {
 
 	if deadline.deadline().IsZero() {
 		// ApiVersions is called automatically when API version negotiation
-		// needs to happen, so we are not garanteed that a read deadline has
+		// needs to happen, so we are not guaranteed that a read deadline has
 		// been set yet. Fallback to use the write deadline in case it was
 		// set, for example when version negotiation is initiated during a
 		// produce request.

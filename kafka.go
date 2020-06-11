@@ -21,7 +21,7 @@ type Topic struct {
 	// The list of partition currently available on this topic.
 	Partitions []Partition
 
-	// An error that may have occured while attempting to read the topic
+	// An error that may have occurred while attempting to read the topic
 	// metadata.
 	//
 	// The error contains both the kafka error code, and an error message
@@ -42,7 +42,7 @@ type Partition struct {
 	Replicas []Broker
 	Isr      []Broker
 
-	// An error that may have occured while attempting to read the partition
+	// An error that may have occurred while attempting to read the partition
 	// metadata.
 	//
 	// The error contains both the kafka error code, and an error message

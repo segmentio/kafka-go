@@ -139,7 +139,7 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 
 	if compression := attributes.Compression(); compression != 0 {
 		if codec := compression.Codec(); codec != nil {
-			// In the message format version 1, compression is acheived by
+			// In the message format version 1, compression is achieved by
 			// compressing the value of a message which recursively contains
 			// the representation of the compressed message set.
 			subset := *rs

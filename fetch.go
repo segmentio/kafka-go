@@ -57,7 +57,7 @@ type FetchResponse struct {
 	LastStableOffset int64
 	LogStartOffset   int64
 
-	// An error that may have occured while attempting to fetch the records.
+	// An error that may have occurred while attempting to fetch the records.
 	//
 	// The error contains both the kafka error code, and an error message
 	// returned by the kafka broker. Programs may use the standard errors.Is
