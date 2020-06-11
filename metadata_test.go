@@ -69,7 +69,7 @@ func TestClientMetadata(t *testing.T) {
 		}
 
 		if len(metadata.Topics) > 1 {
-			t.Error("too mnay topics were returned in the metadata response")
+			t.Error("too many topics were returned in the metadata response")
 		}
 	}
 }
