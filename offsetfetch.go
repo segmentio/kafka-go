@@ -10,7 +10,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/offsetfetch"
 )
 
-// OffsetFetchRequest represents a request setnt to a kafka broker to read the
+// OffsetFetchRequest represents a request sent to a kafka broker to read the
 // currently committed offsets of topic partitions.
 type OffsetFetchRequest struct {
 	// Address of the kafka broker to send the request to.
@@ -23,7 +23,7 @@ type OffsetFetchRequest struct {
 	Topics map[string][]int
 }
 
-// OffsetFetchResponse represents a response from a kafka broker to a offset
+// OffsetFetchResponse represents a response from a kafka broker to an offset
 // fetch request.
 type OffsetFetchResponse struct {
 	// The amount of time that the broker throttled the request.
@@ -63,7 +63,7 @@ type OffsetFetchPartition struct {
 	Error error
 }
 
-// OffsetFetch sends a offset fetch request to a kafka broker and returns the
+// OffsetFetch sends an offset fetch request to a kafka broker and returns the
 // response.
 func (c *Client) OffsetFetch(ctx context.Context, req *OffsetFetchRequest) (*OffsetFetchResponse, error) {
 	topics := make([]offsetfetch.RequestTopic, 0, len(req.Topics))
