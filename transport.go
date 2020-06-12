@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"runtime/pprof"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -540,14 +541,14 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 				IncludeClusterAuthorizedOperations: true,
 				IncludeTopicAuthorizedOperations:   true,
 			}
-
+			deadline, cancel := context.WithTimeout(ctx, p.metadataTTL)
 			c.reqs <- connRequest{
-				req:      req,
-				res:      res,
-				deadline: time.Now().Add(p.metadataTTL),
+				ctx: deadline,
+				req: req,
+				res: res,
 			}
-
-			r, err := res.await(ctx)
+			r, err := res.await(deadline)
+			cancel()
 			if err != nil && err == ctx.Err() {
 				return
 			}
@@ -639,13 +640,12 @@ func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolS
 		return reject(err)
 	}
 
-	deadline, _ := ctx.Deadline()
 	res := make(async, 1)
 
 	c.reqs <- connRequest{
-		req:      req,
-		res:      res,
-		deadline: deadline,
+		ctx: ctx,
+		req: req,
+		res: res,
 	}
 
 	return res
@@ -776,9 +776,9 @@ func (p *connPool) newConnGroup(ctx context.Context, network, address string) *c
 }
 
 type connRequest struct {
-	req      Request
-	res      async
-	deadline time.Time
+	ctx context.Context
+	req Request
+	res async
 }
 
 // The promise interface is used as a message passing abstraction to coordinate
@@ -1062,9 +1062,7 @@ func (c *conn) run(pc *protocol.Conn, reqs <-chan connRequest) {
 	defer pc.Close()
 
 	for cr := range reqs {
-		pc.SetDeadline(cr.deadline)
-
-		r, err := pc.RoundTrip(cr.req)
+		r, err := c.roundTrip(cr.ctx, pc, cr.req)
 		if err != nil {
 			cr.res.reject(err)
 			if !errors.Is(err, protocol.ErrNoRecord) {
@@ -1073,13 +1071,22 @@ func (c *conn) run(pc *protocol.Conn, reqs <-chan connRequest) {
 		} else {
 			cr.res.resolve(r)
 		}
-
-		pc.SetDeadline(time.Time{})
-
 		if !c.group.releaseConn(c) {
 			break
 		}
 	}
+}
+
+func (c *conn) roundTrip(ctx context.Context, pc *protocol.Conn, req Request) (Response, error) {
+	pprof.SetGoroutineLabels(ctx)
+	defer pprof.SetGoroutineLabels(context.Background())
+
+	if deadline, hasDeadline := ctx.Deadline(); hasDeadline {
+		pc.SetDeadline(deadline)
+		defer pc.SetDeadline(time.Time{})
+	}
+
+	return pc.RoundTrip(req)
 }
 
 // authenticateSASL performs all of the required requests to authenticate this
