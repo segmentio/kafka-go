@@ -22,7 +22,7 @@ const (
 // be used to asynchronously cancel the requests.
 //
 // Clients are safe to use concurrently from multiple goroutines, as long as
-// their configuration is not changed after it was first used.
+// their configuration is not changed after first use.
 type Client struct {
 	// Address of the kafka cluster (or specific broker) that the client will be
 	// sending requests to.
