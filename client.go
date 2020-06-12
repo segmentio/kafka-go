@@ -130,6 +130,9 @@ func (c *Client) timeout(ctx context.Context, defaultTimeout time.Duration) time
 	}
 
 	if timeout > 0 {
+		// Half the timeout because it is communicated to kafka in multiple
+		// requests (e.g. Fetch, Produce, etc...), this adds buffer to account
+		// for network latency when waiting for the response from kafka.
 		return timeout / 2
 	}
 
