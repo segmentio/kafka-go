@@ -360,11 +360,11 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 			expectTopics[i] = m.Topics[i].Name
 		}
 
-	case protocol.Mapper:
-		// Messages that implement the Mapper interface trigger the creation of
+	case protocol.Splitter:
+		// Messages that implement the Splitter interface trigger the creation of
 		// multiple requests that are all merged back into a single results by
 		// a merger.
-		messages, merger, err := m.Map(state.layout)
+		messages, merger, err := m.Split(state.layout)
 		if err != nil {
 			return nil, err
 		}

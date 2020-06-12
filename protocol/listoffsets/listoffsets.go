@@ -49,7 +49,7 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	return protocol.Broker{ID: -1}, nil
 }
 
-func (r *Request) Map(cluster protocol.Cluster) ([]protocol.Message, protocol.Merger, error) {
+func (r *Request) Split(cluster protocol.Cluster) ([]protocol.Message, protocol.Merger, error) {
 	// Because kafka refuses to answer ListOffsets requests containing multiple
 	// entries of unique topic/partition pairs, we submit multiple requests on
 	// the wire and merge their results back.
@@ -225,6 +225,6 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (pr
 
 var (
 	_ protocol.BrokerMessage = (*Request)(nil)
-	_ protocol.Mapper        = (*Request)(nil)
+	_ protocol.Splitter      = (*Request)(nil)
 	_ protocol.Merger        = (*Response)(nil)
 )

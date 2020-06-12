@@ -422,14 +422,14 @@ type PreparedMessage interface {
 	Prepare(apiVersion int16)
 }
 
-// Mapper is an interface implemented by messages that can be split into
+// Splitter is an interface implemented by messages that can be split into
 // multiple requests and have their results merged back by a Merger.
-type Mapper interface {
+type Splitter interface {
 	// For a given cluster layout, returns the list of messages constructed
 	// from the receiver for each requests that should be sent to the cluster.
 	// The second return value is a Merger which can be used to merge back the
 	// results of each request into a single message (or an error).
-	Map(Cluster) ([]Message, Merger, error)
+	Split(Cluster) ([]Message, Merger, error)
 }
 
 // Merger is an interface implemented by messages which can merge multiple
