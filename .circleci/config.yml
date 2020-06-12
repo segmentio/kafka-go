@@ -123,15 +123,15 @@ jobs:
       - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
       - run: go test -v -race -cover -timeout 150s $(go list ./... | grep -v examples)
 
-  kafka-250:
+  kafka-241:
     working_directory: /go/src/github.com/segmentio/kafka-go
     environment:
-      KAFKA_VERSION: "2.5.0"
+      KAFKA_VERSION: "2.4.1"
     docker:
       - image: circleci/golang
       - image: wurstmeister/zookeeper
         ports: ['2181:2181']
-      - image: wurstmeister/kafka:2.12-2.5.0
+      - image: wurstmeister/kafka:2.12-2.4.1
         ports: ['9092:9092','9093:9093']
         environment:
           KAFKA_BROKER_ID: '1'
@@ -162,4 +162,4 @@ workflows:
       - kafka-011
       - kafka-111
       - kafka-210
-      - kafka-250
+      - kafka-241
