@@ -423,22 +423,22 @@ type PreparedMessage interface {
 }
 
 // Mapper is an interface implemented by messages that can be split into
-// multiple requests and have their results merged back by a Reducer.
+// multiple requests and have their results merged back by a Merger.
 type Mapper interface {
 	// For a given cluster layout, returns the list of messages constructed
 	// from the receiver for each requests that should be sent to the cluster.
-	// The second return value is a Reducer which can be used to merge back the
+	// The second return value is a Merger which can be used to merge back the
 	// results of each request into a single message (or an error).
-	Map(Cluster) ([]Message, Reducer, error)
+	Map(Cluster) ([]Message, Merger, error)
 }
 
-// Reducer is an interface implemented by messages which can merge multiple
+// Merger is an interface implemented by messages which can merge multiple
 // results into one response.
-type Reducer interface {
+type Merger interface {
 	// Given a list of message and associated results, merge them back into a
 	// response (or an error). The results must be either Message or error
 	// values, other types should trigger a panic.
-	Reduce(messages []Message, results []interface{}) (Message, error)
+	Merge(messages []Message, results []interface{}) (Message, error)
 }
 
 // Result converts r to a Message or and error, or panics if r could be be

@@ -363,8 +363,8 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 	case protocol.Mapper:
 		// Messages that implement the Mapper interface trigger the creation of
 		// multiple requests that are all merged back into a single results by
-		// a reducer.
-		messages, reducer, err := m.Map(state.layout)
+		// a merger.
+		messages, merger, err := m.Map(state.layout)
 		if err != nil {
 			return nil, err
 		}
@@ -372,7 +372,7 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		for i, m := range messages {
 			promises[i] = p.sendRequest(ctx, m, state)
 		}
-		response = join(promises, messages, reducer)
+		response = join(promises, messages, merger)
 	}
 
 	if response == nil {
@@ -824,18 +824,18 @@ func (p *rejected) await(ctx context.Context) (Response, error) {
 }
 
 // joined is an implementation of the promise interface which merges results
-// from multiple promises into one await call using a reducer.
+// from multiple promises into one await call using a merger.
 type joined struct {
 	promises []promise
 	requests []Request
-	reducer  protocol.Reducer
+	merger   protocol.Merger
 }
 
-func join(promises []promise, requests []Request, reducer protocol.Reducer) promise {
+func join(promises []promise, requests []Request, merger protocol.Merger) promise {
 	return &joined{
 		promises: promises,
 		requests: requests,
-		reducer:  reducer,
+		merger:   merger,
 	}
 }
 
@@ -851,7 +851,7 @@ func (p *joined) await(ctx context.Context) (Response, error) {
 		}
 	}
 
-	return p.reducer.Reduce(p.requests, results)
+	return p.merger.Merge(p.requests, results)
 }
 
 // Default dialer used by the transport connections when no Dial function
