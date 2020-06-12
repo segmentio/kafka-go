@@ -897,7 +897,7 @@ func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
 		errChan := make(chan error)
 
 		go func() {
-			c, err := g.connect()
+			c, err := g.connect(ctx)
 			if err != nil {
 				select {
 				case errChan <- err:
@@ -991,10 +991,10 @@ func (g *connGroup) releaseConn(c *conn) bool {
 	return true
 }
 
-func (g *connGroup) connect() (*conn, error) {
+func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 	deadline := time.Now().Add(g.pool.dialTimeout)
 
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 
 	netConn, err := g.pool.dial(ctx, g.network, g.address)
