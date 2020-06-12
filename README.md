@@ -39,7 +39,7 @@ should have minimal impact on programs and should only manifest at compile time
 * Programs do not need to import compression packages anymore in order to read
 compressed messages from kafka. All compression codecs are supported by default.
 
-* Programs that used the compression codecs direction must be adapted.
+* Programs that used the compression codecs directly must be adapted.
 Compression codecs are now exposed in the `compress` sub-package.
 
 * The experimental `kafka.Client` API has been updated and slightly modified:
