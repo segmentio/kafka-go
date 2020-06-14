@@ -12,6 +12,9 @@ const (
 )
 
 func makeTime(t int64) time.Time {
+	if t <= 0 {
+		return time.Time{}
+	}
 	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond)).UTC()
 }
 

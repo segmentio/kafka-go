@@ -84,6 +84,10 @@ func (r *Request) Prepare(apiVersion int16) {
 	}
 }
 
+func (r *Request) HasResponse() bool {
+	return r.Acks != 0
+}
+
 type RequestTopic struct {
 	Topic      string             `kafka:"min=v0,max=v8"`
 	Partitions []RequestPartition `kafka:"min=v0,max=v8"`

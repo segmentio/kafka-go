@@ -121,6 +121,12 @@ func TestClient(t *testing.T) {
 	}
 }
 
+type testLogger struct{ *testing.T }
+
+func (log testLogger) Printf(msg string, args ...interface{}) {
+	log.Logf(msg, args...)
+}
+
 func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client) {
 	const totalMessages = 144
 	const partitions = 12
@@ -157,9 +163,11 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 	for i := 0; i < totalMessages; i++ {
 		m, err := r.FetchMessage(ctx)
 		if err != nil {
-			t.Errorf("error fetching message: %s", err)
+			t.Fatalf("error fetching message: %s", err)
 		}
-		r.CommitMessages(context.Background(), m)
+		if err := r.CommitMessages(context.Background(), m); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	offsets, err := c.ConsumerOffsets(ctx, TopicAndGroup{GroupId: groupId, Topic: topic})
@@ -174,7 +182,7 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 	for i := 0; i < partitions; i++ {
 		committedOffset := offsets[i]
 		if committedOffset != msgPerPartition {
-			t.Fatalf("expected committed offset of %d but received %d", msgPerPartition, committedOffset)
+			t.Errorf("expected partition %d with committed offset of %d but received %d", i, msgPerPartition, committedOffset)
 		}
 	}
 }

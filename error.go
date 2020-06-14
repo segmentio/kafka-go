@@ -532,6 +532,16 @@ type MessageTooLargeError struct {
 	Remaining []Message
 }
 
+func messageTooLarge(msgs []Message, i int) MessageTooLargeError {
+	remain := make([]Message, 0, len(msgs)-1)
+	remain = append(remain, msgs[:i]...)
+	remain = append(remain, msgs[i+1:]...)
+	return MessageTooLargeError{
+		Message:   msgs[i],
+		Remaining: remain,
+	}
+}
+
 func (e MessageTooLargeError) Error() string {
 	return MessageSizeTooLarge.Error()
 }
@@ -544,4 +554,43 @@ func makeError(code int16, message string) error {
 		return Error(code)
 	}
 	return fmt.Errorf("%w: %s", Error(code), message)
+}
+
+// WriteError is returned by kafka.(*Writer).WriteMessages when the writer is
+// not configured to write messages asynchronously. WriteError values contain
+// a list of errors where each entry matches the position of a message in the
+// WriteMessages call. The program can determine the status of each message by
+// looping over the error:
+//
+//	switch err := w.WriteMessages(ctx, msgs...).(type) {
+//	case nil:
+//	case kafka.WriteErrors:
+//		for i := range msgs {
+//			if err[i] != nil {
+//				// handle the error writing msgs[i]
+//				...
+//			}
+//		}
+//	default:
+//		// handle other errors
+//		...
+//	}
+//
+type WriteErrors []error
+
+// Count counts the number of non-nil errors in err.
+func (err WriteErrors) Count() int {
+	n := 0
+
+	for _, e := range err {
+		if e != nil {
+			n++
+		}
+	}
+
+	return n
+}
+
+func (err WriteErrors) Error() string {
+	return fmt.Sprintf("kafka write errors (%d/%d)", err.Count(), len(err))
 }

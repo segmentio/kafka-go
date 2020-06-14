@@ -350,6 +350,9 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		//
 		// This reduces the number of round trips to kafka brokers while keeping
 		// the logic simple when applying partitioning strategies.
+		if state.err != nil {
+			return nil, state.err
+		}
 		return filterMetadataResponse(m, state.metadata), nil
 
 	case *createtopics.Request:
@@ -469,6 +472,7 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 		if state.metadata != nil {
 			return
 		}
+		state.err = err
 	} else {
 		for id, b2 := range layout.Brokers {
 			if b1, ok := state.layout.Brokers[id]; !ok {

@@ -12,6 +12,27 @@ import (
 	produceAPI "github.com/segmentio/kafka-go/protocol/produce"
 )
 
+type RequiredAcks int
+
+const (
+	RequireNone RequiredAcks = 0
+	RequireOne  RequiredAcks = 1
+	RequireAll  RequiredAcks = -1
+)
+
+func (acks RequiredAcks) String() string {
+	switch acks {
+	case RequireNone:
+		return "none"
+	case RequireOne:
+		return "one"
+	case RequireAll:
+		return "all"
+	default:
+		return "unknown"
+	}
+}
+
 // ProduceRequest represents a request sent to a kafka broker to produce records
 // to a topic partition.
 type ProduceRequest struct {
@@ -25,7 +46,7 @@ type ProduceRequest struct {
 	Partition int
 
 	// The level of required acknowledgements to ask the kafka broker for.
-	RequiredAcks int
+	RequiredAcks RequiredAcks
 
 	// The message format version used when encoding the records.
 	//
@@ -88,6 +109,9 @@ type ProduceResponse struct {
 //
 // If the request contained no records, an error wrapping protocol.ErrNoRecord
 // is returned.
+//
+// When the request is configured with RequiredAcks=none, both the response and
+// the error will be nil on success.
 func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResponse, error) {
 	attributes := protocol.Attributes(req.Compression) & 0x7
 
@@ -113,6 +137,10 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 		return new(ProduceResponse), nil
 	default:
 		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", err)
+	}
+
+	if req.RequiredAcks == RequireNone {
+		return nil, nil
 	}
 
 	res := m.(*produceAPI.Response)

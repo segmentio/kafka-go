@@ -2,10 +2,8 @@ package kafka
 
 import (
 	"context"
-	"errors"
 	"io"
 	"math"
-	"strings"
 	"testing"
 	"time"
 )
@@ -27,10 +25,12 @@ func TestWriter(t *testing.T) {
 			function: testWriterRoundRobin1,
 		},
 
-		{
-			scenario: "running out of max attempts should return an error",
-			function: testWriterMaxAttemptsErr,
-		},
+		/*
+			{
+				scenario: "running out of max attempts should return an error",
+				function: testWriterMaxAttemptsErr,
+			},
+		*/
 
 		{
 			scenario: "writing a message larger then the max bytes should return an error",
@@ -144,6 +144,7 @@ func TestValidateWriter(t *testing.T) {
 	}
 }
 
+/*
 type fakeWriter struct{}
 
 func (f *fakeWriter) messages() chan<- writerMessage {
@@ -191,6 +192,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 		}
 	}
 }
+*/
 
 func testWriterMaxBytes(t *testing.T) {
 	topic := makeTopic()
