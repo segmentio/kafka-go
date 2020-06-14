@@ -233,11 +233,11 @@ to use in most cases as it provides additional features:
 
 ```go
 // make a writer that produces to topic-A, using the least-bytes distribution
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9092"},
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
 	Topic:   "topic-A",
 	Balancer: &kafka.LeastBytes{},
-})
+}
 
 w.WriteMessages(context.Background(),
 	kafka.Message{
@@ -260,6 +260,28 @@ w.Close()
 **Note:** Even though kafka.Message contain ```Topic``` and ```Partition``` fields, they **MUST NOT** be
 set when writing messages.  They are intended for read use only.
 
+### Writing to multiple topics
+
+Each writer is bound to a single topic, to write to multiple topics, a program
+must create multiple writers.
+
+We considered making the `kafka.Writer` type interpret the `Topic` field of the
+`kafka.Message` values, batching messages per partition or topic/partition is
+not so different and could be achieved. However, supporting this means we would
+also have to report stats broken down by topic. It would also raise the question
+of how we would manage configuration specific to each topic (e.g. different
+compression algorithms). Overall, the amount of coupling between the various
+properties of `kafka.Writer` suggest that we should not support publishing to
+multiple topics from a single writer, and instead encourage the program to
+create a writer for each topic it needs to publish to.
+
+The split of connection management into the `kafka.Transport` in kafka-go 0.4 has
+made writers really cheap to create as they barely manage any state, programs can
+construct new writers configured to publish to kafka topics when needed.
+
+Adding new APIs to facilitate the management of writer sets is an option, and we
+would welcome contributions in this area.
+
 ### Compatibility with other clients
 
 #### Sarama
@@ -269,11 +291,11 @@ partitioning, you can use the ```kafka.Hash``` balancer.  ```kafka.Hash``` route
 messages to the same partitions that Sarama's default partitioner would route to.
 
 ```go
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers:  []string{"localhost:9092"},
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
 	Topic:    "topic-A",
 	Balancer: &kafka.Hash{},
-})
+}
 ```
 
 #### librdkafka and confluent-kafka-go
@@ -282,11 +304,11 @@ Use the ```kafka.CRC32Balancer``` balancer to get the same behaviour as librdkaf
 default ```consistent_random``` partition strategy.
 
 ```go
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers:  []string{"localhost:9092"},
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
 	Topic:    "topic-A",
 	Balancer: kafka.CRC32Balancer{},
-})
+}
 ```
 
 #### Java
@@ -296,29 +318,23 @@ Java client's default partitioner.  Note: the Java class allows you to directly 
 the partition which is not permitted.
 
 ```go
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers:  []string{"localhost:9092"},
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
 	Topic:    "topic-A",
 	Balancer: kafka.Murmur2Balancer{},
-})
+}
 ```
 
 ### Compression
 
-Compression can be enabled on the `Writer` by configuring the `CompressionCodec`:
+Compression can be enabled on the `Writer` by setting the `Compression` field:
 
 ```go
-import (
-    "github.com/segmentio/kafka-go/compress/snappy"
-)
-
-...
-
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9092"},
-	Topic:   "topic-A",
-	CompressionCodec: new(snappy.Codec),
-})
+w := &kafka.Writer{
+	Addr:        kafka.TCP("localhost:9092"),
+	Topic:       "topic-A",
+	Compression: kafka.Snappy,
+}
 ```
 
 The `Reader` will by determine if the consumed messages are compressed by
@@ -359,22 +375,5 @@ r := kafka.NewReader(kafka.ReaderConfig{
     GroupID:        "consumer-group-id",
     Topic:          "topic-A",
     Dialer:         dialer,
-})
-```
-
-### Writer
-
-```go
-dialer := &kafka.Dialer{
-    Timeout:   10 * time.Second,
-    DualStack: true,
-    TLS:       &tls.Config{...tls config...},
-}
-
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9093"},
-	Topic:   "topic-A",
-	Balancer: &kafka.Hash{},
-	Dialer:   dialer,
 })
 ```

@@ -121,12 +121,6 @@ func TestClient(t *testing.T) {
 	}
 }
 
-type testLogger struct{ *testing.T }
-
-func (log testLogger) Printf(msg string, args ...interface{}) {
-	log.Logf(msg, args...)
-}
-
 func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client) {
 	const totalMessages = 144
 	const partitions = 12
