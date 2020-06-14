@@ -110,8 +110,6 @@ func TestCompressedMessages(t *testing.T) {
 
 func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
-		t.Parallel()
-
 		topic := createTopic(t, 1)
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
@@ -178,8 +176,6 @@ func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 }
 
 func TestMixedCompressedMessages(t *testing.T) {
-	t.Parallel()
-
 	topic := createTopic(t, 1)
 
 	offset := 0
