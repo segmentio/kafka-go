@@ -9,8 +9,6 @@ import (
 )
 
 func TestWriter(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T)
@@ -56,7 +54,6 @@ func TestWriter(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
 			testFunc(t)
 		})
 	}
