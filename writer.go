@@ -208,7 +208,7 @@ type Writer struct {
 // WriterConfig is a configuration type used to create new instances of Writer.
 //
 // DEPRECATED: writer values should be configured directly by assigning their
-// exported fields. This type is kept for backward compatibilty, and will be
+// exported fields. This type is kept for backward compatibility, and will be
 // removed in version 1.0.
 type WriterConfig struct {
 	// The list of brokers used to discover the partitions available on the
