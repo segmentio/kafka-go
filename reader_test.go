@@ -13,8 +13,6 @@ import (
 )
 
 func TestReader(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *Reader)
@@ -331,8 +329,6 @@ func deleteTopic(t *testing.T, topic ...string) {
 }
 
 func TestReaderOnNonZeroPartition(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *Reader)
@@ -406,7 +402,6 @@ func TestReadTruncatedMessages(t *testing.T) {
 	//        include it in CI unit tests.
 	t.Skip()
 
-	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	r := NewReader(ReaderConfig{
@@ -698,8 +693,6 @@ func TestExtractTopics(t *testing.T) {
 }
 
 func TestReaderConsumerGroup(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario       string
 		partitions     int
@@ -1240,8 +1233,6 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 // than partitions in a group.
 // https://github.com/segmentio/kafka-go/issues/200
 func TestRebalanceTooManyConsumers(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
 	conf := ReaderConfig{
 		Brokers: []string{"localhost:9092"},
@@ -1272,7 +1263,6 @@ func TestRebalanceTooManyConsumers(t *testing.T) {
 }
 
 func TestConsumerGroupWithMissingTopic(t *testing.T) {
-	t.Parallel()
 	t.Skip("this test doesn't work when the cluster is configured to auto-create topics")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

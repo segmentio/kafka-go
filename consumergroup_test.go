@@ -237,8 +237,6 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 }
 
 func TestConsumerGroup(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *ConsumerGroup)
