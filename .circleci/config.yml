@@ -32,6 +32,13 @@ jobs:
           echo -e 'KafkaServer {\norg.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
     steps: &steps
     - checkout
+    - restore_cache:
+        key: kafka-go-mod-{{ checksum "go.sum" }}-1
+    - run: go mod download
+    - save_cache:
+        key: kafka-go-mod-{{ checksum "go.sum" }}-1
+        paths:
+        - /go/pkg/mod
     - run: go test -race -cover ./...
 
   # Starting at version 0.11, the kafka features and configuration remained
