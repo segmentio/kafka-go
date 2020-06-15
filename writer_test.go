@@ -140,7 +140,9 @@ func TestValidateWriter(t *testing.T) {
 	}
 }
 
-type fakeWriter struct{}
+type fakeWriter struct {
+	attempts int
+}
 
 func (f *fakeWriter) messages() chan<- writerMessage {
 	ch := make(chan writerMessage, 1)
@@ -148,6 +150,7 @@ func (f *fakeWriter) messages() chan<- writerMessage {
 	go func() {
 		for {
 			msg := <-ch
+			f.attempts++
 			msg.res <- &writerError{
 				err: errors.New("bad attempt"),
 			}
@@ -157,12 +160,13 @@ func (f *fakeWriter) messages() chan<- writerMessage {
 	return ch
 }
 
-func (f *fakeWriter) close() {
-
-}
+func (f *fakeWriter) close() {}
 
 func testWriterMaxAttemptsErr(t *testing.T) {
 	const topic = "test-writer-2"
+	const maxAttempts = 3
+
+	var fw fakeWriter
 
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
@@ -170,7 +174,7 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 		MaxAttempts: 1,
 		Balancer:    &RoundRobin{},
 		newPartitionWriter: func(p int, config WriterConfig, stats *writerStats) partitionWriter {
-			return &fakeWriter{}
+			return &fw
 		},
 	})
 	defer w.Close()
@@ -185,6 +189,10 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 			t.Errorf("unexpected error: %s", err)
 			return
 		}
+	}
+
+	if fw.attempts != maxAttempts {
+		t.Errorf("got %d attempts, want %d", fw.attempts, maxAttempts)
 	}
 }
 
