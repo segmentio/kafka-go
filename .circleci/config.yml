@@ -46,7 +46,7 @@ jobs:
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
-    - image: wurstmeister/kafka:0.11.0.3
+    - image: wurstmeister/kafka:2.11-0.11.0.3
       ports:
       - 9092:9092
       - 9093:9093
