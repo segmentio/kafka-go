@@ -27,11 +27,12 @@ jobs:
         KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
         KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
         CUSTOM_INIT_SCRIPT: |-
-          echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
-          /opt/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
+          echo -e 'KafkaServer {\norg.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
     steps: &steps
     - checkout
-    - run: go test -v -race -cover -timeout 150s ./...
+    - run: go test -v -race -cover .
+    - run: go test -v -race -cover ./protocol
+    - run: go test -v -race -cover ./compress
 
   kafka-011:
     working_directory: *working_directory
@@ -94,8 +95,17 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-      environment: *environment
-    steps: *steps
+      environment:
+        <<: *environment
+        CUSTOM_INIT_SCRIPT: |-
+          echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
+          /opt/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
+    steps:
+    - checkout
+    - run: go test -v -race -cover .
+    - run: go test -v -race -cover ./protocol
+    - run: go test -v -race -cover ./compress
+    - run: go test -v -race -cover ./sasl
 
 workflows:
   version: 2
