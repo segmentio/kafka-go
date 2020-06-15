@@ -50,7 +50,7 @@ type Addr struct {
 // Network returns a.Net, satisfies the net.Addr interface.
 func (a *Addr) Network() string { return a.Net }
 
-// String returns a.Addr, satisifes the net.Addr interface.
+// String returns a.Addr, satisfies the net.Addr interface.
 func (a *Addr) String() string { return a.Addr }
 
 // MultiAddr is an implementation of the net.Addr interface for a set of network
