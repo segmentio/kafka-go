@@ -680,10 +680,10 @@ func (w *Writer) batchMessages(messages []Message, assignments map[int32][]int32
 func (w *Writer) newWriteBatch(partition int32) *writeBatch {
 	batch := newWriteBatch(time.Now(), w.batchTimeout())
 	w.group.Add(1)
-	go func(partition int32) {
+	go func() {
 		defer w.group.Done()
 		w.writeBatch(partition, batch)
-	}(partition)
+	}()
 	return batch
 }
 

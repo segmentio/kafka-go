@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,6 +24,12 @@ import (
 	"github.com/segmentio/kafka-go/compress/zstd"
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
+
+func init() {
+	// Seeding the random source is important to prevent multiple test runs from
+	// reusing the same topic names.
+	rand.Seed(time.Now().UnixNano())
+}
 
 func TestCodecs(t *testing.T) {
 	for i, c := range pkg.Codecs {
@@ -111,6 +118,8 @@ func TestCompressedMessages(t *testing.T) {
 func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
 		topic := createTopic(t, 1)
+		defer deleteTopic(t, topic)
+
 		w := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:          []string{"127.0.0.1:9092"},
 			Topic:            topic,
@@ -159,16 +168,16 @@ func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 			for i := base; i < len(values); i++ {
 				msg, err := r.ReadMessage(ctx)
 				if err != nil {
-					t.Errorf("error receiving message at loop %d, offset %d, reason: %+v", base, i, err)
+					t.Fatalf("error receiving message at loop %d, offset %d, reason: %+v", base, i, err)
 				}
 				if msg.Offset != int64(i) {
-					t.Errorf("wrong offset at loop %d...expected %d but got %d", base, i, msg.Offset)
+					t.Fatalf("wrong offset at loop %d...expected %d but got %d", base, i, msg.Offset)
 				}
 				if strconv.Itoa(i) != string(msg.Key) {
-					t.Errorf("wrong message key at loop %d...expected %d but got %s", base, i, string(msg.Key))
+					t.Fatalf("wrong message key at loop %d...expected %d but got %s", base, i, string(msg.Key))
 				}
 				if values[i] != string(msg.Value) {
-					t.Errorf("wrong message value at loop %d...expected %s but got %s", base, values[i], string(msg.Value))
+					t.Fatalf("wrong message value at loop %d...expected %s but got %s", base, values[i], string(msg.Value))
 				}
 			}
 		}
@@ -177,6 +186,7 @@ func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 
 func TestMixedCompressedMessages(t *testing.T) {
 	topic := createTopic(t, 1)
+	defer deleteTopic(t, topic)
 
 	offset := 0
 	var values []string
@@ -427,4 +437,28 @@ func createTopic(t *testing.T, partitions int) string {
 	}
 
 	return topic
+}
+
+func deleteTopic(t *testing.T, topic ...string) {
+	conn, err := kafka.Dial("tcp", "localhost:9092")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	controller, err := conn.Controller()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err = kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
+
+	if err := conn.DeleteTopics(topic...); err != nil {
+		t.Fatal(err)
+	}
 }
