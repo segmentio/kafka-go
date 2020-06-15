@@ -1196,7 +1196,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				// block relies on the batch repackaging real io.EOF errors as
 				// io.UnexpectedEOF.  otherwise, we would end up swallowing real
 				// errors here.
-				break readLoop
+				errcount = 0
 			case UnknownTopicOrPartition:
 				r.withErrorLogger(func(log Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d, topic or parition not found on this broker, %v", r.partition, r.topic, offset, r.brokers)

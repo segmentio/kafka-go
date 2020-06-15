@@ -3,6 +3,7 @@ package zstd
 
 import (
 	"io"
+	"runtime"
 	"sync"
 
 	zstdlib "github.com/klauspost/compress/zstd"
@@ -38,8 +39,9 @@ func (c *CompressionCodec) NewReader(r io.Reader) io.ReadCloser {
 	p := new(reader)
 	if cached := decPool.Get(); cached == nil {
 		p.dec, p.err = zstdlib.NewReader(r)
+		runtime.SetFinalizer(p, finalizeReader)
 	} else {
-		p.dec = cached.(*zstdlib.Decoder)
+		p = cached.(*reader)
 		p.err = p.dec.Reset(r)
 	}
 	return p
@@ -55,9 +57,8 @@ type reader struct {
 // Close implements the io.Closer interface.
 func (r *reader) Close() error {
 	if r.dec != nil {
-		decPool.Put(r.dec)
-		r.dec = nil
 		r.err = io.ErrClosedPipe
+		decPool.Put(r)
 	}
 	return nil
 }
@@ -124,4 +125,11 @@ func (w *writer) ReadFrom(r io.Reader) (n int64, err error) {
 		return 0, w.err
 	}
 	return w.enc.ReadFrom(r)
+}
+
+// finalizeReader closes underlying resources managed by a reader.
+func finalizeReader(r *reader) {
+	if r.dec != nil {
+		r.dec.Close()
+	}
 }
