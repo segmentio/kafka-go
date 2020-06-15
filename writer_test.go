@@ -166,15 +166,15 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 	const topic = "test-writer-2"
 	const maxAttempts = 3
 
-	var fw fakeWriter
+	fw := &fakeWriter{}
 
 	createTopic(t, topic, 1)
 	w := newTestWriter(WriterConfig{
 		Topic:       topic,
-		MaxAttempts: 1,
+		MaxAttempts: maxAttempts,
 		Balancer:    &RoundRobin{},
 		newPartitionWriter: func(p int, config WriterConfig, stats *writerStats) partitionWriter {
-			return &fw
+			return fw
 		},
 	})
 	defer w.Close()
