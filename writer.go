@@ -468,7 +468,7 @@ func NewWriter(config WriterConfig) *Writer {
 	}
 
 	w := &Writer{
-		Addr:         TCP(config.Brokers[0]), // Should we do something more complex here?
+		Addr:         TCP(config.Brokers...),
 		Topic:        config.Topic,
 		MaxAttempts:  config.MaxAttempts,
 		BatchSize:    config.BatchSize,

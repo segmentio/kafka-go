@@ -93,7 +93,7 @@ type Transport struct {
 	SASL sasl.Mechanism
 
 	mutex sync.RWMutex
-	pools map[networkAddress]*connPool
+	pools map[Addr]*connPool
 }
 
 // DefaultTransport is the default transport used by kafka clients in this
@@ -185,9 +185,9 @@ func (t *Transport) metadataTTL() time.Duration {
 }
 
 func (t *Transport) grabPool(addr net.Addr) *connPool {
-	k := networkAddress{
-		network: addr.Network(),
-		address: addr.String(),
+	k := Addr{
+		Net:  addr.Network(),
+		Addr: addr.String(),
 	}
 
 	t.mutex.RLock()
@@ -199,31 +199,6 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 
 	if p != nil {
 		return p
-	}
-
-	network := k.network
-	address := k.address
-
-	host, port, _ := net.SplitHostPort(address)
-	if port == "" {
-		port = "9092"
-	}
-	if host == "" {
-		host = address
-	}
-	address = net.JoinHostPort(host, port)
-
-	var tlsConfig *tls.Config
-	if network == "tls" {
-		network = "tcp"
-
-		switch tlsConfig = t.TLS; {
-		case tlsConfig == nil:
-			tlsConfig = &tls.Config{ServerName: host}
-		case tlsConfig.ServerName == "" && !tlsConfig.InsecureSkipVerify:
-			tlsConfig = tlsConfig.Clone()
-			tlsConfig.ServerName = host
-		}
 	}
 
 	t.mutex.Lock()
@@ -244,7 +219,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		idleTimeout: t.idleTimeout(),
 		metadataTTL: t.metadataTTL(),
 		clientID:    t.ClientID,
-		tls:         tlsConfig,
+		tls:         t.TLS,
 		sasl:        t.SASL,
 
 		ready:  make(event),
@@ -253,11 +228,11 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		cancel: cancel,
 	}
 
-	p.ctrl = p.newConnGroup(ctx, network, address)
+	p.ctrl = p.newConnGroup(addr)
 	go p.discover(ctx, p.wake)
 
 	if t.pools == nil {
-		t.pools = make(map[networkAddress]*connPool)
+		t.pools = make(map[Addr]*connPool)
 	}
 	t.pools[k] = p
 	return p
@@ -515,7 +490,10 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 
 		for id := range addBrokers {
 			broker := layout.Brokers[id]
-			p.conns[id] = p.newConnGroup(ctx, broker.Network(), broker.String())
+			p.conns[id] = p.newConnGroup(&Addr{
+				Net:  "tcp",
+				Addr: broker.String(),
+			})
 		}
 	}
 }
@@ -771,11 +749,10 @@ func appendBrokerIDs(ids []int, brokers []int32) ([]int, []int) {
 	return ids, ids[i:]
 }
 
-func (p *connPool) newConnGroup(ctx context.Context, network, address string) *connGroup {
+func (p *connPool) newConnGroup(a net.Addr) *connGroup {
 	return &connGroup{
-		network: network,
-		address: address,
-		pool:    p,
+		addr: a,
+		pool: p,
 	}
 }
 
@@ -869,8 +846,7 @@ var defaultDialer = net.Dialer{
 // actual network connections are lazily open before sending requests, and
 // closed if they are unused for longer than the idle timeout.
 type connGroup struct {
-	network string
-	address string
+	addr net.Addr
 	// Immutable state of the connection.
 	pool *connPool
 	// Shared state of the connection, this is synchronized on the mutex through
@@ -1001,18 +977,45 @@ func (g *connGroup) connect() (*conn, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 
-	netConn, err := g.pool.dial(ctx, g.network, g.address)
+	var netConn net.Conn
+	var netAddr net.Addr
+	var addrs []net.Addr
+	var err error
+
+	if m, ok := g.addr.(MultiAddr); ok {
+		addrs = append([]net.Addr{}, m...)
+		// Shuffle the list of addresses to randomize the order in which
+		// connections are attempted. This prevents routing all connections
+		// to the first broker (which will usually succeed).
+		rand.Shuffle(len(addrs), func(i, j int) { addrs[i], addrs[j] = addrs[j], addrs[i] })
+	} else {
+		addrs = []net.Addr{g.addr}
+	}
+
+	for _, netAddr = range addrs {
+		netConn, err = g.pool.dial(ctx, netAddr.Network(), netAddr.String())
+		if err == nil {
+			break
+		}
+	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() {
 		if netConn != nil {
 			netConn.Close()
 		}
 	}()
 
-	if g.pool.tls != nil {
-		netConn = tls.Client(netConn, g.pool.tls)
+	if tlsConfig := g.pool.tls; tlsConfig != nil {
+		if tlsConfig.ServerName == "" && !tlsConfig.InsecureSkipVerify {
+			host, _, _ := net.SplitHostPort(netAddr.String())
+			tlsConfig = tlsConfig.Clone()
+			tlsConfig.ServerName = host
+		}
+		netConn = tls.Client(netConn, tlsConfig)
 	}
 
 	pc := protocol.NewConn(netConn, g.pool.clientID)
@@ -1032,7 +1035,7 @@ func (g *connGroup) connect() (*conn, error) {
 	ver := make(map[protocol.ApiKey]int16, len(res.ApiKeys))
 
 	if res.ErrorCode != 0 {
-		return nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", g.address, Error(res.ErrorCode))
+		return nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", g.addr, Error(res.ErrorCode))
 	}
 
 	for _, r := range res.ApiKeys {
