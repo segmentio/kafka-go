@@ -26,7 +26,7 @@ jobs:
             echo -e 'KafkaServer {\norg.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
     steps: &steps
       - checkout
-      - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
+      - run: go test -v -race -cover -timeout 150s ./...
 
   kafka-011:
     working_directory: *working_directory
