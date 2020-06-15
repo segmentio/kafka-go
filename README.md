@@ -265,9 +265,9 @@ set when writing messages.  They are intended for read use only.
 Each writer is bound to a single topic, to write to multiple topics, a program
 must create multiple writers.
 
-We considered making the `kafka.Writer` type interpret the `Topic` field of the
-`kafka.Message` values, batching messages per partition or topic/partition is
-not so different and could be achieved. However, supporting this means we would
+We considered making the `kafka.Writer` type interpret the `Topic` field of
+`kafka.Message` values, batching messages per partition or topic/partition pairs
+does not introduce much more complexity. However, supporting this means we would
 also have to report stats broken down by topic. It would also raise the question
 of how we would manage configuration specific to each topic (e.g. different
 compression algorithms). Overall, the amount of coupling between the various

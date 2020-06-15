@@ -1,7 +1,7 @@
 version: 2
 jobs:
   kafka-010:
-    working_directory: /go/src/github.com/segmentio/kafka-go
+    working_directory: &working_directory /go/src/github.com/segmentio/kafka-go
     environment:
       KAFKA_VERSION: "0.10.1"
     docker:
@@ -10,7 +10,7 @@ jobs:
         ports: ['2181:2181']
       - image: wurstmeister/kafka:0.10.1.1
         ports: ['9092:9092']
-        environment:
+        environment: &environment
           KAFKA_BROKER_ID: '1'
           KAFKA_CREATE_TOPICS: 'test-writer-0:3:1,test-writer-1:3:1'
           KAFKA_DELETE_TOPIC_ENABLE: 'true'
@@ -24,14 +24,12 @@ jobs:
           KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
           CUSTOM_INIT_SCRIPT: |-
             echo -e 'KafkaServer {\norg.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
-    steps:
+    steps: &steps
       - checkout
-      - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
       - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
 
   kafka-011:
-    working_directory: /go/src/github.com/segmentio/kafka-go
+    working_directory: *working_directory
     environment:
       KAFKA_VERSION: "0.11.0"
     docker:
@@ -40,29 +38,11 @@ jobs:
         ports: ['2181:2181']
       - image: wurstmeister/kafka:2.11-0.11.0.3
         ports: ['9092:9092','9093:9093']
-        environment:
-          KAFKA_BROKER_ID: '1'
-          KAFKA_CREATE_TOPICS: 'test-writer-0:3:1,test-writer-1:3:1'
-          KAFKA_DELETE_TOPIC_ENABLE: 'true'
-          KAFKA_ADVERTISED_HOST_NAME: 'localhost'
-          KAFKA_ADVERTISED_PORT: '9092'
-          KAFKA_ZOOKEEPER_CONNECT: 'localhost:2181'
-          KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-          KAFKA_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
-          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
-          KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
-          KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
-          CUSTOM_INIT_SCRIPT: |-
-            echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
-            /opt/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
-    steps:
-      - checkout
-      - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
-      - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
+        environment: *environment
+    steps: *steps
 
   kafka-111:
-    working_directory: /go/src/github.com/segmentio/kafka-go
+    working_directory: *working_directory
     environment:
       KAFKA_VERSION: "1.1.1"
     docker:
@@ -71,29 +51,11 @@ jobs:
         ports: ['2181:2181']
       - image: wurstmeister/kafka:2.11-1.1.1
         ports: ['9092:9092','9093:9093']
-        environment:
-          KAFKA_BROKER_ID: '1'
-          KAFKA_CREATE_TOPICS: 'test-writer-0:3:1,test-writer-1:3:1'
-          KAFKA_DELETE_TOPIC_ENABLE: 'true'
-          KAFKA_ADVERTISED_HOST_NAME: 'localhost'
-          KAFKA_ADVERTISED_PORT: '9092'
-          KAFKA_ZOOKEEPER_CONNECT: 'localhost:2181'
-          KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-          KAFKA_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
-          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
-          KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
-          KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
-          CUSTOM_INIT_SCRIPT: |-
-            echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
-            /opt/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
-    steps:
-      - checkout
-      - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
-      - run: go test -v -race -cover -timeout 150s . ./gzip ./lz4 ./sasl ./snappy
+        environment: *environment
+    steps: *steps
 
   kafka-210:
-    working_directory: /go/src/github.com/segmentio/kafka-go
+    working_directory: *working_directory
     environment:
       KAFKA_VERSION: "2.1.0"
     docker:
@@ -102,29 +64,11 @@ jobs:
         ports: ['2181:2181']
       - image: wurstmeister/kafka:2.12-2.1.0
         ports: ['9092:9092','9093:9093']
-        environment:
-          KAFKA_BROKER_ID: '1'
-          KAFKA_CREATE_TOPICS: 'test-writer-0:3:1,test-writer-1:3:1'
-          KAFKA_DELETE_TOPIC_ENABLE: 'true'
-          KAFKA_ADVERTISED_HOST_NAME: 'localhost'
-          KAFKA_ADVERTISED_PORT: '9092'
-          KAFKA_ZOOKEEPER_CONNECT: 'localhost:2181'
-          KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-          KAFKA_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
-          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
-          KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-256,SCRAM-SHA-512,PLAIN
-          KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
-          CUSTOM_INIT_SCRIPT: |-
-            echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
-            /opt/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
-    steps:
-      - checkout
-      - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
-      - run: go test -v -race -cover -timeout 150s $(go list ./... | grep -v examples)
+        environment: *environment
+    steps: *steps
 
   kafka-231:
-    working_directory: /go/src/github.com/segmentio/kafka-go
+    working_directory: *working_directory
     environment:
       KAFKA_VERSION: "2.3.1"
     docker:
@@ -133,26 +77,8 @@ jobs:
         ports: ['2181:2181']
       - image: wurstmeister/kafka:2.12-2.3.1
         ports: ['9092:9092','9093:9093']
-        environment:
-          KAFKA_BROKER_ID: '1'
-          KAFKA_CREATE_TOPICS: 'test-writer-0:3:1,test-writer-1:3:1'
-          KAFKA_DELETE_TOPIC_ENABLE: 'true'
-          KAFKA_ADVERTISED_HOST_NAME: 'localhost'
-          KAFKA_ADVERTISED_PORT: '9092'
-          KAFKA_ZOOKEEPER_CONNECT: 'localhost:2181'
-          KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-          KAFKA_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
-          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
-          KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-256,SCRAM-SHA-512,PLAIN
-          KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
-          CUSTOM_INIT_SCRIPT: |-
-            echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
-            /opt/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
-    steps:
-      - checkout
-      - setup_remote_docker: { reusable: true, docker_layer_caching: true }
-      - run: go get -v -t . ./gzip ./lz4 ./sasl ./snappy
-      - run: go test -v -race -cover -timeout 150s $(go list ./... | grep -v examples)
+        environment: *environment
+    steps: *steps
 
 workflows:
   version: 2
