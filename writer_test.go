@@ -54,6 +54,7 @@ func TestWriter(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
 			testFunc(t)
 		})
 	}
@@ -68,8 +69,9 @@ func newTestWriter(config WriterConfig) *Writer {
 
 func testWriterClose(t *testing.T) {
 	const topic = "test-writer-0"
-
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
 	w := newTestWriter(WriterConfig{
 		Topic: topic,
 	})
@@ -81,8 +83,9 @@ func testWriterClose(t *testing.T) {
 
 func testWriterRoundRobin1(t *testing.T) {
 	const topic = "test-writer-1"
-
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
 	offset, err := readOffset(topic, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -165,8 +168,9 @@ func (f *fakeWriter) close() {
 
 func testWriterMaxAttemptsErr(t *testing.T) {
 	const topic = "test-writer-2"
-
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
 	w := newTestWriter(WriterConfig{
 		Topic:       topic,
 		MaxAttempts: 1,
@@ -193,8 +197,9 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 
 func testWriterMaxBytes(t *testing.T) {
 	topic := makeTopic()
-
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
 	w := newTestWriter(WriterConfig{
 		Topic:      topic,
 		BatchBytes: 25,
@@ -285,9 +290,11 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 func testWriterBatchBytes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	const topic = "test-writer-1-bytes"
 
+	const topic = "test-writer-1-bytes"
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
 	offset, err := readOffset(topic, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -339,6 +346,8 @@ func testWriterBatchSize(t *testing.T) {
 
 	topic := makeTopic()
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
 	offset, err := readOffset(topic, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -390,6 +399,8 @@ func testWriterSmallBatchBytes(t *testing.T) {
 
 	topic := makeTopic()
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
 	offset, err := readOffset(topic, 0)
 	if err != nil {
 		t.Fatal(err)

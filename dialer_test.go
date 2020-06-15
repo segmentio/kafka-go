@@ -26,8 +26,6 @@ func TestDialer(t *testing.T) {
 	for _, test := range tests {
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
@@ -37,9 +35,9 @@ func TestDialer(t *testing.T) {
 }
 
 func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
-	const topic = "test-dialer-LookupPartitions"
-
+	topic := makeTopic()
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
 
 	// Write a message to ensure the partition gets created.
 	w := NewWriter(WriterConfig{
@@ -61,7 +59,7 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 
 	want := []Partition{
 		{
-			Topic:    "test-dialer-LookupPartitions",
+			Topic:    topic,
 			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
 			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
 			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
@@ -170,11 +168,9 @@ wE3YmpC3Q0g9r44nEbz4Bw==
 }
 
 func TestDialerTLS(t *testing.T) {
-	t.Parallel()
-
-	const topic = "test-dialer-LookupPartitions"
-
+	topic := makeTopic()
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
 
 	// Write a message to ensure the partition gets created.
 	w := NewWriter(WriterConfig{

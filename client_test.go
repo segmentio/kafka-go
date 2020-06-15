@@ -125,9 +125,12 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 	const totalMessages = 144
 	const partitions = 12
 	const msgPerPartition = totalMessages / partitions
+
 	topic := makeTopic()
-	groupId := makeGroupID()
 	createTopic(t, topic, partitions)
+	defer deleteTopic(t, topic)
+
+	groupId := makeGroupID()
 	brokers := []string{"localhost:9092"}
 
 	writer := NewWriter(WriterConfig{
