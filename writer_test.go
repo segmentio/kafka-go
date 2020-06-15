@@ -23,12 +23,10 @@ func TestWriter(t *testing.T) {
 			function: testWriterRoundRobin1,
 		},
 
-		/*
-			{
-				scenario: "running out of max attempts should return an error",
-				function: testWriterMaxAttemptsErr,
-			},
-		*/
+		{
+			scenario: "running out of max attempts should return an error",
+			function: testWriterMaxAttemptsErr,
+		},
 
 		{
 			scenario: "writing a message larger then the max bytes should return an error",
@@ -144,40 +142,16 @@ func TestValidateWriter(t *testing.T) {
 	}
 }
 
-/*
-type fakeWriter struct{}
-
-func (f *fakeWriter) messages() chan<- writerMessage {
-	ch := make(chan writerMessage, 1)
-
-	go func() {
-		for {
-			msg := <-ch
-			msg.res <- &writerError{
-				err: errors.New("bad attempt"),
-			}
-		}
-	}()
-
-	return ch
-}
-
-func (f *fakeWriter) close() {
-
-}
-
 func testWriterMaxAttemptsErr(t *testing.T) {
-	const topic = "test-writer-2"
+	topic := makeTopic()
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
 
 	w := newTestWriter(WriterConfig{
+		Brokers:     []string{"localhost:9999"}, // nothing is listening here
 		Topic:       topic,
-		MaxAttempts: 1,
+		MaxAttempts: 3,
 		Balancer:    &RoundRobin{},
-		newPartitionWriter: func(p int, config WriterConfig, stats *writerStats) partitionWriter {
-			return &fakeWriter{}
-		},
 	})
 	defer w.Close()
 
@@ -186,14 +160,8 @@ func testWriterMaxAttemptsErr(t *testing.T) {
 	}); err == nil {
 		t.Error("expected error")
 		return
-	} else if err != nil {
-		if !strings.Contains(err.Error(), "bad attempt") {
-			t.Errorf("unexpected error: %s", err)
-			return
-		}
 	}
 }
-*/
 
 func testWriterMaxBytes(t *testing.T) {
 	topic := makeTopic()
