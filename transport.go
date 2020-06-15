@@ -982,7 +982,7 @@ func (g *connGroup) connect() (*conn, error) {
 	var addrs []net.Addr
 	var err error
 
-	if m, ok := g.addr.(MultiAddr); ok {
+	if m, _ := g.addr.(MultiAddr); len(m) != 0 {
 		addrs = append([]net.Addr{}, m...)
 		// Shuffle the list of addresses to randomize the order in which
 		// connections are attempted. This prevents routing all connections
