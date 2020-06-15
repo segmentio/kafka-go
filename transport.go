@@ -10,6 +10,7 @@ import (
 	"net"
 	"runtime/pprof"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -93,7 +94,7 @@ type Transport struct {
 	SASL sasl.Mechanism
 
 	mutex sync.RWMutex
-	pools map[Addr]*connPool
+	pools map[networkAddress]*connPool
 }
 
 // DefaultTransport is the default transport used by kafka clients in this
@@ -185,9 +186,9 @@ func (t *Transport) metadataTTL() time.Duration {
 }
 
 func (t *Transport) grabPool(addr net.Addr) *connPool {
-	k := Addr{
-		Net:  addr.Network(),
-		Addr: addr.String(),
+	k := networkAddress{
+		network: addr.Network(),
+		address: addr.String(),
 	}
 
 	t.mutex.RLock()
@@ -232,7 +233,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	go p.discover(ctx, p.wake)
 
 	if t.pools == nil {
-		t.pools = make(map[Addr]*connPool)
+		t.pools = make(map[networkAddress]*connPool)
 	}
 	t.pools[k] = p
 	return p
@@ -490,9 +491,9 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 
 		for id := range addBrokers {
 			broker := layout.Brokers[id]
-			p.conns[id] = p.newConnGroup(&Addr{
-				Net:  "tcp",
-				Addr: broker.String(),
+			p.conns[id] = p.newConnGroup(&networkAddress{
+				network: "tcp",
+				address: broker.String(),
 			})
 		}
 	}
@@ -977,23 +978,24 @@ func (g *connGroup) connect() (*conn, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 
+	var network = strings.Split(g.addr.Network(), ",")
+	var address = strings.Split(g.addr.String(), ",")
 	var netConn net.Conn
 	var netAddr net.Addr
-	var addrs []net.Addr
 	var err error
 
-	if m, _ := g.addr.(MultiAddr); len(m) != 0 {
-		addrs = append([]net.Addr{}, m...)
+	if len(address) > 1 {
 		// Shuffle the list of addresses to randomize the order in which
 		// connections are attempted. This prevents routing all connections
 		// to the first broker (which will usually succeed).
-		rand.Shuffle(len(addrs), func(i, j int) { addrs[i], addrs[j] = addrs[j], addrs[i] })
-	} else {
-		addrs = []net.Addr{g.addr}
+		rand.Shuffle(len(address), func(i, j int) {
+			network[i], network[j] = network[j], network[i]
+			address[i], address[j] = address[j], address[i]
+		})
 	}
 
-	for _, netAddr = range addrs {
-		netConn, err = g.pool.dial(ctx, netAddr.Network(), netAddr.String())
+	for i := range address {
+		netConn, err = g.pool.dial(ctx, network[i], address[i])
 		if err == nil {
 			break
 		}

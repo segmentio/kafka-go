@@ -27,43 +27,36 @@ func makeAddr(network, address string) net.Addr {
 	if host == "" {
 		host = address
 	}
-	return &Addr{
-		Net:  network,
-		Addr: net.JoinHostPort(host, port),
+	return &networkAddress{
+		network: network,
+		address: net.JoinHostPort(host, port),
 	}
 }
 
 func makeMultiAddr(network string, addresses []string) net.Addr {
-	multi := make(MultiAddr, len(addresses))
+	multi := make(multiAddr, len(addresses))
 	for i, address := range addresses {
 		multi[i] = makeAddr(network, address)
 	}
 	return multi
 }
 
-// Addr is a generic implementation of the net.Addr interface.
-type Addr struct {
-	Net  string
-	Addr string
+type networkAddress struct {
+	network string
+	address string
 }
 
-// Network returns a.Net, satisfies the net.Addr interface.
-func (a *Addr) Network() string { return a.Net }
+func (a *networkAddress) Network() string { return a.network }
 
-// String returns a.Addr, satisfies the net.Addr interface.
-func (a *Addr) String() string { return a.Addr }
+func (a *networkAddress) String() string { return a.address }
 
-// MultiAddr is an implementation of the net.Addr interface for a set of network
-// addresses.
-type MultiAddr []net.Addr
+type multiAddr []net.Addr
 
-// Network returns the comma-separated list of networks included in m.
-func (m MultiAddr) Network() string { return m.join(net.Addr.Network) }
+func (m multiAddr) Network() string { return m.join(net.Addr.Network) }
 
-// String returns the comma-separated list of addresses included in m.
-func (m MultiAddr) String() string { return m.join(net.Addr.String) }
+func (m multiAddr) String() string { return m.join(net.Addr.String) }
 
-func (m MultiAddr) join(f func(net.Addr) string) string {
+func (m multiAddr) join(f func(net.Addr) string) string {
 	switch len(m) {
 	case 0:
 		return ""

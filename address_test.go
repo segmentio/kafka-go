@@ -40,16 +40,6 @@ func TestNetworkAddress(t *testing.T) {
 			network: "tcp,tcp,tcp",
 			address: "localhost:9092,localhost:9093,localhost:9094",
 		},
-
-		{
-			addr: MultiAddr{
-				TCP("localhost:9092"),
-				TCP("localhost:9093"),
-				TCP("localhost:9094"),
-			},
-			network: "tcp,tcp,tcp",
-			address: "localhost:9092,localhost:9093,localhost:9094",
-		},
 	}
 
 	for _, test := range tests {
