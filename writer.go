@@ -308,50 +308,83 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		res = make(chan error, len(msgs))
 	}
 	t0 := time.Now()
-	defer w.stats.writeTime.observeDuration(time.Since(t0))
 
-	w.mutex.RLock()
-	closed := w.closed
-	w.mutex.RUnlock()
+	for attempt := 0; attempt < w.config.MaxAttempts; attempt++ {
+		w.mutex.RLock()
 
-	if closed {
-		return io.ErrClosedPipe
-	}
+		if w.closed {
+			w.mutex.RUnlock()
+			return io.ErrClosedPipe
+		}
 
-	for i, msg := range msgs {
-
-		if int(msg.size()) > w.config.BatchBytes {
-			err := MessageTooLargeError{
-				Message:   msg,
-				Remaining: msgs[i+1:],
+		for i, msg := range msgs {
+			if int(msg.size()) > w.config.BatchBytes {
+				err := MessageTooLargeError{
+					Message:   msg,
+					Remaining: msgs[i+1:],
+				}
+				w.mutex.RUnlock()
+				return err
 			}
-			return err
+			select {
+			case w.msgs <- writerMessage{
+				msg: msg,
+				res: res,
+			}:
+			case <-ctx.Done():
+				w.mutex.RUnlock()
+				return ctx.Err()
+			}
 		}
 
-		wm := writerMessage{msg: msg, res: res}
+		w.mutex.RUnlock()
 
-		select {
-		case w.msgs <- wm:
-		case <-ctx.Done():
-			return ctx.Err()
+		if w.config.Async {
+			break
 		}
-	}
 
-	if w.config.Async {
-		return nil
-	}
+		var retry []Message
 
-	for i := 0; i != len(msgs); i++ {
+		for i := 0; i != len(msgs); i++ {
+			select {
+			case e := <-res:
+				if e != nil {
+					if we, ok := e.(*writerError); ok {
+						w.stats.retries.observe(1)
+						retry, err = append(retry, we.msg), we.err
+					} else {
+						err = e
+					}
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		if msgs = retry; len(msgs) == 0 {
+			break
+		}
+
+		timer := time.NewTimer(backoff(attempt+1, 100*time.Millisecond, 1*time.Second))
 		select {
-		case e := <-res:
-			if e != nil {
-				err = e
+		case <-timer.C:
+			// Only clear the error (so we retry the loop) if we have more retries, otherwise
+			// we risk silencing the error.
+			if attempt < w.config.MaxAttempts-1 {
+				err = nil
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			err = ctx.Err()
+		case <-w.done:
+			err = io.ErrClosedPipe
+		}
+		timer.Stop()
+
+		if err != nil {
+			break
 		}
 	}
-
+	w.stats.writeTime.observeDuration(time.Since(t0))
 	return err
 }
 
@@ -538,7 +571,6 @@ type writer struct {
 	codec           CompressionCodec
 	logger          Logger
 	errorLogger     Logger
-	maxAttempts     int
 }
 
 func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
@@ -558,7 +590,6 @@ func newWriter(partition int, config WriterConfig, stats *writerStats) *writer {
 		codec:           config.CompressionCodec,
 		logger:          config.Logger,
 		errorLogger:     config.ErrorLogger,
-		maxAttempts:     config.MaxAttempts,
 	}
 	w.join.Add(1)
 	go w.run()
@@ -670,15 +701,13 @@ func (w *writer) run() {
 			if len(batch) == 0 {
 				continue
 			}
-
 			var err error
-			if conn, err = w.writeWithRetries(conn, batch, resch); err != nil {
+			if conn, err = w.write(conn, batch, resch); err != nil {
 				if conn != nil {
 					conn.Close()
 					conn = nil
 				}
 			}
-
 			idleConnDeadline = time.Now().Add(w.idleConnTimeout)
 			for i := range batch {
 				batch[i] = Message{}
@@ -706,20 +735,6 @@ func (w *writer) dial() (conn *Conn, err error) {
 		}
 	}
 	return
-}
-
-func (w *writer) writeWithRetries(conn *Conn, batch []Message, resch [](chan<- error)) (*Conn, error) {
-	var err error
-
-	for attempt := 0; attempt < w.maxAttempts; attempt++ {
-		conn, err = w.write(conn, batch, resch)
-		if err == nil {
-			break
-		}
-		w.stats.retries.observe(1)
-		time.Sleep(backoff(attempt+1, 100*time.Millisecond, 1*time.Second))
-	}
-	return conn, err
 }
 
 func (w *writer) write(conn *Conn, batch []Message, resch [](chan<- error)) (ret *Conn, err error) {
