@@ -483,7 +483,7 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(listGroups, v1, id, request)
+			return c.writeRequest(listGroups, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {

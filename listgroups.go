@@ -43,7 +43,7 @@ type listGroupsResponseV1 struct {
 	// ThrottleTimeMS holds the duration in milliseconds for which the request
 	// was throttled due to quota violation (Zero if the request did not violate
 	// any quota)
-	ThrottleTimeMS int32
+	//ThrottleTimeMS int32
 
 	// ErrorCode holds response error code
 	ErrorCode int16
@@ -51,21 +51,16 @@ type listGroupsResponseV1 struct {
 }
 
 func (t listGroupsResponseV1) size() int32 {
-	return sizeofInt32(t.ThrottleTimeMS) +
-		sizeofInt16(t.ErrorCode) +
+	return sizeofInt16(t.ErrorCode) +
 		sizeofArray(len(t.Groups), func(i int) int32 { return t.Groups[i].size() })
 }
 
 func (t listGroupsResponseV1) writeTo(wb *writeBuffer) {
-	wb.writeInt32(t.ThrottleTimeMS)
 	wb.writeInt16(t.ErrorCode)
 	wb.writeArray(len(t.Groups), func(i int) { t.Groups[i].writeTo(wb) })
 }
 
 func (t *listGroupsResponseV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt32(r, size, &t.ThrottleTimeMS); err != nil {
-		return
-	}
 	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
 		return
 	}
