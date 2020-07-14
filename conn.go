@@ -1020,6 +1020,27 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 	return
 }
 
+func (c *Conn) Topics() (topics []string, err error){
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadata, v1, id, topicMetadataRequestV1(topics))
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV1
+
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+
+			for _,topic := range res.Topics{
+				topics = append(topics, topic.TopicName)
+			}
+			return nil
+		},
+	)
+	return
+}
+
 // Write writes a message to the kafka broker that this connection was
 // established to. The method returns the number of bytes written, or an error
 // if something went wrong.

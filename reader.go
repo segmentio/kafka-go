@@ -1056,6 +1056,26 @@ func (r *Reader) readLag(ctx context.Context) {
 	}
 }
 
+func (r *Reader) ReadTopicNames(ctx context.Context) (topics []string, err error){
+	if len(r.config.Brokers) == 0{
+		return nil, errors.New("no broker provided")
+	}
+
+	conn, err := r.config.Dialer.DialLeader(ctx, "tcp", r.config.Brokers[0], r.config.Topic, r.config.Partition)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	topicNames, err := conn.Topics()
+	if err != nil{
+		return nil, err
+	}
+	for _, topicName := range topicNames{
+		topics = append(topics, topicName)
+	}
+	return
+}
+
 func (r *Reader) start(offsetsByPartition map[int]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
