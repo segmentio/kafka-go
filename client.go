@@ -127,7 +127,12 @@ func (c *Client) ConsumerOffsets(ctx context.Context, tg TopicAndGroup) (map[int
 	return offsetsByPartition, nil
 }
 
-func (c *Client) ListGroups(ctx context.Context) ([]string, error) {
+type ConsumerGroupInfo struct {
+	GroupID     string
+	Coordinator int
+}
+
+func (c *Client) ListGroups(ctx context.Context) ([]ConsumerGroupInfo, error) {
 	conn, err := c.connect()
 	if err != nil {
 		return nil, err
@@ -138,7 +143,7 @@ func (c *Client) ListGroups(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	groupIDs := []string{}
+	groupInfos := []ConsumerGroupInfo{}
 
 	for _, broker := range brokers {
 		brokerConn, err := c.dialer.Dial(
@@ -155,15 +160,21 @@ func (c *Client) ListGroups(ctx context.Context) ([]string, error) {
 		}
 
 		for _, group := range resp.Groups {
-			groupIDs = append(groupIDs, group.GroupID)
+			groupInfos = append(
+				groupInfos,
+				ConsumerGroupInfo{
+					GroupID:     group.GroupID,
+					Coordinator: broker.ID,
+				},
+			)
 		}
 	}
 
-	sort.Slice(groupIDs, func(a, b int) bool {
-		return groupIDs[a] < groupIDs[b]
+	sort.Slice(groupInfos, func(a, b int) bool {
+		return groupInfos[a].GroupID < groupInfos[b].GroupID
 	})
 
-	return groupIDs, nil
+	return groupInfos, nil
 }
 
 type GroupInfo struct {
@@ -198,13 +209,23 @@ type GroupMemberTopic struct {
 	Partitions []int32
 }
 
-func (c *Conn) DescribeGroup(groupID string) (GroupInfo, error) {
+func (c *Client) DescribeGroup(ctx context.Context, groupID string) (GroupInfo, error) {
 	groupInfo := GroupInfo{}
+
+	address, err := c.lookupCoordinator(groupID)
+	if err != nil {
+		return groupInfo, err
+	}
+
+	conn, err := c.coordinator(ctx, address)
+	if err != nil {
+		return groupInfo, err
+	}
 
 	req := describeGroupsRequestV0{
 		GroupIDs: []string{groupID},
 	}
-	resp, err := c.describeGroups(req)
+	resp, err := conn.describeGroups(req)
 	if err != nil {
 		return groupInfo, err
 	}

@@ -439,8 +439,6 @@ func (c *Conn) listGroups(request listGroupsRequestV0) (listGroupsResponseV0, er
 			return c.writeRequest(listGroups, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
-			fmt.Printf("Response size is %d\n", size)
-
 			return expectZeroSize(func() (remain int, err error) {
 				return (&response).readFrom(&c.rbuf, size)
 			}())
