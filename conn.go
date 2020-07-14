@@ -431,7 +431,7 @@ func (c *Conn) leaveGroup(request leaveGroupRequestV0) (leaveGroupResponseV0, er
 // listGroups lists all the consumer groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_ListGroups
-func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, error) {
+func (c *Conn) ListGroups(request listGroupsRequestV1) (listGroupsResponseV1, error) {
 	var response listGroupsResponseV1
 
 	err := c.readOperation(

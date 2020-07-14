@@ -751,7 +751,7 @@ func testConnListGroupsReturnsGroups(t *testing.T, conn *Conn) {
 	_, _, stop2 := createGroup(t, conn, group2)
 	defer stop2()
 
-	out, err := conn.listGroups(listGroupsRequestV1{})
+	out, err := conn.ListGroups(listGroupsRequestV1{})
 	if err != nil {
 		t.Fatalf("bad err: %v", err)
 	}
