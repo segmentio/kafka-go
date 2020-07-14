@@ -275,12 +275,16 @@ func (c *Client) DescribeGroup(ctx context.Context, groupID string) (GroupInfo, 
 	return groupInfo, nil
 }
 
-func decodeMemberMetadata(metadata []byte) (GroupMemberMetadata, error) {
+func decodeMemberMetadata(rawMetadata []byte) (GroupMemberMetadata, error) {
 	mm := GroupMemberMetadata{}
 
-	buf := bytes.NewBuffer(metadata)
+	if len(rawMetadata) == 0 {
+		return mm, nil
+	}
+
+	buf := bytes.NewBuffer(rawMetadata)
 	bufReader := bufio.NewReader(buf)
-	remain := len(metadata)
+	remain := len(rawMetadata)
 
 	var err error
 
@@ -301,12 +305,16 @@ func decodeMemberMetadata(metadata []byte) (GroupMemberMetadata, error) {
 	return mm, nil
 }
 
-func decodeMemberAssignments(metadata []byte) (GroupMemberAssignmentsInfo, error) {
+func decodeMemberAssignments(rawAssignments []byte) (GroupMemberAssignmentsInfo, error) {
 	ma := GroupMemberAssignmentsInfo{}
 
-	buf := bytes.NewBuffer(metadata)
+	if len(rawAssignments) == 0 {
+		return ma, nil
+	}
+
+	buf := bytes.NewBuffer(rawAssignments)
 	bufReader := bufio.NewReader(buf)
-	remain := len(metadata)
+	remain := len(rawAssignments)
 
 	var err error
 
@@ -333,8 +341,6 @@ func decodeMemberAssignments(metadata []byte) (GroupMemberAssignmentsInfo, error
 	if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
 		return ma, err
 	}
-
-	fmt.Printf("%d bytes remaining after reading array\n", remain)
 
 	if remain, err = readBytes(bufReader, remain, &ma.UserData); err != nil {
 		return ma, err
