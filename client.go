@@ -247,9 +247,6 @@ func (c *Client) DescribeGroup(ctx context.Context, groupID string) (GroupInfo, 
 			continue
 		}
 
-		fmt.Printf("Metadata bytes: %+v\n", member.MemberMetadata)
-		fmt.Printf("Assignment bytes: %+v\n", member.MemberAssignments)
-
 		memberMetadata, err := decodeMemberMetadata(member.MemberMetadata)
 		if err != nil {
 			return groupInfo, err
