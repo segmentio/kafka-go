@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-func TestListGroupsResponseV1(t *testing.T) {
-	item := listGroupsResponseV1{
+func TestListGroupsResponseV0(t *testing.T) {
+	item := listGroupsResponseV0{
 		ErrorCode: 2,
-		Groups: []listGroupsResponseGroupV1{
+		Groups: []listGroupsResponseGroupV0{
 			{
 				GroupID:      "a",
 				ProtocolType: "b",
@@ -22,7 +22,7 @@ func TestListGroupsResponseV1(t *testing.T) {
 	w := &writeBuffer{w: b}
 	item.writeTo(w)
 
-	var found listGroupsResponseV1
+	var found listGroupsResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)

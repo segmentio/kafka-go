@@ -4,32 +4,32 @@ import (
 	"bufio"
 )
 
-type listGroupsRequestV1 struct {
+type listGroupsRequestV0 struct {
 }
 
-func (t listGroupsRequestV1) size() int32 {
+func (t listGroupsRequestV0) size() int32 {
 	return 0
 }
 
-func (t listGroupsRequestV1) writeTo(wb *writeBuffer) {
+func (t listGroupsRequestV0) writeTo(wb *writeBuffer) {
 }
 
-type listGroupsResponseGroupV1 struct {
+type listGroupsResponseGroupV0 struct {
 	// GroupID holds the unique group identifier
 	GroupID      string
 	ProtocolType string
 }
 
-func (t listGroupsResponseGroupV1) size() int32 {
+func (t listGroupsResponseGroupV0) size() int32 {
 	return sizeofString(t.GroupID) + sizeofString(t.ProtocolType)
 }
 
-func (t listGroupsResponseGroupV1) writeTo(wb *writeBuffer) {
+func (t listGroupsResponseGroupV0) writeTo(wb *writeBuffer) {
 	wb.writeString(t.GroupID)
 	wb.writeString(t.ProtocolType)
 }
 
-func (t *listGroupsResponseGroupV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+func (t *listGroupsResponseGroupV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readString(r, size, &t.GroupID); err != nil {
 		return
 	}
@@ -39,35 +39,29 @@ func (t *listGroupsResponseGroupV1) readFrom(r *bufio.Reader, size int) (remain 
 	return
 }
 
-type listGroupsResponseV1 struct {
-	// ThrottleTimeMS holds the duration in milliseconds for which the request
-	// was throttled due to quota violation (Zero if the request did not violate
-	// any quota)
-	//ThrottleTimeMS int32
-
+type listGroupsResponseV0 struct {
 	// ErrorCode holds response error code
 	ErrorCode int16
-	Groups    []listGroupsResponseGroupV1
+	Groups    []listGroupsResponseGroupV0
 }
 
-func (t listGroupsResponseV1) size() int32 {
+func (t listGroupsResponseV0) size() int32 {
 	return sizeofInt16(t.ErrorCode) +
 		sizeofArray(len(t.Groups), func(i int) int32 { return t.Groups[i].size() })
 }
 
-func (t listGroupsResponseV1) writeTo(wb *writeBuffer) {
-
+func (t listGroupsResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.ErrorCode)
 	wb.writeArray(len(t.Groups), func(i int) { t.Groups[i].writeTo(wb) })
 }
 
-func (t *listGroupsResponseV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+func (t *listGroupsResponseV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readInt16(r, size, &t.ErrorCode); err != nil {
 		return
 	}
 
 	fn := func(withReader *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
-		var item listGroupsResponseGroupV1
+		var item listGroupsResponseGroupV0
 		if fnRemain, fnErr = (&item).readFrom(withReader, withSize); err != nil {
 			return
 		}

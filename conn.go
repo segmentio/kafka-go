@@ -478,8 +478,8 @@ func (c *Conn) leaveGroup(request leaveGroupRequestV0) (leaveGroupResponseV0, er
 // listGroups lists all the consumer groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_ListGroups
-func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, error) {
-	var response listGroupsResponseV1
+func (c *Conn) listGroups(request listGroupsRequestV0) (listGroupsResponseV0, error) {
+	var response listGroupsResponseV0
 
 	err := c.readOperation(
 		func(deadline time.Time, id int32) error {
@@ -494,17 +494,17 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 		},
 	)
 	if err != nil {
-		return listGroupsResponseV1{}, err
+		return listGroupsResponseV0{}, err
 	}
 	if response.ErrorCode != 0 {
-		return listGroupsResponseV1{}, Error(response.ErrorCode)
+		return listGroupsResponseV0{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
 }
 
 func (c *Conn) ListGroupsPublic() ([]string, error) {
-	resp, err := c.listGroups(listGroupsRequestV1{})
+	resp, err := c.listGroups(listGroupsRequestV0{})
 	if err != nil {
 		return nil, err
 	}
