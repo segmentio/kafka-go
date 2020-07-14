@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"os"
@@ -487,9 +486,6 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 			return c.writeRequest(listGroups, v0, id, request)
 		},
 		func(deadline time.Time, size int) error {
-			respBytes, err := ioutil.ReadAll(&c.rbuf)
-			fmt.Printf(">>>> %+v, %+v", respBytes, err)
-
 			return expectZeroSize(func() (remain int, err error) {
 				return (&response).readFrom(&c.rbuf, size)
 			}())

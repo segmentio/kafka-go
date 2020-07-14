@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"fmt"
 )
 
 type listGroupsRequestV1 struct {
@@ -61,12 +62,15 @@ func (t listGroupsResponseV1) writeTo(wb *writeBuffer) {
 }
 
 func (t *listGroupsResponseV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+	fmt.Println("Reading error code")
+
 	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
 		return
 	}
 
 	fn := func(withReader *bufio.Reader, withSize int) (fnRemain int, fnErr error) {
 		var item listGroupsResponseGroupV1
+		fmt.Println("Reading array item")
 		if fnRemain, fnErr = (&item).readFrom(withReader, withSize); err != nil {
 			return
 		}
