@@ -281,6 +281,7 @@ func (c *Client) DescribeGroup(ctx context.Context, groupID string) (GroupInfo, 
 	return groupInfo, nil
 }
 
+// decodeMemberMetadata converts raw metadata bytes to a GroupMemberMetadata struct.
 func decodeMemberMetadata(rawMetadata []byte) (GroupMemberMetadata, error) {
 	mm := GroupMemberMetadata{}
 
@@ -311,6 +312,7 @@ func decodeMemberMetadata(rawMetadata []byte) (GroupMemberMetadata, error) {
 	return mm, nil
 }
 
+// decodeMemberAssignments converts raw assignment bytes to a GroupMemberAssignmentsInfo struct.
 func decodeMemberAssignments(rawAssignments []byte) (GroupMemberAssignmentsInfo, error) {
 	ma := GroupMemberAssignmentsInfo{}
 
@@ -359,6 +361,8 @@ func decodeMemberAssignments(rawAssignments []byte) (GroupMemberAssignmentsInfo,
 	return ma, nil
 }
 
+// readInt32Array reads an array of int32s. It's adapted from the implementation of
+// readStringArray.
 func readInt32Array(r *bufio.Reader, sz int, v *[]int32) (remain int, err error) {
 	var content []int32
 	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
