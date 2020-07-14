@@ -149,7 +149,7 @@ type AlterConfig struct {
 	ValidateOnly bool
 }
 
-func (c *Conn) alterConfigs(request alterConfigsRequestV0) (*alterConfigsResponseV0, error) {
+func (c *Conn) alterConfigs(request alterConfigsRequestV0) (alterConfigsResponseV0, error) {
 	var response alterConfigsResponseV0
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
@@ -162,9 +162,9 @@ func (c *Conn) alterConfigs(request alterConfigsRequestV0) (*alterConfigsRespons
 		},
 	)
 	if err != nil {
-		return nil, err
+		return response, err
 	}
-	return &response, nil
+	return response, nil
 }
 
 //AlterConfigs alters configuration data.

@@ -136,23 +136,23 @@ func (t *describeConfigsResponseV0Resource) readFrom(r *bufio.Reader, size int) 
 	return
 }
 
-//DescribeConfigsResponseV0 descirbe configs response V0 version
-type DescribeConfigsResponseV0 struct {
+//describeConfigsResponseV0 descirbe configs response V0 version
+type describeConfigsResponseV0 struct {
 	ThrottleTimeMs int32
 	Resources      []describeConfigsResponseV0Resource
 }
 
-func (t DescribeConfigsResponseV0) size() int32 {
+func (t describeConfigsResponseV0) size() int32 {
 	return sizeofInt32(t.ThrottleTimeMs) +
 		sizeofArray(len(t.Resources), func(i int) int32 { return t.Resources[i].size() })
 }
 
-func (t DescribeConfigsResponseV0) writeTo(wb *writeBuffer) {
+func (t describeConfigsResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeInt32(t.ThrottleTimeMs)
 	wb.writeArray(len(t.Resources), func(i int) { t.Resources[i].writeTo(wb) })
 }
 
-func (t *DescribeConfigsResponseV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+func (t *describeConfigsResponseV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readInt32(r, size, &t.ThrottleTimeMs); err != nil {
 		return
 	}
@@ -171,24 +171,8 @@ func (t *DescribeConfigsResponseV0) readFrom(r *bufio.Reader, size int) (remain 
 	return
 }
 
-//DescribeConfig
-type DescribeConfig struct {
-	//ResourceType
-	//0: Unknown
-	//1: Any
-	//2: Topic
-	//3: Group
-	//4: Cluster
-	//5: Broker (new)
-	ResourceType int8
-
-	ResourceName string
-
-	ConfigNames []string
-}
-
-func (c *Conn) describeConfigs(request describeConfigsRequestV0) (*DescribeConfigsResponseV0, error) {
-	var response DescribeConfigsResponseV0
+func (c *Conn) describeConfigs(request describeConfigsRequestV0) (describeConfigsResponseV0, error) {
+	var response describeConfigsResponseV0
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
 			return c.writeRequest(describeConfigs, v0, id, request)
@@ -200,38 +184,122 @@ func (c *Conn) describeConfigs(request describeConfigsRequestV0) (*DescribeConfi
 		},
 	)
 	if err != nil {
-		return nil, err
+		return response, err
 	}
 	for _, tr := range response.Resources {
 		if tr.ErrorCode != 0 {
-			return &response, Error(tr.ErrorCode)
+			return response, Error(tr.ErrorCode)
 		}
 	}
-	return &response, nil
+	return response, nil
+}
+
+type ResourceType int8
+
+const (
+	ResourceTypeUnknown ResourceType = 0
+	ResourceTypeAny     ResourceType = 1
+	ResourceTypeTopic   ResourceType = 2
+	ResourceTypeGroup   ResourceType = 3
+	ResourceTypeCluster ResourceType = 4
+	ResourceTypeBroker  ResourceType = 5
+)
+
+//DescribeConfig
+type DescribeConfig struct {
+	//ResourceType
+	//0: Unknown
+	//1: Any
+	//2: Topic
+	//3: Group
+	//4: Cluster
+	//5: Broker (new)
+	ResourceType ResourceType
+
+	ResourceName string
+
+	ConfigNames []string
+}
+
+//DescribeConfigsResponse
+type DescribeConfigsResponse struct {
+	ThrottleTimeMs int32
+	Resources      []DescribeConfigsResponseResource
+}
+
+//DescribeConfigsResponseResource
+type DescribeConfigsResponseResource struct {
+	ErrorCode     int16
+	ErrorMessage  string
+	ResourceType  int8
+	ResourceName  string
+	ConfigEntries []DescribeConfigsResponseConfigEntry
+}
+
+//DescribeConfigsResponseConfigEntry
+type DescribeConfigsResponseConfigEntry struct {
+	ConfigName  string
+	ConfigValue string
+	ReadOnly    bool
+	IsDefault   bool
+	IsSensitive bool
 }
 
 //DescribeConfigs gets configuration data.
 //
 //Detailed info please look at https://cwiki.apache.org/confluence/display/KAFKA/KIP-133%3A+Describe+and+Alter+Configs+Admin+APIs
-func (c *Conn) DescribeConfigs(configs ...DescribeConfig) (*DescribeConfigsResponseV0, error) {
+func (c *Conn) DescribeConfigs(configs ...DescribeConfig) (DescribeConfigsResponse, error) {
 	var requestV0Resource []describeConfigsRequestV0Resource
 	for _, t := range configs {
 		requestV0Resource = append(
 			requestV0Resource,
 			describeConfigsRequestV0Resource{
-				ResourceType: t.ResourceType,
+				ResourceType: int8(t.ResourceType),
 				ResourceName: t.ResourceName,
 				ConfigNames:  t.ConfigNames,
 			})
 	}
 
-	res, err := c.describeConfigs(describeConfigsRequestV0{
+	resV0, err := c.describeConfigs(describeConfigsRequestV0{
 		Resources: requestV0Resource,
 	})
 
+	res := convertToPublicAPI(resV0)
+
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	return res, nil
+}
+
+//convertToPublicAPI converts intenal API to publical API
+func convertToPublicAPI(v0 describeConfigsResponseV0) DescribeConfigsResponse {
+	resources := make([]DescribeConfigsResponseResource, 0)
+	for _, r := range v0.Resources {
+		configEntries := make([]DescribeConfigsResponseConfigEntry, 0)
+		for _, ce := range r.ConfigEntries {
+			configEntries = append(configEntries, DescribeConfigsResponseConfigEntry{
+				ConfigName:  ce.ConfigName,
+				ConfigValue: ce.ConfigValue,
+				ReadOnly:    ce.ReadOnly,
+				IsDefault:   ce.IsDefault,
+				IsSensitive: ce.IsSensitive,
+			})
+		}
+		resource := DescribeConfigsResponseResource{
+			ErrorCode:     r.ErrorCode,
+			ErrorMessage:  r.ErrorMessage,
+			ResourceType:  r.ResourceType,
+			ResourceName:  r.ResourceName,
+			ConfigEntries: configEntries,
+		}
+		resources = append(resources, resource)
+	}
+	res := DescribeConfigsResponse{
+		ThrottleTimeMs: v0.ThrottleTimeMs,
+		Resources:      resources,
+	}
+
+	return res
 }

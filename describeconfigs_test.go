@@ -8,7 +8,7 @@ import (
 )
 
 func TestDescribeConfigsResponseV0(t *testing.T) {
-	item := DescribeConfigsResponseV0{
+	item := describeConfigsResponseV0{
 		ThrottleTimeMs: 100,
 		Resources: []describeConfigsResponseV0Resource{
 			{
@@ -32,7 +32,7 @@ func TestDescribeConfigsResponseV0(t *testing.T) {
 	w := &writeBuffer{w: b}
 	item.writeTo(w)
 
-	var found DescribeConfigsResponseV0
+	var found describeConfigsResponseV0
 	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)

@@ -128,7 +128,7 @@ func (t *createPartitionsResponseV0) readFrom(r *bufio.Reader, size int) (remain
 	return
 }
 
-func (c *Conn) createPartitions(request createPartitionsRequestV0) (*createPartitionsResponseV0, error) {
+func (c *Conn) createPartitions(request createPartitionsRequestV0) (createPartitionsResponseV0, error) {
 	var response createPartitionsResponseV0
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
@@ -146,14 +146,14 @@ func (c *Conn) createPartitions(request createPartitionsRequestV0) (*createParti
 		},
 	)
 	if err != nil {
-		return nil, err
+		return response, err
 	}
 	for _, tr := range response.Results {
 		if tr.ErrorCode != 0 {
-			return &response, Error(tr.ErrorCode)
+			return response, Error(tr.ErrorCode)
 		}
 	}
-	return &response, nil
+	return response, nil
 }
 
 //Topic is a topic config for CreatePartitionsConfig
