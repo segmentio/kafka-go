@@ -247,6 +247,9 @@ func (c *Client) DescribeGroup(ctx context.Context, groupID string) (GroupInfo, 
 			continue
 		}
 
+		fmt.Printf("Metadata bytes: %+v\n", member.MemberMetadata)
+		fmt.Printf("Assignment bytes: %+v", member.MemberAssignments)
+
 		memberMetadata, err := decodeMemberMetadata(member.MemberMetadata)
 		if err != nil {
 			return groupInfo, err
@@ -316,11 +319,11 @@ func decodeMemberAssignments(metadata []byte) (GroupMemberAssignmentsInfo, error
 			Partitions: []int32{},
 		}
 
-		if fnRemain, fnErr = readString(bufReader, size, &item.Topic); fnErr != nil {
+		if fnRemain, fnErr = readString(r, size, &item.Topic); fnErr != nil {
 			return
 		}
 
-		if fnRemain, fnErr = readInt32Array(bufReader, fnRemain, &item.Partitions); fnErr != nil {
+		if fnRemain, fnErr = readInt32Array(r, fnRemain, &item.Partitions); fnErr != nil {
 			return
 		}
 
