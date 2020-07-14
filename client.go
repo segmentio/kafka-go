@@ -1,6 +1,8 @@
 package kafka
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"sort"
@@ -165,50 +167,176 @@ func (c *Client) ListGroups(ctx context.Context) ([]string, error) {
 }
 
 type GroupInfo struct {
-	GroupID string
-	Members []MemberInfo
+	ErrorCode int16
+	GroupID   string
+	State     string
+	Members   []MemberInfo
 }
 
 type MemberInfo struct {
 	MemberID          string
 	ClientID          string
 	ClientHost        string
-	MemberMetadata    []byte
-	MemberAssignments []byte
+	MemberMetadata    GroupMemberMetadata
+	MemberAssignments GroupMemberAssignmentsInfo
 }
 
-func (c *Conn) DescribeGroup(groupID string) ([]GroupInfo, error) {
+type GroupMemberMetadata struct {
+	Version  int16
+	Topics   []string
+	UserData []byte
+}
+
+type GroupMemberAssignmentsInfo struct {
+	Version  int16
+	Topics   []GroupMemberTopic
+	UserData []byte
+}
+
+type GroupMemberTopic struct {
+	Topic      string
+	Partitions []int32
+}
+
+func (c *Conn) DescribeGroup(groupID string) (GroupInfo, error) {
+	groupInfo := GroupInfo{}
+
 	req := describeGroupsRequestV0{
 		GroupIDs: []string{groupID},
 	}
 	resp, err := c.describeGroups(req)
 	if err != nil {
-		return nil, err
-	}
-	groupInfos := make([]GroupInfo, len(resp.Groups))
-
-	for _, group := range resp.Groups {
-		groupInfo := GroupInfo{
-			GroupID: group.GroupID,
-			Members: make([]MemberInfo, len(group.Members)),
-		}
-		for _, member := range group.Members {
-			groupInfo.Members = append(
-				groupInfo.Members,
-				MemberInfo{
-					MemberID:          member.MemberID,
-					ClientID:          member.ClientID,
-					ClientHost:        member.ClientHost,
-					MemberMetadata:    member.MemberMetadata,
-					MemberAssignments: member.MemberAssignments,
-				},
-			)
-		}
-
-		groupInfos = append(groupInfos, groupInfo)
+		return groupInfo, err
 	}
 
-	return groupInfos, nil
+	if len(resp.Groups) != 1 {
+		return groupInfo, fmt.Errorf("Got %d groups, expected 1", len(resp.Groups))
+	}
+
+	groupObj := resp.Groups[0]
+
+	groupInfo.ErrorCode = groupObj.ErrorCode
+	groupInfo.GroupID = groupObj.GroupID
+	groupInfo.State = groupObj.State
+	groupInfo.Members = []MemberInfo{}
+
+	for _, member := range groupObj.Members {
+		if member.MemberID == "" {
+			// Skip over empty member slots
+			continue
+		}
+
+		memberMetadata, err := decodeMemberMetadata(member.MemberMetadata)
+		if err != nil {
+			return groupInfo, err
+		}
+
+		memberAssignments, err := decodeMemberAssignments(member.MemberAssignments)
+		if err != nil {
+			return groupInfo, err
+		}
+
+		groupInfo.Members = append(
+			groupInfo.Members,
+			MemberInfo{
+				MemberID:          member.MemberID,
+				ClientID:          member.ClientID,
+				ClientHost:        member.ClientHost,
+				MemberMetadata:    memberMetadata,
+				MemberAssignments: memberAssignments,
+			},
+		)
+	}
+
+	return groupInfo, nil
+}
+
+func decodeMemberMetadata(metadata []byte) (GroupMemberMetadata, error) {
+	mm := GroupMemberMetadata{}
+
+	buf := bytes.NewBuffer(metadata)
+	bufReader := bufio.NewReader(buf)
+	remain := len(metadata)
+
+	var err error
+
+	if remain, err = readInt16(bufReader, remain, &mm.Version); err != nil {
+		return mm, err
+	}
+	if remain, err = readStringArray(bufReader, remain, &mm.Topics); err != nil {
+		return mm, err
+	}
+	if remain, err = readBytes(bufReader, remain, &mm.UserData); err != nil {
+		return mm, err
+	}
+
+	if remain != 0 {
+		return mm, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
+	}
+
+	return mm, nil
+}
+
+func decodeMemberAssignments(metadata []byte) (GroupMemberAssignmentsInfo, error) {
+	ma := GroupMemberAssignmentsInfo{}
+
+	buf := bytes.NewBuffer(metadata)
+	bufReader := bufio.NewReader(buf)
+	remain := len(metadata)
+
+	var err error
+
+	if remain, err = readInt16(bufReader, remain, &ma.Version); err != nil {
+		return ma, err
+	}
+
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
+		item := GroupMemberTopic{
+			Partitions: []int32{},
+		}
+
+		if fnRemain, fnErr = readString(bufReader, size, &item.Topic); fnErr != nil {
+			return
+		}
+
+		if fnRemain, fnErr = readInt32Array(bufReader, fnRemain, &item.Partitions); fnErr != nil {
+			return
+		}
+
+		ma.Topics = append(ma.Topics, item)
+		return
+	}
+	if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
+		return ma, err
+	}
+
+	if remain, err = readBytes(bufReader, remain, &ma.UserData); err != nil {
+		return ma, err
+	}
+
+	if remain != 0 {
+		return ma, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
+	}
+
+	return ma, nil
+}
+
+func readInt32Array(r *bufio.Reader, sz int, v *[]int32) (remain int, err error) {
+	var content []int32
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
+		var value int32
+		if fnRemain, fnErr = readInt32(r, size, &value); fnErr != nil {
+			return
+		}
+		content = append(content, value)
+		return
+	}
+	if remain, err = readArrayWith(r, sz, fn); err != nil {
+		return
+	}
+
+	*v = content
+	return
 }
 
 // connect returns a connection to ANY broker
