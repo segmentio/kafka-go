@@ -127,11 +127,13 @@ func (c *Client) ConsumerOffsets(ctx context.Context, tg TopicAndGroup) (map[int
 	return offsetsByPartition, nil
 }
 
+// ConsumerGroupInfo contains a groupID and its coordinator broker.
 type ConsumerGroupInfo struct {
 	GroupID     string
 	Coordinator int
 }
 
+// ListGroups returns info about all groups in the cluster.
 func (c *Client) ListGroups(ctx context.Context) ([]ConsumerGroupInfo, error) {
 	conn, err := c.connect()
 	if err != nil {
@@ -177,6 +179,7 @@ func (c *Client) ListGroups(ctx context.Context) ([]ConsumerGroupInfo, error) {
 	return groupInfos, nil
 }
 
+// GroupInfo contains detailed information about a single group and its members.
 type GroupInfo struct {
 	ErrorCode int16
 	GroupID   string
@@ -184,6 +187,7 @@ type GroupInfo struct {
 	Members   []MemberInfo
 }
 
+// MemberInfo represents the membership information for a single group member.
 type MemberInfo struct {
 	MemberID          string
 	ClientID          string
@@ -192,23 +196,28 @@ type MemberInfo struct {
 	MemberAssignments GroupMemberAssignmentsInfo
 }
 
+// GroupMemberMetadata stores metadata associated with a group member.
 type GroupMemberMetadata struct {
 	Version  int16
 	Topics   []string
 	UserData []byte
 }
 
+// GroupMemberAssignmentsInfo stores the topic partition assignment data for a group member.
 type GroupMemberAssignmentsInfo struct {
 	Version  int16
 	Topics   []GroupMemberTopic
 	UserData []byte
 }
 
+// GroupMemberTopic is a mapping from a topic to a list of partitions in the topic. It is used
+// to represent the topic partitions that have been assigned to a group member.
 type GroupMemberTopic struct {
 	Topic      string
 	Partitions []int32
 }
 
+// DescribeGroup returns detailed information about a single consumer group.
 func (c *Client) DescribeGroup(ctx context.Context, groupID string) (GroupInfo, error) {
 	groupInfo := GroupInfo{}
 
