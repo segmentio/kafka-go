@@ -248,7 +248,7 @@ func (c *Client) DescribeGroup(ctx context.Context, groupID string) (GroupInfo, 
 		}
 
 		fmt.Printf("Metadata bytes: %+v\n", member.MemberMetadata)
-		fmt.Printf("Assignment bytes: %+v", member.MemberAssignments)
+		fmt.Printf("Assignment bytes: %+v\n", member.MemberAssignments)
 
 		memberMetadata, err := decodeMemberMetadata(member.MemberMetadata)
 		if err != nil {
@@ -333,6 +333,8 @@ func decodeMemberAssignments(metadata []byte) (GroupMemberAssignmentsInfo, error
 	if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
 		return ma, err
 	}
+
+	fmt.Printf("%d bytes remaining after reading array\n", remain)
 
 	if remain, err = readBytes(bufReader, remain, &ma.UserData); err != nil {
 		return ma, err
