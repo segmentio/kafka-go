@@ -323,53 +323,6 @@ func (c *Conn) describeGroups(request describeGroupsRequestV0) (describeGroupsRe
 	return response, nil
 }
 
-type GroupInfo struct {
-	GroupID string
-	Members []MemberInfo
-}
-
-type MemberInfo struct {
-	MemberID          string
-	ClientID          string
-	ClientHost        string
-	MemberMetadata    []byte
-	MemberAssignments []byte
-}
-
-func (c *Conn) DescribeGroupsPublic(groups ...string) ([]GroupInfo, error) {
-	req := describeGroupsRequestV0{
-		GroupIDs: groups,
-	}
-	resp, err := c.describeGroups(req)
-	if err != nil {
-		return nil, err
-	}
-	groupInfos := make([]GroupInfo, len(resp.Groups))
-
-	for _, group := range resp.Groups {
-		groupInfo := GroupInfo{
-			GroupID: group.GroupID,
-			Members: make([]MemberInfo, len(group.Members)),
-		}
-		for _, member := range group.Members {
-			groupInfo.Members = append(
-				groupInfo.Members,
-				MemberInfo{
-					MemberID:          member.MemberID,
-					ClientID:          member.ClientID,
-					ClientHost:        member.ClientHost,
-					MemberMetadata:    member.MemberMetadata,
-					MemberAssignments: member.MemberAssignments,
-				},
-			)
-		}
-
-		groupInfos = append(groupInfos, groupInfo)
-	}
-
-	return groupInfos, nil
-}
-
 // findCoordinator finds the coordinator for the specified group or transaction
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
@@ -501,18 +454,6 @@ func (c *Conn) listGroups(request listGroupsRequestV0) (listGroupsResponseV0, er
 	}
 
 	return response, nil
-}
-
-func (c *Conn) ListGroupsPublic() ([]string, error) {
-	resp, err := c.listGroups(listGroupsRequestV0{})
-	if err != nil {
-		return nil, err
-	}
-	groupIDs := make([]string, len(resp.Groups))
-	for _, group := range resp.Groups {
-		groupIDs = append(groupIDs, group.GroupID)
-	}
-	return groupIDs, nil
 }
 
 // offsetCommit commits the specified topic partition offsets

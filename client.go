@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"sort"
 )
 
 // Client is a new and experimental API for kafka-go. It is expected that this API will grow over time,
@@ -122,6 +123,92 @@ func (c *Client) ConsumerOffsets(ctx context.Context, tg TopicAndGroup) (map[int
 	}
 
 	return offsetsByPartition, nil
+}
+
+func (c *Client) ListGroups(ctx context.Context) ([]string, error) {
+	conn, err := c.connect()
+	if err != nil {
+		return nil, err
+	}
+
+	brokers, err := conn.Brokers()
+	if err != nil {
+		return nil, err
+	}
+
+	groupIDs := []string{}
+
+	for _, broker := range brokers {
+		brokerConn, err := c.dialer.Dial(
+			"tcp",
+			fmt.Sprintf("%s:%d", broker.Host, broker.Port),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := brokerConn.listGroups(listGroupsRequestV0{})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, group := range resp.Groups {
+			groupIDs = append(groupIDs, group.GroupID)
+		}
+	}
+
+	sort.Slice(groupIDs, func(a, b int) bool {
+		return groupIDs[a] < groupIDs[b]
+	})
+
+	return groupIDs, nil
+}
+
+type GroupInfo struct {
+	GroupID string
+	Members []MemberInfo
+}
+
+type MemberInfo struct {
+	MemberID          string
+	ClientID          string
+	ClientHost        string
+	MemberMetadata    []byte
+	MemberAssignments []byte
+}
+
+func (c *Conn) DescribeGroup(groupID string) ([]GroupInfo, error) {
+	req := describeGroupsRequestV0{
+		GroupIDs: []string{groupID},
+	}
+	resp, err := c.describeGroups(req)
+	if err != nil {
+		return nil, err
+	}
+	groupInfos := make([]GroupInfo, len(resp.Groups))
+
+	for _, group := range resp.Groups {
+		groupInfo := GroupInfo{
+			GroupID: group.GroupID,
+			Members: make([]MemberInfo, len(group.Members)),
+		}
+		for _, member := range group.Members {
+			groupInfo.Members = append(
+				groupInfo.Members,
+				MemberInfo{
+					MemberID:          member.MemberID,
+					ClientID:          member.ClientID,
+					ClientHost:        member.ClientHost,
+					MemberMetadata:    member.MemberMetadata,
+					MemberAssignments: member.MemberAssignments,
+				},
+			)
+		}
+
+		groupInfos = append(groupInfos, groupInfo)
+	}
+
+	return groupInfos, nil
 }
 
 // connect returns a connection to ANY broker
