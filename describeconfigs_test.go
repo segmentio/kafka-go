@@ -3,7 +3,9 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"net"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -45,5 +47,49 @@ func TestDescribeConfigsResponseV0(t *testing.T) {
 	if !reflect.DeepEqual(item, found) {
 		t.Error("expected item and found to be the same")
 		t.FailNow()
+	}
+}
+
+func TestDescribeConfigs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		scenario string
+		function func(*testing.T)
+	}{
+		{
+			scenario: "describe configs",
+			function: testDescribeConfigs,
+		},
+	}
+
+	for _, test := range tests {
+		testFunc := test.function
+		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
+			testFunc(t)
+		})
+	}
+}
+func testDescribeConfigs(t *testing.T) {
+	const topic = "test-1"
+	createTopic(t, topic, 1)
+	conn, err := Dial("tcp", "localhost:9092")
+	if err != nil {
+		return
+	}
+	controller, _ := conn.Controller()
+	conncontroller, err := Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	if err != nil {
+		return
+	}
+
+	_, err = conncontroller.DescribeConfigs(DescribeConfig{
+		ResourceType: ResourceTypeTopic,
+		ResourceName: topic,
+		ConfigNames:  []string{"max.message.bytes"}})
+
+	if err != nil {
+		return
 	}
 }

@@ -3,7 +3,9 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"net"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -36,5 +38,59 @@ func TestAlterConfigsResponseV0(t *testing.T) {
 	if !reflect.DeepEqual(item, found) {
 		t.Error("expected item and found to be the same")
 		t.FailNow()
+	}
+}
+
+func TestAlterConfigs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		scenario string
+		function func(*testing.T)
+	}{
+		{
+			scenario: "alter configs",
+			function: testAlterConfigs,
+		},
+	}
+
+	for _, test := range tests {
+		testFunc := test.function
+		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
+			testFunc(t)
+		})
+	}
+}
+
+func testAlterConfigs(t *testing.T) {
+	const topic = "test-1"
+	createTopic(t, topic, 1)
+	conn, err := Dial("tcp", "localhost:9092")
+	if err != nil {
+		return
+	}
+	controller, _ := conn.Controller()
+	conncontroller, err := Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	if err != nil {
+		return
+	}
+
+	err = conncontroller.AlterConfigs(AlterConfig{
+		Resources: []Resource{
+			{
+				ResourceType: int8(2),
+				ResourceName: topic,
+				ConfigEntries: []ConfigEntry{{
+					ConfigName:  "max.message.bytes",
+					ConfigValue: "200000",
+				},
+				},
+			},
+		},
+		ValidateOnly: false})
+
+	if err != nil {
+		return
 	}
 }
