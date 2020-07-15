@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"sort"
 )
 
 // Client is a new and experimental API for kafka-go. It is expected that this API will grow over time,
@@ -71,7 +70,7 @@ func NewClientWith(config ClientConfig) *Client {
 
 // ConsumerOffsets returns a map[int]int64 of partition to committed offset for a consumer group id and topic
 func (c *Client) ConsumerOffsets(ctx context.Context, tg TopicAndGroup) (map[int]int64, error) {
-	address, err := c.lookupCoordinator(tg.GroupId)
+	address, err := c.lookupCoordinator(ctx, tg.GroupId)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +134,7 @@ type ConsumerGroupInfo struct {
 
 // ListGroups returns info about all groups in the cluster.
 func (c *Client) ListGroups(ctx context.Context) ([]ConsumerGroupInfo, error) {
-	conn, err := c.connect()
+	conn, err := c.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -147,34 +146,56 @@ func (c *Client) ListGroups(ctx context.Context) ([]ConsumerGroupInfo, error) {
 
 	groupInfos := []ConsumerGroupInfo{}
 
-	for _, broker := range brokers {
-		brokerConn, err := c.dialer.Dial(
-			"tcp",
-			fmt.Sprintf("%s:%d", broker.Host, broker.Port),
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		resp, err := brokerConn.listGroups(listGroupsRequestV0{})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, group := range resp.Groups {
-			groupInfos = append(
-				groupInfos,
-				ConsumerGroupInfo{
-					GroupID:     group.GroupID,
-					Coordinator: broker.ID,
-				},
-			)
-		}
+	type listResult struct {
+		broker   Broker
+		response listGroupsResponseV0
+		err      error
 	}
 
-	sort.Slice(groupInfos, func(a, b int) bool {
-		return groupInfos[a].GroupID < groupInfos[b].GroupID
-	})
+	resultsChan := make(chan listResult, len(brokers))
+
+	for _, broker := range brokers {
+		go func(innerBroker Broker) {
+			brokerConn, err := c.dialer.DialContext(
+				ctx,
+				"tcp",
+				fmt.Sprintf("%s:%d", innerBroker.Host, innerBroker.Port),
+			)
+			if err != nil {
+				resultsChan <- listResult{
+					innerBroker,
+					listGroupsResponseV0{},
+					err,
+				}
+			}
+
+			resp, err := brokerConn.listGroups(listGroupsRequestV0{})
+			resultsChan <- listResult{
+				innerBroker, resp, err,
+			}
+		}(broker)
+	}
+
+	for i := 0; i < len(brokers); i++ {
+		select {
+		case <-ctx.Done():
+			return groupInfos, ctx.Err()
+		case result := <-resultsChan:
+			if result.err != nil {
+				return groupInfos, err
+			}
+
+			for _, group := range result.response.Groups {
+				groupInfos = append(
+					groupInfos,
+					ConsumerGroupInfo{
+						GroupID:     group.GroupID,
+						Coordinator: result.broker.ID,
+					},
+				)
+			}
+		}
+	}
 
 	return groupInfos, nil
 }
@@ -221,7 +242,7 @@ type GroupMemberTopic struct {
 func (c *Client) DescribeGroup(ctx context.Context, groupID string) (GroupInfo, error) {
 	groupInfo := GroupInfo{}
 
-	address, err := c.lookupCoordinator(groupID)
+	address, err := c.lookupCoordinator(ctx, groupID)
 	if err != nil {
 		return groupInfo, err
 	}
@@ -382,9 +403,9 @@ func readInt32Array(r *bufio.Reader, sz int, v *[]int32) (remain int, err error)
 }
 
 // connect returns a connection to ANY broker
-func (c *Client) connect() (conn *Conn, err error) {
+func (c *Client) connect(ctx context.Context) (conn *Conn, err error) {
 	for _, broker := range c.brokers {
-		if conn, err = c.dialer.Dial("tcp", broker); err == nil {
+		if conn, err = c.dialer.DialContext(ctx, "tcp", broker); err == nil {
 			return
 		}
 	}
@@ -403,8 +424,8 @@ func (c *Client) coordinator(ctx context.Context, address string) (*Conn, error)
 
 // lookupCoordinator scans the brokers and looks up the address of the
 // coordinator for the groupId.
-func (c *Client) lookupCoordinator(groupId string) (string, error) {
-	conn, err := c.connect()
+func (c *Client) lookupCoordinator(ctx context.Context, groupId string) (string, error) {
+	conn, err := c.connect(ctx)
 	if err != nil {
 		return "", fmt.Errorf("unable to find coordinator to any connect for group, %v: %v\n", groupId, err)
 	}
