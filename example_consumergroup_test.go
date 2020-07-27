@@ -46,7 +46,7 @@ func ExampleConsumerGroupParallelReaders() {
 					case kafka.ErrGenerationEnded:
 						// generation has ended.  commit offsets.  in a real app,
 						// offsets would be committed periodically.
-						gen.CommitOffsets(map[string]map[int]int64{"my-topic": {partition: offset}})
+						gen.CommitOffsets(map[string]map[int]int64{"my-topic": {partition: offset + 1}})
 						return
 					case nil:
 						fmt.Printf("received message %s/%d/%d : %s\n", msg.Topic, msg.Partition, msg.Offset, string(msg.Value))
