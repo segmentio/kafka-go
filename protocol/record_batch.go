@@ -71,9 +71,6 @@ func handleRecord(i int, r *Record, f func(int, *Record) error) error {
 	if r.Value != nil {
 		defer r.Value.Close()
 	}
-	if r.Offset == 0 {
-		r.Offset = int64(i)
-	}
 	return f(i, r)
 }
 
@@ -362,25 +359,4 @@ func (s *RecordStream) ReadRecord() (*Record, error) {
 
 		return r, err
 	}
-}
-
-type message struct {
-	Record Record
-	read   bool
-}
-
-func (m *message) ReadRecord() (*Record, error) {
-	if m.read {
-		return nil, io.EOF
-	}
-	m.read = true
-	return &m.Record, nil
-}
-
-func (m *message) Offset() int64 {
-	return m.Record.Offset
-}
-
-func (m *message) Version() int {
-	return 1
 }

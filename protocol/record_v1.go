@@ -5,6 +5,7 @@ import (
 	"hash/crc32"
 	"io"
 	"math"
+	"time"
 )
 
 func readMessage(b *pageBuffer, d *decoder) (attributes int8, baseOffset, timestamp int64, key, value Bytes, err error) {
@@ -120,6 +121,19 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 				})
 			}
 
+			// https://kafka.apache.org/documentation/#messageset
+			//
+			// In version 1, to avoid server side re-compression, only the
+			// wrapper message will be assigned an offset. The inner messages
+			// will have relative offsets. The absolute offset can be computed
+			// using the offset from the outer message, which corresponds to the
+			// offset assigned to the last inner message.
+			lastRelativeOffset := int64(len(r.records)) - 1
+
+			for i := range r.records {
+				r.records[i].Offset = baseOffset - (lastRelativeOffset - r.records[i].Offset)
+			}
+
 			records = r
 		}
 	}
@@ -178,16 +192,22 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 	}
 
 	e := encoder{writer: buffer}
+	currentTimestamp := timestamp(time.Now())
 
 	return forEachRecord(records, func(i int, r *Record) error {
+		t := timestamp(r.Time)
+		if t == 0 {
+			t = currentTimestamp
+		}
+
 		messageOffset := buffer.Size()
-		e.writeInt64(r.Offset)
+		e.writeInt64(int64(i))
 		e.writeInt32(0) // message size placeholder
 		e.writeInt32(0) // crc32 placeholder
 		e.setCRC(crc32.IEEETable)
 		e.writeInt8(1) // magic byte: version 1
 		e.writeInt8(int8(attributes))
-		e.writeInt64(timestamp(r.Time))
+		e.writeInt64(t)
 
 		if err := e.writeNullBytesFrom(r.Key); err != nil {
 			return err
@@ -205,4 +225,17 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 		e.setCRC(nil)
 		return nil
 	})
+}
+
+type message struct {
+	Record Record
+	read   bool
+}
+
+func (m *message) ReadRecord() (*Record, error) {
+	if m.read {
+		return nil, io.EOF
+	}
+	m.read = true
+	return &m.Record, nil
 }

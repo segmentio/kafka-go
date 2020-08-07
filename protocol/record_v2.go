@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"time"
 )
 
 func (rs *RecordSet) readFromVersion2(d *decoder) error {
@@ -214,18 +215,25 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		}
 	}
 
+	currentTimestamp := timestamp(time.Now())
 	lastOffsetDelta := int32(0)
 	firstTimestamp := int64(0)
 	maxTimestamp := int64(0)
 
 	err := forEachRecord(records, func(i int, r *Record) error {
-		maxTimestamp = timestamp(r.Time)
-		if i == 0 {
-			firstTimestamp = maxTimestamp
+		t := timestamp(r.Time)
+		if t == 0 {
+			t = currentTimestamp
+		}
+		if firstTimestamp == 0 {
+			firstTimestamp = t
+		}
+		if t > maxTimestamp {
+			maxTimestamp = t
 		}
 
 		timestampDelta := maxTimestamp - firstTimestamp
-		offsetDelta := r.Offset
+		offsetDelta := int64(i)
 		lastOffsetDelta = int32(offsetDelta)
 
 		length := 1 + // attributes
