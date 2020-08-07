@@ -121,17 +121,19 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 				})
 			}
 
-			// https://kafka.apache.org/documentation/#messageset
-			//
-			// In version 1, to avoid server side re-compression, only the
-			// wrapper message will be assigned an offset. The inner messages
-			// will have relative offsets. The absolute offset can be computed
-			// using the offset from the outer message, which corresponds to the
-			// offset assigned to the last inner message.
-			lastRelativeOffset := int64(len(r.records)) - 1
+			if baseOffset != 0 {
+				// https://kafka.apache.org/documentation/#messageset
+				//
+				// In version 1, to avoid server side re-compression, only the
+				// wrapper message will be assigned an offset. The inner messages
+				// will have relative offsets. The absolute offset can be computed
+				// using the offset from the outer message, which corresponds to the
+				// offset assigned to the last inner message.
+				lastRelativeOffset := int64(len(r.records)) - 1
 
-			for i := range r.records {
-				r.records[i].Offset = baseOffset - (lastRelativeOffset - r.records[i].Offset)
+				for i := range r.records {
+					r.records[i].Offset = baseOffset - (lastRelativeOffset - r.records[i].Offset)
+				}
 			}
 
 			records = r
