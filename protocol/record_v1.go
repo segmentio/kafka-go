@@ -5,6 +5,7 @@ import (
 	"hash/crc32"
 	"io"
 	"math"
+	"time"
 )
 
 func readMessage(b *pageBuffer, d *decoder) (attributes int8, baseOffset, timestamp int64, key, value Bytes, err error) {
@@ -191,8 +192,14 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 	}
 
 	e := encoder{writer: buffer}
+	currentTimestamp := timestamp(time.Now())
 
 	return forEachRecord(records, func(i int, r *Record) error {
+		t := timestamp(r.Time)
+		if t == 0 {
+			t = currentTimestamp
+		}
+
 		messageOffset := buffer.Size()
 		e.writeInt64(int64(i))
 		e.writeInt32(0) // message size placeholder
@@ -200,7 +207,7 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 		e.setCRC(crc32.IEEETable)
 		e.writeInt8(1) // magic byte: version 1
 		e.writeInt8(int8(attributes))
-		e.writeInt64(timestamp(r.Time))
+		e.writeInt64(t)
 
 		if err := e.writeNullBytesFrom(r.Key); err != nil {
 			return err

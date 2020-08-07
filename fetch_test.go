@@ -233,6 +233,7 @@ func TestClientPipeline(t *testing.T) {
 	const numBatches = 100
 	const recordsPerBatch = 30
 
+	unixEpoch := time.Unix(0, 0)
 	records := make([]Record, recordsPerBatch)
 	content := []byte("1234567890")
 
@@ -291,6 +292,10 @@ func TestClientPipeline(t *testing.T) {
 
 			if r.Offset != offset {
 				t.Errorf("record at index %d has mismatching offset, want %d but got %d", i, offset, r.Offset)
+			}
+
+			if r.Time.IsZero() || r.Time.Equal(unixEpoch) {
+				t.Errorf("record at index %d with offset %d has not timestamp", i, r.Offset)
 			}
 
 			offset = r.Offset + 1
