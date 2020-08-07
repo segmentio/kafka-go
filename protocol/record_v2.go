@@ -225,14 +225,14 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		if t == 0 {
 			t = currentTimestamp
 		}
-		if firstTimestamp == 0 {
+		if i == 0 {
 			firstTimestamp = t
 		}
 		if t > maxTimestamp {
 			maxTimestamp = t
 		}
 
-		timestampDelta := maxTimestamp - firstTimestamp
+		timestampDelta := t - firstTimestamp
 		offsetDelta := int64(i)
 		lastOffsetDelta = int32(offsetDelta)
 
