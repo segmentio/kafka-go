@@ -78,9 +78,9 @@ func TestFetchResponse(t *testing.T) {
 						RecordSet: protocol.RecordSet{
 							Version: 2,
 							Records: protocol.NewRecordReader(
-								protocol.Record{Offset: 11, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
-								protocol.Record{Offset: 12, Time: t1, Key: nil, Value: prototest.String("msg-1")},
-								protocol.Record{Offset: 14, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
+								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
+								protocol.Record{Offset: 1, Time: t1, Key: nil, Value: prototest.String("msg-1")},
+								protocol.Record{Offset: 2, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
 							),
 						},
 					},
@@ -134,9 +134,9 @@ func BenchmarkFetchResponse(b *testing.B) {
 						RecordSet: protocol.RecordSet{
 							Version: 2,
 							Records: protocol.NewRecordReader(
-								protocol.Record{Offset: 11, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
-								protocol.Record{Offset: 12, Time: t1, Key: nil, Value: prototest.String("msg-1")},
-								protocol.Record{Offset: 14, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
+								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
+								protocol.Record{Offset: 1, Time: t1, Key: nil, Value: prototest.String("msg-1")},
+								protocol.Record{Offset: 2, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
 							),
 						},
 					},
