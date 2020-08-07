@@ -225,3 +225,76 @@ func readRecords(records RecordReader) ([]memoryRecord, error) {
 		})
 	}
 }
+
+func TestClientPipeline(t *testing.T) {
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
+
+	const numBatches = 100
+	const recordsPerBatch = 30
+
+	records := make([]Record, recordsPerBatch)
+	content := []byte("1234567890")
+
+	for i := 0; i < numBatches; i++ {
+		for j := range records {
+			records[j] = Record{Value: NewBytes(content)}
+		}
+
+		_, err := client.Produce(context.Background(), &ProduceRequest{
+			Topic:        topic,
+			RequiredAcks: -1,
+			Records:      NewRecordReader(records...),
+			Compression:  Snappy,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	offset := int64(0)
+
+	for i := 0; i < (numBatches * recordsPerBatch); {
+		req := &FetchRequest{
+			Topic:    topic,
+			Offset:   offset,
+			MinBytes: 1,
+			MaxBytes: 8192,
+			MaxWait:  500 * time.Millisecond,
+		}
+
+		res, err := client.Fetch(context.Background(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if res.Error != nil {
+			t.Fatal(res.Error)
+		}
+
+		for {
+			r, err := res.Records.ReadRecord()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				t.Fatal(err)
+			}
+
+			if r.Key != nil {
+				r.Key.Close()
+			}
+
+			if r.Value != nil {
+				r.Value.Close()
+			}
+
+			if r.Offset != offset {
+				t.Errorf("record at index %d has mismatching offset, want %d but got %d", i, offset, r.Offset)
+			}
+
+			offset = r.Offset + 1
+			i++
+		}
+	}
+}

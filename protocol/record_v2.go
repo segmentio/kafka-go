@@ -225,7 +225,7 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		}
 
 		timestampDelta := maxTimestamp - firstTimestamp
-		offsetDelta := r.Offset
+		offsetDelta := int64(i)
 		lastOffsetDelta = int32(offsetDelta)
 
 		length := 1 + // attributes

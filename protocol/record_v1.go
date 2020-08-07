@@ -120,6 +120,19 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 				})
 			}
 
+			// https://kafka.apache.org/documentation/#messageset
+			//
+			// In version 1, to avoid server side re-compression, only the
+			// wrapper message will be assigned an offset. The inner messages
+			// will have relative offsets. The absolute offset can be computed
+			// using the offset from the outer message, which corresponds to the
+			// offset assigned to the last inner message.
+			lastRelativeOffset := int64(len(r.records)) - 1
+
+			for i := range r.records {
+				r.records[i].Offset = baseOffset - (lastRelativeOffset - r.records[i].Offset)
+			}
+
 			records = r
 		}
 	}
@@ -181,7 +194,7 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 
 	return forEachRecord(records, func(i int, r *Record) error {
 		messageOffset := buffer.Size()
-		e.writeInt64(r.Offset)
+		e.writeInt64(int64(i))
 		e.writeInt32(0) // message size placeholder
 		e.writeInt32(0) // crc32 placeholder
 		e.setCRC(crc32.IEEETable)
@@ -205,4 +218,17 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 		e.setCRC(nil)
 		return nil
 	})
+}
+
+type message struct {
+	Record Record
+	read   bool
+}
+
+func (m *message) ReadRecord() (*Record, error) {
+	if m.read {
+		return nil, io.EOF
+	}
+	m.read = true
+	return &m.Record, nil
 }
