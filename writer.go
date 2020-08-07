@@ -815,6 +815,9 @@ func (w *Writer) partitions(ctx context.Context) (int, error) {
 	// Here we use the transport directly as an optimization to avoid the
 	// construction of temporary request and response objects made by the
 	// (*Client).Metadata API.
+	//
+	// It is expected that the transport will optimize this request by
+	// caching recent results (the kafka.Transport types does).
 	r, err := client.transport().RoundTrip(ctx, client.Addr, &metadataAPI.Request{
 		TopicNames: []string{w.Topic},
 	})
