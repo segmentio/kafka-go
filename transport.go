@@ -995,7 +995,6 @@ func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 	}
 
 	for i := range address {
-		fmt.Printf("%s %s %d %#v\n", network, address, i, g.pool)
 		netConn, err = g.pool.dial(ctx, network[i], address[i])
 		if err == nil {
 			netAddr = &networkAddress{
