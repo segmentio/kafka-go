@@ -28,5 +28,7 @@ func TestIsse477(t *testing.T) {
 		// An error is expected here because we are not actually establishing
 		// a TLS connection to a kafka broker.
 		t.Log(err)
+	} else {
+		t.Error("no error was reported when attempting to establish a TLS connection to a non-TLS endpoint")
 	}
 }
