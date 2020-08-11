@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestIsse477(t *testing.T) {
+func TestIssue477(t *testing.T) {
 	// This test verifies that a connection attempt with a minimal TLS
 	// configuration does not panic.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
