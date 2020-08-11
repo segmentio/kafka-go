@@ -997,6 +997,10 @@ func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 	for i := range address {
 		netConn, err = g.pool.dial(ctx, network[i], address[i])
 		if err == nil {
+			netAddr = &networkAddress{
+				network: network[i],
+				address: address[i],
+			}
 			break
 		}
 	}
