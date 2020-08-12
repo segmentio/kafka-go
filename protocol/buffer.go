@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"sync"
 	"sync/atomic"
 )
@@ -461,9 +460,10 @@ func (pages contiguousPages) slice(begin, end int64) contiguousPages {
 }
 
 func (pages contiguousPages) indexOf(offset int64) int {
-	return sort.Search(len(pages), func(i int) bool {
-		return offset < (pages[i].offset + pages[i].Size())
-	})
+	if len(pages) == 0 {
+		return 0
+	}
+	return int((offset - pages[0].offset) / pageSize)
 }
 
 func (pages contiguousPages) scan(begin, end int64, f func([]byte) bool) {
