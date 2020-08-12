@@ -18,6 +18,13 @@ type Dialer struct {
 	// Unique identifier for client connections established by this Dialer.
 	ClientID string
 
+	// Optionally specifies the function that the dialer uses to establish
+	// network connections. If nil, net.(*Dialer).DialContext is used instead.
+	//
+	// When DialFunc is set, LocalAddr, DualStack, FallbackDelay, and KeepAlive
+	// are ignored.
+	DialFunc func(context.Context, string, string) (net.Conn, error)
+
 	// Timeout is the maximum amount of time a dial will wait for a connect to
 	// complete. If Deadline is also set, it may fail earlier.
 	//
@@ -329,12 +336,17 @@ func (d *Dialer) dialContext(ctx context.Context, network string, address string
 		}
 	}
 
-	conn, err := (&net.Dialer{
-		LocalAddr:     d.LocalAddr,
-		DualStack:     d.DualStack,
-		FallbackDelay: d.FallbackDelay,
-		KeepAlive:     d.KeepAlive,
-	}).DialContext(ctx, network, address)
+	dial := d.DialFunc
+	if dial == nil {
+		dial = (&net.Dialer{
+			LocalAddr:     d.LocalAddr,
+			DualStack:     d.DualStack,
+			FallbackDelay: d.FallbackDelay,
+			KeepAlive:     d.KeepAlive,
+		}).DialContext
+	}
+
+	conn, err := dial(ctx, network, address)
 	if err != nil {
 		return nil, err
 	}
