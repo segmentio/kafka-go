@@ -23,7 +23,7 @@ type Dialer struct {
 	//
 	// When DialFunc is set, LocalAddr, DualStack, FallbackDelay, and KeepAlive
 	// are ignored.
-	DialFunc func(context.Context, string, string) (net.Conn, error)
+	DialFunc func(ctx context.Context, network string, address string) (net.Conn, error)
 
 	// Timeout is the maximum amount of time a dial will wait for a connect to
 	// complete. If Deadline is also set, it may fail earlier.
