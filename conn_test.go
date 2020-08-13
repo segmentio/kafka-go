@@ -188,6 +188,11 @@ func TestConn(t *testing.T) {
 		},
 
 		{
+			scenario: "read a batch using explicit max wait time",
+			function: testConnReadBatchWithMaxWait,
+		},
+
+		{
 			scenario:   "describe groups retrieves all groups when no groupID specified",
 			function:   testConnDescribeGroupRetrievesAllGroups,
 			minVersion: "0.11.0",
@@ -540,6 +545,52 @@ func testConnReadWatermarkFromBatch(t *testing.T, conn *Conn) {
 	}
 
 	batch.Close()
+}
+
+func testConnReadBatchWithMaxWait(t *testing.T, conn *Conn) {
+	if _, err := conn.WriteMessages(makeTestSequence(10)...); err != nil {
+		t.Fatal(err)
+	}
+
+	const maxBytes = 10e6 // 10 MB
+
+	value := make([]byte, 10e3) // 10 KB
+
+	cfg := ReadBatchConfig{
+		MinBytes:    maxBytes, // use max for both so that we hit max wait time
+		MaxBytes:    maxBytes,
+		MaxWaitTime: 500 * time.Millisecond,
+	}
+
+	// set aa read deadline so the batch will succeed.
+	conn.SetDeadline(time.Now().Add(time.Second))
+	batch := conn.ReadBatchWith(cfg)
+
+	for i := 0; i < 10; i++ {
+		_, err := batch.Read(value)
+		if err != nil {
+			if err = batch.Close(); err != nil {
+				t.Fatalf("error trying to read batch message: %s", err)
+			}
+		}
+
+		if batch.HighWaterMark() != 10 {
+			t.Fatal("expected highest offset (watermark) to be 10")
+		}
+	}
+
+	batch.Close()
+
+	// reset the offset and  ensure that the conn deadline takes precedence over
+	// the max wait
+	conn.Seek(0, SeekAbsolute)
+	conn.SetDeadline(time.Now().Add(50 * time.Millisecond))
+	batch = conn.ReadBatchWith(cfg)
+	if err := batch.Err(); err == nil {
+		t.Fatal("should have timed out, but got no error")
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		t.Fatalf("should have timed out, but got: %v", err)
+	}
 }
 
 func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {

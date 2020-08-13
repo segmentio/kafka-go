@@ -121,6 +121,13 @@ type ReadBatchConfig struct {
 	// ReadUncommitted makes all records visible. With ReadCommitted only
 	// non-transactional and committed records are visible.
 	IsolationLevel IsolationLevel
+
+	// The amount of time for the broker while waiting to hit the min/max byte
+	// targets.  This setting is independent of any network-level timeouts or
+	// deadlines.
+	//
+	// For backward compatibility, the default value here will todo
+	MaxWaitTime time.Duration
 }
 
 type IsolationLevel int8
@@ -790,7 +797,20 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
 		now := time.Now()
-		deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+		var timeout time.Duration
+		if cfg.MaxWaitTime > 0 {
+			// explicitly-configured case: no changes are made to the deadline,
+			// and the timeout is sent exactly as specified.
+			timeout = cfg.MaxWaitTime
+		} else {
+			// default case: use the original logic to adjust the conn's
+			// deadline.T
+			deadline = adjustDeadlineForRTT(deadline, now, defaultRTT)
+			timeout = deadlineToTimeout(deadline, now)
+		}
+		// save this variable outside of the closure for later use in detecting
+		// truncated messages.
+		adjustedDeadline = deadline
 		switch fetchVersion {
 		case v10:
 			return c.wb.writeFetchRequestV10(
@@ -801,7 +821,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 				offset,
 				cfg.MinBytes,
 				cfg.MaxBytes+int(c.fetchMinSize),
-				deadlineToTimeout(deadline, now),
+				timeout,
 				int8(cfg.IsolationLevel),
 			)
 		case v5:
@@ -813,7 +833,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 				offset,
 				cfg.MinBytes,
 				cfg.MaxBytes+int(c.fetchMinSize),
-				deadlineToTimeout(deadline, now),
+				timeout,
 				int8(cfg.IsolationLevel),
 			)
 		default:
@@ -825,7 +845,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 				offset,
 				cfg.MinBytes,
 				cfg.MaxBytes+int(c.fetchMinSize),
-				deadlineToTimeout(deadline, now),
+				timeout,
 			)
 		}
 	})
