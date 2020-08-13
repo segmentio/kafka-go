@@ -122,12 +122,13 @@ type ReadBatchConfig struct {
 	// non-transactional and committed records are visible.
 	IsolationLevel IsolationLevel
 
-	// The amount of time for the broker while waiting to hit the min/max byte
-	// targets.  This setting is independent of any network-level timeouts or
-	// deadlines.
+	// MaxWait is the amount of time for the broker while waiting to hit the
+	// min/max byte targets.  This setting is independent of any network-level
+	// timeouts or deadlines.
 	//
-	// For backward compatibility, the default value here will todo
-	MaxWaitTime time.Duration
+	// For backward compatibility, when this field is left zero, kafka-go will
+	// infer the max wait from the connection's read deadline.
+	MaxWait time.Duration
 }
 
 type IsolationLevel int8
@@ -798,10 +799,10 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
 		now := time.Now()
 		var timeout time.Duration
-		if cfg.MaxWaitTime > 0 {
+		if cfg.MaxWait > 0 {
 			// explicitly-configured case: no changes are made to the deadline,
 			// and the timeout is sent exactly as specified.
-			timeout = cfg.MaxWaitTime
+			timeout = cfg.MaxWait
 		} else {
 			// default case: use the original logic to adjust the conn's
 			// deadline.T

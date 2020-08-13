@@ -557,9 +557,9 @@ func testConnReadBatchWithMaxWait(t *testing.T, conn *Conn) {
 	value := make([]byte, 10e3) // 10 KB
 
 	cfg := ReadBatchConfig{
-		MinBytes:    maxBytes, // use max for both so that we hit max wait time
-		MaxBytes:    maxBytes,
-		MaxWaitTime: 500 * time.Millisecond,
+		MinBytes: maxBytes, // use max for both so that we hit max wait time
+		MaxBytes: maxBytes,
+		MaxWait:  500 * time.Millisecond,
 	}
 
 	// set aa read deadline so the batch will succeed.
