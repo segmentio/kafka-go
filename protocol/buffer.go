@@ -579,12 +579,7 @@ func (ref *pageRef) WriteTo(w io.Writer) (wn int64, err error) {
 func (ref *pageRef) scan(off int64, f func([]byte) bool) {
 	begin := ref.offset + off
 	end := ref.offset + int64(ref.length)
-
-	for _, p := range ref.pages.slice(begin, end) {
-		if !f(p.slice(begin, end)) {
-			break
-		}
-	}
+	ref.pages.scan(begin, end, f)
 }
 
 var (
