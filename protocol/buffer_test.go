@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"io"
 	"io/ioutil"
 	"testing"
@@ -81,6 +82,27 @@ func TestPageRefWriteReadSeek(t *testing.T) {
 		}
 		if offset != 0 {
 			t.Fatalf("invalid offset after seek #%d: %d", i, offset)
+		}
+	}
+}
+
+func TestPageRefReadByte(t *testing.T) {
+	buffer := newPageBuffer()
+	defer buffer.unref()
+
+	content := bytes.Repeat([]byte("1234567890"), 10e3)
+	buffer.Write(content)
+
+	ref := buffer.ref(0, buffer.Size())
+	defer ref.unref()
+
+	for i, c := range content {
+		b, err := ref.ReadByte()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b != c {
+			t.Fatalf("byte at offset %d mismatch, expected '%c' but got '%c'", i, c, b)
 		}
 	}
 }

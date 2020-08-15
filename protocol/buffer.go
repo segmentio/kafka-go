@@ -580,11 +580,9 @@ func (ref *pageRef) scan(off int64, f func([]byte) bool) {
 	begin := ref.offset + off
 	end := ref.offset + int64(ref.length)
 
-	if begin < end {
-		for _, p := range ref.pages {
-			if !f(p.slice(begin, end)) {
-				break
-			}
+	for _, p := range ref.pages.slice(begin, end) {
+		if !f(p.slice(begin, end)) {
+			break
 		}
 	}
 }
