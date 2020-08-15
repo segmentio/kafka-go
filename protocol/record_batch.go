@@ -187,6 +187,13 @@ type ControlRecord struct {
 }
 
 func ReadControlRecord(r *Record) (*ControlRecord, error) {
+	if r.Key != nil {
+		defer r.Key.Close()
+	}
+	if r.Value != nil {
+		defer r.Value.Close()
+	}
+
 	k, err := ReadAll(r.Key)
 	if err != nil {
 		return nil, err
