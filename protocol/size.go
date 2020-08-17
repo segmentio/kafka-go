@@ -67,7 +67,7 @@ func sizeOfVarBytes(b Bytes) int {
 	if b == nil {
 		return sizeOfVarInt(-1)
 	} else {
-		n := b.Size()
-		return sizeOfVarInt(n) + int(n)
+		n := b.Len()
+		return sizeOfVarInt(int64(n)) + n
 	}
 }

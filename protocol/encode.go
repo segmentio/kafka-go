@@ -247,7 +247,7 @@ func (e *encoder) writeCompactNullBytes(b []byte) {
 }
 
 func (e *encoder) writeBytesFrom(b Bytes) error {
-	size := b.Size()
+	size := int64(b.Len())
 	e.writeInt32(int32(size))
 	n, err := io.Copy(e, b)
 	if err == nil && n != size {
@@ -261,7 +261,7 @@ func (e *encoder) writeNullBytesFrom(b Bytes) error {
 		e.writeInt32(-1)
 		return nil
 	} else {
-		size := b.Size()
+		size := int64(b.Len())
 		e.writeInt32(int32(size))
 		n, err := io.Copy(e, b)
 		if err == nil && n != size {
@@ -276,7 +276,7 @@ func (e *encoder) writeCompactNullBytesFrom(b Bytes) error {
 		e.writeVarInt(-1)
 		return nil
 	} else {
-		size := b.Size()
+		size := int64(b.Len())
 		e.writeVarInt(size)
 		n, err := io.Copy(e, b)
 		if err == nil && n != size {

@@ -120,20 +120,23 @@ func loadRecords(r protocol.RecordReader) []memoryRecord {
 			}
 			panic(err)
 		}
-		k, err := protocol.ReadAll(rec.Key)
-		if err != nil {
-			panic(err)
-		}
-		v, err := protocol.ReadAll(rec.Value)
-		if err != nil {
-			panic(err)
-		}
 		records = append(records, memoryRecord{
 			offset:  rec.Offset,
 			time:    rec.Time,
-			key:     k,
-			value:   v,
+			key:     readAll(rec.Key),
+			value:   readAll(rec.Value),
 			headers: rec.Headers,
 		})
 	}
+}
+
+func readAll(bytes protocol.Bytes) []byte {
+	if bytes != nil {
+		defer bytes.Close()
+	}
+	b, err := protocol.ReadAll(bytes)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

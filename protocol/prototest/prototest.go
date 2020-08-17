@@ -125,8 +125,8 @@ func deepEqualBytes(s1, s2 protocol.Bytes) bool {
 		return false
 	}
 
-	n1 := s1.Size()
-	n2 := s2.Size()
+	n1 := s1.Len()
+	n2 := s2.Len()
 
 	if n1 != n2 {
 		return false
