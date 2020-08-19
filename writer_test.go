@@ -47,6 +47,10 @@ func TestWriter(t *testing.T) {
 			scenario: "writing messsages with a small batch byte size",
 			function: testWriterSmallBatchBytes,
 		},
+		{
+			scenario: "setting a non default balancer on the writer",
+			function: testWriterSetsRightBalancer,
+		},
 	}
 
 	for _, test := range tests {
@@ -76,6 +80,20 @@ func testWriterClose(t *testing.T) {
 
 	if err := w.Close(); err != nil {
 		t.Error(err)
+	}
+}
+
+func testWriterSetsRightBalancer(t *testing.T) {
+	const topic = "test-writer-1"
+	balancer := &CRC32Balancer{}
+	w := newTestWriter(WriterConfig{
+		Topic:    topic,
+		Balancer: balancer,
+	})
+	defer w.Close()
+
+	if w.Balancer != balancer {
+		t.Errorf("Balancer not set correctly")
 	}
 }
 

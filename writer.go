@@ -396,6 +396,10 @@ func NewWriter(config WriterConfig) *Writer {
 		config.Dialer = DefaultDialer
 	}
 
+	if config.Balancer == nil {
+		config.Balancer = &RoundRobin{}
+	}
+
 	// Converts the pre-0.4 Dialer API into a Transport.
 	kafkaDialer := DefaultDialer
 	if config.Dialer != nil {
@@ -472,6 +476,7 @@ func NewWriter(config WriterConfig) *Writer {
 		Topic:        config.Topic,
 		MaxAttempts:  config.MaxAttempts,
 		BatchSize:    config.BatchSize,
+		Balancer:     config.Balancer,
 		BatchBytes:   int64(config.BatchBytes),
 		BatchTimeout: config.BatchTimeout,
 		ReadTimeout:  config.ReadTimeout,
