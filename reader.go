@@ -1066,14 +1066,8 @@ func (r *Reader) ReadTopicNames(ctx context.Context) (topics []string, err error
 		return nil, err
 	}
 	defer conn.Close()
-	topicNames, err := conn.Topics()
-	if err != nil{
-		return nil, err
-	}
-	for _, topicName := range topicNames{
-		topics = append(topics, topicName)
-	}
-	return
+
+	return conn.Topics()
 }
 
 func (r *Reader) start(offsetsByPartition map[int]int64) {
