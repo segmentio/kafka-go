@@ -685,7 +685,11 @@ func (r *Reader) Close() error {
 // The method returns io.EOF to indicate that the reader has been closed.
 //
 // If consumer groups are used, ReadMessage will automatically commit the
-// offset when called.
+// offset when called. Note that this could result in an offset being committed
+// before the message is fully processed.
+//
+// If more fine grained control of when offsets are  committed is required, it
+// is recommended to use FetchMessage with CommitMessages instead.
 func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	m, err := r.FetchMessage(ctx)
 	if err != nil {
