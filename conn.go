@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/segmentio/kafka-go/sasl"
 	"io"
+	"log"
 	"math"
 	"net"
 	"os"
@@ -1444,7 +1445,6 @@ func (c *Conn) ApiVersions() ([]ApiVersion, error) {
 		h.writeTo(&c.wb)
 		return c.wbuf.Flush()
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -1578,12 +1578,18 @@ func (c *Conn) saslHandshake(mechanism string, version apiVersion) error {
 	return err
 }
 
-func (c *Conn) authenticateSASL(ctx context.Context, conn *Conn, mechanism sasl.Mechanism, version apiVersion) error {
+// performs all of the required requests to authenticate this
+// connection.  If any step fails, this function returns with an error.  A nil
+// error indicates successful authentication.
+//
+// In case of error, this function *does not* close the connection.  That is the
+// responsibility of the caller.
+func (c *Conn) authenticateSASL(ctx context.Context, mechanism sasl.Mechanism, version apiVersion) error {
 	//Prevent other requests from being sent while re-authenticating
-	conn.authLock.Lock()
-	defer conn.authLock.Unlock()
+	c.authLock.Lock()
+	defer c.authLock.Unlock()
 
-	if err := conn.saslHandshake(mechanism.Name(), version); err != nil {
+	if err := c.saslHandshake(mechanism.Name(), version); err != nil {
 		return err
 	}
 
@@ -1595,7 +1601,7 @@ func (c *Conn) authenticateSASL(ctx context.Context, conn *Conn, mechanism sasl.
 	var sessionLifeTimeMs int64
 	for completed := false; !completed; {
 		var challenge []byte
-		challenge, sessionLifeTimeMs, err = conn.saslAuthenticate(state)
+		challenge, sessionLifeTimeMs, err = c.saslAuthenticate(state)
 		switch err {
 		case nil:
 		case io.EOF:
@@ -1614,12 +1620,16 @@ func (c *Conn) authenticateSASL(ctx context.Context, conn *Conn, mechanism sasl.
 	}
 
 	if sessionLifeTimeMs > 0 {
-		//schedule re-authentication after 80% of the session lifetime elapsed
+		// schedule re-authentication after 80% of the session lifetime elapsed
+		// maybe a minimum timeout should be implemented, in order to avoid cloging the application
+		// when a broker returns a session life time too short?
 		t := time.NewTimer(time.Duration(sessionLifeTimeMs*80/100) * time.Millisecond)
 		go func() {
 			select {
 			case <-t.C:
-				c.authenticateSASL(ctx, conn, mechanism, version)
+				if err := c.authenticateSASL(ctx, mechanism, version); err != nil {
+					log.Printf("error authenticating connection: %v", err)
+				}
 			case <-c.cancelNextAuthentication:
 			}
 		}()

@@ -281,19 +281,15 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 	return conn, nil
 }
 
-// authenticateSASLFirstTime performs all of the required requests to authenticate this
-// connection.  If any step fails, this function returns with an error.  A nil
-// error indicates successful authentication.
-//
-// In case of error, this function *does not* close the connection.  That is the
-// responsibility of the caller.
+// negotiates the version for future SASL authentication procedures
+// and attempts to authenticate the connection for the first time
 func (d *Dialer) authenticateSASLFirstTime(ctx context.Context, conn *Conn) error {
 	version, err := conn.negotiateVersion(saslHandshake, v0, v1)
 	if err != nil {
 		return err
 	}
 
-	return conn.authenticateSASL(ctx, conn, d.SASLMechanism, version)
+	return conn.authenticateSASL(ctx, d.SASLMechanism, version)
 }
 
 func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {
