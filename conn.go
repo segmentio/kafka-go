@@ -1615,7 +1615,7 @@ func (c *Conn) authenticateSASL(ctx context.Context, conn *Conn, mechanism sasl.
 
 	if sessionLifeTimeMs > 0 {
 		//schedule re-authentication after 80% of the session lifetime elapsed
-		t := time.NewTimer(time.Duration((sessionLifeTimeMs*80)/100) * time.Millisecond)
+		t := time.NewTimer(time.Duration(sessionLifeTimeMs*80/100) * time.Millisecond)
 		go func() {
 			select {
 			case <-t.C:
