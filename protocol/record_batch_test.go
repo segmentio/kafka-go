@@ -171,19 +171,30 @@ func equalRecords(r1, r2 *Record) bool {
 		return false
 	}
 
-	k1, _ := ReadAll(r1.Key)
-	k2, _ := ReadAll(r2.Key)
+	k1 := readAll(r1.Key)
+	k2 := readAll(r2.Key)
 
 	if !reflect.DeepEqual(k1, k2) {
 		return false
 	}
 
-	v1, _ := ReadAll(r1.Value)
-	v2, _ := ReadAll(r2.Value)
+	v1 := readAll(r1.Value)
+	v2 := readAll(r2.Value)
 
 	if !reflect.DeepEqual(v1, v2) {
 		return false
 	}
 
 	return reflect.DeepEqual(r1.Headers, r2.Headers)
+}
+
+func readAll(bytes Bytes) []byte {
+	if bytes != nil {
+		defer bytes.Close()
+	}
+	b, err := ReadAll(bytes)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

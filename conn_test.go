@@ -105,8 +105,6 @@ func makeGroupID() string {
 }
 
 func TestConn(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario   string
 		function   func(*testing.T, *Conn)
@@ -1027,7 +1025,7 @@ func testBrokers(t *testing.T, conn *Conn) {
 func TestReadPartitionsNoTopic(t *testing.T) {
 	conn, err := Dial("tcp", "127.0.0.1:9092")
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer conn.Close()
 

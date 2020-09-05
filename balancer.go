@@ -7,15 +7,14 @@ import (
 	"math/rand"
 	"sort"
 	"sync"
+	"sync/atomic"
 )
 
 // The Balancer interface provides an abstraction of the message distribution
 // logic used by Writer instances to route messages to the partitions available
 // on a kafka cluster.
 //
-// Instances of Balancer do not have to be safe to use concurrently by multiple
-// goroutines, the Writer implementation ensures that calls to Balance are
-// synchronized.
+// Balancers must be safe to use concurrently from multiple goroutines.
 type Balancer interface {
 	// Balance receives a message and a set of available partitions and
 	// returns the partition number that the message should be routed to.
@@ -39,14 +38,19 @@ func (f BalancerFunc) Balance(msg Message, partitions ...int) int {
 // RoundRobin is an Balancer implementation that equally distributes messages
 // across all available partitions.
 type RoundRobin struct {
-	offset uint64
+	// Use a 32 bits integer so RoundRobin values don't need to be aligned to
+	// apply atomic increments.
+	offset uint32
 }
 
 // Balance satisfies the Balancer interface.
 func (rr *RoundRobin) Balance(msg Message, partitions ...int) int {
-	length := uint64(len(partitions))
-	offset := rr.offset
-	rr.offset++
+	return rr.balance(partitions)
+}
+
+func (rr *RoundRobin) balance(partitions []int) int {
+	length := uint32(len(partitions))
+	offset := atomic.AddUint32(&rr.offset, 1) - 1
 	return partitions[offset%length]
 }
 
@@ -57,6 +61,7 @@ func (rr *RoundRobin) Balance(msg Message, partitions ...int) int {
 // balancing relies on the fact that each producer using a LeastBytes balancer
 // should produce well balanced messages.
 type LeastBytes struct {
+	mutex    sync.Mutex
 	counters []leastBytesCounter
 }
 
@@ -67,6 +72,9 @@ type leastBytesCounter struct {
 
 // Balance satisfies the Balancer interface.
 func (lb *LeastBytes) Balance(msg Message, partitions ...int) int {
+	lb.mutex.Lock()
+	defer lb.mutex.Unlock()
+
 	for _, p := range partitions {
 		if c := lb.counterOf(p); c == nil {
 			lb.counters = lb.makeCounters(partitions...)

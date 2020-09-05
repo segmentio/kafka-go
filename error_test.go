@@ -6,8 +6,6 @@ import (
 )
 
 func TestError(t *testing.T) {
-	t.Parallel()
-
 	errorCodes := []Error{
 		Unknown,
 		OffsetOutOfRange,

@@ -174,7 +174,7 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 			var err error
 			buffer.pages.scan(bufferOffset, buffer.Size(), func(b []byte) bool {
 				_, err = compressor.Write(b)
-				return err != nil
+				return err == nil
 			})
 			if err != nil {
 				return err

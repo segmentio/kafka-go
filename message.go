@@ -40,7 +40,7 @@ func (msg Message) message(cw *crc32Writer) message {
 
 const timestampSize = 8
 
-func (msg Message) size() int32 {
+func (msg *Message) size() int32 {
 	return 4 + 1 + 1 + sizeofBytes(msg.Key) + sizeofBytes(msg.Value) + timestampSize
 }
 

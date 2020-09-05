@@ -31,12 +31,9 @@ func copyRecords(records []Record) []Record {
 }
 
 func produceRecords(t *testing.T, n int, addr net.Addr, topic string, compression compress.Codec) []Record {
-	network := addr.Network()
-	address := net.JoinHostPort(addr.String(), "9092")
-
 	conn, err := (&Dialer{
 		Resolver: &net.Resolver{},
-	}).DialLeader(context.Background(), network, address, topic, 0)
+	}).DialLeader(context.Background(), addr.Network(), addr.String(), topic, 0)
 
 	if err != nil {
 		t.Fatal("failed to open a new kafka connection:", err)

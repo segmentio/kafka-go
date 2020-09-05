@@ -9,6 +9,9 @@ func RoundTrip(rw io.ReadWriter, apiVersion int16, correlationID int32, clientID
 	if err := WriteRequest(rw, apiVersion, correlationID, clientID, req); err != nil {
 		return nil, err
 	}
+	if !hasResponse(req) {
+		return nil, nil
+	}
 	id, res, err := ReadResponse(rw, req.ApiKey(), apiVersion)
 	if err != nil {
 		return nil, err
@@ -17,4 +20,9 @@ func RoundTrip(rw io.ReadWriter, apiVersion int16, correlationID int32, clientID
 		return nil, Errorf("correlation id mismatch (expected=%d, found=%d)", correlationID, id)
 	}
 	return res, nil
+}
+
+func hasResponse(msg Message) bool {
+	x, _ := msg.(interface{ HasResponse() bool })
+	return x == nil || x.HasResponse()
 }

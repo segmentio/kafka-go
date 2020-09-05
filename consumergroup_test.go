@@ -237,8 +237,6 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 }
 
 func TestConsumerGroup(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *ConsumerGroup)
@@ -314,11 +312,10 @@ func TestConsumerGroup(t *testing.T) {
 
 	topic := makeTopic()
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
 			group, err := NewConsumerGroup(ConsumerGroupConfig{
 				ID:                makeGroupID(),
 				Topics:            []string{topic},
@@ -342,8 +339,6 @@ func TestConsumerGroup(t *testing.T) {
 }
 
 func TestConsumerGroupErrors(t *testing.T) {
-	t.Parallel()
-
 	var left []string
 	var lock sync.Mutex
 	mc := mockCoordinator{

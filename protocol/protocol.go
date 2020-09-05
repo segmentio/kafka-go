@@ -357,10 +357,6 @@ type Broker struct {
 	ID   int
 }
 
-func (b Broker) Network() string {
-	return "tcp"
-}
-
 func (b Broker) String() string {
 	return net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
 }

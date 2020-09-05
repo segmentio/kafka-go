@@ -47,7 +47,6 @@ func TestWriteVarInt(t *testing.T) {
 }
 
 func TestWriteOptimizations(t *testing.T) {
-	t.Parallel()
 	t.Run("writeFetchRequestV2", testWriteFetchRequestV2)
 	t.Run("writeListOffsetRequestV1", testWriteListOffsetRequestV1)
 	t.Run("writeProduceRequestV2", testWriteProduceRequestV2)

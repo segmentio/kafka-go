@@ -18,9 +18,6 @@ const (
 )
 
 func TestSASL(t *testing.T) {
-
-	t.Parallel()
-
 	tests := []struct {
 		valid    func() sasl.Mechanism
 		invalid  func() sasl.Mechanism

@@ -32,8 +32,6 @@ func TestApiVersionsFormat(t *testing.T) {
 }
 
 func TestProtocol(t *testing.T) {
-	t.Parallel()
-
 	tests := []interface{}{
 		int8(42),
 		int16(42),
