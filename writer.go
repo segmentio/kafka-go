@@ -636,7 +636,6 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			werr[i] = batch.err
 		}
 	}
-
 	return werr
 }
 
