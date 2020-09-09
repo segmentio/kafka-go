@@ -51,6 +51,10 @@ func TestWriter(t *testing.T) {
 			scenario: "setting a non default balancer on the writer",
 			function: testWriterSetsRightBalancer,
 		},
+		{
+			scenario: "setting RequiredAcks to None in Writer doesn't cause a panic",
+			function: testWriterRequiredAcksNone,
+		},
 	}
 
 	for _, test := range tests {
@@ -80,6 +84,29 @@ func testWriterClose(t *testing.T) {
 
 	if err := w.Close(); err != nil {
 		t.Error(err)
+	}
+}
+
+func testWriterRequiredAcksNone(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	w := &Writer{
+		Addr:     TCP("localhost:9092"),
+		Topic:    topic,
+		Balancer: &RoundRobin{},
+		RequiredAcks: RequireNone,
+	}
+	defer w.Close()
+
+	msg := Message{
+		Key:   []byte("ThisIsAKey"),
+		Value: []byte("Test message for required acks test")}
+
+	err := w.WriteMessages(context.Background(), msg)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
