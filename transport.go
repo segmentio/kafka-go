@@ -778,6 +778,8 @@ func (p async) await(ctx context.Context) (Response, error) {
 	select {
 	case x := <-p:
 		switch v := x.(type) {
+		case nil:
+			return nil, nil // A nil response is ok (e.g. when RequiredAcks is None)
 		case Response:
 			return v, nil
 		case error:
