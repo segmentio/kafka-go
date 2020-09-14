@@ -56,9 +56,9 @@ const (
 	// query the brokers looking for partition changes.
 	defaultPartitionWatchTime = 5 * time.Second
 
-	// defaultReadTimeout is the deadline to set when interacting with the
+	// defaultTimeout is the deadline to set when interacting with the
 	// consumer group coordinator.
-	defaultReadTimeout = 5 * time.Second
+	defaultTimeout = 5 * time.Second
 )
 
 // ConsumerGroupConfig is a configuration object used to create new instances of
@@ -147,16 +147,16 @@ type ConsumerGroupConfig struct {
 	// back to using Logger instead.
 	ErrorLogger Logger
 
-	// ReadTimeout is the network timeout used when communicating with the
-	// consumer group coordinator.  This value should not be too small since
-	// errors communicating with the broker will generally cause a consumer
-	// group rebalance, and it's undesirable that a transient network error
-	// intoduce that overhead.  Similarly, it should not be too large or the
-	// consumer group may be slow to respond to the coordinator failing over
-	// to another broker.
+	// Timeout is the network timeout used when communicating with the consumer
+	// group coordinator.  This value should not be too small since errors
+	// communicating with the broker will generally cause a consumer group
+	// rebalance, and it's undesirable that a transient network error intoduce
+	// that overhead.  Similarly, it should not be too large or the consumer
+	// group may be slow to respond to the coordinator failing over to another
+	// broker.
 	//
 	// Default: 5s
-	ReadTimeout time.Duration
+	Timeout time.Duration
 
 	// connect is a function for dialing the coordinator.  This is provided for
 	// unit testing to mock broker connections.
@@ -246,12 +246,12 @@ func (config *ConsumerGroupConfig) Validate() error {
 		return errors.New(fmt.Sprintf("StartOffset is not valid %d", config.StartOffset))
 	}
 
-	if config.ReadTimeout == 0 {
-		config.ReadTimeout = defaultReadTimeout
+	if config.Timeout == 0 {
+		config.Timeout = defaultTimeout
 	}
 
 	if config.connect == nil {
-		config.connect = makeConnect(config.ReadTimeout)
+		config.connect = makeConnect(config.Timeout)
 	}
 
 	return nil
@@ -530,56 +530,56 @@ func (t *timeoutCoordinator) Close() error {
 }
 
 func (t *timeoutCoordinator) findCoordinator(req findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
-	if err := t.conn.SetReadDeadline(time.Now().Add(t.timeout)); err != nil {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
 		return findCoordinatorResponseV0{}, err
 	}
 	return t.conn.findCoordinator(req)
 }
 
 func (t *timeoutCoordinator) joinGroup(req joinGroupRequestV1) (joinGroupResponseV1, error) {
-	if err := t.conn.SetReadDeadline(time.Now().Add(t.timeout)); err != nil {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
 		return joinGroupResponseV1{}, err
 	}
 	return t.conn.joinGroup(req)
 }
 
 func (t *timeoutCoordinator) syncGroup(req syncGroupRequestV0) (syncGroupResponseV0, error) {
-	if err := t.conn.SetReadDeadline(time.Now().Add(t.timeout)); err != nil {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
 		return syncGroupResponseV0{}, err
 	}
 	return t.conn.syncGroup(req)
 }
 
 func (t *timeoutCoordinator) leaveGroup(req leaveGroupRequestV0) (leaveGroupResponseV0, error) {
-	if err := t.conn.SetReadDeadline(time.Now().Add(t.timeout)); err != nil {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
 		return leaveGroupResponseV0{}, err
 	}
 	return t.conn.leaveGroup(req)
 }
 
 func (t *timeoutCoordinator) heartbeat(req heartbeatRequestV0) (heartbeatResponseV0, error) {
-	if err := t.conn.SetReadDeadline(time.Now().Add(t.timeout)); err != nil {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
 		return heartbeatResponseV0{}, err
 	}
 	return t.conn.heartbeat(req)
 }
 
 func (t *timeoutCoordinator) offsetFetch(req offsetFetchRequestV1) (offsetFetchResponseV1, error) {
-	if err := t.conn.SetReadDeadline(time.Now().Add(t.timeout)); err != nil {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
 		return offsetFetchResponseV1{}, err
 	}
 	return t.conn.offsetFetch(req)
 }
 
 func (t *timeoutCoordinator) offsetCommit(req offsetCommitRequestV2) (offsetCommitResponseV2, error) {
-	if err := t.conn.SetReadDeadline(time.Now().Add(t.timeout)); err != nil {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
 		return offsetCommitResponseV2{}, err
 	}
 	return t.conn.offsetCommit(req)
 }
 
 func (t *timeoutCoordinator) readPartitions(topics ...string) ([]Partition, error) {
-	if err := t.conn.SetReadDeadline(time.Now().Add(t.timeout)); err != nil {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
 		return nil, err
 	}
 	return t.conn.ReadPartitions(topics...)
