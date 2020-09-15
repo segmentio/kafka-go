@@ -251,7 +251,7 @@ func (config *ConsumerGroupConfig) Validate() error {
 	}
 
 	if config.connect == nil {
-		config.connect = makeConnect(config.Timeout)
+		config.connect = makeConnect(*config)
 	}
 
 	return nil
@@ -521,8 +521,10 @@ type coordinator interface {
 // factor all of the deadline management into this shared location as opposed to
 // peppering it all through where the code actually interacts with the broker.
 type timeoutCoordinator struct {
-	timeout time.Duration
-	conn    *Conn
+	timeout          time.Duration
+	sessionTimeout   time.Duration
+	rebalanceTimeout time.Duration
+	conn             *Conn
 }
 
 func (t *timeoutCoordinator) Close() error {
@@ -537,14 +539,18 @@ func (t *timeoutCoordinator) findCoordinator(req findCoordinatorRequestV0) (find
 }
 
 func (t *timeoutCoordinator) joinGroup(req joinGroupRequestV1) (joinGroupResponseV1, error) {
-	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
+	// in the case of join group, the consumer group coordinator may wait up
+	// to rebalance timeout in order to wait for all members to join.
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout + t.rebalanceTimeout)); err != nil {
 		return joinGroupResponseV1{}, err
 	}
 	return t.conn.joinGroup(req)
 }
 
 func (t *timeoutCoordinator) syncGroup(req syncGroupRequestV0) (syncGroupResponseV0, error) {
-	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
+	// in the case of sync group, the consumer group leader is given up to
+	// the session timeout to respond before the coordinator will give up.
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout + t.sessionTimeout)); err != nil {
 		return syncGroupResponseV0{}, err
 	}
 	return t.conn.syncGroup(req)
@@ -814,15 +820,17 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 }
 
 // connect returns a connection to ANY broker
-func makeConnect(timeout time.Duration) func(dialer *Dialer, brokers ...string) (coordinator, error) {
+func makeConnect(config ConsumerGroupConfig) func(dialer *Dialer, brokers ...string) (coordinator, error) {
 	return func(dialer *Dialer, brokers ...string) (coordinator, error) {
 		var err error
 		for _, broker := range brokers {
 			var conn *Conn
 			if conn, err = dialer.Dial("tcp", broker); err == nil {
 				return &timeoutCoordinator{
-					conn:    conn,
-					timeout: timeout,
+					conn:             conn,
+					timeout:          config.Timeout,
+					sessionTimeout:   config.SessionTimeout,
+					rebalanceTimeout: config.RebalanceTimeout,
 				}, nil
 			}
 		}
