@@ -352,7 +352,7 @@ You can specify an option on the `Dialer` to use SASL authentication. The `Diale
 
 ### SASL Authentication Types
 
-[Plain](https://godoc.org/github.com/segmentio/kafka-go/sasl/plain#Mechanism)
+#### [Plain](https://godoc.org/github.com/segmentio/kafka-go/sasl/plain#Mechanism)
 ```go
 mechanism := plain.Mechanism{
     Username: "username",
@@ -360,7 +360,7 @@ mechanism := plain.Mechanism{
 }
 ```
 
-[SCRAM](https://godoc.org/github.com/segmentio/kafka-go/sasl/scram#Mechanism)
+#### [SCRAM](https://godoc.org/github.com/segmentio/kafka-go/sasl/scram#Mechanism)
 ```go
 mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
 if err != nil {
