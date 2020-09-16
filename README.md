@@ -348,7 +348,7 @@ w := kafka.NewWriter(kafka.WriterConfig{
 
 ## SASL Support
 
-For a bare bones Conn type or in the Reader/Writer configs you can specify a dialer option for SASL authentication. If the `SASLMechanism` field is `nil`, it will not authenticate with SASL.
+You can specify an option on the `Dialer` to use SASL authentication. The `Dialer` can be used directly to open a `Conn` or it can be passed to a `Reader` or `Writer` via their respective configs. If the `SASLMechanism` field is `nil`, it will not authenticate with SASL.
 
 There are implementations for [Plain](https://godoc.org/github.com/segmentio/kafka-go/sasl/plain#Mechanism)
 and [SCRAM](https://godoc.org/github.com/segmentio/kafka-go/sasl/scram#Mechanism) included.
