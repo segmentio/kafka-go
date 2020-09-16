@@ -356,7 +356,7 @@ and [SCRAM](https://godoc.org/github.com/segmentio/kafka-go/sasl/scram#Mechanism
 ### Connection
 
 ```go
-mechanism, err := scram.Mechanism(...config...)
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
 if err != nil {
     panic(err)
 }
@@ -374,7 +374,7 @@ conn, err := dialer.DialContext(ctx, "tcp", "localhost:9093")
 ### Reader
 
 ```go
-mechanism, err := scram.Mechanism(...config...)
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
 if err != nil {
     panic(err)
 }
@@ -396,7 +396,7 @@ r := kafka.NewReader(kafka.ReaderConfig{
 ### Writer
 
 ```go
-mechanism, err := scram.Mechanism(...config...)
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
 if err != nil {
     panic(err)
 }
