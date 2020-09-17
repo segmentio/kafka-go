@@ -1313,3 +1313,43 @@ func getOffsets(t *testing.T, config ReaderConfig) offsetFetchResponseV1 {
 
 	return offsets
 }
+
+const (
+	connTO     = 1 * time.Second
+	connTestTO = 2 * connTO
+)
+
+func TestErrorCannotConnect(t *testing.T) {
+	r := NewReader(ReaderConfig{
+		Brokers:     []string{"localhost:9093"},
+		Dialer:      &Dialer{Timeout: connTO},
+		MaxAttempts: 1,
+		Topic:       makeTopic(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), connTestTO)
+	defer cancel()
+
+	_, err := r.FetchMessage(ctx)
+	if err == nil || ctx.Err() != nil {
+		t.Errorf("Reader.FetchMessage must fail when it cannot " +
+			"connect")
+	}
+}
+
+func TestErrorCannotConnectGroupSubscription(t *testing.T) {
+	r := NewReader(ReaderConfig{
+		Brokers:     []string{"localhost:9093"},
+		Dialer:      &Dialer{Timeout: 1 * time.Second},
+		GroupID:     "foobar",
+		MaxAttempts: 1,
+		Topic:       makeTopic(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), connTestTO)
+	defer cancel()
+
+	_, err := r.FetchMessage(ctx)
+	if err == nil || ctx.Err() != nil {
+		t.Errorf("Reader.FetchMessage with a group subscription " +
+			"must fail when it cannot connect")
+	}
+}
