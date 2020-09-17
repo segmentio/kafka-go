@@ -345,3 +345,87 @@ w := kafka.NewWriter(kafka.WriterConfig{
 	Dialer:   dialer,
 })
 ```
+
+## SASL Support
+
+You can specify an option on the `Dialer` to use SASL authentication. The `Dialer` can be used directly to open a `Conn` or it can be passed to a `Reader` or `Writer` via their respective configs. If the `SASLMechanism` field is `nil`, it will not authenticate with SASL.
+
+### SASL Authentication Types
+
+#### [Plain](https://godoc.org/github.com/segmentio/kafka-go/sasl/plain#Mechanism)
+```go
+mechanism := plain.Mechanism{
+    Username: "username",
+    Password: "password",
+}
+```
+
+#### [SCRAM](https://godoc.org/github.com/segmentio/kafka-go/sasl/scram#Mechanism)
+```go
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
+if err != nil {
+    panic(err)
+}
+```
+
+### Connection
+
+```go
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
+if err != nil {
+    panic(err)
+}
+
+dialer := &kafka.Dialer{
+    Timeout:       10 * time.Second,
+    DualStack:     true,
+    SASLMechanism: mechanism,
+}
+
+conn, err := dialer.DialContext(ctx, "tcp", "localhost:9093")
+```
+
+
+### Reader
+
+```go
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
+if err != nil {
+    panic(err)
+}
+
+dialer := &kafka.Dialer{
+    Timeout:       10 * time.Second,
+    DualStack:     true,
+    SASLMechanism: mechanism,
+}
+
+r := kafka.NewReader(kafka.ReaderConfig{
+    Brokers:        []string{"localhost:9093"},
+    GroupID:        "consumer-group-id",
+    Topic:          "topic-A",
+    Dialer:         dialer,
+})
+```
+
+### Writer
+
+```go
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
+if err != nil {
+    panic(err)
+}
+
+dialer := &kafka.Dialer{
+    Timeout:       10 * time.Second,
+    DualStack:     true,
+    SASLMechanism: mechanism,
+}
+
+w := kafka.NewWriter(kafka.WriterConfig{
+	Brokers: []string{"localhost:9093"},
+	Topic:   "topic-A",
+	Balancer: &kafka.Hash{},
+	Dialer:   dialer,
+})
+```
