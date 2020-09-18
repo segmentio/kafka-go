@@ -114,6 +114,7 @@ conn, err := kafka.Dial("tcp", "localhost:9092")
 if err != nil {
     panic(err.Error())
 }
+defer conn.Close()
 controller, err := conn.Controller()
 if err != nil {
     panic(err.Error())
@@ -123,6 +124,7 @@ connLeader, err = kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.It
 if err != nil {
     panic(err.Error())
 }
+defer connLeader.Close()
 ```
 
 
