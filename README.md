@@ -89,7 +89,10 @@ conn.Close()
 topic := "my-topic"
 partition := 0
 
-conn, _ := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
+conn, err := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
+if err != nil {
+    panic(err.Error())
+}
 defer conn.Close()
 topicConfigs := []kafka.TopicConfig{
     kafka.TopicConfig{
@@ -99,7 +102,7 @@ topicConfigs := []kafka.TopicConfig{
     },
 }
 
-err := conn.CreateTopics(topicConfigs...)
+err = conn.CreateTopics(topicConfigs...)
 if err != nil {
     panic(err.Error())
 }
@@ -107,10 +110,19 @@ if err != nil {
 
 ```go
 // to connect to the kafka leader via an existing non-leader connection rather than using DialLeader
-conn, _ := kafka.Dial("tcp", "localhost:9092")
-controller, _ := conn.Controller()
-fmt.Printf("%s %d ", controller.Host, controller.Port)
-connLeader, _ := kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+conn, err := kafka.Dial("tcp", "localhost:9092")
+if err != nil {
+    panic(err.Error())
+}
+controller, err := conn.Controller()
+if err != nil {
+    panic(err.Error())
+}
+var connLeader *kafka.Conn
+connLeader, err = kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+if err != nil {
+    panic(err.Error())
+}
 ```
 
 
