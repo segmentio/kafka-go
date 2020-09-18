@@ -90,6 +90,7 @@ topic := "my-topic"
 partition := 0
 
 conn, _ := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
+defer conn.Close()
 topicConfigs := []kafka.TopicConfig{
     kafka.TopicConfig{
         Topic:             topic,
