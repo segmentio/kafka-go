@@ -570,6 +570,19 @@ func TestReaderLagWhenConsumerGroupsEnabled(t *testing.T) {
 	}
 }
 
+func TestReaderReadLagReturnsZeroLagWhenConsumerGroupsEnabled(t *testing.T) {
+	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
+	lag, err := r.ReadLag(context.Background())
+
+	if err != errNotAvailableWithGroup {
+		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
+	}
+
+	if lag != 0 {
+		t.Fatalf("expected 0; got %d", lag)
+	}
+}
+
 func TestReaderPartitionWhenConsumerGroupsEnabled(t *testing.T) {
 	invoke := func() (boom bool) {
 		defer func() {
