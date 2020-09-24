@@ -100,7 +100,7 @@ if err := conn.Close(); err != nil {
 }
 ```
 
-### create topics
+### To Create Topics
 ```go
 // to create topics
 topic := "my-topic"
@@ -125,7 +125,7 @@ if err != nil {
 }
 ```
 
-### Connect to leader via non-leader connection
+### To Connect To Leader Via a Non-leader Connection
 ```go
 // to connect to the kafka leader via an existing non-leader connection rather than using DialLeader
 conn, err := kafka.Dial("tcp", "localhost:9092")
