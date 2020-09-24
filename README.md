@@ -100,6 +100,50 @@ if err := conn.Close(); err != nil {
 }
 ```
 
+```go
+// to create topics
+topic := "my-topic"
+partition := 0
+
+conn, err := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
+if err != nil {
+    panic(err.Error())
+}
+defer conn.Close()
+topicConfigs := []kafka.TopicConfig{
+    kafka.TopicConfig{
+        Topic:             topic,
+        NumPartitions:     1,
+        ReplicationFactor: 1,
+    },
+}
+
+err = conn.CreateTopics(topicConfigs...)
+if err != nil {
+    panic(err.Error())
+}
+```
+
+```go
+// to connect to the kafka leader via an existing non-leader connection rather than using DialLeader
+conn, err := kafka.Dial("tcp", "localhost:9092")
+if err != nil {
+    panic(err.Error())
+}
+defer conn.Close()
+controller, err := conn.Controller()
+if err != nil {
+    panic(err.Error())
+}
+var connLeader *kafka.Conn
+connLeader, err = kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+if err != nil {
+    panic(err.Error())
+}
+defer connLeader.Close()
+```
+
+
 Because it is low level, the `Conn` type turns out to be a great building block
 for higher level abstractions, like the `Reader` for example.
 
