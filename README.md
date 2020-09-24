@@ -147,29 +147,24 @@ defer connLeader.Close()
 
 ### To list topics
 ```go
-// to list topics
 conn, err := kafka.Dial("tcp", "localhost:9092")
 if err != nil {
     panic(err.Error())
 }
 defer conn.Close()
-controller, err := conn.Controller()
-if err != nil {
-    panic(err.Error())
-}
-var connLeader *kafka.Conn
-connLeader, err = kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+
+partitions, err := conn.ReadPartitions()
 if err != nil {
     panic(err.Error())
 }
 
-partitions, err := connLeader.ReadPartitions()
-if err != nil {
-    panic(err.Error())
-}
+m := map[string]struct{}{}
 
 for _, p := range partitions {
-    fmt.Println(p.Topic)
+    m[p.Topic] = struct{}{}
+}
+for k := range m {
+    fmt.Println(k)
 }
 ```
 
