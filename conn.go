@@ -28,13 +28,21 @@ type Broker struct {
 	Rack string
 }
 
+// Topic carries the metadata associated with a kafka topic.
+type Topic struct {
+	TopicName  string
+	Internal   bool
+	Partitions []Partition
+}
+
 // Partition carries the metadata associated with a kafka partition.
 type Partition struct {
-	Topic    string
-	Leader   Broker
-	Replicas []Broker
-	Isr      []Broker
-	ID       int
+	Topic           string
+	Leader          Broker
+	Replicas        []Broker
+	Isr             []Broker
+	ID              int
+	OfflineReplicas []Broker
 }
 
 // Conn represents a connection to a kafka broker.
@@ -264,6 +272,86 @@ func (c *Conn) Controller() (broker Broker, err error) {
 		},
 	)
 	return broker, err
+}
+
+// Controller requests kafka for the current controller and returns its URL
+func (c *Conn) Topics() (topics []Topic, err error) {
+	err = c.readOperation(
+		func(deadline time.Time, id int32) error {
+			return c.writeRequest(metadata, v5, id, &topicMetadataRequestV5{})
+		},
+		func(deadline time.Time, size int) error {
+			var res metadataResponseV5
+
+			if err := c.readResponse(size, &res); err != nil {
+				return err
+			}
+			var leader Broker
+			brokers := make(map[int]Broker)
+
+			for key, brokerMeta := range res.Brokers {
+				brokers[key] = Broker{
+					ID:   int(brokerMeta.NodeID),
+					Port: int(brokerMeta.Port),
+					Host: brokerMeta.Host,
+					Rack: brokerMeta.Rack,
+				}
+
+				if brokerMeta.NodeID == res.ControllerID {
+					leader = brokers[key]
+				}
+			}
+
+			for _, topicMeta := range res.Topics {
+				partitions := make([]Partition, 0)
+
+				for _, partitionMeta := range topicMeta.Partitions {
+					partition := Partition{
+						Topic:           topicMeta.TopicName,
+						Leader:          leader,
+						Replicas:        make([]Broker, 0),
+						Isr:             make([]Broker, 0),
+						ID:              int(partitionMeta.PartitionID),
+						OfflineReplicas: make([]Broker, 0),
+					}
+
+					for _, key := range partitionMeta.Replicas {
+						partition.Replicas = append(
+							partition.Replicas,
+							brokers[int(key)],
+						)
+					}
+
+					for _, key := range partitionMeta.Isr {
+						partition.Isr = append(
+							partition.Isr,
+							brokers[int(key)],
+						)
+					}
+
+					for _, key := range partitionMeta.OfflineReplicas {
+						partition.OfflineReplicas = append(
+							partition.OfflineReplicas,
+							brokers[int(key)],
+						)
+					}
+
+					partitions = append(partitions, partition)
+				}
+
+				topics = append(
+					topics,
+					Topic{
+						TopicName:  topicMeta.TopicName,
+						Internal:   topicMeta.Internal,
+						Partitions: partitions,
+					},
+				)
+			}
+			return nil
+		},
+	)
+	return topics, err
 }
 
 // Brokers retrieve the broker list from the Kafka metadata
@@ -1418,7 +1506,7 @@ func (c *Conn) ApiVersions() ([]ApiVersion, error) {
 			CorrelationID: id,
 			ClientID:      c.clientID,
 		}
-		h.Size = (h.size() - 4)
+		h.Size = h.size() - 4
 		h.writeTo(&c.wb)
 		return c.wbuf.Flush()
 	})
