@@ -277,3 +277,84 @@ func TestMurmur2Balancer(t *testing.T) {
 		}
 	})
 }
+
+func TestLeastBytes(t *testing.T) {
+	testNormalCases := map[string]struct {
+		Keys       [][]byte
+		Partitions []int
+		Partition  int
+	}{
+		"one msg": {
+			Keys: [][]byte{
+				[]byte("key"),
+			},
+			Partitions: []int{0, 1, 2},
+			Partition:  0,
+		},
+		"two msg": {
+			Keys: [][]byte{
+				[]byte("key"),
+				[]byte("key"),
+			},
+			Partitions: []int{0, 1, 2},
+			Partition:  1,
+		},
+	}
+
+	testPartitionChange := map[string]struct {
+		Key            []byte
+		PartitionsHist [][]int
+		Partition      int
+	}{
+		"reduce": {
+			Key: []byte("key"),
+			PartitionsHist: [][]int{
+				{0, 1, 2},
+				{0, 1},
+			},
+			Partition: 0,
+		},
+		"expand": {
+			Key: []byte("key"),
+			PartitionsHist: [][]int{
+				{0, 1},
+				{0, 1, 2},
+			},
+			Partition: 0,
+		},
+	}
+
+	t.Run("normal", func(t *testing.T) {
+		for label, test := range testNormalCases {
+			t.Run(label, func(t *testing.T) {
+				lb := &LeastBytes{}
+				var partition int
+				for _, key := range test.Keys {
+					msg := Message{Key: key}
+					partition = lb.Balance(msg, test.Partitions...)
+
+				}
+				if partition != test.Partition {
+					t.Errorf("expected %v; got %v", test.Partition, partition)
+				}
+			})
+		}
+	})
+
+	t.Run("partitionChange", func(t *testing.T) {
+		for label, test := range testPartitionChange {
+			t.Run(label, func(t *testing.T) {
+				lb := &LeastBytes{}
+				msg := Message{Key: test.Key}
+				var partition int
+				for _, partitions := range test.PartitionsHist {
+					partition = lb.Balance(msg, partitions...)
+				}
+				if partition != test.Partition {
+					t.Errorf("expected %v; got %v", test.Partition, partition)
+				}
+
+			})
+		}
+	})
+}
