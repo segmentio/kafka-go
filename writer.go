@@ -485,7 +485,14 @@ func (w *Writer) run() {
 
 			if len(partitions) != 0 {
 				selectedPartition := w.config.Balancer.Balance(wm.msg, partitions...)
-				writers[selectedPartition].messages() <- wm
+				if pw, ok := writers[selectedPartition]; !ok {
+					err = fmt.Errorf("write balancer chose nonexistant partition %d for topic %s", selectedPartition, w.config.Topic)
+					if wm.res != nil {
+						wm.res <- &writerError{msg: wm.msg, err: err}
+					}
+				} else {
+					pw.messages() <- wm
+				}
 			} else {
 				// No partitions were found because the topic doesn't exist.
 				if err == nil {

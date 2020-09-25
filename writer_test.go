@@ -47,6 +47,10 @@ func TestWriter(t *testing.T) {
 			scenario: "writing messsages with a small batch byte size",
 			function: testWriterSmallBatchBytes,
 		},
+		{
+			scenario: "writing a message to an invalid partition",
+			function: testWriterInvalidPartition,
+		},
 	}
 
 	for _, test := range tests {
@@ -437,5 +441,37 @@ func testWriterSmallBatchBytes(t *testing.T) {
 			continue
 		}
 		t.Error("bad messages in partition", msgs)
+	}
+}
+
+type staticBalancer struct {
+	partition int
+}
+
+func (b *staticBalancer) Balance(_ Message, partitions ...int) int {
+	return b.partition
+}
+
+func testWriterInvalidPartition(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+
+	w := newTestWriter(WriterConfig{
+		Topic:       topic,
+		MaxAttempts: 1,                              // only try once to get the error back immediately
+		Balancer:    &staticBalancer{partition: -1}, // intentionally invalid partition
+	})
+	defer w.Close()
+
+	msg := Message{
+		Value: []byte("Hello World!"),
+	}
+
+	// this call should return an error and not panic (see issue #517)
+	if err := w.WriteMessages(ctx, msg); err == nil {
+		t.Fatal("expected error attempting to write message")
 	}
 }
