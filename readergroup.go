@@ -122,18 +122,33 @@ func (g *ReaderGroup) FetchMessage(ctx context.Context) (Message, error) {
 func (g *ReaderGroup) ReadLag(ctx context.Context) (int64, error) {
 	var errg errgroup.Group
 
-	lags := make(chan int64)
+	// we are using the slice, because we are not writing concurrently
+	// on multiple indices
+	lags := make([]int64, len(g.readers))
 	go func() {
 		for i := range g.readers {
-			errg.Go(g.readers[i].Close)
+			// copy to have the value in the closure (i is incremented by the loop)
+			n := i
+			errg.Go(func() error {
+				var err error
+				lags[n], err = g.readers[n].ReadLag(ctx)
+				if err != nil {
+					return err
+				}
+				return nil
+			})
 		}
 	}()
 
+	err := errg.Wait()
+	if err != nil {
+		return 0, err
+	}
+
 	var totalLag int64
-	for lag := range lags {
+	for _, lag := range lags {
 		totalLag += lag
 	}
 
-	err := errg.Wait()
-	return totalLag, err
+	return totalLag, nil
 }
