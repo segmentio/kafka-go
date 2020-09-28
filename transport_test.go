@@ -24,7 +24,7 @@ func TestIssue477(t *testing.T) {
 		},
 	}
 
-	if _, err := cg.connect(context.Background()); err != nil {
+	if _, err := cg.connect(context.Background(), cg.addr); err != nil {
 		// An error is expected here because we are not actually establishing
 		// a TLS connection to a kafka broker.
 		t.Log(err)
