@@ -107,6 +107,12 @@ type Transport struct {
 	// resolution, and is always called with a pre-resolved address.
 	Resolver BrokerResolver
 
+	// The background context used to control goroutines started internally by
+	// the transport.
+	//
+	// If nil, context.Background() is used instead.
+	Context context.Context
+
 	mutex sync.RWMutex
 	pools map[networkAddress]*connPool
 }
@@ -224,7 +230,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		return p
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.context())
 
 	p = &connPool{
 		refc: 2,
@@ -252,6 +258,13 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	}
 	t.pools[k] = p
 	return p
+}
+
+func (t *Transport) context() context.Context {
+	if t.Context != nil {
+		return t.Context
+	}
+	return context.Background()
 }
 
 type event chan struct{}
