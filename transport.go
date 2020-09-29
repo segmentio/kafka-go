@@ -996,7 +996,7 @@ func (g *connGroup) grabConnTo(network, address string) *conn {
 	for i := len(g.idleConns) - 1; i >= 0; i-- {
 		c := g.idleConns[i]
 
-		if c.addr.Network() == network && c.addr.String() == address {
+		if c.network == network && c.address == address {
 			copy(g.idleConns[i:], g.idleConns[i+1:])
 			n := len(g.idleConns) - 1
 			g.idleConns[n] = nil
@@ -1160,9 +1160,10 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 
 	reqs := make(chan connRequest)
 	c := &conn{
-		addr:  netAddr,
-		reqs:  reqs,
-		group: g,
+		network: netAddr.Network(),
+		address: netAddr.String(),
+		reqs:    reqs,
+		group:   g,
 	}
 	go c.run(pc, reqs)
 
@@ -1171,11 +1172,12 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 }
 
 type conn struct {
-	reqs  chan<- connRequest
-	addr  net.Addr
-	once  sync.Once
-	group *connGroup
-	timer *time.Timer
+	reqs    chan<- connRequest
+	network string
+	address string
+	once    sync.Once
+	group   *connGroup
+	timer   *time.Timer
 }
 
 func (c *conn) close() {
