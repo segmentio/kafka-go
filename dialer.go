@@ -407,14 +407,6 @@ func LookupPartitions(ctx context.Context, network string, address string, topic
 	return DefaultDialer.LookupPartitions(ctx, network, address, topic)
 }
 
-// The Resolver interface is used as an abstraction to provide service discovery
-// of the hosts of a kafka cluster.
-type Resolver interface {
-	// LookupHost looks up the given host using the local resolver.
-	// It returns a slice of that host's addresses.
-	LookupHost(ctx context.Context, host string) (addrs []string, err error)
-}
-
 func sleep(ctx context.Context, duration time.Duration) bool {
 	if duration == 0 {
 		select {

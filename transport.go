@@ -10,6 +10,7 @@ import (
 	"net"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,6 +93,25 @@ type Transport struct {
 
 	// SASL configures the Transfer to use SASL authentication.
 	SASL sasl.Mechanism
+
+	// An optional resolver used to translate broker host names into network
+	// addresses.
+	//
+	// The resolver will be called for every request (not every connection),
+	// making it possible to implement ACL policies by validating that the
+	// program is allowed to connect to the kafka broker. This also means that
+	// the resolver should probably provide a caching layer to avoid storming
+	// the service discovery backend with requests.
+	//
+	// When set, the Dial function is not responsible for performing name
+	// resolution, and is always called with a pre-resolved address.
+	Resolver BrokerResolver
+
+	// The background context used to control goroutines started internally by
+	// the transport.
+	//
+	// If nil, context.Background() is used instead.
+	Context context.Context
 
 	mutex sync.RWMutex
 	pools map[networkAddress]*connPool
@@ -210,7 +230,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		return p
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.context())
 
 	p = &connPool{
 		refc: 2,
@@ -222,6 +242,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		clientID:    t.ClientID,
 		tls:         t.TLS,
 		sasl:        t.SASL,
+		resolver:    t.Resolver,
 
 		ready:  make(event),
 		wake:   make(chan event),
@@ -237,6 +258,13 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 	}
 	t.pools[k] = p
 	return p
+}
+
+func (t *Transport) context() context.Context {
+	if t.Context != nil {
+		return t.Context
+	}
+	return context.Background()
 }
 
 type event chan struct{}
@@ -255,6 +283,7 @@ type connPool struct {
 	clientID    string
 	tls         *tls.Config
 	sasl        sasl.Mechanism
+	resolver    BrokerResolver
 	// Signaling mechanisms to orchestrate communications between the pool and
 	// the rest of the program.
 	once   sync.Once  // ensure that `ready` is triggered only once
@@ -491,9 +520,11 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 
 		for id := range addBrokers {
 			broker := layout.Brokers[id]
-			p.conns[id] = p.newConnGroup(&networkAddress{
-				network: "tcp",
-				address: broker.String(),
+			p.conns[id] = p.newBrokerConnGroup(Broker{
+				Rack: broker.Rack,
+				Host: broker.Host,
+				Port: broker.Port,
+				ID:   broker.ID,
 			})
 		}
 	}
@@ -559,12 +590,12 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 // returned.
 func (p *connPool) grabBrokerConn(ctx context.Context, brokerID int) (*conn, error) {
 	p.mutex.RLock()
-	c := p.conns[brokerID]
+	g := p.conns[brokerID]
 	p.mutex.RUnlock()
-	if c == nil {
+	if g == nil {
 		return nil, BrokerNotAvailable
 	}
-	return c.grabConnOrConnect(ctx)
+	return g.grabConnOrConnect(ctx)
 }
 
 // grabClusterConn returns the connection to the kafka cluster that the pool is
@@ -754,6 +785,20 @@ func (p *connPool) newConnGroup(a net.Addr) *connGroup {
 	return &connGroup{
 		addr: a,
 		pool: p,
+		broker: Broker{
+			ID: -1,
+		},
+	}
+}
+
+func (p *connPool) newBrokerConnGroup(broker Broker) *connGroup {
+	return &connGroup{
+		addr: &networkAddress{
+			network: "tcp",
+			address: net.JoinHostPort(broker.Host, strconv.Itoa(broker.Port)),
+		},
+		pool:   p,
+		broker: broker,
 	}
 }
 
@@ -849,7 +894,8 @@ var defaultDialer = net.Dialer{
 // actual network connections are lazily open before sending requests, and
 // closed if they are unused for longer than the idle timeout.
 type connGroup struct {
-	addr net.Addr
+	addr   net.Addr
+	broker Broker
 	// Immutable state of the connection.
 	pool *connPool
 	// Shared state of the connection, this is synchronized on the mutex through
@@ -873,14 +919,50 @@ func (g *connGroup) closeIdleConns() {
 }
 
 func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
-	c := g.grabConn()
+	var rslv = g.pool.resolver
+	var addr = g.addr
+	var c *conn
+
+	if rslv == nil {
+		c = g.grabConn()
+	} else {
+		var err error
+		var broker = g.broker
+
+		if broker.ID < 0 {
+			host, port, err := net.SplitHostPort(addr.String())
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", addr, err)
+			}
+			portNumber, err := strconv.Atoi(port)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", addr, err)
+			}
+			broker.Host = host
+			broker.Port = portNumber
+		}
+
+		ipAddrs, err := rslv.LookupBrokerIPAddr(ctx, broker)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ipAddr := range ipAddrs {
+			network := addr.Network()
+			address := net.JoinHostPort(ipAddr.String(), strconv.Itoa(broker.Port))
+
+			if c = g.grabConnTo(network, address); c != nil {
+				break
+			}
+		}
+	}
 
 	if c == nil {
 		connChan := make(chan *conn)
 		errChan := make(chan error)
 
 		go func() {
-			c, err := g.connect(ctx)
+			c, err := g.connect(ctx, addr)
 			if err != nil {
 				select {
 				case errChan <- err:
@@ -907,6 +989,30 @@ func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
 	}
 
 	return c, nil
+}
+
+func (g *connGroup) grabConnTo(network, address string) *conn {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+
+	for i := len(g.idleConns) - 1; i >= 0; i-- {
+		c := g.idleConns[i]
+
+		if c.network == network && c.address == address {
+			copy(g.idleConns[i:], g.idleConns[i+1:])
+			n := len(g.idleConns) - 1
+			g.idleConns[n] = nil
+			g.idleConns = g.idleConns[:n]
+
+			if c.timer != nil {
+				c.timer.Stop()
+			}
+
+			return c
+		}
+	}
+
+	return nil
 }
 
 func (g *connGroup) grabConn() *conn {
@@ -974,14 +1080,14 @@ func (g *connGroup) releaseConn(c *conn) bool {
 	return true
 }
 
-func (g *connGroup) connect(ctx context.Context) (*conn, error) {
+func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	deadline := time.Now().Add(g.pool.dialTimeout)
 
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 
-	var network = strings.Split(g.addr.Network(), ",")
-	var address = strings.Split(g.addr.String(), ",")
+	var network = strings.Split(addr.Network(), ",")
+	var address = strings.Split(addr.String(), ",")
 	var netConn net.Conn
 	var netAddr net.Addr
 	var err error
@@ -1055,7 +1161,12 @@ func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 	pc.SetDeadline(time.Time{})
 
 	reqs := make(chan connRequest)
-	c := &conn{reqs: reqs, group: g}
+	c := &conn{
+		network: netAddr.Network(),
+		address: netAddr.String(),
+		reqs:    reqs,
+		group:   g,
+	}
 	go c.run(pc, reqs)
 
 	netConn = nil
@@ -1063,10 +1174,12 @@ func (g *connGroup) connect(ctx context.Context) (*conn, error) {
 }
 
 type conn struct {
-	reqs  chan<- connRequest
-	once  sync.Once
-	group *connGroup
-	timer *time.Timer
+	reqs    chan<- connRequest
+	network string
+	address string
+	once    sync.Once
+	group   *connGroup
+	timer   *time.Timer
 }
 
 func (c *conn) close() {

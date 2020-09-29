@@ -66,7 +66,8 @@ func newClient(addr net.Addr) (*Client, func()) {
 	}
 
 	transport := &Transport{
-		Dial: conns.Dial,
+		Dial:     conns.Dial,
+		Resolver: NewBrokerResolver(nil),
 	}
 
 	client := &Client{
