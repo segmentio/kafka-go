@@ -352,3 +352,67 @@ func TestLeastBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestPartitionBalancer(t *testing.T) {
+	soecificPartition:=2
+
+	testCases := map[string]struct {
+		Keys       [][]byte
+		Partitions [][]int
+		Partition  int
+	}{
+		"single message": {
+			Keys: [][]byte{
+				[]byte("key"),
+			},
+			Partitions: [][]int{
+				{0, 1, 2},
+			},
+			Partition: soecificPartition,
+		},
+		"multiple messages": {
+			Keys: [][]byte{
+				[]byte("a"),
+				[]byte("ab"),
+				[]byte("abc"),
+				[]byte("abcd"),
+			},
+			Partitions: [][]int{
+				{0, 1, 2},
+				{0, 1, 2},
+				{0, 1, 2},
+				{0, 1, 2},
+			},
+			Partition: soecificPartition,
+		},
+		"partition lost": {
+			Keys: [][]byte{
+				[]byte("hello world 1"),
+				[]byte("hello world 2"),
+				[]byte("hello world 3"),
+			},
+			Partitions: [][]int{
+				{0, 1},
+				{0, 1},
+				{0, 1, 2},
+			},
+			Partition: soecificPartition,
+		},
+	}
+
+	for label, test := range testCases {
+		t.Run(label, func(t *testing.T) {
+			pb := &PartitionBalancer{soecificPartition}
+
+			var partition int
+			for i, key := range test.Keys {
+				msg := Message{Key: key}
+				partition = pb.Balance(msg, test.Partitions[i]...)
+			}
+
+			if partition != test.Partition {
+				t.Errorf("expected %v; got %v", test.Partition, partition)
+			}
+		})
+	}
+}

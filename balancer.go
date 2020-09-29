@@ -283,3 +283,16 @@ func murmur2(data []byte) uint32 {
 
 	return h
 }
+
+
+// PartitionBalancer is a Balancer that always write Message to a specific partition
+//
+// Note that if you specific a none exist partition, write func will return an error,
+// and the logger of the Writer instance will write down this error.
+type PartitionBalancer struct {
+	p int
+}
+
+func (p *PartitionBalancer) Balance(_ Message, _ ...int) (partition int) {
+	return p.p
+}
