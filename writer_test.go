@@ -92,19 +92,23 @@ func testWriterRequiredAcksNone(t *testing.T) {
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
 
-	w := &Writer{
+	transport := &Transport{}
+	defer transport.CloseIdleConnections()
+
+	writer := &Writer{
 		Addr:         TCP("localhost:9092"),
 		Topic:        topic,
 		Balancer:     &RoundRobin{},
 		RequiredAcks: RequireNone,
+		Transport:    transport,
 	}
-	defer w.Close()
+	defer writer.Close()
 
 	msg := Message{
 		Key:   []byte("ThisIsAKey"),
 		Value: []byte("Test message for required acks test")}
 
-	err := w.WriteMessages(context.Background(), msg)
+	err := writer.WriteMessages(context.Background(), msg)
 	if err != nil {
 		t.Fatal(err)
 	}
