@@ -52,7 +52,7 @@ func TestWriter(t *testing.T) {
 			function: testWriterSetsRightBalancer,
 		},
 		{
-			scenario: "setting RequiredAcks to None in Writer doesn't cause a panic",
+			scenario: "setting RequiredAcks to None in Writer does not cause a panic",
 			function: testWriterRequiredAcksNone,
 		},
 	}
@@ -93,9 +93,9 @@ func testWriterRequiredAcksNone(t *testing.T) {
 	defer deleteTopic(t, topic)
 
 	w := &Writer{
-		Addr:     TCP("localhost:9092"),
-		Topic:    topic,
-		Balancer: &RoundRobin{},
+		Addr:         TCP("localhost:9092"),
+		Topic:        topic,
+		Balancer:     &RoundRobin{},
 		RequiredAcks: RequireNone,
 	}
 	defer w.Close()
