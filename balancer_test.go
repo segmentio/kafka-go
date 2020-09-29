@@ -354,7 +354,7 @@ func TestLeastBytes(t *testing.T) {
 }
 
 func TestPartitionBalancer(t *testing.T) {
-	soecificPartition:=2
+	specificPartition:=2
 
 	testCases := map[string]struct {
 		Keys       [][]byte
@@ -368,7 +368,7 @@ func TestPartitionBalancer(t *testing.T) {
 			Partitions: [][]int{
 				{0, 1, 2},
 			},
-			Partition: soecificPartition,
+			Partition: specificPartition,
 		},
 		"multiple messages": {
 			Keys: [][]byte{
@@ -383,7 +383,7 @@ func TestPartitionBalancer(t *testing.T) {
 				{0, 1, 2},
 				{0, 1, 2},
 			},
-			Partition: soecificPartition,
+			Partition: specificPartition,
 		},
 		"partition lost": {
 			Keys: [][]byte{
@@ -396,13 +396,13 @@ func TestPartitionBalancer(t *testing.T) {
 				{0, 1},
 				{0, 1, 2},
 			},
-			Partition: soecificPartition,
+			Partition: specificPartition,
 		},
 	}
 
 	for label, test := range testCases {
 		t.Run(label, func(t *testing.T) {
-			pb := &PartitionBalancer{soecificPartition}
+			pb := &PartitionBalancer{specificPartition}
 
 			var partition int
 			for i, key := range test.Keys {
