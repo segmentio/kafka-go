@@ -40,10 +40,10 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 	defer deleteTopic(t, topic)
 
 	// Write a message to ensure the partition gets created.
-	w := NewWriter(WriterConfig{
-		Brokers: []string{"localhost:9092"},
-		Topic:   topic,
-	})
+	w := &Writer{
+		Addr:  TCP("localhost:9092"),
+		Topic: topic,
+	}
 	w.WriteMessages(ctx, Message{})
 	w.Close()
 
@@ -173,10 +173,10 @@ func TestDialerTLS(t *testing.T) {
 	defer deleteTopic(t, topic)
 
 	// Write a message to ensure the partition gets created.
-	w := NewWriter(WriterConfig{
-		Brokers: []string{"localhost:9092"},
-		Topic:   topic,
-	})
+	w := &Writer{
+		Addr:  TCP("localhost:9092"),
+		Topic: topic,
+	}
 	w.WriteMessages(context.Background(), Message{})
 	w.Close()
 

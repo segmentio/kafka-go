@@ -205,12 +205,12 @@ func TestWriteV2RecordBatch(t *testing.T) {
 		value := fmt.Sprintf("Sample message content: %d!", i)
 		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{Header{Key: "hk", Value: []byte("hv")}}}
 	}
-	w := NewWriter(WriterConfig{
-		Brokers:      []string{"localhost:9092"},
+	w := &Writer{
+		Addr:         TCP("localhost:9092"),
 		Topic:        topic,
 		BatchTimeout: 100 * time.Millisecond,
 		BatchSize:    5,
-	})
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

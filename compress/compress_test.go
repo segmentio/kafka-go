@@ -120,12 +120,12 @@ func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 		topic := createTopic(t, 1)
 		defer deleteTopic(t, topic)
 
-		w := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:          []string{"127.0.0.1:9092"},
-			Topic:            topic,
-			CompressionCodec: codec,
-			BatchTimeout:     10 * time.Millisecond,
-		})
+		w := &kafka.Writer{
+			Addr:         kafka.TCP("127.0.0.1:9092"),
+			Topic:        topic,
+			Compression:  kafka.Compression(codec.Code()),
+			BatchTimeout: 10 * time.Millisecond,
+		}
 		defer w.Close()
 
 		offset := 0
@@ -191,11 +191,11 @@ func TestMixedCompressedMessages(t *testing.T) {
 	offset := 0
 	var values []string
 	produce := func(n int, codec pkg.Codec) {
-		w := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:          []string{"127.0.0.1:9092"},
-			Topic:            topic,
-			CompressionCodec: codec,
-		})
+		w := &kafka.Writer{
+			Addr:        kafka.TCP("127.0.0.1:9092"),
+			Topic:       topic,
+			Compression: kafka.Compression(codec.Code()),
+		}
 		defer w.Close()
 
 		msgs := make([]kafka.Message, n)
