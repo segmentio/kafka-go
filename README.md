@@ -100,6 +100,7 @@ if err := conn.Close(); err != nil {
 }
 ```
 
+### To Create Topics
 ```go
 // to create topics
 topic := "my-topic"
@@ -124,6 +125,7 @@ if err != nil {
 }
 ```
 
+### To Connect To Leader Via a Non-leader Connection
 ```go
 // to connect to the kafka leader via an existing non-leader connection rather than using DialLeader
 conn, err := kafka.Dial("tcp", "localhost:9092")
@@ -141,6 +143,29 @@ if err != nil {
     panic(err.Error())
 }
 defer connLeader.Close()
+```
+
+### To list topics
+```go
+conn, err := kafka.Dial("tcp", "localhost:9092")
+if err != nil {
+    panic(err.Error())
+}
+defer conn.Close()
+
+partitions, err := conn.ReadPartitions()
+if err != nil {
+    panic(err.Error())
+}
+
+m := map[string]struct{}{}
+
+for _, p := range partitions {
+    m[p.Topic] = struct{}{}
+}
+for k := range m {
+    fmt.Println(k)
+}
 ```
 
 
