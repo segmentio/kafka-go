@@ -906,13 +906,12 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx context.Context, r *Reader) {
 	const N = 12
 
-	writer := NewWriter(WriterConfig{
-		Brokers:   r.config.Brokers,
+	writer := &Writer{
+		Addr:      TCP(r.config.Brokers...),
 		Topic:     r.config.Topic,
-		Dialer:    r.config.Dialer,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
-	})
+	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(N)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
 	}
@@ -944,13 +943,12 @@ func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Read
 	)
 
 	// rebalance should result in 12 message in each of the partitions
-	writer := NewWriter(WriterConfig{
-		Brokers:   r.config.Brokers,
+	writer := &Writer{
+		Addr:      TCP(r.config.Brokers...),
 		Topic:     r.config.Topic,
-		Dialer:    r.config.Dialer,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
-	})
+	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(N*partitions)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
 	}
@@ -994,13 +992,12 @@ func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Cont
 	)
 
 	// write messages across both partitions
-	writer := NewWriter(WriterConfig{
-		Brokers:   r.config.Brokers,
+	writer := &Writer{
+		Addr:      TCP(r.config.Brokers...),
 		Topic:     r.config.Topic,
-		Dialer:    r.config.Dialer,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
-	})
+	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(N)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
 	}
@@ -1047,13 +1044,12 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 	}()
 
 	// write messages across both partitions
-	writer := NewWriter(WriterConfig{
-		Brokers:   r.config.Brokers,
+	writer := &Writer{
+		Addr:      TCP(r.config.Brokers...),
 		Topic:     r.config.Topic,
-		Dialer:    r.config.Dialer,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
-	})
+	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(N*3)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
 	}
@@ -1299,12 +1295,12 @@ func TestConsumerGroupWithMissingTopic(t *testing.T) {
 	createTopic(t, conf.Topic, 1)
 	defer deleteTopic(t, conf.Topic)
 
-	w := NewWriter(WriterConfig{
-		Brokers:      r.config.Brokers,
+	w := &Writer{
+		Addr:         TCP(r.config.Brokers...),
 		Topic:        r.config.Topic,
 		BatchTimeout: 10 * time.Millisecond,
 		BatchSize:    1,
-	})
+	}
 	defer w.Close()
 	if err := w.WriteMessages(ctx, Message{}); err != nil {
 		t.Fatalf("write error: %+v", err)

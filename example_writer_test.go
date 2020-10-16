@@ -7,10 +7,10 @@ import (
 )
 
 func ExampleWriter() {
-	w := kafka.NewWriter(kafka.WriterConfig{
-		Brokers: []string{"localhost:9092"},
-		Topic:   "Topic-1",
-	})
+	w := &kafka.Writer{
+		Addr:  kafka.TCP("localhost:9092"),
+		Topic: "Topic-1",
+	}
 
 	w.WriteMessages(context.Background(),
 		kafka.Message{

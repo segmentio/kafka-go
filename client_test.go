@@ -139,13 +139,12 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 	groupId := makeGroupID()
 	brokers := []string{"localhost:9092"}
 
-	writer := NewWriter(WriterConfig{
-		Brokers:   brokers,
+	writer := &Writer{
+		Addr:      TCP(brokers...),
 		Topic:     topic,
-		Dialer:    DefaultDialer,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
-	})
+	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(totalMessages)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
 	}
