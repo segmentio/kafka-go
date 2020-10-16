@@ -56,7 +56,7 @@ if err != nil {
 }
 
 conn.SetWriteDeadline(time.Now().Add(10*time.Second))
-err := conn.WriteMessages(
+_, err = conn.WriteMessages(
     kafka.Message{Value: []byte("one!")},
     kafka.Message{Value: []byte("two!")},
     kafka.Message{Value: []byte("three!")},
