@@ -1135,12 +1135,6 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	pc := protocol.NewConn(netConn, g.pool.clientID)
 	pc.SetDeadline(deadline)
 
-	if g.pool.sasl != nil {
-		if err := authenticateSASL(ctx, pc, g.pool.sasl); err != nil {
-			return nil, err
-		}
-	}
-
 	r, err := pc.RoundTrip(new(apiversions.Request))
 	if err != nil {
 		return nil, err
@@ -1159,6 +1153,12 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 
 	pc.SetVersions(ver)
 	pc.SetDeadline(time.Time{})
+
+	if g.pool.sasl != nil {
+		if err := authenticateSASL(ctx, pc, g.pool.sasl); err != nil {
+			return nil, err
+		}
+	}
 
 	reqs := make(chan connRequest)
 	c := &conn{
