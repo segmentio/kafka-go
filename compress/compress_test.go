@@ -465,7 +465,10 @@ func newLocalClient() (*kafka.Client, func()) {
 }
 
 func newClient(addr net.Addr) (*kafka.Client, func()) {
-	transport := &kafka.Transport{}
+	transport := &kafka.Transport{
+		IdleTimeout: 1 * time.Minute,
+		MetadataTTL: 1 * time.Minute,
+	}
 
 	client := &kafka.Client{
 		Addr:      addr,

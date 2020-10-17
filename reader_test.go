@@ -906,11 +906,15 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 func testReaderConsumerGroupReadContentAcrossPartitions(t *testing.T, ctx context.Context, r *Reader) {
 	const N = 12
 
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
 	writer := &Writer{
 		Addr:      TCP(r.config.Brokers...),
 		Topic:     r.config.Topic,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
+		Transport: client.Transport,
 	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(N)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
@@ -942,12 +946,16 @@ func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Read
 		partitions = 2
 	)
 
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
 	// rebalance should result in 12 message in each of the partitions
 	writer := &Writer{
 		Addr:      TCP(r.config.Brokers...),
 		Topic:     r.config.Topic,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
+		Transport: client.Transport,
 	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(N*partitions)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
@@ -969,9 +977,8 @@ func testReaderConsumerGroupRebalance(t *testing.T, ctx context.Context, r *Read
 
 func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Context, r *Reader) {
 	// create a second reader that shares the groupID, but reads from a different topic
-	topic2 := makeTopic()
-	createTopic(t, topic2, 1)
-	defer deleteTopic(t, topic2)
+	client, topic2, shutdown := newLocalClientAndTopic()
+	defer shutdown()
 
 	r2 := NewReader(ReaderConfig{
 		Brokers:           r.config.Brokers,
@@ -997,6 +1004,7 @@ func testReaderConsumerGroupRebalanceAcrossTopics(t *testing.T, ctx context.Cont
 		Topic:     r.config.Topic,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
+		Transport: client.Transport,
 	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(N)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
@@ -1043,12 +1051,16 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 		}
 	}()
 
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
 	// write messages across both partitions
 	writer := &Writer{
 		Addr:      TCP(r.config.Brokers...),
 		Topic:     r.config.Topic,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
+		Transport: client.Transport,
 	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(N*3)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
@@ -1292,14 +1304,15 @@ func TestConsumerGroupWithMissingTopic(t *testing.T) {
 	}()
 
 	time.Sleep(time.Second)
-	createTopic(t, conf.Topic, 1)
-	defer deleteTopic(t, conf.Topic)
+	client, shutdown := newLocalClientWithTopic(conf.Topic, 1)
+	defer shutdown()
 
 	w := &Writer{
 		Addr:         TCP(r.config.Brokers...),
 		Topic:        r.config.Topic,
 		BatchTimeout: 10 * time.Millisecond,
 		BatchSize:    1,
+		Transport:    client.Transport,
 	}
 	defer w.Close()
 	if err := w.WriteMessages(ctx, Message{}); err != nil {
