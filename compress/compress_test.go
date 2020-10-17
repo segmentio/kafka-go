@@ -465,9 +465,12 @@ func newLocalClient() (*kafka.Client, func()) {
 }
 
 func newClient(addr net.Addr) (*kafka.Client, func()) {
+	conns := &ktesting.ConnWaitGroup{
+		DialFunc: (&net.Dialer{}).DialContext,
+	}
+
 	transport := &kafka.Transport{
-		IdleTimeout: 1 * time.Minute,
-		MetadataTTL: 1 * time.Minute,
+		Dial: conns.Dial,
 	}
 
 	client := &kafka.Client{
@@ -476,5 +479,5 @@ func newClient(addr net.Addr) (*kafka.Client, func()) {
 		Transport: transport,
 	}
 
-	return client, func() { transport.CloseIdleConnections() }
+	return client, func() { transport.CloseIdleConnections(); conns.Wait() }
 }
