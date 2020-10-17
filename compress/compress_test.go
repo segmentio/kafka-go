@@ -417,7 +417,7 @@ func makeTopic() string {
 
 func createTopic(t *testing.T, topic string, partitions int) {
 	client := kafka.Client{
-		Addr: kafka.TCP("localhost:9092"),
+		Addr: kafka.TCP("127.0.0.1:9092"),
 	}
 
 	_, err := client.CreateTopics(context.Background(), &kafka.CreateTopicsRequest{
@@ -435,9 +435,6 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	// layout in the cluster is available in the controller before being synced
 	// with the other brokers, which causes "Error:[3] Unknown Topic Or Partition"
 	// when sending requests to the partition leaders.
-	//
-	// This loop will wait up to 2 seconds polling the cluster until no errors
-	// are returned.
 	for i := 0; i < 20; i++ {
 		r, err := client.Fetch(context.Background(), &kafka.FetchRequest{
 			Topic:     topic,
@@ -453,7 +450,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 
 func deleteTopic(t *testing.T, topic string) {
 	client := kafka.Client{
-		Addr: kafka.TCP("localhost:9092"),
+		Addr: kafka.TCP("127.0.0.1:9092"),
 	}
 	client.DeleteTopics(context.Background(), &kafka.DeleteTopicsRequest{
 		Topics: []string{topic},
