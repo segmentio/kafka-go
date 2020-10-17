@@ -101,7 +101,7 @@ func (r *reader) WriteTo(w io.Writer) (n int64, err error) {
 // NewWriter implements the compress.Codec interface.
 func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 	p := new(writer)
-	if enc := c.encoderPool.Get().(*encoder); enc == nil {
+	if enc, _ := c.encoderPool.Get().(*encoder); enc == nil {
 		z, err := zstd.NewWriter(w, zstd.WithEncoderLevel(c.zstdLevel()))
 		if err != nil {
 			p.err = err
