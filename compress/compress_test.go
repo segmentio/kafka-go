@@ -88,19 +88,24 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec pkg.Codec) {
 	t.Run("encode with "+codec.Name(), func(t *testing.T) {
 		r1, err = compress(codec, m.Value)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 	})
 
 	t.Run("decode with "+codec.Name(), func(t *testing.T) {
+		if r1 == nil {
+			if r1, err = compress(codec, m.Value); err != nil {
+				t.Fatal(err)
+			}
+		}
 		r2, err = decompress(codec, r1)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		if string(r2) != "message" {
 			t.Error("bad message")
-			t.Log("got: ", string(r2))
-			t.Log("expected: ", string(m.Value))
+			t.Logf("expected: %q", string(m.Value))
+			t.Logf("got:      %q", string(r2))
 		}
 	})
 }

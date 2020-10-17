@@ -75,6 +75,7 @@ type reader struct {
 // Close implements the io.Closer interface.
 func (r *reader) Close() error {
 	if r.dec != nil {
+		r.dec.Reset(devNull{}) // don't retain the underlying reader
 		decoderPool.Put(r.dec)
 		r.dec = nil
 		r.err = io.ErrClosedPipe
@@ -83,7 +84,7 @@ func (r *reader) Close() error {
 }
 
 // Read implements the io.Reader interface.
-func (r *reader) Read(p []byte) (n int, err error) {
+func (r *reader) Read(p []byte) (int, error) {
 	if r.err != nil {
 		return 0, r.err
 	}
@@ -91,7 +92,7 @@ func (r *reader) Read(p []byte) (n int, err error) {
 }
 
 // WriteTo implements the io.WriterTo interface.
-func (r *reader) WriteTo(w io.Writer) (n int64, err error) {
+func (r *reader) WriteTo(w io.Writer) (int64, error) {
 	if r.err != nil {
 		return 0, r.err
 	}
@@ -136,16 +137,23 @@ type writer struct {
 // Close implements the io.Closer interface.
 func (w *writer) Close() error {
 	if w.enc != nil {
+		// Close needs to be called to write the end of stream marker and flush
+		// the buffers. The zstd package documents that the encoder is re-usable
+		// fater being closed.
+		err := w.enc.Close()
+		if err != nil {
+			w.err = err
+		}
+		w.enc.Reset(devNull{}) // don't retain the underyling writer
 		w.c.encoderPool.Put(w.enc)
+		w.enc = nil
+		return err
 	}
-	if w.err == nil {
-		w.err = io.ErrClosedPipe
-	}
-	return w.err
+	return nil
 }
 
 // WriteTo implements the io.WriterTo interface.
-func (w *writer) Write(p []byte) (n int, err error) {
+func (w *writer) Write(p []byte) (int, error) {
 	if w.err != nil {
 		return 0, w.err
 	}
@@ -153,9 +161,14 @@ func (w *writer) Write(p []byte) (n int, err error) {
 }
 
 // ReadFrom implements the io.ReaderFrom interface.
-func (w *writer) ReadFrom(r io.Reader) (n int64, err error) {
+func (w *writer) ReadFrom(r io.Reader) (int64, error) {
 	if w.err != nil {
 		return 0, w.err
 	}
 	return w.enc.ReadFrom(r)
 }
+
+type devNull struct{}
+
+func (devNull) Read([]byte) (int, error)  { return 0, io.EOF }
+func (devNull) Write([]byte) (int, error) { return 0, nil }
