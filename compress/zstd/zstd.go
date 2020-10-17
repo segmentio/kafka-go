@@ -29,7 +29,7 @@ func (c *Codec) Name() string { return "zstd" }
 // NewReader implements the compress.Codec interface.
 func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
 	p := new(reader)
-	if cached := decoderPool.Get(); cached == nil {
+	if dec, _ := decoderPool.Get().(*decoder); dec == nil {
 		z, err := zstd.NewReader(r)
 		if err != nil {
 			p.err = err
@@ -40,8 +40,8 @@ func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
 			runtime.SetFinalizer(p.dec, (*decoder).finalize)
 		}
 	} else {
-		p.dec = cached.(*decoder)
-		p.err = p.dec.Reset(r)
+		p.dec = dec
+		p.err = dec.Reset(r)
 	}
 	return p
 }
@@ -101,7 +101,7 @@ func (r *reader) WriteTo(w io.Writer) (n int64, err error) {
 // NewWriter implements the compress.Codec interface.
 func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 	p := new(writer)
-	if cached := c.encoderPool.Get(); cached == nil {
+	if enc := c.encoderPool.Get().(*encoder); enc == nil {
 		z, err := zstd.NewWriter(w, zstd.WithEncoderLevel(c.zstdLevel()))
 		if err != nil {
 			p.err = err
@@ -112,7 +112,7 @@ func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 			runtime.SetFinalizer(p.enc, (*encoder).finalize)
 		}
 	} else {
-		p.enc = cached.(*encoder)
+		p.enc = enc
 		p.enc.Reset(w)
 	}
 	p.c = c
