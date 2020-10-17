@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -115,16 +116,16 @@ func TestCompressedMessages(t *testing.T) {
 }
 
 func testCompressedMessages(t *testing.T, codec pkg.Codec) {
-	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
-		topic := makeTopic()
-		createTopic(t, topic, 1)
-		defer deleteTopic(t, topic)
+	t.Run(codec.Name(), func(t *testing.T) {
+		client, topic, shutdown := newLocalClientAndTopic()
+		defer shutdown()
 
 		w := &kafka.Writer{
 			Addr:         kafka.TCP("127.0.0.1:9092"),
 			Topic:        topic,
 			Compression:  kafka.Compression(codec.Code()),
 			BatchTimeout: 10 * time.Millisecond,
+			Transport:    client.Transport,
 		}
 		defer w.Close()
 
@@ -185,16 +186,16 @@ func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 }
 
 func TestMixedCompressedMessages(t *testing.T) {
-	topic := makeTopic()
-	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
 
 	offset := 0
 	var values []string
 	produce := func(n int, codec pkg.Codec) {
 		w := &kafka.Writer{
-			Addr:  kafka.TCP("127.0.0.1:9092"),
-			Topic: topic,
+			Addr:      kafka.TCP("127.0.0.1:9092"),
+			Topic:     topic,
+			Transport: client.Transport,
 		}
 		defer w.Close()
 
@@ -411,14 +412,17 @@ func benchmarkCompression(b *testing.B, codec pkg.Codec, buf *bytes.Buffer, payl
 	return 1 - (float64(buf.Len()) / float64(len(payload)))
 }
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 func makeTopic() string {
 	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
 }
 
-func createTopic(t *testing.T, topic string, partitions int) {
-	client := kafka.Client{
-		Addr: kafka.TCP("127.0.0.1:9092"),
-	}
+func newLocalClientAndTopic() (*kafka.Client, string, func()) {
+	topic := makeTopic()
+	client, shutdown := newLocalClient()
 
 	_, err := client.CreateTopics(context.Background(), &kafka.CreateTopicsRequest{
 		Topics: []kafka.TopicConfig{{
@@ -428,7 +432,8 @@ func createTopic(t *testing.T, topic string, partitions int) {
 		}},
 	})
 	if err != nil {
-		t.Fatal(err)
+		shutdown()
+		panic(err)
 	}
 
 	// Topic creation seems to be asynchronous. Metadata for the topic partition
@@ -446,13 +451,27 @@ func createTopic(t *testing.T, topic string, partitions int) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+
+	return client, topic, func() {
+		client.DeleteTopics(context.Background(), &kafka.DeleteTopicsRequest{
+			Topics: []string{topic},
+		})
+		shutdown()
+	}
 }
 
-func deleteTopic(t *testing.T, topic string) {
-	client := kafka.Client{
-		Addr: kafka.TCP("127.0.0.1:9092"),
+func newLocalClient() (*kafka.Client, func()) {
+	return newClient(kafka.TCP("127.0.0.1:9092"))
+}
+
+func newClient(addr net.Addr) (*kafka.Client, func()) {
+	transport := &kafka.Transport{}
+
+	client := &kafka.Client{
+		Addr:      addr,
+		Timeout:   5 * time.Second,
+		Transport: transport,
 	}
-	client.DeleteTopics(context.Background(), &kafka.DeleteTopicsRequest{
-		Topics: []string{topic},
-	})
+
+	return client, func() { transport.CloseIdleConnections() }
 }

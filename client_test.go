@@ -15,7 +15,7 @@ import (
 
 func newLocalClientAndTopic() (*Client, string, func()) {
 	topic := makeTopic()
-	client, shutdown := newClient(TCP("localhost"))
+	client, shutdown := newLocalClient()
 
 	_, err := client.CreateTopics(context.Background(), &CreateTopicsRequest{
 		Topics: []TopicConfig{{
