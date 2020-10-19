@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	defaultCreateTopicsTimeout = 2 * time.Second
-	defaultDeleteTopicsTimeout = 2 * time.Second
-	defaultProduceTimeout      = 500 * time.Millisecond
-	defaultMaxWait             = 500 * time.Millisecond
+	defaultCreateTopicsTimeout     = 2 * time.Second
+	defaultDeleteTopicsTimeout     = 2 * time.Second
+	defaultCreatePartitionsTimeout = 2 * time.Second
+	defaultProduceTimeout          = 500 * time.Millisecond
+	defaultMaxWait                 = 500 * time.Millisecond
 )
 
 // Client is a high-level API to interract with kafka brokers.
