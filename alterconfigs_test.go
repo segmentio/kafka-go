@@ -12,7 +12,7 @@ import (
 func TestAlterConfigsResponseV0(t *testing.T) {
 	item := alterConfigsResponseV0{
 		ThrottleTimeMs: 100,
-		Resources: []alterConfigsResponseV0Resource{
+		Responses: []alterConfigsResponseV0Response{
 			{
 				ErrorCode:    0,
 				ResourceType: int8(2),
@@ -76,12 +76,12 @@ func testAlterConfigs(t *testing.T) {
 		return
 	}
 
-	err = conncontroller.AlterConfigs(AlterConfig{
+	err = conncontroller.AlterConfigs(AlterConfigsConfig{
 		Resources: []Resource{
 			{
 				ResourceType: int8(2),
 				ResourceName: topic,
-				ConfigEntries: []ConfigEntry{{
+				Configs: []ConfigEntry{{
 					ConfigName:  "max.message.bytes",
 					ConfigValue: "200000",
 				},

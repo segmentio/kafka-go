@@ -22,39 +22,39 @@ func (t alterConfigsRequestV0) writeTo(wb *writeBuffer) {
 }
 
 type alterConfigsRequestV0Resource struct {
-	ResourceType  int8
-	ResourceName  string
-	ConfigEntries []alterConfigsResponseV0ConfigEntry
+	ResourceType int8
+	ResourceName string
+	Configs      []alterConfigsRequestV0Config
 }
 
 func (t alterConfigsRequestV0Resource) size() int32 {
 	return sizeofInt8(t.ResourceType) +
 		sizeofString(t.ResourceName) +
-		sizeofArray(len(t.ConfigEntries), func(i int) int32 { return t.ConfigEntries[i].size() })
+		sizeofArray(len(t.Configs), func(i int) int32 { return t.Configs[i].size() })
 }
 
 func (t alterConfigsRequestV0Resource) writeTo(wb *writeBuffer) {
 	wb.writeInt8(t.ResourceType)
 	wb.writeString(t.ResourceName)
-	wb.writeArray(len(t.ConfigEntries), func(i int) { t.ConfigEntries[i].writeTo(wb) })
+	wb.writeArray(len(t.Configs), func(i int) { t.Configs[i].writeTo(wb) })
 }
 
-type alterConfigsResponseV0ConfigEntry struct {
+type alterConfigsRequestV0Config struct {
 	ConfigName  string
 	ConfigValue string
 }
 
-func (t alterConfigsResponseV0ConfigEntry) size() int32 {
+func (t alterConfigsRequestV0Config) size() int32 {
 	return sizeofString(t.ConfigName) +
 		sizeofString(t.ConfigValue)
 }
 
-func (t alterConfigsResponseV0ConfigEntry) writeTo(wb *writeBuffer) {
+func (t alterConfigsRequestV0Config) writeTo(wb *writeBuffer) {
 	wb.writeString(t.ConfigName)
 	wb.writeString(t.ConfigValue)
 }
 
-func (t *alterConfigsResponseV0ConfigEntry) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+func (t *alterConfigsRequestV0Config) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readString(r, size, &t.ConfigName); err != nil {
 		return
 	}
@@ -64,28 +64,28 @@ func (t *alterConfigsResponseV0ConfigEntry) readFrom(r *bufio.Reader, size int) 
 	return
 }
 
-type alterConfigsResponseV0Resource struct {
+type alterConfigsResponseV0Response struct {
 	ErrorCode    int16
 	ErrorMessage string
 	ResourceType int8
 	ResourceName string
 }
 
-func (t alterConfigsResponseV0Resource) size() int32 {
+func (t alterConfigsResponseV0Response) size() int32 {
 	return sizeofInt16(t.ErrorCode) +
 		sizeofString(t.ErrorMessage) +
 		sizeofInt8(t.ResourceType) +
 		sizeofString(t.ResourceName)
 }
 
-func (t alterConfigsResponseV0Resource) writeTo(wb *writeBuffer) {
+func (t alterConfigsResponseV0Response) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.ErrorCode)
 	wb.writeString(t.ErrorMessage)
 	wb.writeInt8(t.ResourceType)
 	wb.writeString(t.ResourceName)
 }
 
-func (t *alterConfigsResponseV0Resource) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+func (t *alterConfigsResponseV0Response) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readInt16(r, size, &t.ErrorCode); err != nil {
 		return
 	}
@@ -105,17 +105,17 @@ func (t *alterConfigsResponseV0Resource) readFrom(r *bufio.Reader, size int) (re
 //alterConfigsResponseV0 descirbe configs response V0 version
 type alterConfigsResponseV0 struct {
 	ThrottleTimeMs int32
-	Resources      []alterConfigsResponseV0Resource
+	Responses      []alterConfigsResponseV0Response
 }
 
 func (t alterConfigsResponseV0) size() int32 {
 	return sizeofInt32(t.ThrottleTimeMs) +
-		sizeofArray(len(t.Resources), func(i int) int32 { return t.Resources[i].size() })
+		sizeofArray(len(t.Responses), func(i int) int32 { return t.Responses[i].size() })
 }
 
 func (t alterConfigsResponseV0) writeTo(wb *writeBuffer) {
 	wb.writeInt32(t.ThrottleTimeMs)
-	wb.writeArray(len(t.Resources), func(i int) { t.Resources[i].writeTo(wb) })
+	wb.writeArray(len(t.Responses), func(i int) { t.Responses[i].writeTo(wb) })
 }
 
 func (t *alterConfigsResponseV0) readFrom(r *bufio.Reader, size int) (remain int, err error) {
@@ -123,11 +123,11 @@ func (t *alterConfigsResponseV0) readFrom(r *bufio.Reader, size int) (remain int
 		return
 	}
 	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		var resource alterConfigsResponseV0Resource
+		var resource alterConfigsResponseV0Response
 		if fnRemain, fnErr = (&resource).readFrom(r, size); err != nil {
 			return
 		}
-		t.Resources = append(t.Resources, resource)
+		t.Responses = append(t.Responses, resource)
 		return
 	}
 	if remain, err = readArrayWith(r, remain, fn); err != nil {
@@ -138,13 +138,13 @@ func (t *alterConfigsResponseV0) readFrom(r *bufio.Reader, size int) (remain int
 }
 
 type Resource struct {
-	ResourceType  int8
-	ResourceName  string
-	ConfigEntries []ConfigEntry
+	ResourceType int8
+	ResourceName string
+	Configs      []ConfigEntry
 }
 
-//AlterConfig
-type AlterConfig struct {
+//AlterConfigsConfig
+type AlterConfigsConfig struct {
 	Resources    []Resource
 	ValidateOnly bool
 }
@@ -170,12 +170,12 @@ func (c *Conn) alterConfigs(request alterConfigsRequestV0) (alterConfigsResponse
 //AlterConfigs alters configuration data.
 //
 //Detailed info please look at https://cwiki.apache.org/confluence/display/KAFKA/KIP-133%3A+Describe+and+Alter+Configs+Admin+APIs
-func (c *Conn) AlterConfigs(config AlterConfig) error {
+func (c *Conn) AlterConfigs(config AlterConfigsConfig) error {
 	var requestV0Resource []alterConfigsRequestV0Resource
 	for _, t := range config.Resources {
-		configEntries := []alterConfigsResponseV0ConfigEntry{}
-		for _, ce := range t.ConfigEntries {
-			configEntries = append(configEntries, alterConfigsResponseV0ConfigEntry{
+		configs := []alterConfigsRequestV0Config{}
+		for _, ce := range t.Configs {
+			configs = append(configs, alterConfigsRequestV0Config{
 				ConfigName:  ce.ConfigName,
 				ConfigValue: ce.ConfigValue,
 			})
@@ -184,9 +184,9 @@ func (c *Conn) AlterConfigs(config AlterConfig) error {
 		requestV0Resource = append(
 			requestV0Resource,
 			alterConfigsRequestV0Resource{
-				ResourceType:  t.ResourceType,
-				ResourceName:  t.ResourceName,
-				ConfigEntries: configEntries,
+				ResourceType: t.ResourceType,
+				ResourceName: t.ResourceName,
+				Configs:      configs,
 			})
 	}
 

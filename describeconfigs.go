@@ -14,7 +14,7 @@ type describeConfigsRequestV0Resource struct {
 func (t describeConfigsRequestV0Resource) size() int32 {
 	return sizeofInt8(t.ResourceType) +
 		sizeofString(t.ResourceName) +
-		sizeofStringArray([]string(t.ConfigNames))
+		sizeofStringArray(t.ConfigNames)
 }
 
 func (t describeConfigsRequestV0Resource) writeTo(wb *writeBuffer) {
