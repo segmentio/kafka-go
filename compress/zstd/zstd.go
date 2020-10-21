@@ -157,6 +157,9 @@ func (w *writer) Write(p []byte) (int, error) {
 	if w.err != nil {
 		return 0, w.err
 	}
+	if w.enc == nil {
+		return 0, io.ErrClosedPipe
+	}
 	return w.enc.Write(p)
 }
 
@@ -164,6 +167,9 @@ func (w *writer) Write(p []byte) (int, error) {
 func (w *writer) ReadFrom(r io.Reader) (int64, error) {
 	if w.err != nil {
 		return 0, w.err
+	}
+	if w.enc == nil {
+		return 0, io.ErrClosedPipe
 	}
 	return w.enc.ReadFrom(r)
 }
