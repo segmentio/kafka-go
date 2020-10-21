@@ -6,27 +6,43 @@ import (
 	"io"
 	"math/rand"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/segmentio/kafka-go/compress"
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 func newLocalClientAndTopic() (*Client, string, func()) {
 	topic := makeTopic()
-	client, shutdown := newClient(TCP("localhost"))
+	client, shutdown := newLocalClientWithTopic(topic, 1)
+	return client, topic, shutdown
+}
 
+func newLocalClientWithTopic(topic string, partitions int) (*Client, func()) {
+	client, shutdown := newLocalClient()
+	if err := clientCreateTopic(client, topic, partitions); err != nil {
+		shutdown()
+		panic(err)
+	}
+	return client, func() {
+		client.DeleteTopics(context.Background(), &DeleteTopicsRequest{
+			Topics: []string{topic},
+		})
+		shutdown()
+	}
+}
+
+func clientCreateTopic(client *Client, topic string, partitions int) error {
 	_, err := client.CreateTopics(context.Background(), &CreateTopicsRequest{
 		Topics: []TopicConfig{{
 			Topic:             topic,
-			NumPartitions:     1,
+			NumPartitions:     partitions,
 			ReplicationFactor: 1,
 		}},
 	})
 	if err != nil {
-		shutdown()
-		panic(err)
+		return err
 	}
 
 	// Topic creation seems to be asynchronous. Metadata for the topic partition
@@ -48,12 +64,7 @@ func newLocalClientAndTopic() (*Client, string, func()) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	return client, topic, func() {
-		client.DeleteTopics(context.Background(), &DeleteTopicsRequest{
-			Topics: []string{topic},
-		})
-		shutdown()
-	}
+	return nil
 }
 
 func newLocalClient() (*Client, func()) {
@@ -61,8 +72,8 @@ func newLocalClient() (*Client, func()) {
 }
 
 func newClient(addr net.Addr) (*Client, func()) {
-	conns := &connWaitGroup{
-		dial: (&net.Dialer{}).DialContext,
+	conns := &ktesting.ConnWaitGroup{
+		DialFunc: (&net.Dialer{}).DialContext,
 	}
 
 	transport := &Transport{
@@ -77,31 +88,6 @@ func newClient(addr net.Addr) (*Client, func()) {
 	}
 
 	return client, func() { transport.CloseIdleConnections(); conns.Wait() }
-}
-
-type connWaitGroup struct {
-	dial func(context.Context, string, string) (net.Conn, error)
-	sync.WaitGroup
-}
-
-func (g *connWaitGroup) Dial(ctx context.Context, network, address string) (net.Conn, error) {
-	c, err := g.dial(ctx, network, address)
-	if err != nil {
-		return nil, err
-	}
-	g.Add(1)
-	return &groupConn{Conn: c, group: g}, nil
-}
-
-type groupConn struct {
-	net.Conn
-	group *connWaitGroup
-	once  sync.Once
-}
-
-func (c *groupConn) Close() error {
-	defer c.once.Do(c.group.Done)
-	return c.Conn.Close()
 }
 
 func TestClient(t *testing.T) {
@@ -121,20 +107,23 @@ func TestClient(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			c := &Client{Addr: TCP("localhost:9092")}
-			testFunc(t, ctx, c)
+			client, shutdown := newLocalClient()
+			defer shutdown()
+
+			testFunc(t, ctx, client)
 		})
 	}
 }
 
-func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client) {
+func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, client *Client) {
 	const totalMessages = 144
 	const partitions = 12
 	const msgPerPartition = totalMessages / partitions
 
 	topic := makeTopic()
-	createTopic(t, topic, partitions)
-	defer deleteTopic(t, topic)
+	if err := clientCreateTopic(client, topic, partitions); err != nil {
+		t.Fatal(err)
+	}
 
 	groupId := makeGroupID()
 	brokers := []string{"localhost:9092"}
@@ -144,6 +133,7 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 		Topic:     topic,
 		Balancer:  &RoundRobin{},
 		BatchSize: 1,
+		Transport: client.Transport,
 	}
 	if err := writer.WriteMessages(ctx, makeTestSequence(totalMessages)...); err != nil {
 		t.Fatalf("bad write messages: %v", err)
@@ -172,7 +162,7 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, c *Client)
 		}
 	}
 
-	offsets, err := c.ConsumerOffsets(ctx, TopicAndGroup{GroupId: groupId, Topic: topic})
+	offsets, err := client.ConsumerOffsets(ctx, TopicAndGroup{GroupId: groupId, Topic: topic})
 	if err != nil {
 		t.Fatal(err)
 	}

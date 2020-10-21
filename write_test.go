@@ -192,24 +192,26 @@ func testWriteOptimization(t *testing.T, h requestHeader, r request, f func(*wri
 }
 
 func TestWriteV2RecordBatch(t *testing.T) {
-
 	if !ktesting.KafkaIsAtLeast("0.11.0") {
 		t.Skip("RecordBatch was added in kafka 0.11.0")
 		return
 	}
 
-	topic := makeTopic()
-	createTopic(t, topic, 1)
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
+
 	msgs := make([]Message, 15)
 	for i := range msgs {
 		value := fmt.Sprintf("Sample message content: %d!", i)
 		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{Header{Key: "hk", Value: []byte("hv")}}}
 	}
+
 	w := &Writer{
 		Addr:         TCP("localhost:9092"),
 		Topic:        topic,
 		BatchTimeout: 100 * time.Millisecond,
 		BatchSize:    5,
+		Transport:    client.Transport,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

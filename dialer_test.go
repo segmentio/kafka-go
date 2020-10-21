@@ -35,14 +35,14 @@ func TestDialer(t *testing.T) {
 }
 
 func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
-	topic := makeTopic()
-	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
 
 	// Write a message to ensure the partition gets created.
 	w := &Writer{
-		Addr:  TCP("localhost:9092"),
-		Topic: topic,
+		Addr:      TCP("localhost:9092"),
+		Topic:     topic,
+		Transport: client.Transport,
 	}
 	w.WriteMessages(ctx, Message{})
 	w.Close()
@@ -168,14 +168,14 @@ wE3YmpC3Q0g9r44nEbz4Bw==
 }
 
 func TestDialerTLS(t *testing.T) {
-	topic := makeTopic()
-	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
 
 	// Write a message to ensure the partition gets created.
 	w := &Writer{
-		Addr:  TCP("localhost:9092"),
-		Topic: topic,
+		Addr:      TCP("localhost:9092"),
+		Topic:     topic,
+		Transport: client.Transport,
 	}
 	w.WriteMessages(context.Background(), Message{})
 	w.Close()

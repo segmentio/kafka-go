@@ -88,19 +88,24 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec pkg.Codec) {
 	t.Run("encode with "+codec.Name(), func(t *testing.T) {
 		r1, err = compress(codec, m.Value)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 	})
 
 	t.Run("decode with "+codec.Name(), func(t *testing.T) {
+		if r1 == nil {
+			if r1, err = compress(codec, m.Value); err != nil {
+				t.Fatal(err)
+			}
+		}
 		r2, err = decompress(codec, r1)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		if string(r2) != "message" {
 			t.Error("bad message")
-			t.Log("got: ", string(r2))
-			t.Log("expected: ", string(m.Value))
+			t.Logf("expected: %q", string(m.Value))
+			t.Logf("got:      %q", string(r2))
 		}
 	})
 }
@@ -116,15 +121,16 @@ func TestCompressedMessages(t *testing.T) {
 }
 
 func testCompressedMessages(t *testing.T, codec pkg.Codec) {
-	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
-		topic := createTopic(t, 1)
-		defer deleteTopic(t, topic)
+	t.Run(codec.Name(), func(t *testing.T) {
+		client, topic, shutdown := newLocalClientAndTopic()
+		defer shutdown()
 
 		w := &kafka.Writer{
 			Addr:         kafka.TCP("127.0.0.1:9092"),
 			Topic:        topic,
 			Compression:  kafka.Compression(codec.Code()),
 			BatchTimeout: 10 * time.Millisecond,
+			Transport:    client.Transport,
 		}
 		defer w.Close()
 
@@ -185,18 +191,22 @@ func testCompressedMessages(t *testing.T, codec pkg.Codec) {
 }
 
 func TestMixedCompressedMessages(t *testing.T) {
-	topic := createTopic(t, 1)
-	defer deleteTopic(t, topic)
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
 
 	offset := 0
 	var values []string
 	produce := func(n int, codec pkg.Codec) {
 		w := &kafka.Writer{
-			Addr:        kafka.TCP("127.0.0.1:9092"),
-			Topic:       topic,
-			Compression: kafka.Compression(codec.Code()),
+			Addr:      kafka.TCP("127.0.0.1:9092"),
+			Topic:     topic,
+			Transport: client.Transport,
 		}
 		defer w.Close()
+
+		if codec != nil {
+			w.Compression = kafka.Compression(codec.Code())
+		}
 
 		msgs := make([]kafka.Message, n)
 		for i := range msgs {
@@ -407,58 +417,72 @@ func benchmarkCompression(b *testing.B, codec pkg.Codec, buf *bytes.Buffer, payl
 	return 1 - (float64(buf.Len()) / float64(len(payload)))
 }
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 func makeTopic() string {
 	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
 }
 
-func createTopic(t *testing.T, partitions int) string {
+func newLocalClientAndTopic() (*kafka.Client, string, func()) {
 	topic := makeTopic()
+	client, shutdown := newLocalClient()
 
-	conn, err := kafka.Dial("tcp", "localhost:9092")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
-	err = conn.CreateTopics(kafka.TopicConfig{
-		Topic:             topic,
-		NumPartitions:     partitions,
-		ReplicationFactor: 1,
+	_, err := client.CreateTopics(context.Background(), &kafka.CreateTopicsRequest{
+		Topics: []kafka.TopicConfig{{
+			Topic:             topic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		}},
 	})
-
-	switch err {
-	case nil:
-		// ok
-	case kafka.TopicAlreadyExists:
-		// ok
-	default:
-		t.Error("bad createTopics", err)
-		t.FailNow()
+	if err != nil {
+		shutdown()
+		panic(err)
 	}
 
-	return topic
+	// Topic creation seems to be asynchronous. Metadata for the topic partition
+	// layout in the cluster is available in the controller before being synced
+	// with the other brokers, which causes "Error:[3] Unknown Topic Or Partition"
+	// when sending requests to the partition leaders.
+	for i := 0; i < 20; i++ {
+		r, err := client.Fetch(context.Background(), &kafka.FetchRequest{
+			Topic:     topic,
+			Partition: 0,
+			Offset:    0,
+		})
+		if err == nil && r.Error == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return client, topic, func() {
+		client.DeleteTopics(context.Background(), &kafka.DeleteTopicsRequest{
+			Topics: []string{topic},
+		})
+		shutdown()
+	}
 }
 
-func deleteTopic(t *testing.T, topic ...string) {
-	conn, err := kafka.Dial("tcp", "localhost:9092")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
+func newLocalClient() (*kafka.Client, func()) {
+	return newClient(kafka.TCP("127.0.0.1:9092"))
+}
 
-	controller, err := conn.Controller()
-	if err != nil {
-		t.Fatal(err)
+func newClient(addr net.Addr) (*kafka.Client, func()) {
+	conns := &ktesting.ConnWaitGroup{
+		DialFunc: (&net.Dialer{}).DialContext,
 	}
 
-	conn, err = kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
-	if err != nil {
-		t.Fatal(err)
+	transport := &kafka.Transport{
+		Dial: conns.Dial,
 	}
 
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
-
-	if err := conn.DeleteTopics(topic...); err != nil {
-		t.Fatal(err)
+	client := &kafka.Client{
+		Addr:      addr,
+		Timeout:   5 * time.Second,
+		Transport: transport,
 	}
+
+	return client, func() { transport.CloseIdleConnections(); conns.Wait() }
 }
