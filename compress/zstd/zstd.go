@@ -139,7 +139,7 @@ func (w *writer) Close() error {
 	if w.enc != nil {
 		// Close needs to be called to write the end of stream marker and flush
 		// the buffers. The zstd package documents that the encoder is re-usable
-		// fater being closed.
+		// after being closed.
 		err := w.enc.Close()
 		if err != nil {
 			w.err = err
