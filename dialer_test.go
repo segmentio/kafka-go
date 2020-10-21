@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"net"
 	"reflect"
@@ -296,5 +297,107 @@ func TestDialerConnectTLSHonorsContext(t *testing.T) {
 	if context.DeadlineExceeded != err {
 		t.Errorf("expected err to be %v; got %v", context.DeadlineExceeded, err)
 		t.FailNow()
+	}
+}
+
+func TestDialerResolver(t *testing.T) {
+	ctx := context.TODO()
+
+	tests := []struct {
+		scenario string
+		address  string
+		resolver map[string][]string
+	}{
+		{
+			scenario: "resolve domain to ip",
+			address:  "example.com",
+			resolver: map[string][]string{
+				"example.com": {"127.0.0.1"},
+			},
+		},
+		{
+			scenario: "resolve domain to ip and port",
+			address:  "example.com",
+			resolver: map[string][]string{
+				"example.com": {"127.0.0.1:9092"},
+			},
+		},
+		{
+			scenario: "resolve domain with port to ip",
+			address:  "example.com:9092",
+			resolver: map[string][]string{
+				"example.com": {"127.0.0.1:9092"},
+			},
+		},
+		{
+			scenario: "resolve domain with port to ip with different port",
+			address:  "example.com:9092",
+			resolver: map[string][]string{
+				"example.com": {"127.0.0.1:80"},
+			},
+		},
+		{
+			scenario: "resolve domain with port to ip",
+			address:  "example.com:9092",
+			resolver: map[string][]string{
+				"example.com": {"127.0.0.1"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.scenario, func(t *testing.T) {
+			topic := makeTopic()
+			createTopic(t, topic, 1)
+			defer deleteTopic(t, topic)
+
+			d := Dialer{
+				Resolver: &mockResolver{addrs: test.resolver},
+			}
+
+			// Write a message to ensure the partition gets created.
+			w := NewWriter(WriterConfig{
+				Brokers: []string{"localhost:9092"},
+				Topic:   topic,
+				Dialer:  &d,
+			})
+			w.WriteMessages(context.Background(), Message{})
+			w.Close()
+
+			partitions, err := d.LookupPartitions(ctx, "tcp", test.address, topic)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
+			sort.Slice(partitions, func(i int, j int) bool {
+				return partitions[i].ID < partitions[j].ID
+			})
+
+			want := []Partition{
+				{
+					Topic:    topic,
+					Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
+					Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+					Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+					ID:       0,
+				},
+			}
+			if !reflect.DeepEqual(partitions, want) {
+				t.Errorf("bad partitions:\ngot:  %+v\nwant: %+v", partitions, want)
+			}
+		})
+	}
+}
+
+type mockResolver struct {
+	addrs map[string][]string
+}
+
+func (mr *mockResolver) LookupHost(ctx context.Context, host string) ([]string, error) {
+	if addrs, ok := mr.addrs[host]; !ok {
+		return nil, fmt.Errorf("unrecognized host %s", host)
+	} else {
+		return addrs, nil
 	}
 }
