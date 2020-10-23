@@ -425,25 +425,15 @@ func NewWriter(config WriterConfig) *Writer {
 	stats := new(writerStats)
 	// For backward compatibility with the pre-0.4 APIs, support custom
 	// resolvers by wrapping the dial function.
-	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		start := time.Now()
 		defer func() {
 			stats.dials.observe(1)
 			stats.dialTime.observe(int64(time.Since(start)))
 		}()
-		if resolver != nil {
-			host, port := splitHostPort(address)
-			addrs, err := resolver.LookupHost(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			if len(addrs) != 0 {
-				address = addrs[0]
-			}
-			if len(port) != 0 {
-				address, _ = splitHostPort(address)
-				address = net.JoinHostPort(address, port)
-			}
+		address, err := lookupHost(ctx, addr, resolver)
+		if err != nil {
+			return nil, err
 		}
 		return dialer.DialContext(ctx, network, address)
 	}

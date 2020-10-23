@@ -65,7 +65,13 @@ type Dialer struct {
 	// support keep-alives ignore this field.
 	KeepAlive time.Duration
 
-	// Resolver optionally specifies an alternate resolver to use.
+	// Resolver optionally gives a hook to convert the broker address into an
+	// alternate host or IP address which is useful for custom service discovery.
+	// If a custom resolver returns any possible hosts, the first one will be
+	// used and the original discarded. If a port number is included with the
+	// resolved host, it will only be used if a port number was not previously
+	// specified. If no port is specified or resolved, the default of 9092 will be
+	// used.
 	Resolver Resolver
 
 	// TLS enables Dialer to open secure connections.  If nil, standard net.Conn
@@ -320,20 +326,10 @@ func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
 	return nil
 }
 
-func (d *Dialer) dialContext(ctx context.Context, network string, address string) (net.Conn, error) {
-	if r := d.Resolver; r != nil {
-		host, port := splitHostPort(address)
-		addrs, err := r.LookupHost(ctx, host)
-		if err != nil {
-			return nil, err
-		}
-		if len(addrs) != 0 {
-			address = addrs[0]
-		}
-		if len(port) != 0 {
-			address, _ = splitHostPort(address)
-			address = net.JoinHostPort(address, port)
-		}
+func (d *Dialer) dialContext(ctx context.Context, network string, addr string) (net.Conn, error) {
+	address, err := lookupHost(ctx, addr, d.Resolver)
+	if err != nil {
+		return nil, err
 	}
 
 	dial := d.DialFunc
@@ -440,4 +436,36 @@ func splitHostPort(s string) (host string, port string) {
 		host = s
 	}
 	return
+}
+
+func lookupHost(ctx context.Context, address string, resolver Resolver) (string, error) {
+	host, port := splitHostPort(address)
+
+	if resolver != nil {
+		resolved, err := resolver.LookupHost(ctx, host)
+		if err != nil {
+			return "", err
+		}
+
+		// if the resolver doesn't return anything, we'll fall back on the provided
+		// address instead
+		if len(resolved) > 0 {
+			resolvedHost, resolvedPort := splitHostPort(resolved[0])
+
+			// we'll always prefer the resolved host
+			host = resolvedHost
+
+			// in the case of port though, the provided address takes priority, and we
+			// only use the resolved address to set the port when not specified
+			if port == "" {
+				port = resolvedPort
+			}
+		}
+	}
+
+	if port == "" {
+		port = "9092"
+	}
+
+	return net.JoinHostPort(host, port), nil
 }
