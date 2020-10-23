@@ -101,12 +101,22 @@ if err := conn.Close(); err != nil {
 ```
 
 ### To Create Topics
+By default kafka has the `KAFKA_AUTO_CREATE_TOPICS_ENABLE='true'`. If this value is set to `'true'` then topics will be created as a side effect of `kafka.DialLeader` like so:
 ```go
-// to create topics
+// to create topics when KAFKA_AUTO_CREATE_TOPICS_ENABLE='true'
+conn, err := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", "my-topic", 0)
+if err != nil {
+    panic(err.Error())
+}
+```
+
+If `KAFKA_AUTO_CREATE_TOPICS_ENABLE='false'` then you will need to create topics explicitly like so:
+```go
+// to create topics when KAFKA_AUTO_CREATE_TOPICS_ENABLE='false'
 topic := "my-topic"
 partition := 0
 
-conn, err := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
+conn, err := kafka.Dial("tcp", "localhost:9092")
 if err != nil {
     panic(err.Error())
 }
