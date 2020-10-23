@@ -65,7 +65,13 @@ type Dialer struct {
 	// support keep-alives ignore this field.
 	KeepAlive time.Duration
 
-	// Resolver optionally specifies an alternate resolver to use.
+	// Resolver optionally gives a hook to convert the broker address into an
+	// alternate host or IP address which is useful for custom service discovery.
+	// If a custom resolver returns any possible hosts, the first one will be
+	// used and the original discarded. If a port number is included with the
+	// resolved host, it will only be used if a port number was not previously
+	// specified. If no port is specified or resolved, the default of 9092 will be
+	// used.
 	Resolver Resolver
 
 	// TLS enables Dialer to open secure connections.  If nil, standard net.Conn
