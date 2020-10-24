@@ -3,24 +3,25 @@ package protocol
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 )
 
 type Cluster struct {
 	ClusterID  string
-	Controller int
-	Brokers    map[int]Broker
+	Controller int32
+	Brokers    map[int32]Broker
 	Topics     map[string]Topic
 }
 
-func (c Cluster) BrokerIDs() []int {
-	brokerIDs := make([]int, 0, len(c.Brokers))
+func (c Cluster) BrokerIDs() []int32 {
+	brokerIDs := make([]int32, 0, len(c.Brokers))
 	for id := range c.Brokers {
 		brokerIDs = append(brokerIDs, id)
 	}
-	sort.Ints(brokerIDs)
+	sort.Slice(brokerIDs, func(i, j int) bool {
+		return brokerIDs[i] < brokerIDs[j]
+	})
 	return brokerIDs
 }
 
@@ -55,8 +56,8 @@ func (c Cluster) Format(w fmt.State, _ rune) {
 	tw.Init(w, 0, 8, 2, ' ', 0)
 	fmt.Fprint(tw, "  TOPIC\tPARTITIONS\tBROKERS\n")
 	topicNames := c.TopicNames()
-	brokers := make(map[int]struct{}, len(c.Brokers))
-	brokerIDs := make([]int, 0, len(c.Brokers))
+	brokers := make(map[int32]struct{}, len(c.Brokers))
+	brokerIDs := make([]int32, 0, len(c.Brokers))
 
 	for _, name := range topicNames {
 		topic := c.Topics[name]
@@ -104,13 +105,13 @@ func (c Cluster) Format(w fmt.State, _ rune) {
 	}
 }
 
-func formatBrokerIDs(brokerIDs []int, leader int) string {
+func formatBrokerIDs(brokerIDs []int32, leader int32) string {
 	if len(brokerIDs) == 0 {
 		return ""
 	}
 
 	if len(brokerIDs) == 1 {
-		return strconv.Itoa(brokerIDs[0])
+		return itoa(brokerIDs[0])
 	}
 
 	sort.Slice(brokerIDs, func(i, j int) bool {
@@ -131,7 +132,7 @@ func formatBrokerIDs(brokerIDs []int, leader int) string {
 	brokerNames := make([]string, len(brokerIDs))
 
 	for i, id := range brokerIDs {
-		brokerNames[i] = strconv.Itoa(id)
+		brokerNames[i] = itoa(id)
 	}
 
 	return strings.Join(brokerNames, ",")

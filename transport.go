@@ -246,7 +246,7 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 
 		ready:  make(event),
 		wake:   make(chan event),
-		conns:  make(map[int]*connGroup),
+		conns:  make(map[int32]*connGroup),
 		cancel: cancel,
 	}
 
@@ -292,9 +292,9 @@ type connPool struct {
 	cancel context.CancelFunc
 	// Mutable fields of the connection pool, access must be synchronized.
 	mutex sync.RWMutex
-	conns map[int]*connGroup // data connections used for produce/fetch/etc...
-	ctrl  *connGroup         // control connections used for metadata requests
-	state atomic.Value       // cached cluster state
+	conns map[int32]*connGroup // data connections used for produce/fetch/etc...
+	ctrl  *connGroup           // control connections used for metadata requests
+	state atomic.Value         // cached cluster state
 }
 
 type connPoolState struct {
@@ -467,8 +467,8 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 	}
 
 	state := p.grabState()
-	addBrokers := make(map[int]struct{})
-	delBrokers := make(map[int]struct{})
+	addBrokers := make(map[int32]struct{})
+	delBrokers := make(map[int32]struct{})
 
 	if err != nil {
 		// Only update the error on the transport if the cluster layout was
@@ -523,8 +523,8 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 			p.conns[id] = p.newBrokerConnGroup(Broker{
 				Rack: broker.Rack,
 				Host: broker.Host,
-				Port: broker.Port,
-				ID:   broker.ID,
+				Port: int(broker.Port),
+				ID:   int(broker.ID),
 			})
 		}
 	}
@@ -588,7 +588,7 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 // grabBrokerConn returns a connection to a specific broker represented by the
 // broker id passed as argument. If the broker id was not known, an error is
 // returned.
-func (p *connPool) grabBrokerConn(ctx context.Context, brokerID int) (*conn, error) {
+func (p *connPool) grabBrokerConn(ctx context.Context, brokerID int32) (*conn, error) {
 	p.mutex.RLock()
 	g := p.conns[brokerID]
 	p.mutex.RUnlock()
@@ -616,7 +616,7 @@ func (p *connPool) grabClusterConn(ctx context.Context) (*conn, error) {
 }
 
 func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolState) promise {
-	brokerID := -1
+	brokerID := int32(-1)
 
 	switch m := req.(type) {
 	case protocol.BrokerMessage:
@@ -640,7 +640,7 @@ func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolS
 		if err != nil {
 			return reject(err)
 		}
-		brokerID = int(r.(*findcoordinator.Response).NodeID)
+		brokerID = r.(*findcoordinator.Response).NodeID
 	}
 
 	var c *conn
@@ -714,17 +714,17 @@ func sortMetadataPartitions(partitions []meta.ResponsePartition) {
 
 func makeLayout(metadataResponse *meta.Response) protocol.Cluster {
 	layout := protocol.Cluster{
-		Controller: int(metadataResponse.ControllerID),
-		Brokers:    make(map[int]protocol.Broker),
+		Controller: metadataResponse.ControllerID,
+		Brokers:    make(map[int32]protocol.Broker),
 		Topics:     make(map[string]protocol.Topic),
 	}
 
 	for _, broker := range metadataResponse.Brokers {
-		layout.Brokers[int(broker.NodeID)] = protocol.Broker{
+		layout.Brokers[broker.NodeID] = protocol.Broker{
 			Rack: broker.Rack,
 			Host: broker.Host,
-			Port: int(broker.Port),
-			ID:   int(broker.NodeID),
+			Port: broker.Port,
+			ID:   broker.NodeID,
 		}
 	}
 
@@ -734,7 +734,7 @@ func makeLayout(metadataResponse *meta.Response) protocol.Cluster {
 		}
 		layout.Topics[topic.Name] = protocol.Topic{
 			Name:       topic.Name,
-			Error:      int(topic.ErrorCode),
+			Error:      topic.ErrorCode,
 			Partitions: makePartitions(topic.Partitions),
 		}
 	}
@@ -742,8 +742,8 @@ func makeLayout(metadataResponse *meta.Response) protocol.Cluster {
 	return layout
 }
 
-func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protocol.Partition {
-	protocolPartitions := make(map[int]protocol.Partition, len(metadataPartitions))
+func makePartitions(metadataPartitions []meta.ResponsePartition) map[int32]protocol.Partition {
+	protocolPartitions := make(map[int32]protocol.Partition, len(metadataPartitions))
 	numBrokerIDs := 0
 
 	for _, p := range metadataPartitions {
@@ -752,18 +752,18 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 
 	// Reduce the memory footprint a bit by allocating a single buffer to write
 	// all broker ids.
-	brokerIDs := make([]int, 0, numBrokerIDs)
+	brokerIDs := make([]int32, 0, numBrokerIDs)
 
 	for _, p := range metadataPartitions {
-		var rep, isr, off []int
+		var rep, isr, off []int32
 		brokerIDs, rep = appendBrokerIDs(brokerIDs, p.ReplicaNodes)
 		brokerIDs, isr = appendBrokerIDs(brokerIDs, p.IsrNodes)
 		brokerIDs, off = appendBrokerIDs(brokerIDs, p.OfflineReplicas)
 
-		protocolPartitions[int(p.PartitionIndex)] = protocol.Partition{
-			ID:       int(p.PartitionIndex),
-			Error:    int(p.ErrorCode),
-			Leader:   int(p.LeaderID),
+		protocolPartitions[p.PartitionIndex] = protocol.Partition{
+			ID:       p.PartitionIndex,
+			Error:    p.ErrorCode,
+			Leader:   p.LeaderID,
 			Replicas: rep,
 			ISR:      isr,
 			Offline:  off,
@@ -773,12 +773,10 @@ func makePartitions(metadataPartitions []meta.ResponsePartition) map[int]protoco
 	return protocolPartitions
 }
 
-func appendBrokerIDs(ids []int, brokers []int32) ([]int, []int) {
+func appendBrokerIDs(ids, brokers []int32) ([]int32, []int32) {
 	i := len(ids)
-	for _, id := range brokers {
-		ids = append(ids, int(id))
-	}
-	return ids, ids[i:]
+	ids = append(ids, brokers...)
+	return ids, ids[i:len(ids):len(ids)]
 }
 
 func (p *connPool) newConnGroup(a net.Addr) *connGroup {
