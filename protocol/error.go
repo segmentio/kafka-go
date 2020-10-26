@@ -62,11 +62,11 @@ func (e *TopicError) Unwrap() error {
 
 type TopicPartitionError struct {
 	Topic     string
-	Partition int
+	Partition int32
 	Err       error
 }
 
-func NewTopicPartitionError(topic string, partition int, err error) *TopicPartitionError {
+func NewTopicPartitionError(topic string, partition int32, err error) *TopicPartitionError {
 	return &TopicPartitionError{
 		Topic:     topic,
 		Partition: partition,
@@ -74,11 +74,11 @@ func NewTopicPartitionError(topic string, partition int, err error) *TopicPartit
 	}
 }
 
-func NewErrNoPartition(topic string, partition int) *TopicPartitionError {
+func NewErrNoPartition(topic string, partition int32) *TopicPartitionError {
 	return NewTopicPartitionError(topic, partition, ErrNoPartition)
 }
 
-func NewErrNoLeader(topic string, partition int) *TopicPartitionError {
+func NewErrNoLeader(topic string, partition int32) *TopicPartitionError {
 	return NewTopicPartitionError(topic, partition, ErrNoLeader)
 }
 

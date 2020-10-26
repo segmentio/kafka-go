@@ -39,13 +39,13 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 		for j := range t.Partitions {
 			p := &t.Partitions[j]
 
-			partition, ok := topic.Partitions[int(p.Partition)]
+			partition, ok := topic.Partitions[p.Partition]
 			if !ok {
-				return broker, NewError(protocol.NewErrNoPartition(t.Topic, int(p.Partition)))
+				return broker, NewError(protocol.NewErrNoPartition(t.Topic, p.Partition))
 			}
 
 			if b, ok := cluster.Brokers[partition.Leader]; !ok {
-				return broker, NewError(protocol.NewErrNoLeader(t.Topic, int(p.Partition)))
+				return broker, NewError(protocol.NewErrNoLeader(t.Topic, p.Partition))
 			} else if broker.ID < 0 {
 				broker = b
 			} else if b.ID != broker.ID {

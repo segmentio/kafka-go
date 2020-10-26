@@ -41,7 +41,7 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	topic := r.Topics[0].Topic
 
 	for _, p := range cluster.Topics[topic].Partitions {
-		if p.ID == int(partition) {
+		if p.ID == partition {
 			return cluster.Brokers[p.Leader], nil
 		}
 	}

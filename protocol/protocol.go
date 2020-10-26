@@ -353,22 +353,22 @@ func dontExpectEOF(err error) error {
 type Broker struct {
 	Rack string
 	Host string
-	Port int
-	ID   int
+	Port int32
+	ID   int32
 }
 
 func (b Broker) String() string {
-	return net.JoinHostPort(b.Host, strconv.Itoa(b.Port))
+	return net.JoinHostPort(b.Host, itoa(b.Port))
 }
 
 func (b Broker) Format(w fmt.State, v rune) {
 	switch v {
 	case 'd':
-		io.WriteString(w, strconv.Itoa(b.ID))
+		io.WriteString(w, itoa(b.ID))
 	case 's':
 		io.WriteString(w, b.String())
 	case 'v':
-		io.WriteString(w, strconv.Itoa(b.ID))
+		io.WriteString(w, itoa(b.ID))
 		io.WriteString(w, " ")
 		io.WriteString(w, b.String())
 		if b.Rack != "" {
@@ -378,19 +378,23 @@ func (b Broker) Format(w fmt.State, v rune) {
 	}
 }
 
+func itoa(i int32) string {
+	return strconv.Itoa(int(i))
+}
+
 type Topic struct {
 	Name       string
-	Error      int
-	Partitions map[int]Partition
+	Error      int16
+	Partitions map[int32]Partition
 }
 
 type Partition struct {
-	ID       int
-	Error    int
-	Leader   int
-	Replicas []int
-	ISR      []int
-	Offline  []int
+	ID       int32
+	Error    int16
+	Leader   int32
+	Replicas []int32
+	ISR      []int32
+	Offline  []int32
 }
 
 // BrokerMessage is an extension of the Message interface implemented by some
