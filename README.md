@@ -121,6 +121,19 @@ if err != nil {
     panic(err.Error())
 }
 defer conn.Close()
+
+controller, err := conn.Controller()
+if err != nil {
+    panic(err.Error())
+}
+var controllerConn *kafka.Conn
+controllerConn, err = kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+if err != nil {
+    panic(err.Error())
+}
+defer controllerConn.Close()
+
+
 topicConfigs := []kafka.TopicConfig{
     kafka.TopicConfig{
         Topic:             topic,
@@ -129,7 +142,7 @@ topicConfigs := []kafka.TopicConfig{
     },
 }
 
-err = conn.CreateTopics(topicConfigs...)
+err = controllerConn.CreateTopics(topicConfigs...)
 if err != nil {
     panic(err.Error())
 }
