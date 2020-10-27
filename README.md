@@ -101,16 +101,39 @@ if err := conn.Close(); err != nil {
 ```
 
 ### To Create Topics
+By default kafka has the `auto.create.topics.enable='true'` (`KAFKA_AUTO_CREATE_TOPICS_ENABLE='true'` in the wurstmeister/kafka kafka docker image). If this value is set to `'true'` then topics will be created as a side effect of `kafka.DialLeader` like so:
 ```go
-// to create topics
+// to create topics when auto.create.topics.enable='true'
+conn, err := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", "my-topic", 0)
+if err != nil {
+    panic(err.Error())
+}
+```
+
+If `auto.create.topics.enable='false'` then you will need to create topics explicitly like so:
+```go
+// to create topics when auto.create.topics.enable='false'
 topic := "my-topic"
 partition := 0
 
-conn, err := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition)
+conn, err := kafka.Dial("tcp", "localhost:9092")
 if err != nil {
     panic(err.Error())
 }
 defer conn.Close()
+
+controller, err := conn.Controller()
+if err != nil {
+    panic(err.Error())
+}
+var controllerConn *kafka.Conn
+controllerConn, err = kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+if err != nil {
+    panic(err.Error())
+}
+defer controllerConn.Close()
+
+
 topicConfigs := []kafka.TopicConfig{
     kafka.TopicConfig{
         Topic:             topic,
@@ -119,7 +142,7 @@ topicConfigs := []kafka.TopicConfig{
     },
 }
 
-err = conn.CreateTopics(topicConfigs...)
+err = controllerConn.CreateTopics(topicConfigs...)
 if err != nil {
     panic(err.Error())
 }
