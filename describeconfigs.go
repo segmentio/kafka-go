@@ -14,13 +14,13 @@ type DescribeConfigsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	// List of resources to update
+	// List of resources to update.
 	Resources []DescribeConfigRequestResource
 
-	// required API version is no less than v1
+	// Ignored if API version is less than v1
 	IncludeSynonyms bool
 
-	// required API version is no less than v3
+	// Ignored if API version is less than v3
 	IncludeDocumentation bool
 }
 
@@ -31,16 +31,13 @@ type DescribeConfigRequestResource struct {
 	// Resource Name
 	ResourceName string
 
-	// Configs is a List of configurations that need to update
+	// ConfigNames is a list of configurations to update.
 	ConfigNames []string
 }
 
 // DescribeConfigsResponse represents a response from a kafka broker to a describe config request.
 type DescribeConfigsResponse struct {
 	// The amount of time that the broker throttled the request.
-	//
-	// This field will be zero if the kafka broker did no support the
-	// DescribeConfigs API in version 2 or above.
 	Throttle time.Duration
 
 	// Resources
@@ -55,11 +52,8 @@ type DescribeConfigResponseResource struct {
 	// Resource Name
 	ResourceName string
 
-	// ErrorCode
-	ErrorCode int16
-
-	// ErrorMessage
-	ErrorMessage string
+	// Error
+	Error error
 
 	// ConfigEntries
 	ConfigEntries []DescribeConfigResponseConfigEntry
@@ -71,6 +65,7 @@ type DescribeConfigResponseConfigEntry struct {
 	ConfigValue         string
 	ReadOnly            bool
 	IsDefault           bool
+	ConfigSource        int8
 	IsSensitive         bool
 	ConfigSynonyms      []DescribeConfigResponseConfigSynonym
 	ConfigType          int8
@@ -90,14 +85,10 @@ func (c *Client) DescribeConfigs(ctx context.Context, req *DescribeConfigsReques
 	resources := make([]describeconfigs.RequestResource, len(req.Resources))
 
 	for i, t := range req.Resources {
-		configNames := make([]string, len(t.ConfigNames))
-		for _, v := range t.ConfigNames {
-			configNames = append(configNames, v)
-		}
 		resources[i] = describeconfigs.RequestResource{
 			ResourceType: t.ResourceType,
 			ResourceName: t.ResourceName,
-			ConfigNames:  configNames,
+			ConfigNames:  t.ConfigNames,
 		}
 	}
 
@@ -117,40 +108,39 @@ func (c *Client) DescribeConfigs(ctx context.Context, req *DescribeConfigsReques
 		Resources: make([]DescribeConfigResponseResource, len(res.Resources)),
 	}
 
-	for _, t := range res.Resources {
+	for i, t := range res.Resources {
 
 		configEntries := make([]DescribeConfigResponseConfigEntry, len(t.ConfigEntries))
-		for _, v := range t.ConfigEntries {
+		for j, v := range t.ConfigEntries {
 
 			configSynonyms := make([]DescribeConfigResponseConfigSynonym, len(v.ConfigSynonyms))
-			for _, cs := range v.ConfigSynonyms {
-				configSynonyms = append(configSynonyms, DescribeConfigResponseConfigSynonym{
+			for k, cs := range v.ConfigSynonyms {
+				configSynonyms[k] = DescribeConfigResponseConfigSynonym{
 					ConfigName:   cs.ConfigName,
 					ConfigValue:  cs.ConfigValue,
 					ConfigSource: cs.ConfigSource,
-				})
+				}
 			}
 
-			configEntries = append(configEntries, DescribeConfigResponseConfigEntry{
+			configEntries[j] = DescribeConfigResponseConfigEntry{
 				ConfigName:          v.ConfigName,
 				ConfigValue:         v.ConfigValue,
 				ReadOnly:            v.ReadOnly,
+				ConfigSource:        v.ConfigSource,
 				IsDefault:           v.IsDefault,
 				IsSensitive:         v.IsSensitive,
 				ConfigSynonyms:      configSynonyms,
 				ConfigType:          v.ConfigType,
 				ConfigDocumentation: v.ConfigDocumentation,
-			})
+			}
 		}
 
-		resource := DescribeConfigResponseResource{
+		ret.Resources[i] = DescribeConfigResponseResource{
 			ResourceType:  t.ResourceType,
 			ResourceName:  t.ResourceName,
-			ErrorCode:     t.ErrorCode,
-			ErrorMessage:  t.ErrorMessage,
+			Error:         makeError(t.ErrorCode, t.ErrorMessage),
 			ConfigEntries: configEntries,
 		}
-		ret.Resources = append(ret.Resources, resource)
 	}
 
 	return ret, nil

@@ -14,7 +14,7 @@ type AlterConfigsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	// List of resources to update
+	// List of resources to update.
 	Resources []AlterConfigRequestResource
 
 	// When set to true, topics are not created but the configuration is
@@ -29,7 +29,7 @@ type AlterConfigRequestResource struct {
 	// Resource Name
 	ResourceName string
 
-	// Configs is a List of configurations that need to update
+	// Configs is a list of configuration updates.
 	Configs []AlterConfigRequestConfig
 }
 
@@ -41,12 +41,9 @@ type AlterConfigRequestConfig struct {
 	Value string
 }
 
-// AlterConfigsResponse represents a response from a kafka broker to a alter config request.
+// AlterConfigsResponse represents a response from a kafka broker to an alter config request.
 type AlterConfigsResponse struct {
-	// The amount of time that the broker throttled the request.
-	//
-	// This field will be zero if the kafka broker did no support the
-	// AlterConfigs API in version 2 or above.
+	// Duration for which the request was throttled due to a quota violation.
 	Throttle time.Duration
 
 	// Mapping of topic names to errors that occurred while attempting to create
@@ -54,7 +51,13 @@ type AlterConfigsResponse struct {
 	//
 	// The errors contain the kafka error code. Programs may use the standard
 	// errors.Is function to test the error against kafka error codes.
-	Errors map[string]error
+	Errors map[AlterConfigsResponseResource]error
+}
+
+// AlterConfigsResponseResource
+type AlterConfigsResponseResource struct {
+	Type int8
+	Name string
 }
 
 // AlterConfigs sends a config altering request to a kafka broker and returns the
@@ -64,12 +67,11 @@ func (c *Client) AlterConfigs(ctx context.Context, req *AlterConfigsRequest) (*A
 
 	for i, t := range req.Resources {
 		configs := make([]alterconfigs.RequestConfig, len(t.Configs))
-		for _, v := range t.Configs {
-			config := alterconfigs.RequestConfig{
+		for j, v := range t.Configs {
+			configs[j] = alterconfigs.RequestConfig{
 				Name:  v.Name,
 				Value: v.Value,
 			}
-			configs = append(configs, config)
 		}
 		resources[i] = alterconfigs.RequestResources{
 			ResourceType: t.ResourceType,
@@ -90,11 +92,14 @@ func (c *Client) AlterConfigs(ctx context.Context, req *AlterConfigsRequest) (*A
 	res := m.(*alterconfigs.Response)
 	ret := &AlterConfigsResponse{
 		Throttle: makeDuration(res.ThrottleTimeMs),
-		Errors:   make(map[string]error, len(res.Responses)),
+		Errors:   make(map[AlterConfigsResponseResource]error, len(res.Responses)),
 	}
 
 	for _, t := range res.Responses {
-		ret.Errors[t.ResourceName] = makeError(t.ErrorCode, t.ErrorMessage)
+		ret.Errors[AlterConfigsResponseResource{
+			Type: t.ResourceType,
+			Name: t.ResourceName,
+		}] = makeError(t.ErrorCode, t.ErrorMessage)
 	}
 
 	return ret, nil

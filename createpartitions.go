@@ -23,13 +23,10 @@ type CreatePartitionsRequest struct {
 	ValidateOnly bool
 }
 
-// CreatePartitionsResponse represents a response from a kafka broker to a partitions
+// CreatePartitionsResponse represents a response from a kafka broker to a partition
 // creation request.
 type CreatePartitionsResponse struct {
 	// The amount of time that the broker throttled the request.
-	//
-	// This field will be zero if the kafka broker did no support the
-	// CreatePartitions API in version 2 or above.
 	Throttle time.Duration
 
 	// Mapping of topic names to errors that occurred while attempting to create

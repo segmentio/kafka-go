@@ -44,7 +44,8 @@ type ResponseConfigEntry struct {
 	ConfigName          string                  `kafka:"min=v0,max=v3"`
 	ConfigValue         string                  `kafka:"min=v0,max=v3,nullable"`
 	ReadOnly            bool                    `kafka:"min=v0,max=v3"`
-	IsDefault           bool                    `kafka:"min=v0,max=v3"`
+	IsDefault           bool                    `kafka:"min=v0,max=v0"`
+	ConfigSource        int8                    `kafka:"min=v1,max=v3"`
 	IsSensitive         bool                    `kafka:"min=v0,max=v3"`
 	ConfigSynonyms      []ResponseConfigSynonym `kafka:"min=v1,max=v3"`
 	ConfigType          int8                    `kafka:"min=v3,max=v3"`
