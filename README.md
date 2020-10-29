@@ -548,3 +548,38 @@ w := kafka.NewWriter(kafka.WriterConfig{
 	Dialer:   dialer,
 })
 ```
+
+#### Reading all messages within a time range
+
+```go
+startTime := time.Now().Add(-time.Hour)
+endTime := time.Now()
+batchSize := int(10e6) // 10MB
+
+r := kafka.NewReader(kafka.ReaderConfig{
+    Brokers:   []string{"localhost:9092"},
+    Topic:     "my-topic1",
+    Partition: 0,
+    MinBytes:  batchSize,
+    MaxBytes:  batchSize,
+})
+
+r.SetOffsetAt(context.Background(), startTime)
+
+for {
+    m, err := r.ReadMessage(context.Background())
+
+    if err != nil {
+        break
+    }
+    if m.Time.After(endTime) {
+        break
+    }
+    // TODO: process message
+    fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
+}
+
+if err := r.Close(); err != nil {
+    log.Fatal("failed to close reader:", err)
+}
+```
