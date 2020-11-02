@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"sync"
 	"time"
@@ -121,7 +122,7 @@ func (batch *Batch) Read(b []byte) (int, error) {
 	batch.mutex.Lock()
 	offset := batch.offset
 
-	_, _, _, err := batch.readMessage(
+	_, err := batch.readMessage(
 		func(r *bufio.Reader, size int, nbytes int) (int, error) {
 			if nbytes < 0 {
 				return size, nil
@@ -171,11 +172,10 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	msg := Message{}
 	batch.mutex.Lock()
 
-	var offset, timestamp int64
-	var headers []Header
+	var meta MetaData
 	var err error
 
-	offset, timestamp, headers, err = batch.readMessage(
+	meta, err = batch.readMessage(
 		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
 			msg.Key, remain, err = readNewBytes(r, size, nbytes)
 			return
@@ -185,11 +185,11 @@ func (batch *Batch) ReadMessage() (Message, error) {
 			return
 		},
 	)
-	for batch.conn != nil && offset < batch.conn.offset {
+	for batch.conn != nil && meta.Offset < batch.conn.offset {
 		if err != nil {
 			break
 		}
-		offset, timestamp, headers, err = batch.readMessage(
+		meta, err = batch.readMessage(
 			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
 				msg.Key, remain, err = readNewBytes(r, size, nbytes)
 				return
@@ -204,9 +204,20 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	batch.mutex.Unlock()
 	msg.Topic = batch.topic
 	msg.Partition = batch.partition
-	msg.Offset = offset
-	msg.Time = timestampToTime(timestamp)
-	msg.Headers = headers
+	msg.Offset = meta.Offset
+	msg.Time = timestampToTime(meta.Timestamp)
+	msg.Headers = meta.Headers
+	msg.Type = meta.Type
+	if msg.Type == ControlMessage {
+		var ver int16
+		var tp int16
+		var rem int = int(len(msg.Key))
+		keyReader := bufio.NewReader(bytes.NewReader(msg.Key))
+		rem, err = readInt16(keyReader, rem, &ver)
+		rem, err = readInt16(keyReader, rem, &tp)
+		msg.ControlData.Version = ver
+		msg.ControlData.Type = ControlType(tp)
+	}
 
 	return msg, err
 }
@@ -214,15 +225,15 @@ func (batch *Batch) ReadMessage() (Message, error) {
 func (batch *Batch) readMessage(
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, headers []Header, err error) {
+) (meta MetaData, err error) {
 	if err = batch.err; err != nil {
 		return
 	}
 
-	offset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
+	meta, err = batch.msgs.readMessage(batch.offset, key, val)
 	switch err {
 	case nil:
-		batch.offset = offset + 1
+		batch.offset = meta.Offset + 1
 	case errShortRead:
 		// As an "optimization" kafka truncates the returned response after
 		// producing MaxBytes, which could then cause the code to return

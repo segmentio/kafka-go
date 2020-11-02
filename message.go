@@ -23,7 +23,37 @@ type Message struct {
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
 	Time time.Time
+
+	Type        MessageType
+	ControlData ControlData
 }
+
+type MetaData struct {
+	Offset    int64
+	Timestamp int64
+	Headers   []Header
+	Type      MessageType
+}
+
+type MessageType int
+
+const (
+	NonTransactional MessageType = 0 // non transactional, data message
+	Transactional    MessageType = 1 // transactional, data message
+	ControlMessage   MessageType = 3 // transactional, control message
+)
+
+type ControlData struct {
+	Version int16
+	Type    ControlType
+}
+
+type ControlType int
+
+const (
+	AbortMessage  ControlType = 0
+	CommitMessage ControlType = 1
+)
 
 func (msg Message) message(cw *crc32Writer) message {
 	m := message{
@@ -125,9 +155,9 @@ type messageSetReader struct {
 func (r *messageSetReader) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, headers []Header, err error) {
+) (meta MetaData, err error) {
 	if r.empty {
-		return 0, 0, nil, RequestTimedOut
+		return MetaData{}, RequestTimedOut
 	}
 	switch r.version {
 	case 1:
@@ -218,7 +248,7 @@ func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, e
 func (r *messageSetReaderV1) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, headers []Header, err error) {
+) (meta MetaData, err error) {
 	for r.readerStack != nil {
 		if r.remain == 0 {
 			r.readerStack = r.parent
@@ -226,7 +256,7 @@ func (r *messageSetReaderV1) readMessage(min int64,
 		}
 
 		var attributes int8
-		if offset, attributes, timestamp, r.remain, err = readMessageHeader(r.reader, r.remain); err != nil {
+		if meta.Offset, attributes, meta.Timestamp, r.remain, err = readMessageHeader(r.reader, r.remain); err != nil {
 			return
 		}
 
@@ -270,7 +300,7 @@ func (r *messageSetReaderV1) readMessage(min int64,
 			// messages at offsets 10-13, then the container message will have
 			// offset 13 and the contained messages will be 0,1,2,3.  the base
 			// offset for the container, then is 13-3=10.
-			if offset, err = extractOffset(offset, decompressed.Bytes()); err != nil {
+			if meta.Offset, err = extractOffset(meta.Offset, decompressed.Bytes()); err != nil {
 				return
 			}
 
@@ -280,7 +310,7 @@ func (r *messageSetReaderV1) readMessage(min int64,
 				// here, no need to reserve another 4KB buffer.
 				reader: bufio.NewReaderSize(&decompressed, 0),
 				remain: decompressed.Len(),
-				base:   offset,
+				base:   meta.Offset,
 				parent: r.readerStack,
 			}
 			continue
@@ -288,12 +318,12 @@ func (r *messageSetReaderV1) readMessage(min int64,
 
 		// adjust the offset in case we're reading compressed messages.  the
 		// base will be zero otherwise.
-		offset += r.base
+		meta.Offset += r.base
 
 		// When the messages are compressed kafka may return messages at an
 		// earlier offset than the one that was requested, it's the client's
 		// responsibility to ignore those.
-		if offset < min {
+		if meta.Offset < min {
 			if r.remain, err = discardBytes(r.reader, r.remain); err != nil {
 				return
 			}
@@ -467,7 +497,7 @@ func (r *messageSetReaderV2) readHeader() (err error) {
 func (r *messageSetReaderV2) readMessage(min int64,
 	key func(*bufio.Reader, int, int) (int, error),
 	val func(*bufio.Reader, int, int) (int, error),
-) (offset int64, timestamp int64, headers []Header, err error) {
+) (meta MetaData, err error) {
 
 	if r.messageCount == 0 {
 		if r.remain == 0 {
@@ -515,6 +545,16 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		}
 	}
 
+	if r.header.controlType() == controlMessage {
+		meta.Type = ControlMessage
+	} else {
+		if r.header.transactionType() == nonTransactional {
+			meta.Type = NonTransactional
+		} else {
+			meta.Type = Transactional
+		}
+	}
+
 	var length int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &length); err != nil {
 		return
@@ -540,6 +580,7 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	if r.remain, err = key(r.reader, r.remain, int(keyLen)); err != nil {
 		return
 	}
+
 	var valueLen int64
 	if r.remain, err = readVarInt(r.reader, r.remain, &valueLen); err != nil {
 		return
@@ -554,15 +595,17 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		return
 	}
 
-	headers = make([]Header, headerCount)
+	meta.Headers = make([]Header, headerCount)
 
 	for i := 0; i < int(headerCount); i++ {
-		if err = r.readMessageHeader(&headers[i]); err != nil {
+		if err = r.readMessageHeader(&meta.Headers[i]); err != nil {
 			return
 		}
 	}
 	r.messageCount--
-	return r.header.firstOffset + offsetDelta, r.header.firstTimestamp + timestampDelta, headers, nil
+	meta.Offset = r.header.firstOffset + offsetDelta
+	meta.Timestamp = r.header.firstTimestamp + timestampDelta
+	return meta, nil
 }
 
 func (r *messageSetReaderV2) readMessageHeader(header *Header) (err error) {
