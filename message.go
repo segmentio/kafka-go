@@ -551,6 +551,10 @@ func (r *messageSetReaderV2) readMessage(min int64,
 
 	headers = make([]Header, headerCount)
 
+	if headerCount >= 0 {
+		headers = make([]Header, headerCount)
+	}
+
 	for i := 0; i < int(headerCount); i++ {
 		if err = r.readMessageHeader(&headers[i]); err != nil {
 			return
