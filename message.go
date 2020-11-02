@@ -549,8 +549,6 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		return
 	}
 
-	headers = make([]Header, headerCount)
-
 	if headerCount >= 0 {
 		headers = make([]Header, headerCount)
 	}
