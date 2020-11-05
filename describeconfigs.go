@@ -61,28 +61,44 @@ type DescribeConfigResponseResource struct {
 
 // DescribeConfigResponseConfigEntry
 type DescribeConfigResponseConfigEntry struct {
-	ConfigName          string
-	ConfigValue         string
-	ReadOnly            bool
-	IsDefault           bool
-	ConfigSource        int8
-	IsSensitive         bool
-	ConfigSynonyms      []DescribeConfigResponseConfigSynonym
-	ConfigType          int8
+	ConfigName  string
+	ConfigValue string
+	ReadOnly    bool
+
+	// Ignored if API version is greater than v0
+	IsDefault bool
+
+	// Ignored if API version is less than v1
+	ConfigSource int8
+
+	IsSensitive bool
+
+	// Ignored if API version is less than v1
+	ConfigSynonyms []DescribeConfigResponseConfigSynonym
+
+	// Ignored if API version is less than v3
+	ConfigType int8
+
+	// Ignored if API version is less than v3
 	ConfigDocumentation string
 }
 
 // DescribeConfigResponseConfigSynonym
 type DescribeConfigResponseConfigSynonym struct {
-	ConfigName   string
-	ConfigValue  string
+	// Ignored if API version is less than v1
+	ConfigName string
+
+	// Ignored if API version is less than v1
+	ConfigValue string
+
+	// Ignored if API version is less than v1
 	ConfigSource int8
 }
 
 // DescribeConfigs sends a config altering request to a kafka broker and returns the
 // response.
 func (c *Client) DescribeConfigs(ctx context.Context, req *DescribeConfigsRequest) (*DescribeConfigsResponse, error) {
-	resources := make([]describeconfigs.RequestResource, len(req.Resources))
+	resources := make([]describeconfigs.RequestResource, 0, len(req.Resources))
 
 	for i, t := range req.Resources {
 		resources[i] = describeconfigs.RequestResource{
@@ -105,15 +121,15 @@ func (c *Client) DescribeConfigs(ctx context.Context, req *DescribeConfigsReques
 	res := m.(*describeconfigs.Response)
 	ret := &DescribeConfigsResponse{
 		Throttle:  makeDuration(res.ThrottleTimeMs),
-		Resources: make([]DescribeConfigResponseResource, len(res.Resources)),
+		Resources: make([]DescribeConfigResponseResource, 0, len(res.Resources)),
 	}
 
 	for i, t := range res.Resources {
 
-		configEntries := make([]DescribeConfigResponseConfigEntry, len(t.ConfigEntries))
+		configEntries := make([]DescribeConfigResponseConfigEntry, 0, len(t.ConfigEntries))
 		for j, v := range t.ConfigEntries {
 
-			configSynonyms := make([]DescribeConfigResponseConfigSynonym, len(v.ConfigSynonyms))
+			configSynonyms := make([]DescribeConfigResponseConfigSynonym, 0, len(v.ConfigSynonyms))
 			for k, cs := range v.ConfigSynonyms {
 				configSynonyms[k] = DescribeConfigResponseConfigSynonym{
 					ConfigName:   cs.ConfigName,

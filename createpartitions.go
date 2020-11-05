@@ -40,7 +40,7 @@ type CreatePartitionsResponse struct {
 // CreatePartitions sends a partitions creation request to a kafka broker and returns the
 // response.
 func (c *Client) CreatePartitions(ctx context.Context, req *CreatePartitionsRequest) (*CreatePartitionsResponse, error) {
-	topics := make([]createpartitions.RequestTopic, len(req.Topics))
+	topics := make([]createpartitions.RequestTopic, 0, len(req.Topics))
 
 	for i, t := range req.Topics {
 		topics[i] = createpartitions.RequestTopic{
@@ -88,7 +88,7 @@ func (t *TopicPartitionsConfig) assignments() []createpartitions.RequestAssignme
 	if len(t.ReplicaAssignments) == 0 {
 		return nil
 	}
-	assignments := make([]createpartitions.RequestAssignment, len(t.ReplicaAssignments))
+	assignments := make([]createpartitions.RequestAssignment, 0, len(t.ReplicaAssignments))
 	for i, a := range t.ReplicaAssignments {
 		assignments[i] = createpartitions.RequestAssignment{
 			BrokerIDs: a.brokerIDs(),
