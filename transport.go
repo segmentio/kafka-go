@@ -1154,7 +1154,8 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	pc.SetDeadline(time.Time{})
 
 	if g.pool.sasl != nil {
-		if err := authenticateSASL(ctx, pc, g.pool.sasl); err != nil {
+		host, _, _ := net.SplitHostPort(netAddr.String())
+		if err := authenticateSASL(ctx, pc, g.pool.sasl, host); err != nil {
 			return nil, err
 		}
 	}
@@ -1219,9 +1220,13 @@ func (c *conn) roundTrip(ctx context.Context, pc *protocol.Conn, req Request) (R
 // authenticateSASL performs all of the required requests to authenticate this
 // connection.  If any step fails, this function returns with an error.  A nil
 // error indicates successful authentication.
-func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mechanism) error {
+func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mechanism, host string) error {
 	if err := saslHandshakeRoundTrip(pc, mechanism.Name()); err != nil {
 		return err
+	}
+
+	if m, ok := mechanism.(sasl.NeedsHost); ok {
+		mechanism = m.WithHost(host)
 	}
 
 	sess, state, err := mechanism.Start(ctx)
