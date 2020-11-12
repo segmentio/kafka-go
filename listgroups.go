@@ -2,7 +2,51 @@ package kafka
 
 import (
 	"bufio"
+	"context"
+	"errors"
+	"net"
+
+	"github.com/segmentio/kafka-go/protocol/listgroups"
 )
+
+type ListGroupsRequest struct {
+	// Address of the kafka broker to send the request to.
+	Addr net.Addr
+}
+
+type ListGroupsResponse struct {
+	Groups []ConsumerGroupInfo
+}
+
+type ConsumerGroupInfo struct {
+	GroupID     string
+	Coordinator int32
+}
+
+func (c *Client) ListGroups(
+	req ListGroupsRequest,
+	ctx context.Context,
+) (*ListGroupsResponse, error) {
+	protocolResp, err := c.roundTrip(ctx, req.Addr, &listgroups.Request{})
+	if err != nil {
+		return nil, err
+	}
+	apiResp, ok := protocolResp.(*listgroups.Response)
+	if !ok {
+		return nil, errors.New("Unexpected response type")
+	}
+
+	resp := &ListGroupsResponse{}
+
+	for _, apiGroupInfo := range apiResp.Groups {
+		resp.Groups = append(resp.Groups, ConsumerGroupInfo{
+			GroupID:     apiGroupInfo.GroupID,
+			Coordinator: apiGroupInfo.BrokerID,
+		})
+	}
+
+	return resp, nil
+}
 
 type listGroupsRequestV1 struct {
 }

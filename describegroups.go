@@ -1,6 +1,100 @@
 package kafka
 
-import "bufio"
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net"
+
+	"github.com/segmentio/kafka-go/protocol/describegroups"
+)
+
+type DescribeGroupRequest struct {
+	// Address of the kafka broker to send the request to.
+	Addr    net.Addr
+	GroupID string
+}
+
+type DescribeGroupResponse struct {
+	Members []MemberInfo
+}
+
+// MemberInfo represents the membership information for a single group member.
+type MemberInfo struct {
+	MemberID          string
+	ClientID          string
+	ClientHost        string
+	MemberMetadata    GroupMemberMetadata
+	MemberAssignments GroupMemberAssignmentsInfo
+}
+
+// GroupMemberMetadata stores metadata associated with a group member.
+type GroupMemberMetadata struct {
+	Version  int16
+	Topics   []string
+	UserData []byte
+}
+
+// GroupMemberAssignmentsInfo stores the topic partition assignment data for a group member.
+type GroupMemberAssignmentsInfo struct {
+	Version  int16
+	Topics   []GroupMemberTopic
+	UserData []byte
+}
+
+// GroupMemberTopic is a mapping from a topic to a list of partitions in the topic. It is used
+// to represent the topic partitions that have been assigned to a group member.
+type GroupMemberTopic struct {
+	Topic      string
+	Partitions []int32
+}
+
+func (c *Client) DescribeGroup(
+	req DescribeGroupRequest,
+	ctx context.Context,
+) (*DescribeGroupResponse, error) {
+	protocolResp, err := c.roundTrip(
+		ctx,
+		req.Addr,
+		&describegroups.Request{
+			Groups: []string{req.GroupID},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	apiResp, ok := protocolResp.(*describegroups.Response)
+	if !ok {
+		return nil, errors.New("Unexpected response type")
+	}
+
+	resp := &DescribeGroupResponse{}
+
+	for _, apiGroupInfo := range apiResp.Groups {
+		for _, member := range apiGroupInfo.Members {
+			decodedMetadata, err := decodeMemberMetadata(member.MemberMetadata)
+			if err != nil {
+				return nil, err
+			}
+			decodedAssignments, err := decodeMemberAssignments(member.MemberAssignment)
+			if err != nil {
+				return nil, err
+			}
+
+			resp.Members = append(resp.Members, MemberInfo{
+				MemberID:          member.MemberID,
+				ClientID:          member.ClientID,
+				ClientHost:        member.ClientHost,
+				MemberAssignments: decodedAssignments,
+				MemberMetadata:    decodedMetadata,
+			})
+		}
+	}
+
+	return resp, nil
+}
 
 // See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
 type describeGroupsRequestV0 struct {
@@ -172,5 +266,105 @@ func (t *describeGroupsResponseV0) readFrom(r *bufio.Reader, sz int) (remain int
 		return
 	}
 
+	return
+}
+
+// decodeMemberMetadata converts raw metadata bytes to a GroupMemberMetadata struct.
+func decodeMemberMetadata(rawMetadata []byte) (GroupMemberMetadata, error) {
+	mm := GroupMemberMetadata{}
+
+	if len(rawMetadata) == 0 {
+		return mm, nil
+	}
+
+	buf := bytes.NewBuffer(rawMetadata)
+	bufReader := bufio.NewReader(buf)
+	remain := len(rawMetadata)
+
+	var err error
+
+	if remain, err = readInt16(bufReader, remain, &mm.Version); err != nil {
+		return mm, err
+	}
+	if remain, err = readStringArray(bufReader, remain, &mm.Topics); err != nil {
+		return mm, err
+	}
+	if remain, err = readBytes(bufReader, remain, &mm.UserData); err != nil {
+		return mm, err
+	}
+
+	if remain != 0 {
+		return mm, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
+	}
+
+	return mm, nil
+}
+
+// decodeMemberAssignments converts raw assignment bytes to a GroupMemberAssignmentsInfo struct.
+func decodeMemberAssignments(rawAssignments []byte) (GroupMemberAssignmentsInfo, error) {
+	ma := GroupMemberAssignmentsInfo{}
+
+	if len(rawAssignments) == 0 {
+		return ma, nil
+	}
+
+	buf := bytes.NewBuffer(rawAssignments)
+	bufReader := bufio.NewReader(buf)
+	remain := len(rawAssignments)
+
+	var err error
+
+	if remain, err = readInt16(bufReader, remain, &ma.Version); err != nil {
+		return ma, err
+	}
+
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
+		item := GroupMemberTopic{
+			Partitions: []int32{},
+		}
+
+		if fnRemain, fnErr = readString(r, size, &item.Topic); fnErr != nil {
+			return
+		}
+
+		if fnRemain, fnErr = readInt32Array(r, fnRemain, &item.Partitions); fnErr != nil {
+			return
+		}
+
+		ma.Topics = append(ma.Topics, item)
+		return
+	}
+	if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
+		return ma, err
+	}
+
+	if remain, err = readBytes(bufReader, remain, &ma.UserData); err != nil {
+		return ma, err
+	}
+
+	if remain != 0 {
+		return ma, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
+	}
+
+	return ma, nil
+}
+
+// readInt32Array reads an array of int32s. It's adapted from the implementation of
+// readStringArray.
+func readInt32Array(r *bufio.Reader, sz int, v *[]int32) (remain int, err error) {
+	var content []int32
+	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
+		var value int32
+		if fnRemain, fnErr = readInt32(r, size, &value); fnErr != nil {
+			return
+		}
+		content = append(content, value)
+		return
+	}
+	if remain, err = readArrayWith(r, sz, fn); err != nil {
+		return
+	}
+
+	*v = content
 	return
 }
