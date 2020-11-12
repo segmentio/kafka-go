@@ -628,7 +628,6 @@ func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolS
 			return reject(err)
 		}
 		brokerID = broker.ID
-
 	case protocol.GroupMessage:
 		// Some requests are supposed to be sent to a group coordinator,
 		// look up which broker is currently the coordinator for the group

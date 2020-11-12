@@ -2,6 +2,7 @@ package listgroups
 
 import (
 	"errors"
+	"log"
 
 	"github.com/segmentio/kafka-go/protocol"
 )
@@ -17,6 +18,7 @@ type Request struct {
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.ListGroups }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
+	log.Printf("Getting id for broker %d\n", r.brokerID)
 	return cluster.Brokers[r.brokerID], nil
 }
 
@@ -30,6 +32,8 @@ func (r *Request) Split(cluster protocol.Cluster) (
 	for _, broker := range cluster.Brokers {
 		messages = append(messages, &Request{broker.ID})
 	}
+
+	log.Printf("Spliting request into %d subrequests\n", len(messages))
 
 	return nil, new(Response), nil
 }
