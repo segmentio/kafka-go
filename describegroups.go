@@ -18,7 +18,9 @@ type DescribeGroupRequest struct {
 }
 
 type DescribeGroupResponse struct {
-	Members []MemberInfo
+	GroupID    string
+	GroupState string
+	Members    []MemberInfo
 }
 
 // MemberInfo represents the membership information for a single group member.
@@ -70,27 +72,35 @@ func (c *Client) DescribeGroup(
 		return nil, errors.New("Unexpected response type")
 	}
 
-	resp := &DescribeGroupResponse{}
+	if len(apiResp.Groups) != 1 {
+		return nil, errors.New("Unexpected response size")
+	}
 
-	for _, apiGroupInfo := range apiResp.Groups {
-		for _, member := range apiGroupInfo.Members {
-			decodedMetadata, err := decodeMemberMetadata(member.MemberMetadata)
-			if err != nil {
-				return nil, err
-			}
-			decodedAssignments, err := decodeMemberAssignments(member.MemberAssignment)
-			if err != nil {
-				return nil, err
-			}
+	apiGroupInfo := apiResp.Groups[0]
 
-			resp.Members = append(resp.Members, MemberInfo{
-				MemberID:          member.MemberID,
-				ClientID:          member.ClientID,
-				ClientHost:        member.ClientHost,
-				MemberAssignments: decodedAssignments,
-				MemberMetadata:    decodedMetadata,
-			})
+	resp := &DescribeGroupResponse{
+		GroupID:    apiGroupInfo.GroupID,
+		GroupState: apiGroupInfo.GroupState,
+		Members:    []MemberInfo{},
+	}
+
+	for _, member := range apiGroupInfo.Members {
+		decodedMetadata, err := decodeMemberMetadata(member.MemberMetadata)
+		if err != nil {
+			return nil, err
 		}
+		decodedAssignments, err := decodeMemberAssignments(member.MemberAssignment)
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Members = append(resp.Members, MemberInfo{
+			MemberID:          member.MemberID,
+			ClientID:          member.ClientID,
+			ClientHost:        member.ClientHost,
+			MemberAssignments: decodedAssignments,
+			MemberMetadata:    decodedMetadata,
+		})
 	}
 
 	return resp, nil
