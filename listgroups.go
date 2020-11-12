@@ -24,8 +24,8 @@ type ConsumerGroupInfo struct {
 }
 
 func (c *Client) ListGroups(
-	req ListGroupsRequest,
 	ctx context.Context,
+	req ListGroupsRequest,
 ) (*ListGroupsResponse, error) {
 	protocolResp, err := c.roundTrip(ctx, req.Addr, &listgroups.Request{})
 	if err != nil {

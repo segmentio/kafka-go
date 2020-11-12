@@ -52,8 +52,8 @@ type GroupMemberTopic struct {
 }
 
 func (c *Client) DescribeGroup(
-	req DescribeGroupRequest,
 	ctx context.Context,
+	req DescribeGroupRequest,
 ) (*DescribeGroupResponse, error) {
 	protocolResp, err := c.roundTrip(
 		ctx,
