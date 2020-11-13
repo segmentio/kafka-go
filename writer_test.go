@@ -55,6 +55,10 @@ func TestWriter(t *testing.T) {
 			scenario: "setting RequiredAcks to None in Writer does not cause a panic",
 			function: testWriterRequiredAcksNone,
 		},
+		{
+			scenario: "writing messages to multiple topics",
+			function: testWriterMultipleTopics,
+		},
 	}
 
 	for _, test := range tests {
@@ -460,5 +464,72 @@ func testWriterSmallBatchBytes(t *testing.T) {
 			continue
 		}
 		t.Error("bad messages in partition", msgs)
+	}
+}
+
+func testWriterMultipleTopics(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	topic1 := makeTopic()
+	createTopic(t, topic1, 1)
+	defer deleteTopic(t, topic1)
+
+	offset1, err := readOffset(topic1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	topic2 := makeTopic()
+	createTopic(t, topic2, 1)
+	defer deleteTopic(t, topic2)
+
+	offset2, err := readOffset(topic2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newTestWriter(WriterConfig{
+		Balancer: &RoundRobin{},
+	})
+	defer w.Close()
+
+	msg1 := Message{Topic: topic1, Value: []byte("Hello")}
+	msg2 := Message{Topic: topic2, Value: []byte("World")}
+
+	if err := w.WriteMessages(ctx, msg1, msg2); err != nil {
+		t.Error(err)
+		return
+	}
+	ws := w.Stats()
+	if ws.Writes != 2 {
+		t.Error("didn't batch messages; Writes: ", ws.Writes)
+		return
+	}
+
+	msgs1, err := readPartition(topic1, 0, offset1)
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+	if len(msgs1) != 1 {
+		t.Error("bad messages in partition", msgs1)
+		return
+	}
+	if string(msgs1[0].Value) != "Hello" {
+		t.Error("bad message in partition", msgs1)
+	}
+
+	msgs2, err := readPartition(topic2, 0, offset2)
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+	if len(msgs2) != 1 {
+		t.Error("bad messages in partition", msgs2)
+		return
+	}
+	if string(msgs2[0].Value) != "Hello" {
+		t.Error("bad message in partition", msgs2)
 	}
 }
