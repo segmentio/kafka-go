@@ -1,4 +1,4 @@
-package incrementalalterconfigs
+package createpartitions
 
 import "github.com/segmentio/kafka-go/protocol"
 

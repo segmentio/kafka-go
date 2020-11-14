@@ -1,6 +1,20 @@
 package incrementalalterconfigs
 
-import "github.com/segmentio/kafka-go/protocol"
+import (
+	"strconv"
+
+	"github.com/segmentio/kafka-go/protocol"
+)
+
+const (
+	ResourceTypeBroker int8 = 4
+	ResourceTypeTopic  int8 = 2
+
+	OpTypeSet      int8 = 0
+	OpTypeDelete   int8 = 1
+	OpTypeAppend   int8 = 2
+	OpTypeSubtract int8 = 3
+)
 
 func init() {
 	protocol.Register(&Request{}, &Response{})
@@ -26,6 +40,18 @@ type RequestConfig struct {
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.IncrementalAlterConfigs }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
+	// TODO: Support updating multiple broker configs in single request?
+	for _, resource := range r.Resources {
+		if resource.ResourceType == ResourceTypeBroker {
+			brokerID, err := strconv.Atoi(resource.ResourceName)
+			if err != nil {
+				return protocol.Broker{}, err
+			}
+
+			return cluster.Brokers[int32(brokerID)], nil
+		}
+	}
+
 	return cluster.Brokers[cluster.Controller], nil
 }
 
