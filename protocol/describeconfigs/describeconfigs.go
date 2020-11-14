@@ -2,6 +2,11 @@ package describeconfigs
 
 import "github.com/segmentio/kafka-go/protocol"
 
+const (
+	ResourceTypeBroker int8 = 4
+	ResourceTypeTopic  int8 = 2
+)
+
 func init() {
 	protocol.Register(&Request{}, &Response{})
 }
@@ -14,7 +19,7 @@ type Request struct {
 
 type RequestResource struct {
 	ResourceType int8     `kafka:"min=v0,max=v3"`
-	ResourceName int16    `kafka:"min=v0,max=v3"`
+	ResourceName string   `kafka:"min=v0,max=v3"`
 	ConfigNames  []string `kafka:"min=v0,max=v3"`
 }
 
@@ -25,7 +30,8 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 }
 
 type Response struct {
-	ThrottleTimeMs int32 `kafka:"min=v0,max=v3"`
+	ThrottleTimeMs int32              `kafka:"min=v0,max=v3"`
+	Resources      []ResponseResource `kafka:"min=v0,max=v3"`
 }
 
 type ResponseResource struct {
@@ -51,9 +57,9 @@ type ResponseConfigEntry struct {
 }
 
 type ResponseConfigSynonym struct {
-	ConfigName   string `kafka:"min=v0,max=v3"`
-	ConfigValue  string `kafka:"min=v0,max=v3,nullable"`
-	ConfigSource int8   `kafka:"min=v0,max=v3"`
+	ConfigName   string `kafka:"min=v1,max=v3"`
+	ConfigValue  string `kafka:"min=v1,max=v3,nullable"`
+	ConfigSource int8   `kafka:"min=v1,max=v3"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.DescribeConfigs }

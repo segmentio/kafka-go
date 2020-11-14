@@ -4,43 +4,46 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 
 	"github.com/segmentio/kafka-go/protocol/describegroups"
 )
 
-type DescribeGroupRequest struct {
+type DescribeGroupsRequest struct {
 	// Address of the kafka broker to send the request to.
-	Addr    net.Addr
-	GroupID string
+	Addr     net.Addr
+	GroupIDs []string
 }
 
-type DescribeGroupResponse struct {
+type DescribeGroupsResponse struct {
+	Groups []DescribeGroupsResponseGroup
+}
+
+type DescribeGroupsResponseGroup struct {
 	GroupID    string
 	GroupState string
-	Members    []MemberInfo
+	Members    []DescribeGroupsResponseMember
 }
 
 // MemberInfo represents the membership information for a single group member.
-type MemberInfo struct {
+type DescribeGroupsResponseMember struct {
 	MemberID          string
 	ClientID          string
 	ClientHost        string
-	MemberMetadata    GroupMemberMetadata
-	MemberAssignments GroupMemberAssignmentsInfo
+	MemberMetadata    DescribeGroupsResponseMemberMetadata
+	MemberAssignments DescribeGroupsResponseAssignments
 }
 
 // GroupMemberMetadata stores metadata associated with a group member.
-type GroupMemberMetadata struct {
+type DescribeGroupsResponseMemberMetadata struct {
 	Version  int16
 	Topics   []string
 	UserData []byte
 }
 
 // GroupMemberAssignmentsInfo stores the topic partition assignment data for a group member.
-type GroupMemberAssignmentsInfo struct {
+type DescribeGroupsResponseAssignments struct {
 	Version  int16
 	Topics   []GroupMemberTopic
 	UserData []byte
@@ -55,52 +58,49 @@ type GroupMemberTopic struct {
 
 func (c *Client) DescribeGroup(
 	ctx context.Context,
-	req DescribeGroupRequest,
-) (*DescribeGroupResponse, error) {
+	req DescribeGroupsRequest,
+) (*DescribeGroupsResponse, error) {
 	protocolResp, err := c.roundTrip(
 		ctx,
 		req.Addr,
 		&describegroups.Request{
-			Groups: []string{req.GroupID},
+			Groups: req.GroupIDs,
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
-	apiResp, ok := protocolResp.(*describegroups.Response)
-	if !ok {
-		return nil, errors.New("Unexpected response type")
+	apiResp := protocolResp.(*describegroups.Response)
+	resp := &DescribeGroupsResponse{
+		Groups: []DescribeGroupsResponseGroup{},
 	}
 
-	if len(apiResp.Groups) != 1 {
-		return nil, errors.New("Unexpected response size")
-	}
-
-	apiGroupInfo := apiResp.Groups[0]
-
-	resp := &DescribeGroupResponse{
-		GroupID:    apiGroupInfo.GroupID,
-		GroupState: apiGroupInfo.GroupState,
-		Members:    []MemberInfo{},
-	}
-
-	for _, member := range apiGroupInfo.Members {
-		decodedMetadata, err := decodeMemberMetadata(member.MemberMetadata)
-		if err != nil {
-			return nil, err
-		}
-		decodedAssignments, err := decodeMemberAssignments(member.MemberAssignment)
-		if err != nil {
-			return nil, err
+	for _, apiGroup := range apiResp.Groups {
+		group := DescribeGroupsResponseGroup{
+			GroupID:    apiGroup.GroupID,
+			GroupState: apiGroup.GroupState,
+			Members:    []DescribeGroupsResponseMember{},
 		}
 
-		resp.Members = append(resp.Members, MemberInfo{
-			MemberID:          member.MemberID,
-			ClientID:          member.ClientID,
-			ClientHost:        member.ClientHost,
-			MemberAssignments: decodedAssignments,
-			MemberMetadata:    decodedMetadata,
-		})
+		for _, member := range apiGroup.Members {
+			decodedMetadata, err := decodeMemberMetadata(member.MemberMetadata)
+			if err != nil {
+				return nil, err
+			}
+			decodedAssignments, err := decodeMemberAssignments(member.MemberAssignment)
+			if err != nil {
+				return nil, err
+			}
+
+			group.Members = append(group.Members, DescribeGroupsResponseMember{
+				MemberID:          member.MemberID,
+				ClientID:          member.ClientID,
+				ClientHost:        member.ClientHost,
+				MemberAssignments: decodedAssignments,
+				MemberMetadata:    decodedMetadata,
+			})
+		}
+		resp.Groups = append(resp.Groups, group)
 	}
 
 	return resp, nil
@@ -279,9 +279,10 @@ func (t *describeGroupsResponseV0) readFrom(r *bufio.Reader, sz int) (remain int
 	return
 }
 
-// decodeMemberMetadata converts raw metadata bytes to a GroupMemberMetadata struct.
-func decodeMemberMetadata(rawMetadata []byte) (GroupMemberMetadata, error) {
-	mm := GroupMemberMetadata{}
+// decodeMemberMetadata converts raw metadata bytes to a
+// DescribeGroupsResponseMemberMetadata struct.
+func decodeMemberMetadata(rawMetadata []byte) (DescribeGroupsResponseMemberMetadata, error) {
+	mm := DescribeGroupsResponseMemberMetadata{}
 
 	if len(rawMetadata) == 0 {
 		return mm, nil
@@ -310,9 +311,10 @@ func decodeMemberMetadata(rawMetadata []byte) (GroupMemberMetadata, error) {
 	return mm, nil
 }
 
-// decodeMemberAssignments converts raw assignment bytes to a GroupMemberAssignmentsInfo struct.
-func decodeMemberAssignments(rawAssignments []byte) (GroupMemberAssignmentsInfo, error) {
-	ma := GroupMemberAssignmentsInfo{}
+// decodeMemberAssignments converts raw assignment bytes to a DescribeGroupsResponseAssignments
+// struct.
+func decodeMemberAssignments(rawAssignments []byte) (DescribeGroupsResponseAssignments, error) {
+	ma := DescribeGroupsResponseAssignments{}
 
 	if len(rawAssignments) == 0 {
 		return ma, nil

@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"io"
+	"log"
 )
 
 func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID string, msg Message, err error) {
@@ -74,6 +75,14 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	if apiVersion < minVersion || apiVersion > maxVersion {
 		return fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 	}
+
+	log.Printf(
+		"Making request with apiKey %+v, apiVersion %d, minVersion %d, msg %+v\n",
+		apiKey,
+		apiVersion,
+		minVersion,
+		msg,
+	)
 
 	r := &t.requests[apiVersion-minVersion]
 	v := valueOf(msg)

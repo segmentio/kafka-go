@@ -16,8 +16,28 @@ type Request struct {
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.DescribeGroups }
 
 func (r *Request) Group() string {
-	// TODO: Handle other groups too (via splitter).
 	return r.Groups[0]
+}
+
+func (r *Request) Split(cluster protocol.Cluster) (
+	[]protocol.Message,
+	protocol.Merger,
+	error,
+) {
+	messages := []protocol.Message{}
+
+	// Split requests by group since they'll need to go to different coordinators.
+	for _, group := range r.Groups {
+		messages = append(
+			messages,
+			&Request{
+				Groups:                      []string{group},
+				IncludeAuthorizedOperations: r.IncludeAuthorizedOperations,
+			},
+		)
+	}
+
+	return messages, new(Response), nil
 }
 
 type Response struct {
@@ -45,3 +65,20 @@ type ResponseGroupMember struct {
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.DescribeGroups }
+
+func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
+	protocol.Message,
+	error,
+) {
+	response := &Response{}
+
+	for _, result := range results {
+		subResp := result.(*Response)
+
+		for _, group := range subResp.Groups {
+			response.Groups = append(response.Groups, group)
+		}
+	}
+
+	return response, nil
+}

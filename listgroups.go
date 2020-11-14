@@ -3,7 +3,6 @@ package kafka
 import (
 	"bufio"
 	"context"
-	"errors"
 	"net"
 
 	"github.com/segmentio/kafka-go/protocol/listgroups"
@@ -15,10 +14,10 @@ type ListGroupsRequest struct {
 }
 
 type ListGroupsResponse struct {
-	Groups []ConsumerGroupInfo
+	Groups []ListGroupsResponseGroup
 }
 
-type ConsumerGroupInfo struct {
+type ListGroupsResponseGroup struct {
 	GroupID     string
 	Coordinator int32
 }
@@ -31,15 +30,11 @@ func (c *Client) ListGroups(
 	if err != nil {
 		return nil, err
 	}
-	apiResp, ok := protocolResp.(*listgroups.Response)
-	if !ok {
-		return nil, errors.New("Unexpected response type")
-	}
-
+	apiResp := protocolResp.(*listgroups.Response)
 	resp := &ListGroupsResponse{}
 
 	for _, apiGroupInfo := range apiResp.Groups {
-		resp.Groups = append(resp.Groups, ConsumerGroupInfo{
+		resp.Groups = append(resp.Groups, ListGroupsResponseGroup{
 			GroupID:     apiGroupInfo.GroupID,
 			Coordinator: apiGroupInfo.BrokerID,
 		})

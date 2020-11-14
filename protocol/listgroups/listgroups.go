@@ -1,7 +1,6 @@
 package listgroups
 
 import (
-	"errors"
 	"log"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -12,6 +11,7 @@ func init() {
 }
 
 type Request struct {
+	_        struct{} `kafka:"min=v0,max=v2"`
 	brokerID int32
 }
 
@@ -30,12 +30,10 @@ func (r *Request) Split(cluster protocol.Cluster) (
 	messages := []protocol.Message{}
 
 	for _, broker := range cluster.Brokers {
-		messages = append(messages, &Request{broker.ID})
+		messages = append(messages, &Request{brokerID: broker.ID})
 	}
 
-	log.Printf("Spliting request into %d subrequests\n", len(messages))
-
-	return nil, new(Response), nil
+	return messages, new(Response), nil
 }
 
 type Response struct {
@@ -61,11 +59,7 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
 	response := &Response{}
 
 	for r, result := range results {
-		brokerResp, ok := result.(*Response)
-		if !ok {
-			return nil, errors.New("Unexpected response type")
-		}
-
+		brokerResp := result.(*Response)
 		respGroups := []ResponseGroup{}
 
 		for _, brokerResp := range brokerResp.Groups {

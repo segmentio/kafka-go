@@ -1137,6 +1137,7 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 		return nil, err
 	}
 	res := r.(*apiversions.Response)
+
 	ver := make(map[protocol.ApiKey]int16, len(res.ApiKeys))
 
 	if res.ErrorCode != 0 {
