@@ -14,6 +14,7 @@ type CreatePartitionsRequest struct {
 
 	Topic         string
 	NewPartitions []CreatePartitionsRequestPartition
+	TotalCount    int32
 }
 
 type CreatePartitionsRequestPartition struct {
@@ -40,7 +41,7 @@ func (c *Client) CreatePartitions(
 		Topics: []createpartitions.RequestTopic{
 			{
 				Name:        req.Topic,
-				Count:       int32(len(req.NewPartitions)) + 3,
+				Count:       req.TotalCount,
 				Assignments: assignments,
 			},
 		},
