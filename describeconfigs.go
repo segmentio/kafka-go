@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/segmentio/kafka-go/protocol/describeconfigs"
 )
@@ -13,8 +14,9 @@ type DescribeConfigsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	Topics  []string
-	Brokers []int
+	Topics          []string
+	Brokers         []int
+	IncludeDefaults bool
 }
 
 type DescribeConfigsResponse struct {
@@ -73,13 +75,24 @@ func (c *Client) DescribeConfigs(
 	resp := &DescribeConfigsResponse{}
 
 	for _, resource := range apiResp.Resources {
-		configs := map[string]string{}
-		for _, entry := range resource.ConfigEntries {
-			configs[entry.ConfigName] = entry.ConfigValue
-		}
-
 		switch resource.ResourceType {
 		case describeconfigs.ResourceTypeBroker:
+			configs := map[string]string{}
+			for _, entry := range resource.ConfigEntries {
+				if resource.ResourceName == "2" && strings.Contains(entry.ConfigName, "throttled") {
+					fmt.Printf("Entry: %+v\n", entry)
+				}
+
+				if !req.IncludeDefaults && (entry.IsDefault ||
+					entry.ConfigSource == describeconfigs.ConfigSourceDefaultConfig ||
+					entry.ConfigSource == describeconfigs.ConfigSourceStaticBrokerConfig ||
+					entry.ConfigSource == describeconfigs.ConfigSourceDynamicDefaultBrokerConfig) {
+					continue
+				}
+
+				configs[entry.ConfigName] = entry.ConfigValue
+			}
+
 			brokerID, err := strconv.Atoi(resource.ResourceName)
 			if err != nil {
 				return nil, err
@@ -90,6 +103,17 @@ func (c *Client) DescribeConfigs(
 				Configs:  configs,
 			})
 		case describeconfigs.ResourceTypeTopic:
+			configs := map[string]string{}
+			for _, entry := range resource.ConfigEntries {
+				if !req.IncludeDefaults && (entry.IsDefault ||
+					entry.ConfigSource == describeconfigs.ConfigSourceDefaultConfig ||
+					entry.ConfigSource == describeconfigs.ConfigSourceStaticBrokerConfig) {
+					continue
+				}
+
+				configs[entry.ConfigName] = entry.ConfigValue
+			}
+
 			resp.Topics = append(resp.Topics, DescribeConfigsResponseTopic{
 				Topic:   resource.ResourceName,
 				Configs: configs,

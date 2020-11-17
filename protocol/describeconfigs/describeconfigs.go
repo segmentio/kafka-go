@@ -9,6 +9,14 @@ import (
 const (
 	ResourceTypeBroker int8 = 4
 	ResourceTypeTopic  int8 = 2
+
+	ConfigSourceUnknown                    int8 = 0
+	ConfigSourceTopicConfig                int8 = 1
+	ConfigSourceDynamicBrokerConfig        int8 = 2
+	ConfigSourceDynamicDefaultBrokerConfig int8 = 3
+	ConfigSourceStaticBrokerConfig         int8 = 4
+	ConfigSourceDefaultConfig              int8 = 5
+	ConfigSourceDynamicBrokerLoggerConfig  int8 = 6
 )
 
 func init() {
@@ -56,7 +64,7 @@ func (r *Request) Split(cluster protocol.Cluster) (
 	}
 
 	for _, resource := range r.Resources {
-		// Split out broker requests into separate brokers
+		// Split out broker requests to separate brokers
 		if resource.ResourceType == ResourceTypeBroker {
 			messages = append(messages, &Request{
 				Resources: []RequestResource{resource},
@@ -93,7 +101,8 @@ type ResponseConfigEntry struct {
 	ConfigName   string `kafka:"min=v0,max=v3"`
 	ConfigValue  string `kafka:"min=v0,max=v3,nullable"`
 	ReadOnly     bool   `kafka:"min=v0,max=v3"`
-	ConfigSource int8   `kafka:"min=v0,max=v3"`
+	IsDefault    bool   `kafka:"min=v0,max=v0"`
+	ConfigSource int8   `kafka:"min=v1,max=v3"`
 	IsSensitive  bool   `kafka:"min=v0,max=v3"`
 
 	ConfigSynonyms []ResponseConfigSynonym `kafka:"min=v1,max=v3"`

@@ -40,10 +40,11 @@ func (c *Client) CreatePartitions(
 		Topics: []createpartitions.RequestTopic{
 			{
 				Name:        req.Topic,
-				Count:       int32(len(req.NewPartitions)),
+				Count:       int32(len(req.NewPartitions)) + 3,
 				Assignments: assignments,
 			},
 		},
+		TimeoutMs: 5000,
 	}
 
 	protocolResp, err := c.roundTrip(
@@ -56,6 +57,7 @@ func (c *Client) CreatePartitions(
 	}
 	apiResp := protocolResp.(*createpartitions.Response)
 
+	fmt.Printf("Response: %+v", *apiResp)
 	if len(apiResp.Results) == 0 {
 		return nil, fmt.Errorf("Empty results")
 	}

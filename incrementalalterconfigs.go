@@ -58,7 +58,6 @@ func (c *Client) AlterBrokerConfigs(
 		return nil, err
 	}
 	apiResp := protocolResp.(*incrementalalterconfigs.Response)
-
 	if len(apiResp.Responses) == 0 {
 		return nil, fmt.Errorf("Empty response")
 	}
@@ -77,7 +76,7 @@ func (c *Client) AlterTopicConfigs(
 	apiReq := &incrementalalterconfigs.Request{
 		Resources: []incrementalalterconfigs.RequestResource{
 			{
-				ResourceType: incrementalalterconfigs.ResourceTypeBroker,
+				ResourceType: incrementalalterconfigs.ResourceTypeTopic,
 				ResourceName: req.Topic,
 				Configs:      configs,
 			},

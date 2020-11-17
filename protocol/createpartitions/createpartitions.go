@@ -1,6 +1,8 @@
 package createpartitions
 
-import "github.com/segmentio/kafka-go/protocol"
+import (
+	"github.com/segmentio/kafka-go/protocol"
+)
 
 func init() {
 	protocol.Register(&Request{}, &Response{})
@@ -29,7 +31,8 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 }
 
 type Response struct {
-	Results []ResponseResult `kafka:"min=v0,max=v1"`
+	ThrottleTimeMs int32            `kafka:"min=v0,max=v1"`
+	Results        []ResponseResult `kafka:"min=v0,max=v1"`
 }
 
 type ResponseResult struct {
