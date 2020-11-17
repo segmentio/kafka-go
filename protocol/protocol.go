@@ -155,11 +155,26 @@ var apiNames = [numApis]string{
 	OffsetDelete:                "OffsetDelete",
 }
 
+// TagBuffer stores optional tagged fields associated with a struct. See
+// https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
+// for details.
+type TagBuffer struct {
+	Fields []TaggedField
+}
+
+// TaggedField contains the details of a single field. For now, the contents are just
+// stored as raw bytes; in the future, we can encode from/decode to higher-level structs.
+type TaggedField struct {
+	TagID    int
+	Contents []byte
+}
+
 type messageType struct {
-	version int16
-	gotype  reflect.Type
-	decode  decodeFunc
-	encode  encodeFunc
+	version  int16
+	flexible bool
+	gotype   reflect.Type
+	decode   decodeFunc
+	encode   encodeFunc
 }
 
 func (t *messageType) new() Message {
@@ -229,8 +244,8 @@ func makeTypes(t reflect.Type) []messageType {
 		types = append(types, messageType{
 			version: v,
 			gotype:  t,
-			decode:  decodeFuncOf(t, v, structTag{}),
-			encode:  encodeFuncOf(t, v, structTag{}),
+			decode:  decodeFuncOf(t, v, false, structTag{}),
+			encode:  encodeFuncOf(t, v, false, structTag{}),
 		})
 	}
 

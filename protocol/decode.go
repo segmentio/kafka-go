@@ -273,6 +273,23 @@ func (d *decoder) readVarInt() int64 {
 	return 0
 }
 
+func (d *decoder) readTagBuffer() TagBuffer {
+	t := TagBuffer{}
+
+	numFields := int(d.readVarInt())
+	for i := 0; i < numFields; i++ {
+		tagID := d.readVarInt()
+		contentLen := d.readVarInt()
+		contents := d.read(int(contentLen))
+		t.Fields = append(t.Fields, TaggedField{
+			TagID:    int(tagID),
+			Contents: contents,
+		})
+	}
+
+	return t
+}
+
 type decodeFunc func(*decoder, value)
 
 var (
@@ -282,7 +299,7 @@ var (
 	readerFrom = reflect.TypeOf((*io.ReaderFrom)(nil)).Elem()
 )
 
-func decodeFuncOf(typ reflect.Type, version int16, tag structTag) decodeFunc {
+func decodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag) decodeFunc {
 	if reflect.PtrTo(typ).Implements(readerFrom) {
 		return readerDecodeFuncOf(typ)
 	}
@@ -300,12 +317,12 @@ func decodeFuncOf(typ reflect.Type, version int16, tag structTag) decodeFunc {
 	case reflect.String:
 		return stringDecodeFuncOf(tag)
 	case reflect.Struct:
-		return structDecodeFuncOf(typ, version)
+		return structDecodeFuncOf(typ, version, flexible)
 	case reflect.Slice:
 		if typ.Elem().Kind() == reflect.Uint8 { // []byte
 			return bytesDecodeFuncOf(tag)
 		}
-		return arrayDecodeFuncOf(typ, version, tag)
+		return arrayDecodeFuncOf(typ, version, flexible, tag)
 	default:
 		panic("unsupported type: " + typ.String())
 	}
@@ -319,7 +336,7 @@ func bytesDecodeFuncOf(tag structTag) decodeFunc {
 	return (*decoder).decodeBytes
 }
 
-func structDecodeFuncOf(typ reflect.Type, version int16) decodeFunc {
+func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFunc {
 	type field struct {
 		decode decodeFunc
 		index  index
@@ -330,7 +347,7 @@ func structDecodeFuncOf(typ reflect.Type, version int16) decodeFunc {
 		forEachStructTag(tag, func(tag structTag) bool {
 			if tag.MinVersion <= version && version <= tag.MaxVersion {
 				fields = append(fields, field{
-					decode: decodeFuncOf(typ, version, tag),
+					decode: decodeFuncOf(typ, version, flexible, tag),
 					index:  index,
 				})
 				return false
@@ -347,9 +364,9 @@ func structDecodeFuncOf(typ reflect.Type, version int16) decodeFunc {
 	}
 }
 
-func arrayDecodeFuncOf(typ reflect.Type, version int16, tag structTag) decodeFunc {
+func arrayDecodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag) decodeFunc {
 	elemType := typ.Elem()
-	elemFunc := decodeFuncOf(elemType, version, tag)
+	elemFunc := decodeFuncOf(elemType, version, flexible, tag)
 	return func(d *decoder, v value) { d.decodeArray(v, elemType, elemFunc) }
 }
 
@@ -381,13 +398,13 @@ func readInt64(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
 }
 
-func Unmarshal(data []byte, version int16, value interface{}) error {
+func Unmarshal(data []byte, version int16, flexible bool, value interface{}) error {
 	typ := elemTypeOf(value)
 	cache, _ := unmarshalers.Load().(map[_type]decodeFunc)
 	decode := cache[typ]
 
 	if decode == nil {
-		decode = decodeFuncOf(reflect.TypeOf(value).Elem(), version, structTag{
+		decode = decodeFuncOf(reflect.TypeOf(value).Elem(), version, flexible, structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
 			Compact:    true,

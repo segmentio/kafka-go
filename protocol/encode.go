@@ -305,6 +305,15 @@ func (e *encoder) writeVarInt(i int64) {
 	e.Write(b[:n])
 }
 
+func (e *encoder) writeTagBuffer(t TagBuffer) {
+	e.writeVarInt(int64(len(t.Fields)))
+	for _, field := range t.Fields {
+		e.writeVarInt(int64(field.TagID))
+		e.writeVarInt(int64(len(field.Contents)))
+		e.Write(field.Contents)
+	}
+}
+
 type encodeFunc func(*encoder, value)
 
 var (
@@ -316,7 +325,7 @@ var (
 	writerTo = reflect.TypeOf((*io.WriterTo)(nil)).Elem()
 )
 
-func encodeFuncOf(typ reflect.Type, version int16, tag structTag) encodeFunc {
+func encodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag) encodeFunc {
 	if reflect.PtrTo(typ).Implements(writerTo) {
 		return writerEncodeFuncOf(typ)
 	}
@@ -334,12 +343,12 @@ func encodeFuncOf(typ reflect.Type, version int16, tag structTag) encodeFunc {
 	case reflect.String:
 		return stringEncodeFuncOf(tag)
 	case reflect.Struct:
-		return structEncodeFuncOf(typ, version)
+		return structEncodeFuncOf(typ, version, flexible)
 	case reflect.Slice:
 		if typ.Elem().Kind() == reflect.Uint8 { // []byte
 			return bytesEncodeFuncOf(tag)
 		}
-		return arrayEncodeFuncOf(typ, version, tag)
+		return arrayEncodeFuncOf(typ, version, flexible, tag)
 	default:
 		panic("unsupported type: " + typ.String())
 	}
@@ -363,7 +372,7 @@ func bytesEncodeFuncOf(tag structTag) encodeFunc {
 	}
 }
 
-func structEncodeFuncOf(typ reflect.Type, version int16) encodeFunc {
+func structEncodeFuncOf(typ reflect.Type, version int16, flexible bool) encodeFunc {
 	type field struct {
 		encode encodeFunc
 		index  index
@@ -375,7 +384,7 @@ func structEncodeFuncOf(typ reflect.Type, version int16) encodeFunc {
 			forEachStructTag(tag, func(tag structTag) bool {
 				if tag.MinVersion <= version && version <= tag.MaxVersion {
 					fields = append(fields, field{
-						encode: encodeFuncOf(typ, version, tag),
+						encode: encodeFuncOf(typ, version, flexible, tag),
 						index:  index,
 					})
 					return false
@@ -393,9 +402,9 @@ func structEncodeFuncOf(typ reflect.Type, version int16) encodeFunc {
 	}
 }
 
-func arrayEncodeFuncOf(typ reflect.Type, version int16, tag structTag) encodeFunc {
+func arrayEncodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag) encodeFunc {
 	elemType := typ.Elem()
-	elemFunc := encodeFuncOf(elemType, version, tag)
+	elemFunc := encodeFuncOf(elemType, version, flexible, tag)
 	switch {
 	case tag.Nullable:
 		return func(e *encoder, v value) { e.encodeNullArray(v, elemType, elemFunc) }
@@ -436,13 +445,13 @@ func writeInt64(b []byte, i int64) {
 	binary.BigEndian.PutUint64(b, uint64(i))
 }
 
-func Marshal(version int16, value interface{}) ([]byte, error) {
+func Marshal(version int16, flexible bool, value interface{}) ([]byte, error) {
 	typ := typeOf(value)
 	cache, _ := marshalers.Load().(map[_type]encodeFunc)
 	encode := cache[typ]
 
 	if encode == nil {
-		encode = encodeFuncOf(reflect.TypeOf(value), version, structTag{
+		encode = encodeFuncOf(reflect.TypeOf(value), version, flexible, structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
 			Compact:    true,

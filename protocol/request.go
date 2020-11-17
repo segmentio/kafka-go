@@ -6,7 +6,13 @@ import (
 	"log"
 )
 
-func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID string, msg Message, err error) {
+func ReadRequest(r io.Reader) (
+	apiVersion int16,
+	correlationID int32,
+	clientID string,
+	msg Message,
+	err error,
+) {
 	d := &decoder{reader: r, remain: 4}
 	size := d.readInt32()
 
@@ -41,7 +47,13 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		err = fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
+		err = fmt.Errorf(
+			"unsupported %s version: v%d not in range v%d-v%d",
+			apiKey,
+			apiVersion,
+			minVersion,
+			maxVersion,
+		)
 		return
 	}
 
@@ -57,7 +69,13 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	return
 }
 
-func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID string, msg Message) error {
+func WriteRequest(
+	w io.Writer,
+	apiVersion int16,
+	correlationID int32,
+	clientID string,
+	msg Message,
+) error {
 	apiKey := msg.ApiKey()
 
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
@@ -73,7 +91,13 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		return fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
+		return fmt.Errorf(
+			"unsupported %s version: v%d not in range v%d-v%d",
+			apiKey,
+			apiVersion,
+			minVersion,
+			maxVersion,
+		)
 	}
 
 	log.Printf(

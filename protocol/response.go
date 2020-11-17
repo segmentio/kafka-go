@@ -5,7 +5,11 @@ import (
 	"io"
 )
 
-func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID int32, msg Message, err error) {
+func ReadResponse(
+	r io.Reader,
+	apiKey ApiKey,
+	apiVersion int16,
+) (correlationID int32, msg Message, err error) {
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
 		err = fmt.Errorf("unsupported api key: %d", i)
 		return
@@ -21,7 +25,13 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		err = fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
+		err = fmt.Errorf(
+			"unsupported %s version: v%d not in range v%d-v%d",
+			apiKey,
+			apiVersion,
+			minVersion,
+			maxVersion,
+		)
 		return
 	}
 
@@ -48,7 +58,12 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	return
 }
 
-func WriteResponse(w io.Writer, apiVersion int16, correlationID int32, msg Message) error {
+func WriteResponse(
+	w io.Writer,
+	apiVersion int16,
+	correlationID int32,
+	msg Message,
+) error {
 	apiKey := msg.ApiKey()
 
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
@@ -64,7 +79,13 @@ func WriteResponse(w io.Writer, apiVersion int16, correlationID int32, msg Messa
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		return fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
+		return fmt.Errorf(
+			"unsupported %s version: v%d not in range v%d-v%d",
+			apiKey,
+			apiVersion,
+			minVersion,
+			maxVersion,
+		)
 	}
 
 	r := &t.responses[apiVersion-minVersion]
