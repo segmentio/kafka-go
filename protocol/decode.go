@@ -318,7 +318,7 @@ func (d *decoder) readUnsignedVarInt() uint64 {
 		n--
 	}
 
-	d.setError(fmt.Errorf("cannot decode varint from input stream"))
+	d.setError(fmt.Errorf("cannot decode unsigned varint from input stream"))
 	return 0
 }
 

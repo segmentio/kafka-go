@@ -25,6 +25,14 @@ type AlterPartitionReassignmentsRequestAssignment struct {
 type AlterPartitionReassignmentsResponse struct {
 	ErrorCode    int16
 	ErrorMessage string
+
+	PartitionResults []AlterPartitionReassignmentsResponsePartitionResult
+}
+
+type AlterPartitionReassignmentsResponsePartitionResult struct {
+	PartitionID  int32
+	ErrorCode    int16
+	ErrorMessage string
 }
 
 func (c *Client) AlterPartitionReassignments(
@@ -63,8 +71,23 @@ func (c *Client) AlterPartitionReassignments(
 	}
 	apiResp := protoResp.(*alterpartitionreassignments.Response)
 
-	return &AlterPartitionReassignmentsResponse{
+	resp := &AlterPartitionReassignmentsResponse{
 		ErrorCode:    apiResp.ErrorCode,
 		ErrorMessage: apiResp.ErrorMessage,
-	}, nil
+	}
+
+	for _, topicResult := range apiResp.Results {
+		for _, partitionResult := range topicResult.Partitions {
+			resp.PartitionResults = append(
+				resp.PartitionResults,
+				AlterPartitionReassignmentsResponsePartitionResult{
+					PartitionID:  partitionResult.PartitionIndex,
+					ErrorCode:    partitionResult.ErrorCode,
+					ErrorMessage: partitionResult.ErrorMessage,
+				},
+			)
+		}
+	}
+
+	return resp, nil
 }

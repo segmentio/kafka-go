@@ -413,7 +413,8 @@ func stringEncodeFuncOf(flexible bool, tag structTag) encodeFunc {
 func bytesEncodeFuncOf(flexible bool, tag structTag) encodeFunc {
 	switch {
 	case flexible:
-		// In flexible messages, all arrays are compact
+		// In flexible messages, all arrays are compact and there is no encoding
+		// distinction between nullable and non-nullable arrays.
 		return (*encoder).encodeCompactBytes
 	case tag.Nullable:
 		return (*encoder).encodeNullBytes
@@ -484,7 +485,8 @@ func arrayEncodeFuncOf(typ reflect.Type, version int16, flexible bool, tag struc
 	elemFunc := encodeFuncOf(elemType, version, flexible, tag)
 	switch {
 	case flexible:
-		// In flexible messages, all arrays are compact
+		// In flexible messages, all arrays are compact and there is no encoding
+		// distinction between nullable and non-nullable arrays.
 		return func(e *encoder, v value) { e.encodeCompactArray(v, elemType, elemFunc) }
 	case tag.Nullable:
 		return func(e *encoder, v value) { e.encodeNullArray(v, elemType, elemFunc) }
@@ -531,7 +533,6 @@ func Marshal(version int16, value interface{}) ([]byte, error) {
 	encode := cache[typ]
 
 	if encode == nil {
-		// TODO:
 		encode = encodeFuncOf(reflect.TypeOf(value), version, false, structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
