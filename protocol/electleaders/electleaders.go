@@ -7,14 +7,14 @@ func init() {
 }
 
 type Request struct {
-	ElectionType    int8                    `kafka:"min=v1,max=v1"`
-	TopicPartitions []RequestTopicPartition `kafka:"min=v0,max=v1"`
-	TimeoutMs       int32                   `kafka:"min=v0,max=v1"`
+	ElectionType    int8                     `kafka:"min=v1,max=v1"`
+	TopicPartitions []RequestTopicPartitions `kafka:"min=v0,max=v1"`
+	TimeoutMs       int32                    `kafka:"min=v0,max=v1"`
 }
 
-type RequestTopicPartition struct {
-	Topic       string
-	PartitionID int32
+type RequestTopicPartitions struct {
+	Topic        string  `kafka:"min=v0,max=v1"`
+	PartitionIDs []int32 `kafka:"min=v0,max=v1"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.ElectLeaders }

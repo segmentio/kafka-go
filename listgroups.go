@@ -43,6 +43,7 @@ func (c *Client) ListGroups(
 	return resp, nil
 }
 
+// TODO: Remove everything below and use protocol-based version above everywhere.
 type listGroupsRequestV1 struct {
 }
 

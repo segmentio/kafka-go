@@ -107,6 +107,8 @@ func (c *Client) DescribeGroup(
 }
 
 // See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
+//
+// TODO: Remove everything below and use protocol-based version above everywhere.
 type describeGroupsRequestV0 struct {
 	// List of groupIds to request metadata for (an empty groupId array
 	// will return empty group metadata).
