@@ -305,15 +305,6 @@ func (e *encoder) writeVarInt(i int64) {
 	e.Write(b[:n])
 }
 
-func (e *encoder) writeTagBuffer(t TagBuffer) {
-	e.writeVarInt(int64(len(t.Fields)))
-	for _, field := range t.Fields {
-		e.writeVarInt(int64(field.TagID))
-		e.writeVarInt(int64(len(field.Contents)))
-		e.Write(field.Contents)
-	}
-}
-
 type encodeFunc func(*encoder, value)
 
 var (
@@ -376,17 +367,27 @@ func structEncodeFuncOf(typ reflect.Type, version int16, flexible bool) encodeFu
 	type field struct {
 		encode encodeFunc
 		index  index
+		tagID  int
 	}
 
 	var fields []field
+	var taggedFields []field
+
 	forEachStructField(typ, func(typ reflect.Type, index index, tag string) {
 		if typ.Size() != 0 { // skip struct{}
 			forEachStructTag(tag, func(tag structTag) bool {
 				if tag.MinVersion <= version && version <= tag.MaxVersion {
-					fields = append(fields, field{
+					f := field{
 						encode: encodeFuncOf(typ, version, flexible, tag),
 						index:  index,
-					})
+						tagID:  tag.TagID,
+					}
+
+					if tag.TagID < -1 {
+						fields = append(fields, f)
+					} else {
+						taggedFields = append(taggedFields, f)
+					}
 					return false
 				}
 				return true
@@ -398,6 +399,25 @@ func structEncodeFuncOf(typ reflect.Type, version int16, flexible bool) encodeFu
 		for i := range fields {
 			f := &fields[i]
 			f.encode(e, v.fieldByIndex(f.index))
+		}
+
+		if flexible {
+			fmt.Println("Encoding flexible fields")
+
+			// See https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
+			// for details of tag buffers in "flexible" messages.
+			e.writeVarInt(int64(len(taggedFields)))
+
+			for i := range taggedFields {
+				f := &fields[i]
+				e.writeVarInt(int64(f.tagID))
+
+				buf := &bytes.Buffer{}
+				se := &encoder{writer: buf}
+				f.encode(se, v.fieldByIndex(f.index))
+				e.writeVarInt(int64(buf.Len()))
+				e.Write(buf.Bytes())
+			}
 		}
 	}
 }
@@ -445,15 +465,17 @@ func writeInt64(b []byte, i int64) {
 	binary.BigEndian.PutUint64(b, uint64(i))
 }
 
-func Marshal(version int16, flexible bool, value interface{}) ([]byte, error) {
+func Marshal(version int16, value interface{}) ([]byte, error) {
 	typ := typeOf(value)
 	cache, _ := marshalers.Load().(map[_type]encodeFunc)
 	encode := cache[typ]
 
 	if encode == nil {
-		encode = encodeFuncOf(reflect.TypeOf(value), version, flexible, structTag{
+		// TODO:
+		encode = encodeFuncOf(reflect.TypeOf(value), version, false, structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
+			TagID:      -2,
 			Compact:    true,
 			Nullable:   true,
 		})

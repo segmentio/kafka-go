@@ -273,23 +273,6 @@ func (d *decoder) readVarInt() int64 {
 	return 0
 }
 
-func (d *decoder) readTagBuffer() TagBuffer {
-	t := TagBuffer{}
-
-	numFields := int(d.readVarInt())
-	for i := 0; i < numFields; i++ {
-		tagID := d.readVarInt()
-		contentLen := d.readVarInt()
-		contents := d.read(int(contentLen))
-		t.Fields = append(t.Fields, TaggedField{
-			TagID:    int(tagID),
-			Contents: contents,
-		})
-	}
-
-	return t
-}
-
 type decodeFunc func(*decoder, value)
 
 var (
@@ -340,16 +323,26 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 	type field struct {
 		decode decodeFunc
 		index  index
+		tagID  int
 	}
 
 	var fields []field
+	var taggedFields map[int]*field
+
 	forEachStructField(typ, func(typ reflect.Type, index index, tag string) {
 		forEachStructTag(tag, func(tag structTag) bool {
 			if tag.MinVersion <= version && version <= tag.MaxVersion {
-				fields = append(fields, field{
+				f := field{
 					decode: decodeFuncOf(typ, version, flexible, tag),
 					index:  index,
-				})
+					tagID:  tag.TagID,
+				}
+
+				if tag.TagID < -1 {
+					fields = append(fields, f)
+				} else {
+					taggedFields[tag.TagID] = &f
+				}
 				return false
 			}
 			return true
@@ -360,6 +353,26 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 		for i := range fields {
 			f := &fields[i]
 			f.decode(d, v.fieldByIndex(f.index))
+		}
+
+		if flexible {
+			fmt.Println("Decoding flexible fields")
+
+			// See https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
+			// for details of tag buffers in "flexible" messages.
+			numFields := int(d.readVarInt())
+
+			for i := 0; i < numFields; i++ {
+				tagID := int(d.readVarInt())
+				size := int(d.readVarInt())
+
+				f, ok := taggedFields[tagID]
+				if ok {
+					f.decode(d, v.fieldByIndex(f.index))
+				} else {
+					d.read(size)
+				}
+			}
 		}
 	}
 }
@@ -398,15 +411,16 @@ func readInt64(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
 }
 
-func Unmarshal(data []byte, version int16, flexible bool, value interface{}) error {
+func Unmarshal(data []byte, version int16, value interface{}) error {
 	typ := elemTypeOf(value)
 	cache, _ := unmarshalers.Load().(map[_type]decodeFunc)
 	decode := cache[typ]
 
 	if decode == nil {
-		decode = decodeFuncOf(reflect.TypeOf(value).Elem(), version, flexible, structTag{
+		decode = decodeFuncOf(reflect.TypeOf(value).Elem(), version, false, structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
+			TagID:      -2,
 			Compact:    true,
 			Nullable:   true,
 		})

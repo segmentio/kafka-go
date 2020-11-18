@@ -47,6 +47,18 @@ func ReadResponse(
 	correlationID = d.readInt32()
 
 	res := &t.responses[apiVersion-minVersion]
+
+	if res.flexible {
+		fmt.Println(">>>>>> Flexible response")
+		// In the flexible case, there's room for tagged fields at the end
+		// of the response header. However, we don't currently implement
+		// anything to decode them.
+		tagBufferSize := int(d.readVarInt())
+		if tagBufferSize > 0 {
+			d.read(tagBufferSize)
+		}
+	}
+
 	msg = res.new()
 	res.decode(d, valueOf(msg))
 	d.discardAll()

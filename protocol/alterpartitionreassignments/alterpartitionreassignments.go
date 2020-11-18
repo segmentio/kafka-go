@@ -9,6 +9,10 @@ func init() {
 type Request struct {
 	TimeoutMs int32          `kafka:"min=v0,max=v0"`
 	Topics    []RequestTopic `kafka:"min=v0,max=v0"`
+
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_ struct{} `kafka:"min=v0,max=v0,tagId=-1"`
 }
 
 type RequestTopic struct {
@@ -30,6 +34,24 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 }
 
 type Response struct {
+	ThrottleTimeMs int32  `kafka:"min=v0,max=v0"`
+	ErrorCode      int16  `kafka:"min=v0,max=v0"`
+	ErrorMessage   string `kafka:"min=v0,max=v0,compact,nullable"`
+
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_ struct{} `kafka:"min=v0,max=v0,tagId=-1"`
+}
+
+type ResponseResult struct {
+	Name       string              `kafka:"min=v0,max=v0,compact"`
+	Partitions []ResponsePartition `kafka:"min=v0,max=v0"`
+}
+
+type ResponsePartition struct {
+	PartitionIndex int32
+	ErrorCode      int16
+	ErrorMessage   string `kafka:"min=v0,max=v0,compact,nullable"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey {

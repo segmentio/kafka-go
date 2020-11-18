@@ -155,20 +155,6 @@ var apiNames = [numApis]string{
 	OffsetDelete:                "OffsetDelete",
 }
 
-// TagBuffer stores optional tagged fields associated with a struct. See
-// https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
-// for details.
-type TagBuffer struct {
-	Fields []TaggedField
-}
-
-// TaggedField contains the details of a single field. For now, the contents are just
-// stored as raw bytes; in the future, we can encode from/decode to higher-level structs.
-type TaggedField struct {
-	TagID    int
-	Contents []byte
-}
-
 type messageType struct {
 	version  int16
 	flexible bool
@@ -226,6 +212,10 @@ func makeTypes(t reflect.Type) []messageType {
 	minVersion := int16(-1)
 	maxVersion := int16(-1)
 
+	// All future versions will be flexible (according to spec), so don't need to
+	// worry about maxes here.
+	minFlexibleVersion := int16(-1)
+
 	forEachStructField(t, func(_ reflect.Type, _ index, tag string) {
 		forEachStructTag(tag, func(tag structTag) bool {
 			if minVersion < 0 || tag.MinVersion < minVersion {
@@ -234,6 +224,9 @@ func makeTypes(t reflect.Type) []messageType {
 			if maxVersion < 0 || tag.MaxVersion > maxVersion {
 				maxVersion = tag.MaxVersion
 			}
+			if tag.TagID > -2 && tag.MinVersion > minFlexibleVersion {
+				minFlexibleVersion = tag.MinVersion
+			}
 			return true
 		})
 	})
@@ -241,11 +234,14 @@ func makeTypes(t reflect.Type) []messageType {
 	types := make([]messageType, 0, (maxVersion-minVersion)+1)
 
 	for v := minVersion; v <= maxVersion; v++ {
+		flexible := minFlexibleVersion >= 0 && v >= minFlexibleVersion
+
 		types = append(types, messageType{
-			version: v,
-			gotype:  t,
-			decode:  decodeFuncOf(t, v, false, structTag{}),
-			encode:  encodeFuncOf(t, v, false, structTag{}),
+			version:  v,
+			gotype:   t,
+			flexible: flexible,
+			decode:   decodeFuncOf(t, v, flexible, structTag{}),
+			encode:   encodeFuncOf(t, v, flexible, structTag{}),
 		})
 	}
 
@@ -257,6 +253,7 @@ type structTag struct {
 	MaxVersion int16
 	Compact    bool
 	Nullable   bool
+	TagID      int
 }
 
 func forEachStructTag(tag string, do func(structTag) bool) {
@@ -268,6 +265,7 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 		tag := structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
+			TagID:      -2,
 		}
 
 		var err error
@@ -277,6 +275,8 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 				tag.MinVersion, err = parseVersion(s[4:])
 			case strings.HasPrefix(s, "max="):
 				tag.MaxVersion, err = parseVersion(s[4:])
+			case strings.HasPrefix(s, "tagId="):
+				tag.TagID, err = strconv.Atoi(s[6:])
 			case s == "compact":
 				tag.Compact = true
 			case s == "nullable":

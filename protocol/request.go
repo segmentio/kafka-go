@@ -118,10 +118,24 @@ func WriteRequest(
 	e.writeInt16(int16(apiKey))
 	e.writeInt16(apiVersion)
 	e.writeInt32(correlationID)
-	// Technically, recent versions of kafka interpret this field as a nullable
-	// string, however kafka 0.10 expected a non-nullable string and fails with
-	// a NullPointerException when it receives a null client id.
-	e.writeString(clientID)
+
+	if r.flexible {
+		fmt.Println(">>>>>> Flexible request")
+		// Flexible uses a compact string for the client ID, then extra space for a
+		// tag buffer, which begins with a size value. Since we're not writing any fields into the
+		// latter, we can just write zero for now.
+		//
+		// See
+		// https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
+		// for details.
+		e.writeCompactString(clientID)
+		e.writeVarInt(0)
+	} else {
+		// Technically, recent versions of kafka interpret this field as a nullable
+		// string, however kafka 0.10 expected a non-nullable string and fails with
+		// a NullPointerException when it receives a null client id.
+		e.writeString(clientID)
+	}
 	r.encode(e, v)
 	err := e.err
 
