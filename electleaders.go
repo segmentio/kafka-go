@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"net"
+	"time"
 
 	"github.com/segmentio/kafka-go/protocol/electleaders"
 )
@@ -13,7 +14,8 @@ type ElectLeadersRequest struct {
 
 	Topic      string
 	Partitions []int32
-	TimeoutMs  int32
+
+	Timeout time.Duration
 }
 
 type ElectLeadersResponse struct {
@@ -36,18 +38,18 @@ func (c *Client) ElectLeaders(
 		)
 	}
 
-	protocolResp, err := c.roundTrip(
+	protoResp, err := c.roundTrip(
 		ctx,
 		req.Addr,
 		&electleaders.Request{
 			TopicPartitions: topicPartitions,
-			TimeoutMs:       req.TimeoutMs,
+			TimeoutMs:       int32(req.Timeout.Milliseconds()),
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
-	apiResp := protocolResp.(*electleaders.Response)
+	apiResp := protoResp.(*electleaders.Response)
 
 	return &ElectLeadersResponse{
 		ErrorCode: apiResp.ErrorCode,

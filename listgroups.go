@@ -26,11 +26,11 @@ func (c *Client) ListGroups(
 	ctx context.Context,
 	req ListGroupsRequest,
 ) (*ListGroupsResponse, error) {
-	protocolResp, err := c.roundTrip(ctx, req.Addr, &listgroups.Request{})
+	protoResp, err := c.roundTrip(ctx, req.Addr, &listgroups.Request{})
 	if err != nil {
 		return nil, err
 	}
-	apiResp := protocolResp.(*listgroups.Response)
+	apiResp := protoResp.(*listgroups.Response)
 	resp := &ListGroupsResponse{}
 
 	for _, apiGroupInfo := range apiResp.Groups {

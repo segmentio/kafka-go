@@ -133,16 +133,32 @@ func (e *encoder) encodeString(v value) {
 	e.writeString(v.string())
 }
 
+func (e *encoder) encodeCompactString(v value) {
+	e.writeCompactString(v.string())
+}
+
 func (e *encoder) encodeNullString(v value) {
 	e.writeNullString(v.string())
+}
+
+func (e *encoder) encodeCompactNullString(v value) {
+	e.writeCompactNullString(v.string())
 }
 
 func (e *encoder) encodeBytes(v value) {
 	e.writeBytes(v.bytes())
 }
 
+func (e *encoder) encodeCompactBytes(v value) {
+	e.writeCompactBytes(v.bytes())
+}
+
 func (e *encoder) encodeNullBytes(v value) {
 	e.writeNullBytes(v.bytes())
+}
+
+func (e *encoder) encodeCompactNullBytes(v value) {
+	e.writeCompactNullBytes(v.bytes())
 }
 
 func (e *encoder) encodeArray(v value, elemType reflect.Type, encodeElem encodeFunc) {
@@ -150,6 +166,22 @@ func (e *encoder) encodeArray(v value, elemType reflect.Type, encodeElem encodeF
 	n := a.length()
 	e.writeInt32(int32(n))
 
+	for i := 0; i < n; i++ {
+		encodeElem(e, a.index(i))
+	}
+}
+
+func (e *encoder) encodeCompactArray(v value, elemType reflect.Type, encodeElem encodeFunc) {
+	a := v.array(elemType)
+	if a.isNil() {
+		e.writeUnsignedVarInt(0)
+		return
+	}
+
+	n := a.length()
+
+	// In compact scheme, size 0=null, size 1=0 len array, etc.
+	e.writeUnsignedVarInt(uint64(n + 1))
 	for i := 0; i < n; i++ {
 		encodeElem(e, a.index(i))
 	}
@@ -205,15 +237,15 @@ func (e *encoder) writeNullString(s string) {
 }
 
 func (e *encoder) writeCompactString(s string) {
-	e.writeVarInt(int64(len(s)))
+	e.writeUnsignedVarInt(uint64(len(s)) + 1)
 	e.WriteString(s)
 }
 
 func (e *encoder) writeCompactNullString(s string) {
 	if s == "" {
-		e.writeVarInt(-1)
+		e.writeUnsignedVarInt(0)
 	} else {
-		e.writeVarInt(int64(len(s)))
+		e.writeUnsignedVarInt(uint64(len(s)) + 1)
 		e.WriteString(s)
 	}
 }
@@ -233,15 +265,15 @@ func (e *encoder) writeNullBytes(b []byte) {
 }
 
 func (e *encoder) writeCompactBytes(b []byte) {
-	e.writeVarInt(int64(len(b)))
+	e.writeUnsignedVarInt(uint64(len(b)) + 1)
 	e.Write(b)
 }
 
 func (e *encoder) writeCompactNullBytes(b []byte) {
 	if b == nil {
-		e.writeVarInt(-1)
+		e.writeUnsignedVarInt(0)
 	} else {
-		e.writeVarInt(int64(len(b)))
+		e.writeUnsignedVarInt(uint64(len(b)) + 1)
 		e.Write(b)
 	}
 }
@@ -273,11 +305,11 @@ func (e *encoder) writeNullBytesFrom(b Bytes) error {
 
 func (e *encoder) writeCompactNullBytesFrom(b Bytes) error {
 	if b == nil {
-		e.writeVarInt(-1)
+		e.writeUnsignedVarInt(0)
 		return nil
 	} else {
 		size := int64(b.Len())
-		e.writeVarInt(size)
+		e.writeUnsignedVarInt(uint64(size + 1))
 		n, err := io.Copy(e, b)
 		if err == nil && n != size {
 			err = fmt.Errorf("size of compact nullable bytes does not match the number of bytes that were written (size=%d, written=%d): %w", size, n, io.ErrUnexpectedEOF)
@@ -299,6 +331,24 @@ func (e *encoder) writeVarInt(i int64) {
 
 	if n < len(b) {
 		b[n] = byte(u)
+		n++
+	}
+
+	e.Write(b[:n])
+}
+
+func (e *encoder) writeUnsignedVarInt(i uint64) {
+	b := e.buffer[:]
+	n := 0
+
+	for i > 0x80 && n < len(b) {
+		b[n] = byte(i)&0x7f | 0x80
+		i >>= 7
+		n++
+	}
+
+	if n < len(b) {
+		b[n] = byte(i)
 		n++
 	}
 
@@ -332,12 +382,12 @@ func encodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag)
 	case reflect.Int64:
 		return (*encoder).encodeInt64
 	case reflect.String:
-		return stringEncodeFuncOf(tag)
+		return stringEncodeFuncOf(flexible, tag)
 	case reflect.Struct:
 		return structEncodeFuncOf(typ, version, flexible)
 	case reflect.Slice:
 		if typ.Elem().Kind() == reflect.Uint8 { // []byte
-			return bytesEncodeFuncOf(tag)
+			return bytesEncodeFuncOf(flexible, tag)
 		}
 		return arrayEncodeFuncOf(typ, version, flexible, tag)
 	default:
@@ -345,8 +395,14 @@ func encodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag)
 	}
 }
 
-func stringEncodeFuncOf(tag structTag) encodeFunc {
+func stringEncodeFuncOf(flexible bool, tag structTag) encodeFunc {
 	switch {
+	case flexible && tag.Nullable:
+		// In flexible messages, all strings are compact
+		return (*encoder).encodeCompactNullString
+	case flexible:
+		// In flexible messages, all strings are compact
+		return (*encoder).encodeCompactString
 	case tag.Nullable:
 		return (*encoder).encodeNullString
 	default:
@@ -354,8 +410,11 @@ func stringEncodeFuncOf(tag structTag) encodeFunc {
 	}
 }
 
-func bytesEncodeFuncOf(tag structTag) encodeFunc {
+func bytesEncodeFuncOf(flexible bool, tag structTag) encodeFunc {
 	switch {
+	case flexible:
+		// In flexible messages, all arrays are compact
+		return (*encoder).encodeCompactBytes
 	case tag.Nullable:
 		return (*encoder).encodeNullBytes
 	default:
@@ -402,20 +461,18 @@ func structEncodeFuncOf(typ reflect.Type, version int16, flexible bool) encodeFu
 		}
 
 		if flexible {
-			fmt.Println("Encoding flexible fields")
-
 			// See https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
 			// for details of tag buffers in "flexible" messages.
-			e.writeVarInt(int64(len(taggedFields)))
+			e.writeUnsignedVarInt(uint64(len(taggedFields)))
 
 			for i := range taggedFields {
 				f := &fields[i]
-				e.writeVarInt(int64(f.tagID))
+				e.writeUnsignedVarInt(uint64(f.tagID))
 
 				buf := &bytes.Buffer{}
 				se := &encoder{writer: buf}
 				f.encode(se, v.fieldByIndex(f.index))
-				e.writeVarInt(int64(buf.Len()))
+				e.writeUnsignedVarInt(uint64(buf.Len()))
 				e.Write(buf.Bytes())
 			}
 		}
@@ -426,6 +483,9 @@ func arrayEncodeFuncOf(typ reflect.Type, version int16, flexible bool, tag struc
 	elemType := typ.Elem()
 	elemFunc := encodeFuncOf(elemType, version, flexible, tag)
 	switch {
+	case flexible:
+		// In flexible messages, all arrays are compact
+		return func(e *encoder, v value) { e.encodeCompactArray(v, elemType, elemFunc) }
 	case tag.Nullable:
 		return func(e *encoder, v value) { e.encodeNullArray(v, elemType, elemFunc) }
 	default:

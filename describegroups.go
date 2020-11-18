@@ -60,7 +60,7 @@ func (c *Client) DescribeGroup(
 	ctx context.Context,
 	req DescribeGroupsRequest,
 ) (*DescribeGroupsResponse, error) {
-	protocolResp, err := c.roundTrip(
+	protoResp, err := c.roundTrip(
 		ctx,
 		req.Addr,
 		&describegroups.Request{
@@ -70,7 +70,7 @@ func (c *Client) DescribeGroup(
 	if err != nil {
 		return nil, err
 	}
-	apiResp := protocolResp.(*describegroups.Response)
+	apiResp := protoResp.(*describegroups.Response)
 	resp := &DescribeGroupsResponse{
 		Groups: []DescribeGroupsResponseGroup{},
 	}

@@ -49,7 +49,7 @@ func (c *Client) AlterBrokerConfigs(
 		},
 	}
 
-	protocolResp, err := c.roundTrip(
+	protoResp, err := c.roundTrip(
 		ctx,
 		req.Addr,
 		apiReq,
@@ -57,7 +57,7 @@ func (c *Client) AlterBrokerConfigs(
 	if err != nil {
 		return nil, err
 	}
-	apiResp := protocolResp.(*incrementalalterconfigs.Response)
+	apiResp := protoResp.(*incrementalalterconfigs.Response)
 	if len(apiResp.Responses) == 0 {
 		return nil, fmt.Errorf("Empty response")
 	}
@@ -83,7 +83,7 @@ func (c *Client) AlterTopicConfigs(
 		},
 	}
 
-	protocolResp, err := c.roundTrip(
+	protoResp, err := c.roundTrip(
 		ctx,
 		req.Addr,
 		apiReq,
@@ -91,7 +91,7 @@ func (c *Client) AlterTopicConfigs(
 	if err != nil {
 		return nil, err
 	}
-	apiResp := protocolResp.(*incrementalalterconfigs.Response)
+	apiResp := protoResp.(*incrementalalterconfigs.Response)
 
 	if len(apiResp.Responses) == 0 {
 		return nil, fmt.Errorf("Empty response")

@@ -16,13 +16,13 @@ type Request struct {
 }
 
 type RequestTopic struct {
-	Name       string              `kafka:"min=v0,max=v0,compact"`
-	Partitions []RequestPartitions `kafka:"min=v0,max=v0"`
+	Name       string             `kafka:"min=v0,max=v0"`
+	Partitions []RequestPartition `kafka:"min=v0,max=v0"`
 }
 
-type RequestPartitions struct {
-	PartitionIndex int32 `kafka:"min=v0,max=v0"`
-	Replicas       int32 `kafka:"min=v0,max=v0"`
+type RequestPartition struct {
+	PartitionIndex int32   `kafka:"min=v0,max=v0"`
+	Replicas       []int32 `kafka:"min=v0,max=v0"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey {
@@ -34,9 +34,10 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 }
 
 type Response struct {
-	ThrottleTimeMs int32  `kafka:"min=v0,max=v0"`
-	ErrorCode      int16  `kafka:"min=v0,max=v0"`
-	ErrorMessage   string `kafka:"min=v0,max=v0,compact,nullable"`
+	ThrottleTimeMs int32            `kafka:"min=v0,max=v0"`
+	ErrorCode      int16            `kafka:"min=v0,max=v0"`
+	ErrorMessage   string           `kafka:"min=v0,max=v0,nullable"`
+	Results        []ResponseResult `kafka:"min=v0,max=v0"`
 
 	// We need at least one tagged field to indicate that this is a "flexible" message
 	// type.
@@ -44,14 +45,14 @@ type Response struct {
 }
 
 type ResponseResult struct {
-	Name       string              `kafka:"min=v0,max=v0,compact"`
+	Name       string              `kafka:"min=v0,max=v0"`
 	Partitions []ResponsePartition `kafka:"min=v0,max=v0"`
 }
 
 type ResponsePartition struct {
-	PartitionIndex int32
-	ErrorCode      int16
-	ErrorMessage   string `kafka:"min=v0,max=v0,compact,nullable"`
+	PartitionIndex int32  `kafka:"min=v0,max=v0"`
+	ErrorCode      int16  `kafka:"min=v0,max=v0"`
+	ErrorMessage   string `kafka:"min=v0,max=v0,nullable"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey {

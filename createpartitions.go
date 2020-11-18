@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/segmentio/kafka-go/protocol/createpartitions"
 )
@@ -15,6 +16,7 @@ type CreatePartitionsRequest struct {
 	Topic         string
 	NewPartitions []CreatePartitionsRequestPartition
 	TotalCount    int32
+	Timeout       time.Duration
 }
 
 type CreatePartitionsRequestPartition struct {
@@ -45,10 +47,10 @@ func (c *Client) CreatePartitions(
 				Assignments: assignments,
 			},
 		},
-		TimeoutMs: 5000,
+		TimeoutMs: int32(req.Timeout.Milliseconds()),
 	}
 
-	protocolResp, err := c.roundTrip(
+	protoResp, err := c.roundTrip(
 		ctx,
 		req.Addr,
 		apiReq,
@@ -56,9 +58,8 @@ func (c *Client) CreatePartitions(
 	if err != nil {
 		return nil, err
 	}
-	apiResp := protocolResp.(*createpartitions.Response)
+	apiResp := protoResp.(*createpartitions.Response)
 
-	fmt.Printf("Response: %+v", *apiResp)
 	if len(apiResp.Results) == 0 {
 		return nil, fmt.Errorf("Empty results")
 	}

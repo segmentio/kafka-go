@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 
 	"github.com/segmentio/kafka-go/protocol/describeconfigs"
 )
@@ -60,7 +59,7 @@ func (c *Client) DescribeConfigs(
 		)
 	}
 
-	protocolResp, err := c.roundTrip(
+	protoResp, err := c.roundTrip(
 		ctx,
 		req.Addr,
 		&describeconfigs.Request{
@@ -70,7 +69,7 @@ func (c *Client) DescribeConfigs(
 	if err != nil {
 		return nil, err
 	}
-	apiResp := protocolResp.(*describeconfigs.Response)
+	apiResp := protoResp.(*describeconfigs.Response)
 
 	resp := &DescribeConfigsResponse{}
 
@@ -79,10 +78,6 @@ func (c *Client) DescribeConfigs(
 		case describeconfigs.ResourceTypeBroker:
 			configs := map[string]string{}
 			for _, entry := range resource.ConfigEntries {
-				if resource.ResourceName == "2" && strings.Contains(entry.ConfigName, "throttled") {
-					fmt.Printf("Entry: %+v\n", entry)
-				}
-
 				if !req.IncludeDefaults && (entry.IsDefault ||
 					entry.ConfigSource == describeconfigs.ConfigSourceDefaultConfig ||
 					entry.ConfigSource == describeconfigs.ConfigSourceStaticBrokerConfig ||

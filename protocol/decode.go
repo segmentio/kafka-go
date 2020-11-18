@@ -89,8 +89,16 @@ func (d *decoder) decodeString(v value) {
 	v.setString(d.readString())
 }
 
+func (d *decoder) decodeCompactString(v value) {
+	v.setString(d.readCompactString())
+}
+
 func (d *decoder) decodeBytes(v value) {
 	v.setBytes(d.readBytes())
+}
+
+func (d *decoder) decodeCompactBytes(v value) {
+	v.setBytes(d.readCompactBytes())
 }
 
 func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeFunc) {
@@ -99,6 +107,19 @@ func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeF
 	} else {
 		a := makeArray(elemType, int(n))
 		for i := 0; i < int(n) && d.remain > 0; i++ {
+			decodeElem(d, a.index(i))
+		}
+		v.setArray(a)
+	}
+}
+
+func (d *decoder) decodeCompactArray(v value, elemType reflect.Type, decodeElem decodeFunc) {
+	if n := d.readUnsignedVarInt(); n < 1 {
+		// TODO: Distinguish between empty and null?
+		v.setArray(array{})
+	} else {
+		a := makeArray(elemType, int(n-1))
+		for i := 0; i < int(n-1) && d.remain > 0; i++ {
 			decodeElem(d, a.index(i))
 		}
 		v.setArray(a)
@@ -205,10 +226,11 @@ func (d *decoder) readString() string {
 }
 
 func (d *decoder) readCompactString() string {
-	if n := d.readVarInt(); n < 0 {
+	if n := d.readUnsignedVarInt(); n < 1 {
+		// TODO: Distinguish between empty and null?
 		return ""
 	} else {
-		return bytesToString(d.read(int(n)))
+		return bytesToString(d.read(int(n - 1)))
 	}
 }
 
@@ -230,18 +252,18 @@ func (d *decoder) readBytesTo(w io.Writer) bool {
 }
 
 func (d *decoder) readCompactBytes() []byte {
-	if n := d.readVarInt(); n < 0 {
+	if n := d.readUnsignedVarInt(); n < 1 {
 		return nil
 	} else {
-		return d.read(int(n))
+		return d.read(int(n - 1))
 	}
 }
 
 func (d *decoder) readCompactBytesTo(w io.Writer) bool {
-	if n := d.readVarInt(); n < 0 {
+	if n := d.readUnsignedVarInt(); n < 1 {
 		return false
 	} else {
-		d.writeTo(w, int(n))
+		d.writeTo(w, int(n-1))
 		return d.err == nil
 	}
 }
@@ -262,6 +284,33 @@ func (d *decoder) readVarInt() int64 {
 		if (b & 0x80) == 0 {
 			x |= uint64(b) << s
 			return int64(x>>1) ^ -(int64(x) & 1)
+		}
+
+		x |= uint64(b&0x7f) << s
+		s += 7
+		n--
+	}
+
+	d.setError(fmt.Errorf("cannot decode varint from input stream"))
+	return 0
+}
+
+func (d *decoder) readUnsignedVarInt() uint64 {
+	n := 11 // varints are at most 11 bytes
+
+	if n > d.remain {
+		n = d.remain
+	}
+
+	x := uint64(0)
+	s := uint(0)
+
+	for n > 0 {
+		b := d.readByte()
+
+		if (b & 0x80) == 0 {
+			x |= uint64(b) << s
+			return x
 		}
 
 		x |= uint64(b&0x7f) << s
@@ -298,12 +347,12 @@ func decodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag)
 	case reflect.Int64:
 		return (*decoder).decodeInt64
 	case reflect.String:
-		return stringDecodeFuncOf(tag)
+		return stringDecodeFuncOf(flexible, tag)
 	case reflect.Struct:
 		return structDecodeFuncOf(typ, version, flexible)
 	case reflect.Slice:
 		if typ.Elem().Kind() == reflect.Uint8 { // []byte
-			return bytesDecodeFuncOf(tag)
+			return bytesDecodeFuncOf(flexible, tag)
 		}
 		return arrayDecodeFuncOf(typ, version, flexible, tag)
 	default:
@@ -311,12 +360,22 @@ func decodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag)
 	}
 }
 
-func stringDecodeFuncOf(tag structTag) decodeFunc {
-	return (*decoder).decodeString
+func stringDecodeFuncOf(flexible bool, tag structTag) decodeFunc {
+	if flexible {
+		// In flexible messages, all strings are compact
+		return (*decoder).decodeCompactString
+	} else {
+		return (*decoder).decodeString
+	}
 }
 
-func bytesDecodeFuncOf(tag structTag) decodeFunc {
-	return (*decoder).decodeBytes
+func bytesDecodeFuncOf(flexible bool, tag structTag) decodeFunc {
+	if flexible {
+		// In flexible messages, all arrays are compact
+		return (*decoder).decodeCompactBytes
+	} else {
+		return (*decoder).decodeBytes
+	}
 }
 
 func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFunc {
@@ -327,7 +386,7 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 	}
 
 	var fields []field
-	var taggedFields map[int]*field
+	taggedFields := map[int]*field{}
 
 	forEachStructField(typ, func(typ reflect.Type, index index, tag string) {
 		forEachStructTag(tag, func(tag structTag) bool {
@@ -356,15 +415,13 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 		}
 
 		if flexible {
-			fmt.Println("Decoding flexible fields")
-
 			// See https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
 			// for details of tag buffers in "flexible" messages.
-			numFields := int(d.readVarInt())
+			numFields := int(d.readUnsignedVarInt())
 
 			for i := 0; i < numFields; i++ {
-				tagID := int(d.readVarInt())
-				size := int(d.readVarInt())
+				tagID := int(d.readUnsignedVarInt())
+				size := int(d.readUnsignedVarInt())
 
 				f, ok := taggedFields[tagID]
 				if ok {
@@ -380,6 +437,11 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 func arrayDecodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag) decodeFunc {
 	elemType := typ.Elem()
 	elemFunc := decodeFuncOf(elemType, version, flexible, tag)
+	if flexible {
+		// In flexible messages, all arrays are compact
+		return func(d *decoder, v value) { d.decodeCompactArray(v, elemType, elemFunc) }
+	}
+
 	return func(d *decoder, v value) { d.decodeArray(v, elemType, elemFunc) }
 }
 

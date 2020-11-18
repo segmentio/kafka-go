@@ -3,7 +3,6 @@ package protocol
 import (
 	"fmt"
 	"io"
-	"log"
 )
 
 func ReadRequest(r io.Reader) (
@@ -100,14 +99,6 @@ func WriteRequest(
 		)
 	}
 
-	log.Printf(
-		"Making request with apiKey %+v, apiVersion %d, minVersion %d, msg %+v\n",
-		apiKey,
-		apiVersion,
-		minVersion,
-		msg,
-	)
-
 	r := &t.requests[apiVersion-minVersion]
 	v := valueOf(msg)
 	b := newPageBuffer()
@@ -120,16 +111,15 @@ func WriteRequest(
 	e.writeInt32(correlationID)
 
 	if r.flexible {
-		fmt.Println(">>>>>> Flexible request")
-		// Flexible uses a compact string for the client ID, then extra space for a
+		// Flexible messages use a nullable string for the client ID, then extra space for a
 		// tag buffer, which begins with a size value. Since we're not writing any fields into the
 		// latter, we can just write zero for now.
 		//
 		// See
 		// https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
 		// for details.
-		e.writeCompactString(clientID)
-		e.writeVarInt(0)
+		e.writeNullString(clientID)
+		e.writeUnsignedVarInt(0)
 	} else {
 		// Technically, recent versions of kafka interpret this field as a nullable
 		// string, however kafka 0.10 expected a non-nullable string and fails with
