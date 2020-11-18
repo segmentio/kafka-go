@@ -189,7 +189,7 @@ func TestValidateWriter(t *testing.T) {
 		errorOccured bool
 	}{
 		{config: WriterConfig{}, errorOccured: true},
-		{config: WriterConfig{Brokers: []string{"broker1", "broker2"}}, errorOccured: true},
+		{config: WriterConfig{Brokers: []string{"broker1", "broker2"}}, errorOccured: false},
 		{config: WriterConfig{Brokers: []string{"broker1"}, Topic: "topic1"}, errorOccured: false},
 	}
 	for _, test := range tests {
