@@ -264,8 +264,10 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	var err error
 	switch rs.Version {
 	case 0, 1:
+		fmt.Println("Writing to record set version 1")
 		err = rs.writeToVersion1(buffer, bufferOffset+4)
 	case 2:
+		fmt.Println("Writing to record set version 2")
 		err = rs.writeToVersion2(buffer, bufferOffset+4)
 	default:
 		err = fmt.Errorf("unsupported record set version %d", rs.Version)
