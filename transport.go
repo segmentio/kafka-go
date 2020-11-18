@@ -628,6 +628,7 @@ func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolS
 			return reject(err)
 		}
 		brokerID = broker.ID
+
 	case protocol.GroupMessage:
 		// Some requests are supposed to be sent to a group coordinator,
 		// look up which broker is currently the coordinator for the group
@@ -1137,7 +1138,6 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 		return nil, err
 	}
 	res := r.(*apiversions.Response)
-
 	ver := make(map[protocol.ApiKey]int16, len(res.ApiKeys))
 
 	if res.ErrorCode != 0 {
