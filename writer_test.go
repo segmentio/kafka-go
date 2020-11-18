@@ -59,6 +59,14 @@ func TestWriter(t *testing.T) {
 			scenario: "writing messages to multiple topics",
 			function: testWriterMultipleTopics,
 		},
+		{
+			scenario: "writing messages without specifying a topic",
+			function: testWriterMissingTopic,
+		},
+		{
+			scenario: "specifying topic for message when already set for writer",
+			function: testWriterUnexpectedMessageTopic,
+		},
 	}
 
 	for _, test := range tests {
@@ -529,7 +537,47 @@ func testWriterMultipleTopics(t *testing.T) {
 		t.Error("bad messages in partition", msgs2)
 		return
 	}
-	if string(msgs2[0].Value) != "Hello" {
+	if string(msgs2[0].Value) != "World" {
 		t.Error("bad message in partition", msgs2)
+	}
+}
+
+func testWriterMissingTopic(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	w := newTestWriter(WriterConfig{
+		// no topic
+		Balancer: &RoundRobin{},
+	})
+	defer w.Close()
+
+	msg := Message{Value: []byte("Hello World")} // no topic
+
+	if err := w.WriteMessages(ctx, msg); err == nil {
+		t.Error("expected error")
+		return
+	}
+}
+
+func testWriterUnexpectedMessageTopic(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	w := newTestWriter(WriterConfig{
+		Topic:    topic,
+		Balancer: &RoundRobin{},
+	})
+	defer w.Close()
+
+	msg := Message{Topic: "should-fail", Value: []byte("Hello World")}
+
+	if err := w.WriteMessages(ctx, msg); err == nil {
+		t.Error("expected error")
+		return
 	}
 }
