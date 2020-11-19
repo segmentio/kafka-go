@@ -225,6 +225,14 @@ func (d *decoder) readString() string {
 	}
 }
 
+func (d *decoder) readVarString() string {
+	if n := d.readVarInt(); n < 0 {
+		return ""
+	} else {
+		return bytesToString(d.read(int(n)))
+	}
+}
+
 func (d *decoder) readCompactString() string {
 	if n := d.readUnsignedVarInt(); n < 1 {
 		// TODO: Distinguish between empty and null?
@@ -244,6 +252,23 @@ func (d *decoder) readBytes() []byte {
 
 func (d *decoder) readBytesTo(w io.Writer) bool {
 	if n := d.readInt32(); n < 0 {
+		return false
+	} else {
+		d.writeTo(w, int(n))
+		return d.err == nil
+	}
+}
+
+func (d *decoder) readVarBytes() []byte {
+	if n := d.readVarInt(); n < 0 {
+		return nil
+	} else {
+		return d.read(int(n))
+	}
+}
+
+func (d *decoder) readVarBytesTo(w io.Writer) bool {
+	if n := d.readVarInt(); n < 0 {
 		return false
 	} else {
 		d.writeTo(w, int(n))

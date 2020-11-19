@@ -123,8 +123,8 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 
 			for i := range h {
 				h[i] = Header{
-					Key:   dec.readCompactString(),
-					Value: dec.readCompactBytes(),
+					Key:   dec.readVarString(),
+					Value: dec.readVarBytes(),
 				}
 			}
 
@@ -239,12 +239,12 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		length := 1 + // attributes
 			sizeOfVarInt(timestampDelta) +
 			sizeOfVarInt(offsetDelta) +
-			sizeOfVarBytes(r.Key) +
-			sizeOfVarBytes(r.Value) +
+			sizeOfVarNullBytesIface(r.Key) +
+			sizeOfVarNullBytesIface(r.Value) +
 			sizeOfVarInt(int64(len(r.Headers)))
 
 		for _, h := range r.Headers {
-			length += sizeOfCompactString(h.Key) + sizeOfCompactNullBytes(h.Value)
+			length += sizeOfVarString(h.Key) + sizeOfVarNullBytes(h.Value)
 		}
 
 		e.writeVarInt(int64(length))
@@ -252,19 +252,19 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		e.writeVarInt(timestampDelta)
 		e.writeVarInt(offsetDelta)
 
-		if err := e.writeCompactNullBytesFrom(r.Key); err != nil {
+		if err := e.writeVarNullBytesFrom(r.Key); err != nil {
 			return err
 		}
 
-		if err := e.writeCompactNullBytesFrom(r.Value); err != nil {
+		if err := e.writeVarNullBytesFrom(r.Value); err != nil {
 			return err
 		}
 
 		e.writeVarInt(int64(len(r.Headers)))
 
 		for _, h := range r.Headers {
-			e.writeCompactString(h.Key)
-			e.writeCompactNullBytes(h.Value)
+			e.writeVarString(h.Key)
+			e.writeVarNullBytes(h.Value)
 		}
 
 		numRecords++
