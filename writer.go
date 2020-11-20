@@ -220,8 +220,9 @@ type WriterConfig struct {
 
 	// The topic that the writer will produce messages to.
 	//
-	// This field is required, attempting to create a writer with an empty topic
-	// will panic.
+	// If provided, this will be used to set the topic for all produced messages.
+	// If not provided, each Message must specify a topic for itself. This must be
+	// mutually exclusive, otherwise the Writer will return an error.
 	Topic string
 
 	// The dialer used by the writer to establish connections to the kafka
