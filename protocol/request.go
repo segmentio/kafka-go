@@ -57,6 +57,17 @@ func ReadRequest(r io.Reader) (
 	}
 
 	req := &t.requests[apiVersion-minVersion]
+
+	if req.flexible {
+		// In the flexible case, there's room for tagged fields at the end
+		// of the response header. However, we don't currently implement
+		// anything to decode them.
+		tagBufferSize := int(d.readUnsignedVarInt())
+		if tagBufferSize > 0 {
+			d.read(tagBufferSize)
+		}
+	}
+
 	msg = req.new()
 	req.decode(d, valueOf(msg))
 	d.discardAll()

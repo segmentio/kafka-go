@@ -279,7 +279,7 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 				tag.MinVersion, err = parseVersion(s[4:])
 			case strings.HasPrefix(s, "max="):
 				tag.MaxVersion, err = parseVersion(s[4:])
-			case strings.HasPrefix(s, "tagId="):
+			case strings.HasPrefix(s, "tag="):
 				tag.TagID, err = strconv.Atoi(s[6:])
 			case s == "compact":
 				tag.Compact = true
