@@ -100,8 +100,10 @@ const (
 	AlterPartitionReassignments ApiKey = 45
 	ListPartitionReassignments  ApiKey = 46
 	OffsetDelete                ApiKey = 47
+	DescribeClientQuotas        ApiKey = 48
+	AlterClientQuotas           ApiKey = 49
 
-	numApis = 48
+	numApis = 50
 )
 
 var apiNames = [numApis]string{
@@ -149,10 +151,12 @@ var apiNames = [numApis]string{
 	DescribeDelegationToken:     "DescribeDelegationToken",
 	DeleteGroups:                "DeleteGroups",
 	ElectLeaders:                "ElectLeaders",
-	IncrementalAlterConfigs:     "IncrementalAlfterConfigs",
+	IncrementalAlterConfigs:     "IncrementalAlterConfigs",
 	AlterPartitionReassignments: "AlterPartitionReassignments",
 	ListPartitionReassignments:  "ListPartitionReassignments",
 	OffsetDelete:                "OffsetDelete",
+	DescribeClientQuotas:        "DescribeClientQuotas",
+	AlterClientQuotas:           "AlterClientQuotas",
 }
 
 type messageType struct {
