@@ -27,28 +27,61 @@ func sizeOfBytes(b []byte) int {
 	return 4 + len(b)
 }
 
-func sizeOfCompactString(s string) int {
+func sizeOfVarString(s string) int {
 	return sizeOfVarInt(int64(len(s))) + len(s)
 }
 
-func sizeOfCompactBytes(b []byte) int {
+func sizeOfCompactString(s string) int {
+	return sizeOfUnsignedVarInt(int64(len(s)+1)) + len(s)
+}
+
+func sizeOfVarBytes(b []byte) int {
 	return sizeOfVarInt(int64(len(b))) + len(b)
+}
+
+func sizeOfCompactBytes(b []byte) int {
+	return sizeOfUnsignedVarInt(int64(len(b)+1)) + len(b)
+}
+
+func sizeOfVarNullString(s string) int {
+	n := len(s)
+	if n == 0 {
+		return sizeOfVarInt(-1)
+	}
+	return sizeOfVarInt(int64(n)) + n
 }
 
 func sizeOfCompactNullString(s string) int {
 	n := len(s)
 	if n == 0 {
-		n = -1
+		return sizeOfUnsignedVarInt(0)
 	}
-	return sizeOfVarInt(int64(n)) + len(s)
+	return sizeOfUnsignedVarInt(int64(n)+1) + n
+}
+
+func sizeOfVarNullBytes(b []byte) int {
+	if b == nil {
+		return sizeOfVarInt(-1)
+	}
+	n := len(b)
+	return sizeOfVarInt(int64(n)) + n
+}
+
+func sizeOfVarNullBytesIface(b Bytes) int {
+	if b == nil {
+		return sizeOfVarInt(-1)
+	} else {
+		n := b.Len()
+		return sizeOfVarInt(int64(n)) + n
+	}
 }
 
 func sizeOfCompactNullBytes(b []byte) int {
 	n := len(b)
 	if b == nil {
-		n = -1
+		return sizeOfUnsignedVarInt(0)
 	}
-	return sizeOfVarInt(int64(n)) + len(b)
+	return sizeOfUnsignedVarInt(int64(n)+1) + n
 }
 
 func sizeOfVarInt(i int64) int {
@@ -63,11 +96,13 @@ func sizeOfVarInt(i int64) int {
 	return n + 1
 }
 
-func sizeOfVarBytes(b Bytes) int {
-	if b == nil {
-		return sizeOfVarInt(-1)
-	} else {
-		n := b.Len()
-		return sizeOfVarInt(int64(n)) + n
+func sizeOfUnsignedVarInt(i int64) int {
+	n := 0
+
+	for i >= 0x80 {
+		i >>= 7
+		n++
 	}
+
+	return n + 1
 }

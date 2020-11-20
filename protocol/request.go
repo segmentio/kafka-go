@@ -5,7 +5,13 @@ import (
 	"io"
 )
 
-func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID string, msg Message, err error) {
+func ReadRequest(r io.Reader) (
+	apiVersion int16,
+	correlationID int32,
+	clientID string,
+	msg Message,
+	err error,
+) {
 	d := &decoder{reader: r, remain: 4}
 	size := d.readInt32()
 
@@ -40,7 +46,13 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		err = fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
+		err = fmt.Errorf(
+			"unsupported %s version: v%d not in range v%d-v%d",
+			apiKey,
+			apiVersion,
+			minVersion,
+			maxVersion,
+		)
 		return
 	}
 
@@ -56,7 +68,13 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	return
 }
 
-func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID string, msg Message) error {
+func WriteRequest(
+	w io.Writer,
+	apiVersion int16,
+	correlationID int32,
+	clientID string,
+	msg Message,
+) error {
 	apiKey := msg.ApiKey()
 
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {
@@ -72,7 +90,13 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		return fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
+		return fmt.Errorf(
+			"unsupported %s version: v%d not in range v%d-v%d",
+			apiKey,
+			apiVersion,
+			minVersion,
+			maxVersion,
+		)
 	}
 
 	r := &t.requests[apiVersion-minVersion]
@@ -85,10 +109,23 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	e.writeInt16(int16(apiKey))
 	e.writeInt16(apiVersion)
 	e.writeInt32(correlationID)
-	// Technically, recent versions of kafka interpret this field as a nullable
-	// string, however kafka 0.10 expected a non-nullable string and fails with
-	// a NullPointerException when it receives a null client id.
-	e.writeString(clientID)
+
+	if r.flexible {
+		// Flexible messages use a nullable string for the client ID, then extra space for a
+		// tag buffer, which begins with a size value. Since we're not writing any fields into the
+		// latter, we can just write zero for now.
+		//
+		// See
+		// https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
+		// for details.
+		e.writeNullString(clientID)
+		e.writeUnsignedVarInt(0)
+	} else {
+		// Technically, recent versions of kafka interpret this field as a nullable
+		// string, however kafka 0.10 expected a non-nullable string and fails with
+		// a NullPointerException when it receives a null client id.
+		e.writeString(clientID)
+	}
 	r.encode(e, v)
 	err := e.err
 
