@@ -5,13 +5,7 @@ import (
 	"io"
 )
 
-func ReadRequest(r io.Reader) (
-	apiVersion int16,
-	correlationID int32,
-	clientID string,
-	msg Message,
-	err error,
-) {
+func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID string, msg Message, err error) {
 	d := &decoder{reader: r, remain: 4}
 	size := d.readInt32()
 
@@ -59,12 +53,14 @@ func ReadRequest(r io.Reader) (
 	req := &t.requests[apiVersion-minVersion]
 
 	if req.flexible {
-		// In the flexible case, there's room for tagged fields at the end
-		// of the response header. However, we don't currently implement
-		// anything to decode them.
-		tagBufferSize := int(d.readUnsignedVarInt())
-		if tagBufferSize > 0 {
-			d.read(tagBufferSize)
+		// In the flexible case, there's a tag buffer at the end of the request header
+		taggedCount := int(d.readUnsignedVarInt())
+		for i := 0; i < taggedCount; i++ {
+			d.readUnsignedVarInt() // tagID
+			size := d.readUnsignedVarInt()
+
+			// Just throw away the values for now
+			d.read(int(size))
 		}
 	}
 
@@ -79,13 +75,7 @@ func ReadRequest(r io.Reader) (
 	return
 }
 
-func WriteRequest(
-	w io.Writer,
-	apiVersion int16,
-	correlationID int32,
-	clientID string,
-	msg Message,
-) error {
+func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID string, msg Message) error {
 	apiKey := msg.ApiKey()
 
 	if i := int(apiKey); i < 0 || i >= len(apiTypes) {

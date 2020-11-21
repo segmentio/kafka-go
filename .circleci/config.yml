@@ -171,6 +171,22 @@ jobs:
       environment: *environment
     steps: *steps
 
+  kafka-241:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "2.4.1"
+    docker:
+    - image: circleci/golang
+    - image: wurstmeister/zookeeper
+      ports:
+      - 2181:2181
+    - image: wurstmeister/kafka:2.12-2.4.1
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+    steps: *steps
+
 workflows:
   version: 2
   run:
@@ -183,3 +199,4 @@ workflows:
     - kafka-211
     - kafka-222
     - kafka-231
+    - kafka-241

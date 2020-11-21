@@ -234,7 +234,6 @@ func (d *decoder) readVarString() string {
 
 func (d *decoder) readCompactString() string {
 	if n := d.readUnsignedVarInt(); n < 1 {
-		// TODO: Distinguish between empty and null?
 		return ""
 	} else {
 		return bytesToString(d.read(int(n - 1)))
