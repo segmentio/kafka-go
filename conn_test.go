@@ -273,12 +273,6 @@ func TestConn(t *testing.T) {
 			continue
 		}
 
-		// TODO: Remove this once we figure out why these tests are failing with v2.4.1.
-		if _, ok := os.LookupEnv("KAFKA_SKIP_CONNTEST"); ok {
-			t.Log("skipping " + test.scenario + " because KAFKA_SKIP_CONNTEST is set")
-			continue
-		}
-
 		testFunc := test.function
 		t.Run(test.scenario, func(t *testing.T) {
 			t.Parallel()
@@ -300,6 +294,12 @@ func TestConn(t *testing.T) {
 	}
 
 	t.Run("nettest", func(t *testing.T) {
+		// TODO: Remove this once we figure out why these tests are failing with v2.4.1.
+		if _, ok := os.LookupEnv("KAFKA_SKIP_NETTEST"); ok {
+			t.Log("skipping nettest because KAFKA_SKIP_NETTEST is set")
+			t.Skip()
+		}
+
 		t.Parallel()
 
 		nettest.TestConn(t, func() (c1 net.Conn, c2 net.Conn, stop func(), err error) {
