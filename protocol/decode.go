@@ -441,9 +441,9 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 		if flexible {
 			// See https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
 			// for details of tag buffers in "flexible" messages.
-			numFields := int(d.readUnsignedVarInt())
+			n := int(d.readUnsignedVarInt())
 
-			for i := 0; i < numFields; i++ {
+			for i := 0; i < n; i++ {
 				tagID := int(d.readUnsignedVarInt())
 				size := int(d.readUnsignedVarInt())
 

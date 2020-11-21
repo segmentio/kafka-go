@@ -536,7 +536,7 @@ func structEncodeFuncOf(typ reflect.Type, version int16, flexible bool) encodeFu
 			e.writeUnsignedVarInt(uint64(len(taggedFields)))
 
 			for i := range taggedFields {
-				f := &fields[i]
+				f := &taggedFields[i]
 				e.writeUnsignedVarInt(uint64(f.tagID))
 
 				buf := &bytes.Buffer{}

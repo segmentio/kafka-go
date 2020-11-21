@@ -228,7 +228,7 @@ func makeTypes(t reflect.Type) []messageType {
 			if maxVersion < 0 || tag.MaxVersion > maxVersion {
 				maxVersion = tag.MaxVersion
 			}
-			if tag.TagID > -2 && tag.MinVersion > minFlexibleVersion {
+			if tag.TagID > -2 && (minFlexibleVersion < 0 || tag.MinVersion < minFlexibleVersion) {
 				minFlexibleVersion = tag.MinVersion
 			}
 			return true
