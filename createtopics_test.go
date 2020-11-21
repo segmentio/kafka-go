@@ -27,13 +27,27 @@ func TestClientCreateTopics(t *testing.T) {
 		Topics: []TopicConfig{
 			{
 				Topic:             topic1,
-				NumPartitions:     1,
-				ReplicationFactor: 1,
-				ConfigEntries:     config,
+				NumPartitions:     -1,
+				ReplicationFactor: -1,
+				ReplicaAssignments: []ReplicaAssignment{
+					{
+						Partition: 0,
+						Replicas:  []int{1},
+					},
+					{
+						Partition: 1,
+						Replicas:  []int{1},
+					},
+					{
+						Partition: 2,
+						Replicas:  []int{1},
+					},
+				},
+				ConfigEntries: config,
 			},
 			{
 				Topic:             topic2,
-				NumPartitions:     1,
+				NumPartitions:     2,
 				ReplicationFactor: 1,
 				ConfigEntries:     config,
 			},
