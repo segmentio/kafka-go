@@ -419,8 +419,10 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 				}
 
 				if tag.TagID < -1 {
+					// Normal required field
 					fields = append(fields, f)
 				} else {
+					// Optional tagged field (flexible messages only)
 					taggedFields[tag.TagID] = &f
 				}
 				return false
