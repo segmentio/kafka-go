@@ -40,13 +40,7 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		err = fmt.Errorf(
-			"unsupported %s version: v%d not in range v%d-v%d",
-			apiKey,
-			apiVersion,
-			minVersion,
-			maxVersion,
-		)
+		err = fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 		return
 	}
 
@@ -91,13 +85,7 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	maxVersion := t.maxVersion()
 
 	if apiVersion < minVersion || apiVersion > maxVersion {
-		return fmt.Errorf(
-			"unsupported %s version: v%d not in range v%d-v%d",
-			apiKey,
-			apiVersion,
-			minVersion,
-			maxVersion,
-		)
+		return fmt.Errorf("unsupported %s version: v%d not in range v%d-v%d", apiKey, apiVersion, minVersion, maxVersion)
 	}
 
 	r := &t.requests[apiVersion-minVersion]
