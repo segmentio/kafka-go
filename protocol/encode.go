@@ -189,15 +189,9 @@ func (e *encoder) encodeArray(v value, elemType reflect.Type, encodeElem encodeF
 
 func (e *encoder) encodeCompactArray(v value, elemType reflect.Type, encodeElem encodeFunc) {
 	a := v.array(elemType)
-	if a.isNil() {
-		e.writeUnsignedVarInt(0)
-		return
-	}
-
 	n := a.length()
-
-	// In compact scheme, size 0=null, size 1=0 len array, etc.
 	e.writeUnsignedVarInt(uint64(n + 1))
+
 	for i := 0; i < n; i++ {
 		encodeElem(e, a.index(i))
 	}
@@ -213,6 +207,20 @@ func (e *encoder) encodeNullArray(v value, elemType reflect.Type, encodeElem enc
 	n := a.length()
 	e.writeInt32(int32(n))
 
+	for i := 0; i < n; i++ {
+		encodeElem(e, a.index(i))
+	}
+}
+
+func (e *encoder) encodeCompactNullArray(v value, elemType reflect.Type, encodeElem encodeFunc) {
+	a := v.array(elemType)
+	if a.isNil() {
+		e.writeUnsignedVarInt(0)
+		return
+	}
+
+	n := a.length()
+	e.writeUnsignedVarInt(uint64(n + 1))
 	for i := 0; i < n; i++ {
 		encodeElem(e, a.index(i))
 	}
@@ -471,9 +479,11 @@ func stringEncodeFuncOf(flexible bool, tag structTag) encodeFunc {
 
 func bytesEncodeFuncOf(flexible bool, tag structTag) encodeFunc {
 	switch {
+	case flexible && tag.Nullable:
+		// In flexible messages, all arrays are compact
+		return (*encoder).encodeCompactNullBytes
 	case flexible:
-		// In flexible messages, all arrays are compact and there is no encoding
-		// distinction between nullable and non-nullable arrays.
+		// In flexible messages, all arrays are compact
 		return (*encoder).encodeCompactBytes
 	case tag.Nullable:
 		return (*encoder).encodeNullBytes
@@ -543,9 +553,11 @@ func arrayEncodeFuncOf(typ reflect.Type, version int16, flexible bool, tag struc
 	elemType := typ.Elem()
 	elemFunc := encodeFuncOf(elemType, version, flexible, tag)
 	switch {
+	case flexible && tag.Nullable:
+		// In flexible messages, all arrays are compact
+		return func(e *encoder, v value) { e.encodeCompactNullArray(v, elemType, elemFunc) }
 	case flexible:
-		// In flexible messages, all arrays are compact and there is no encoding
-		// distinction between nullable and non-nullable arrays.
+		// In flexible messages, all arrays are compact
 		return func(e *encoder, v value) { e.encodeCompactArray(v, elemType, elemFunc) }
 	case tag.Nullable:
 		return func(e *encoder, v value) { e.encodeNullArray(v, elemType, elemFunc) }

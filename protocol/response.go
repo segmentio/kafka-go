@@ -53,6 +53,7 @@ func ReadResponse(
 		// of the response header. However, we don't currently implement
 		// anything to decode them.
 		tagBufferSize := int(d.readUnsignedVarInt())
+
 		if tagBufferSize > 0 {
 			d.read(tagBufferSize)
 		}

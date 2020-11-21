@@ -115,7 +115,6 @@ func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeF
 
 func (d *decoder) decodeCompactArray(v value, elemType reflect.Type, decodeElem decodeFunc) {
 	if n := d.readUnsignedVarInt(); n < 1 {
-		// TODO: Distinguish between empty and null?
 		v.setArray(array{})
 	} else {
 		a := makeArray(elemType, int(n-1))

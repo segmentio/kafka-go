@@ -70,17 +70,16 @@ func sizeOfVarNullBytes(b []byte) int {
 func sizeOfVarNullBytesIface(b Bytes) int {
 	if b == nil {
 		return sizeOfVarInt(-1)
-	} else {
-		n := b.Len()
-		return sizeOfVarInt(int64(n)) + n
 	}
+	n := b.Len()
+	return sizeOfVarInt(int64(n)) + n
 }
 
 func sizeOfCompactNullBytes(b []byte) int {
-	n := len(b)
 	if b == nil {
 		return sizeOfUnsignedVarInt(0)
 	}
+	n := len(b)
 	return sizeOfUnsignedVarInt(int64(n)+1) + n
 }
 
