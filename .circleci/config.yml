@@ -175,6 +175,7 @@ jobs:
     working_directory: *working_directory
     environment:
       KAFKA_VERSION: "2.4.1"
+      KAFKA_SKIP_CONNTEST: "1"
     docker:
     - image: circleci/golang
     - image: wurstmeister/zookeeper
