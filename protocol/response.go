@@ -39,7 +39,7 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	res := &t.responses[apiVersion-minVersion]
 
 	if res.flexible {
-		// In the flexible case, there's a tag buffer at the end of the request header
+		// In the flexible case, there's a tag buffer at the end of the response header
 		taggedCount := int(d.readUnsignedVarInt())
 		for i := 0; i < taggedCount; i++ {
 			d.readUnsignedVarInt() // tagID

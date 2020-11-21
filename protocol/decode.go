@@ -387,18 +387,16 @@ func stringDecodeFuncOf(flexible bool, tag structTag) decodeFunc {
 	if flexible {
 		// In flexible messages, all strings are compact
 		return (*decoder).decodeCompactString
-	} else {
-		return (*decoder).decodeString
 	}
+	return (*decoder).decodeString
 }
 
 func bytesDecodeFuncOf(flexible bool, tag structTag) decodeFunc {
 	if flexible {
 		// In flexible messages, all arrays are compact
 		return (*decoder).decodeCompactBytes
-	} else {
-		return (*decoder).decodeBytes
 	}
+	return (*decoder).decodeBytes
 }
 
 func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFunc {
