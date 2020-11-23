@@ -968,21 +968,18 @@ func (w *Writer) Stats() WriterStats {
 }
 
 func (w *Writer) chooseTopic(msg Message) (string, error) {
-	if w.Topic != "" {
-		if msg.Topic != "" {
-			// if writer topic defined, messages must not also specify one
-			return "", InvalidMessage
-		}
+	// w.Topic and msg.Topic are mutually exclusive, meaning only 1 must be set
+	// otherwise we will return an error.
+	if (w.Topic != "" && msg.Topic != "") || (w.Topic == "" && msg.Topic == "") {
+		return "", InvalidMessage
+	}
 
-		return w.Topic, nil
-	} else {
-		if msg.Topic == "" {
-			// either the writer or the message must specify a topic
-			return "", InvalidTopic
-		}
-
+	// now we choose the topic, depending on which one is not empty
+	if msg.Topic != "" {
 		return msg.Topic, nil
 	}
+
+	return w.Topic, nil
 }
 
 type writeBatch struct {
