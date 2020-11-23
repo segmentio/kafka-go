@@ -294,7 +294,15 @@ func TestConn(t *testing.T) {
 	}
 
 	t.Run("nettest", func(t *testing.T) {
-		// TODO: Remove this once we figure out why these tests are failing with v2.4.1.
+		// Need ability to skip nettest on newer Kafka versions to avoid these kinds of errors:
+		//  --- FAIL: TestConn/nettest (17.56s)
+		//    --- FAIL: TestConn/nettest/PingPong (7.40s)
+		//      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+		//      conntest.go:118: mismatching value: got 77, want 78
+		//      conntest.go:118: mismatching value: got 78, want 79
+		// ...
+		//
+		// TODO: Figure out why these are happening and fix them (they don't appear to be new).
 		if _, ok := os.LookupEnv("KAFKA_SKIP_NETTEST"); ok {
 			t.Log("skipping nettest because KAFKA_SKIP_NETTEST is set")
 			t.Skip()
