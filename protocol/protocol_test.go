@@ -163,6 +163,36 @@ func TestVarInts(t *testing.T) {
 			expUVarInt: []byte{12},
 		},
 		{
+			input:      63,
+			expVarInt:  []byte{126},
+			expUVarInt: []byte{63},
+		},
+		{
+			input:      -64,
+			expVarInt:  []byte{127},
+			expUVarInt: []byte{192, 255, 255, 255, 255, 255, 255, 255, 255, 1},
+		},
+		{
+			input:      64,
+			expVarInt:  []byte{128, 1},
+			expUVarInt: []byte{64},
+		},
+		{
+			input:      127,
+			expVarInt:  []byte{254, 1},
+			expUVarInt: []byte{127},
+		},
+		{
+			input:      128,
+			expVarInt:  []byte{128, 2},
+			expUVarInt: []byte{128, 1},
+		},
+		{
+			input:      129,
+			expVarInt:  []byte{130, 2},
+			expUVarInt: []byte{129, 1},
+		},
+		{
 			input:      12345,
 			expVarInt:  []byte{242, 192, 1},
 			expUVarInt: []byte{185, 96},
