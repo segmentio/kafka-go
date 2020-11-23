@@ -386,22 +386,7 @@ func (e *encoder) writeCompactNullBytesFrom(b Bytes) error {
 }
 
 func (e *encoder) writeVarInt(i int64) {
-	b := e.buffer[:]
-	u := uint64((i << 1) ^ (i >> 63))
-	n := 0
-
-	for u >= 0x80 && n < len(b) {
-		b[n] = byte(u) | 0x80
-		u >>= 7
-		n++
-	}
-
-	if n < len(b) {
-		b[n] = byte(u)
-		n++
-	}
-
-	e.Write(b[:n])
+	e.writeUnsignedVarInt(uint64((i << 1) ^ (i >> 63)))
 }
 
 func (e *encoder) writeUnsignedVarInt(i uint64) {
