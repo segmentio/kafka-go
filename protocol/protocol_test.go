@@ -197,6 +197,11 @@ func TestVarInts(t *testing.T) {
 			expVarInt:  []byte{242, 192, 1},
 			expUVarInt: []byte{185, 96},
 		},
+		{
+			input:      123456789101112,
+			expVarInt:  []byte{240, 232, 249, 224, 144, 146, 56},
+			expUVarInt: []byte{184, 244, 188, 176, 136, 137, 28},
+		},
 	}
 
 	for _, tc := range tcs {
@@ -217,6 +222,15 @@ func TestVarInts(t *testing.T) {
 				"got", b.Bytes(),
 			)
 		}
+		expLen := sizeOfVarInt(tc.input)
+		if expLen != len(b.Bytes()) {
+			t.Error(
+				"Wrong sizeOf for", tc.input, "as varInt",
+				"expected", expLen,
+				"got", len(b.Bytes()),
+			)
+		}
+
 		d := &decoder{reader: b, remain: len(b.Bytes())}
 		v := d.readVarInt()
 		if v != tc.input {
@@ -244,6 +258,15 @@ func TestVarInts(t *testing.T) {
 				"got", b.Bytes(),
 			)
 		}
+		expLen = sizeOfUnsignedVarInt(uint64(tc.input))
+		if expLen != len(b.Bytes()) {
+			t.Error(
+				"Wrong sizeOf for", tc.input, "as unsignedVarInt",
+				"expected", expLen,
+				"got", len(b.Bytes()),
+			)
+		}
+
 		d = &decoder{reader: b, remain: len(b.Bytes())}
 		v = int64(d.readUnsignedVarInt())
 		if v != tc.input {
