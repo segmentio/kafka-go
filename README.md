@@ -536,6 +536,24 @@ if err != nil {
 }
 ```
 
+#### [GSSAPI](https://godoc.org/github.com/segmentio/kafka-go/sasl/gssapi#Mechanism)
+```go
+conf, _ := os.Open("krb5.conf")
+kt, _ := os.Open("keytab")
+config := KerberosConfig{
+    Principal:     "principal/principal",
+    Realm:         "realm",
+    SPN:           "kafka/domain",
+    Configuration: conf,
+    Keytab:        kt,
+}
+
+mechanism, err := gssapi.Mechanism(config)
+if err != nil {
+    panic(err)
+}
+```
+
 ### Connection
 
 ```go
