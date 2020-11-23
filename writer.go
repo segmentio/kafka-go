@@ -83,10 +83,11 @@ type Writer struct {
 	// nil address will error.
 	Addr net.Addr
 
-	// The topic that the writer will produce messages to.
+	// Topic is the name of the topic that the writer will produce messages to.
 	//
-	// This field is required, attempting to write messages to a writer with no
-	// topic will error.
+	// Setting this field or not is a mutually exclusive option. If you set Topic
+	// here, you must not set Topic for any produced Message. Otherwise, if you	do
+	// not set Topic, every Message must have Topic specified.
 	Topic string
 
 	// The balancer used to distribute messages across partitions.
