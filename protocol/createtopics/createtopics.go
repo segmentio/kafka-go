@@ -7,13 +7,13 @@ func init() {
 }
 
 type Request struct {
+	// We need at least one tagged field to indicate that v5+ uses "flexible"
+	// messages.
+	_ struct{} `kafka:"min=v5,max=v5,tag"`
+
 	Topics       []RequestTopic `kafka:"min=v0,max=v5"`
 	TimeoutMs    int32          `kafka:"min=v0,max=v5"`
 	ValidateOnly bool           `kafka:"min=v1,max=v5"`
-
-	// We need at least one tagged field to indicate that v5+ uses "flexible"
-	// messages.
-	_ struct{} `kafka:"min=v5,max=v5,tag=-1"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.CreateTopics }
@@ -41,12 +41,12 @@ type RequestConfig struct {
 }
 
 type Response struct {
-	ThrottleTimeMs int32           `kafka:"min=v2,max=v5"`
-	Topics         []ResponseTopic `kafka:"min=v0,max=v5"`
-
 	// We need at least one tagged field to indicate that v5+ uses "flexible"
 	// messages.
-	_ struct{} `kafka:"min=v5,max=v5,tag=-1"`
+	_ struct{} `kafka:"min=v5,max=v5,tag"`
+
+	ThrottleTimeMs int32           `kafka:"min=v2,max=v5"`
+	Topics         []ResponseTopic `kafka:"min=v0,max=v5"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.CreateTopics }
