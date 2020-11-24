@@ -40,7 +40,7 @@ type CreatePartitionsResponse struct {
 // CreatePartitions sends a partitions creation request to a kafka broker and returns the
 // response.
 func (c *Client) CreatePartitions(ctx context.Context, req *CreatePartitionsRequest) (*CreatePartitionsResponse, error) {
-	topics := make([]createpartitions.RequestTopic, 0, len(req.Topics))
+	topics := make([]createpartitions.RequestTopic, len(req.Topics))
 
 	for i, t := range req.Topics {
 		topics[i] = createpartitions.RequestTopic{
@@ -80,19 +80,38 @@ type TopicPartitionsConfig struct {
 	// Topic partition's count.
 	Count int32
 
-	// ReplicaAssignments among kafka brokers for this topic partitions.
-	ReplicaAssignments []ReplicaAssignment
+	// PartitionReplicaAssignments among kafka brokers for this topic partitions.
+	PartitionReplicaAssignments []PartitionReplicaAssignment
 }
 
 func (t *TopicPartitionsConfig) assignments() []createpartitions.RequestAssignment {
-	if len(t.ReplicaAssignments) == 0 {
+	if len(t.PartitionReplicaAssignments) == 0 {
 		return nil
 	}
-	assignments := make([]createpartitions.RequestAssignment, 0, len(t.ReplicaAssignments))
-	for i, a := range t.ReplicaAssignments {
+	assignments := make([]createpartitions.RequestAssignment, len(t.PartitionReplicaAssignments))
+	for i, a := range t.PartitionReplicaAssignments {
 		assignments[i] = createpartitions.RequestAssignment{
 			BrokerIDs: a.brokerIDs(),
 		}
 	}
 	return assignments
+}
+
+type PartitionReplicaAssignment struct {
+	// The list of brokers where the partition should be allocated. There must
+	// be as many entries in thie list as there are replicas of the partition.
+	// The first entry represents the broker that will be the preferred leader
+	// for the partition.
+	Replicas []int
+}
+
+func (a *PartitionReplicaAssignment) brokerIDs() []int32 {
+	if len(a.Replicas) == 0 {
+		return nil
+	}
+	replicas := make([]int32, len(a.Replicas))
+	for i, r := range a.Replicas {
+		replicas[i] = int32(r)
+	}
+	return replicas
 }

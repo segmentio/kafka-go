@@ -24,9 +24,20 @@ type DescribeConfigsRequest struct {
 	IncludeDocumentation bool
 }
 
+type ResourceType int8
+
+const (
+	ResourceTypeUnknown ResourceType = 0
+	ResourceTypeAny     ResourceType = 1
+	ResourceTypeTopic   ResourceType = 2
+	ResourceTypeGroup   ResourceType = 3
+	ResourceTypeCluster ResourceType = 4
+	ResourceTypeBroker  ResourceType = 5
+)
+
 type DescribeConfigRequestResource struct {
 	// Resource Type
-	ResourceType int8
+	ResourceType ResourceType
 
 	// Resource Name
 	ResourceName string
@@ -98,11 +109,11 @@ type DescribeConfigResponseConfigSynonym struct {
 // DescribeConfigs sends a config altering request to a kafka broker and returns the
 // response.
 func (c *Client) DescribeConfigs(ctx context.Context, req *DescribeConfigsRequest) (*DescribeConfigsResponse, error) {
-	resources := make([]describeconfigs.RequestResource, 0, len(req.Resources))
+	resources := make([]describeconfigs.RequestResource, len(req.Resources))
 
 	for i, t := range req.Resources {
 		resources[i] = describeconfigs.RequestResource{
-			ResourceType: t.ResourceType,
+			ResourceType: int8(t.ResourceType),
 			ResourceName: t.ResourceName,
 			ConfigNames:  t.ConfigNames,
 		}
@@ -121,15 +132,15 @@ func (c *Client) DescribeConfigs(ctx context.Context, req *DescribeConfigsReques
 	res := m.(*describeconfigs.Response)
 	ret := &DescribeConfigsResponse{
 		Throttle:  makeDuration(res.ThrottleTimeMs),
-		Resources: make([]DescribeConfigResponseResource, 0, len(res.Resources)),
+		Resources: make([]DescribeConfigResponseResource, len(res.Resources)),
 	}
 
 	for i, t := range res.Resources {
 
-		configEntries := make([]DescribeConfigResponseConfigEntry, 0, len(t.ConfigEntries))
+		configEntries := make([]DescribeConfigResponseConfigEntry, len(t.ConfigEntries))
 		for j, v := range t.ConfigEntries {
 
-			configSynonyms := make([]DescribeConfigResponseConfigSynonym, 0, len(v.ConfigSynonyms))
+			configSynonyms := make([]DescribeConfigResponseConfigSynonym, len(v.ConfigSynonyms))
 			for k, cs := range v.ConfigSynonyms {
 				configSynonyms[k] = DescribeConfigResponseConfigSynonym{
 					ConfigName:   cs.ConfigName,

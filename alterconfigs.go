@@ -24,7 +24,7 @@ type AlterConfigsRequest struct {
 
 type AlterConfigRequestResource struct {
 	// Resource Type
-	ResourceType int8
+	ResourceType ResourceType
 
 	// Resource Name
 	ResourceName string
@@ -63,10 +63,10 @@ type AlterConfigsResponseResource struct {
 // AlterConfigs sends a config altering request to a kafka broker and returns the
 // response.
 func (c *Client) AlterConfigs(ctx context.Context, req *AlterConfigsRequest) (*AlterConfigsResponse, error) {
-	resources := make([]alterconfigs.RequestResources, 0, len(req.Resources))
+	resources := make([]alterconfigs.RequestResources, len(req.Resources))
 
 	for i, t := range req.Resources {
-		configs := make([]alterconfigs.RequestConfig, 0, len(t.Configs))
+		configs := make([]alterconfigs.RequestConfig, len(t.Configs))
 		for j, v := range t.Configs {
 			configs[j] = alterconfigs.RequestConfig{
 				Name:  v.Name,
@@ -74,7 +74,7 @@ func (c *Client) AlterConfigs(ctx context.Context, req *AlterConfigsRequest) (*A
 			}
 		}
 		resources[i] = alterconfigs.RequestResources{
-			ResourceType: t.ResourceType,
+			ResourceType: int8(t.ResourceType),
 			ResourceName: t.ResourceName,
 			Configs:      configs,
 		}
