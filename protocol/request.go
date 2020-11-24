@@ -45,6 +45,19 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	}
 
 	req := &t.requests[apiVersion-minVersion]
+
+	if req.flexible {
+		// In the flexible case, there's a tag buffer at the end of the request header
+		taggedCount := int(d.readUnsignedVarInt())
+		for i := 0; i < taggedCount; i++ {
+			d.readUnsignedVarInt() // tagID
+			size := d.readUnsignedVarInt()
+
+			// Just throw away the values for now
+			d.read(int(size))
+		}
+	}
+
 	msg = req.new()
 	req.decode(d, valueOf(msg))
 	d.discardAll()
@@ -85,10 +98,23 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	e.writeInt16(int16(apiKey))
 	e.writeInt16(apiVersion)
 	e.writeInt32(correlationID)
-	// Technically, recent versions of kafka interpret this field as a nullable
-	// string, however kafka 0.10 expected a non-nullable string and fails with
-	// a NullPointerException when it receives a null client id.
-	e.writeString(clientID)
+
+	if r.flexible {
+		// Flexible messages use a nullable string for the client ID, then extra space for a
+		// tag buffer, which begins with a size value. Since we're not writing any fields into the
+		// latter, we can just write zero for now.
+		//
+		// See
+		// https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
+		// for details.
+		e.writeNullString(clientID)
+		e.writeUnsignedVarInt(0)
+	} else {
+		// Technically, recent versions of kafka interpret this field as a nullable
+		// string, however kafka 0.10 expected a non-nullable string and fails with
+		// a NullPointerException when it receives a null client id.
+		e.writeString(clientID)
+	}
 	r.encode(e, v)
 	err := e.err
 

@@ -100,8 +100,10 @@ const (
 	AlterPartitionReassignments ApiKey = 45
 	ListPartitionReassignments  ApiKey = 46
 	OffsetDelete                ApiKey = 47
+	DescribeClientQuotas        ApiKey = 48
+	AlterClientQuotas           ApiKey = 49
 
-	numApis = 48
+	numApis = 50
 )
 
 var apiNames = [numApis]string{
@@ -149,17 +151,20 @@ var apiNames = [numApis]string{
 	DescribeDelegationToken:     "DescribeDelegationToken",
 	DeleteGroups:                "DeleteGroups",
 	ElectLeaders:                "ElectLeaders",
-	IncrementalAlterConfigs:     "IncrementalAlfterConfigs",
+	IncrementalAlterConfigs:     "IncrementalAlterConfigs",
 	AlterPartitionReassignments: "AlterPartitionReassignments",
 	ListPartitionReassignments:  "ListPartitionReassignments",
 	OffsetDelete:                "OffsetDelete",
+	DescribeClientQuotas:        "DescribeClientQuotas",
+	AlterClientQuotas:           "AlterClientQuotas",
 }
 
 type messageType struct {
-	version int16
-	gotype  reflect.Type
-	decode  decodeFunc
-	encode  encodeFunc
+	version  int16
+	flexible bool
+	gotype   reflect.Type
+	decode   decodeFunc
+	encode   encodeFunc
 }
 
 func (t *messageType) new() Message {
@@ -211,6 +216,10 @@ func makeTypes(t reflect.Type) []messageType {
 	minVersion := int16(-1)
 	maxVersion := int16(-1)
 
+	// All future versions will be flexible (according to spec), so don't need to
+	// worry about maxes here.
+	minFlexibleVersion := int16(-1)
+
 	forEachStructField(t, func(_ reflect.Type, _ index, tag string) {
 		forEachStructTag(tag, func(tag structTag) bool {
 			if minVersion < 0 || tag.MinVersion < minVersion {
@@ -219,6 +228,9 @@ func makeTypes(t reflect.Type) []messageType {
 			if maxVersion < 0 || tag.MaxVersion > maxVersion {
 				maxVersion = tag.MaxVersion
 			}
+			if tag.TagID > -2 && (minFlexibleVersion < 0 || tag.MinVersion < minFlexibleVersion) {
+				minFlexibleVersion = tag.MinVersion
+			}
 			return true
 		})
 	})
@@ -226,11 +238,14 @@ func makeTypes(t reflect.Type) []messageType {
 	types := make([]messageType, 0, (maxVersion-minVersion)+1)
 
 	for v := minVersion; v <= maxVersion; v++ {
+		flexible := minFlexibleVersion >= 0 && v >= minFlexibleVersion
+
 		types = append(types, messageType{
-			version: v,
-			gotype:  t,
-			decode:  decodeFuncOf(t, v, structTag{}),
-			encode:  encodeFuncOf(t, v, structTag{}),
+			version:  v,
+			gotype:   t,
+			flexible: flexible,
+			decode:   decodeFuncOf(t, v, flexible, structTag{}),
+			encode:   encodeFuncOf(t, v, flexible, structTag{}),
 		})
 	}
 
@@ -242,6 +257,7 @@ type structTag struct {
 	MaxVersion int16
 	Compact    bool
 	Nullable   bool
+	TagID      int
 }
 
 func forEachStructTag(tag string, do func(structTag) bool) {
@@ -253,6 +269,11 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 		tag := structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
+
+			// Legitimate tag IDs can start at 0. We use -1 as a placeholder to indicate
+			// that the message type is flexible, so that leaves -2 as the default for
+			// indicating that there is no tag ID and the message is not flexible.
+			TagID: -2,
 		}
 
 		var err error
@@ -262,6 +283,10 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 				tag.MinVersion, err = parseVersion(s[4:])
 			case strings.HasPrefix(s, "max="):
 				tag.MaxVersion, err = parseVersion(s[4:])
+			case s == "tag":
+				tag.TagID = -1
+			case strings.HasPrefix(s, "tag="):
+				tag.TagID, err = strconv.Atoi(s[4:])
 			case s == "compact":
 				tag.Compact = true
 			case s == "nullable":

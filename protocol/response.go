@@ -37,6 +37,19 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	correlationID = d.readInt32()
 
 	res := &t.responses[apiVersion-minVersion]
+
+	if res.flexible {
+		// In the flexible case, there's a tag buffer at the end of the response header
+		taggedCount := int(d.readUnsignedVarInt())
+		for i := 0; i < taggedCount; i++ {
+			d.readUnsignedVarInt() // tagID
+			size := d.readUnsignedVarInt()
+
+			// Just throw away the values for now
+			d.read(int(size))
+		}
+	}
+
 	msg = res.new()
 	res.decode(d, valueOf(msg))
 	d.discardAll()
