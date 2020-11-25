@@ -115,7 +115,6 @@ func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeF
 
 func (d *decoder) decodeCompactArray(v value, elemType reflect.Type, decodeElem decodeFunc) {
 	if n := d.readUnsignedVarInt(); n < 1 {
-		// TODO: Distinguish between empty and null?
 		v.setArray(array{})
 	} else {
 		a := makeArray(elemType, int(n-1))
@@ -235,7 +234,6 @@ func (d *decoder) readVarString() string {
 
 func (d *decoder) readCompactString() string {
 	if n := d.readUnsignedVarInt(); n < 1 {
-		// TODO: Distinguish between empty and null?
 		return ""
 	} else {
 		return bytesToString(d.read(int(n - 1)))
@@ -389,18 +387,16 @@ func stringDecodeFuncOf(flexible bool, tag structTag) decodeFunc {
 	if flexible {
 		// In flexible messages, all strings are compact
 		return (*decoder).decodeCompactString
-	} else {
-		return (*decoder).decodeString
 	}
+	return (*decoder).decodeString
 }
 
 func bytesDecodeFuncOf(flexible bool, tag structTag) decodeFunc {
 	if flexible {
 		// In flexible messages, all arrays are compact
 		return (*decoder).decodeCompactBytes
-	} else {
-		return (*decoder).decodeBytes
 	}
+	return (*decoder).decodeBytes
 }
 
 func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFunc {
@@ -423,8 +419,10 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 				}
 
 				if tag.TagID < -1 {
+					// Normal required field
 					fields = append(fields, f)
 				} else {
+					// Optional tagged field (flexible messages only)
 					taggedFields[tag.TagID] = &f
 				}
 				return false
@@ -442,9 +440,9 @@ func structDecodeFuncOf(typ reflect.Type, version int16, flexible bool) decodeFu
 		if flexible {
 			// See https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
 			// for details of tag buffers in "flexible" messages.
-			numFields := int(d.readUnsignedVarInt())
+			n := int(d.readUnsignedVarInt())
 
-			for i := 0; i < numFields; i++ {
+			for i := 0; i < n; i++ {
 				tagID := int(d.readUnsignedVarInt())
 				size := int(d.readUnsignedVarInt())
 

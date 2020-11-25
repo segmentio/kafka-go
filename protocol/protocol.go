@@ -228,7 +228,7 @@ func makeTypes(t reflect.Type) []messageType {
 			if maxVersion < 0 || tag.MaxVersion > maxVersion {
 				maxVersion = tag.MaxVersion
 			}
-			if tag.TagID > -2 && tag.MinVersion > minFlexibleVersion {
+			if tag.TagID > -2 && (minFlexibleVersion < 0 || tag.MinVersion < minFlexibleVersion) {
 				minFlexibleVersion = tag.MinVersion
 			}
 			return true
@@ -269,7 +269,11 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 		tag := structTag{
 			MinVersion: -1,
 			MaxVersion: -1,
-			TagID:      -2,
+
+			// Legitimate tag IDs can start at 0. We use -1 as a placeholder to indicate
+			// that the message type is flexible, so that leaves -2 as the default for
+			// indicating that there is no tag ID and the message is not flexible.
+			TagID: -2,
 		}
 
 		var err error
@@ -279,8 +283,10 @@ func forEachStructTag(tag string, do func(structTag) bool) {
 				tag.MinVersion, err = parseVersion(s[4:])
 			case strings.HasPrefix(s, "max="):
 				tag.MaxVersion, err = parseVersion(s[4:])
-			case strings.HasPrefix(s, "tagId="):
-				tag.TagID, err = strconv.Atoi(s[6:])
+			case s == "tag":
+				tag.TagID = -1
+			case strings.HasPrefix(s, "tag="):
+				tag.TagID, err = strconv.Atoi(s[4:])
 			case s == "compact":
 				tag.Compact = true
 			case s == "nullable":

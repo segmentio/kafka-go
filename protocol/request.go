@@ -57,6 +57,19 @@ func ReadRequest(r io.Reader) (
 	}
 
 	req := &t.requests[apiVersion-minVersion]
+
+	if req.flexible {
+		// In the flexible case, there's a tag buffer at the end of the request header
+		taggedCount := int(d.readUnsignedVarInt())
+		for i := 0; i < taggedCount; i++ {
+			d.readUnsignedVarInt() // tagID
+			size := d.readUnsignedVarInt()
+
+			// Just throw away the values for now
+			d.read(int(size))
+		}
+	}
+
 	msg = req.new()
 	req.decode(d, valueOf(msg))
 	d.discardAll()

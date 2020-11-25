@@ -49,12 +49,14 @@ func ReadResponse(
 	res := &t.responses[apiVersion-minVersion]
 
 	if res.flexible {
-		// In the flexible case, there's room for tagged fields at the end
-		// of the response header. However, we don't currently implement
-		// anything to decode them.
-		tagBufferSize := int(d.readUnsignedVarInt())
-		if tagBufferSize > 0 {
-			d.read(tagBufferSize)
+		// In the flexible case, there's a tag buffer at the end of the response header
+		taggedCount := int(d.readUnsignedVarInt())
+		for i := 0; i < taggedCount; i++ {
+			d.readUnsignedVarInt() // tagID
+			size := d.readUnsignedVarInt()
+
+			// Just throw away the values for now
+			d.read(int(size))
 		}
 	}
 

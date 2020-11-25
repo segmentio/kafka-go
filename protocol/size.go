@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"math/bits"
 	"reflect"
 )
 
@@ -32,7 +33,7 @@ func sizeOfVarString(s string) int {
 }
 
 func sizeOfCompactString(s string) int {
-	return sizeOfUnsignedVarInt(int64(len(s)+1)) + len(s)
+	return sizeOfUnsignedVarInt(uint64(len(s)+1)) + len(s)
 }
 
 func sizeOfVarBytes(b []byte) int {
@@ -40,7 +41,7 @@ func sizeOfVarBytes(b []byte) int {
 }
 
 func sizeOfCompactBytes(b []byte) int {
-	return sizeOfUnsignedVarInt(int64(len(b)+1)) + len(b)
+	return sizeOfUnsignedVarInt(uint64(len(b)+1)) + len(b)
 }
 
 func sizeOfVarNullString(s string) int {
@@ -56,7 +57,7 @@ func sizeOfCompactNullString(s string) int {
 	if n == 0 {
 		return sizeOfUnsignedVarInt(0)
 	}
-	return sizeOfUnsignedVarInt(int64(n)+1) + n
+	return sizeOfUnsignedVarInt(uint64(n)+1) + n
 }
 
 func sizeOfVarNullBytes(b []byte) int {
@@ -70,39 +71,23 @@ func sizeOfVarNullBytes(b []byte) int {
 func sizeOfVarNullBytesIface(b Bytes) int {
 	if b == nil {
 		return sizeOfVarInt(-1)
-	} else {
-		n := b.Len()
-		return sizeOfVarInt(int64(n)) + n
 	}
+	n := b.Len()
+	return sizeOfVarInt(int64(n)) + n
 }
 
 func sizeOfCompactNullBytes(b []byte) int {
-	n := len(b)
 	if b == nil {
 		return sizeOfUnsignedVarInt(0)
 	}
-	return sizeOfUnsignedVarInt(int64(n)+1) + n
+	n := len(b)
+	return sizeOfUnsignedVarInt(uint64(n)+1) + n
 }
 
 func sizeOfVarInt(i int64) int {
-	u := uint64((i << 1) ^ (i >> 63)) // zig-zag encoding
-	n := 0
-
-	for u >= 0x80 {
-		u >>= 7
-		n++
-	}
-
-	return n + 1
+	return sizeOfUnsignedVarInt(uint64((i << 1) ^ (i >> 63))) // zig-zag encoding
 }
 
-func sizeOfUnsignedVarInt(i int64) int {
-	n := 0
-
-	for i >= 0x80 {
-		i >>= 7
-		n++
-	}
-
-	return n + 1
+func sizeOfUnsignedVarInt(i uint64) int {
+	return (bits.Len64(i|1) + 6) / 7
 }
