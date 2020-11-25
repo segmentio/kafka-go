@@ -17,7 +17,7 @@ type AlterBrokerConfigsRequest struct {
 }
 
 type AlterBrokerConfigsResponse struct {
-	ErrorCode    int16
+	ErrorCode    int
 	ErrorMessage string
 }
 
@@ -30,7 +30,7 @@ type AlterTopicConfigsRequest struct {
 }
 
 type AlterTopicConfigsResponse struct {
-	ErrorCode    int16
+	ErrorCode    int
 	ErrorMessage string
 }
 
@@ -63,7 +63,7 @@ func (c *Client) AlterBrokerConfigs(
 	}
 
 	return &AlterBrokerConfigsResponse{
-		ErrorCode:    apiResp.Responses[0].ErrorCode,
+		ErrorCode:    int(apiResp.Responses[0].ErrorCode),
 		ErrorMessage: apiResp.Responses[0].ErrorMessage,
 	}, nil
 }
@@ -98,7 +98,7 @@ func (c *Client) AlterTopicConfigs(
 	}
 
 	return &AlterTopicConfigsResponse{
-		ErrorCode:    apiResp.Responses[0].ErrorCode,
+		ErrorCode:    int(apiResp.Responses[0].ErrorCode),
 		ErrorMessage: apiResp.Responses[0].ErrorMessage,
 	}, nil
 }

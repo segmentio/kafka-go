@@ -15,16 +15,16 @@ type CreatePartitionsRequest struct {
 
 	Topic         string
 	NewPartitions []CreatePartitionsRequestPartition
-	TotalCount    int32
+	TotalCount    int
 	Timeout       time.Duration
 }
 
 type CreatePartitionsRequestPartition struct {
-	BrokerIDs []int32
+	BrokerIDs []int
 }
 
 type CreatePartitionsResponse struct {
-	ErrorCode    int16
+	ErrorCode    int
 	ErrorMessage string
 }
 
@@ -34,8 +34,13 @@ func (c *Client) CreatePartitions(
 ) (*CreatePartitionsResponse, error) {
 	assignments := []createpartitions.RequestAssignment{}
 	for _, partition := range req.NewPartitions {
+		brokerIDs32 := []int32{}
+		for _, brokerID := range partition.BrokerIDs {
+			brokerIDs32 = append(brokerIDs32, int32(brokerID))
+		}
+
 		assignments = append(assignments, createpartitions.RequestAssignment{
-			BrokerIDs: partition.BrokerIDs,
+			BrokerIDs: brokerIDs32,
 		})
 	}
 
@@ -43,7 +48,7 @@ func (c *Client) CreatePartitions(
 		Topics: []createpartitions.RequestTopic{
 			{
 				Name:        req.Topic,
-				Count:       req.TotalCount,
+				Count:       int32(req.TotalCount),
 				Assignments: assignments,
 			},
 		},
@@ -65,7 +70,7 @@ func (c *Client) CreatePartitions(
 	}
 
 	return &CreatePartitionsResponse{
-		ErrorCode:    apiResp.Results[0].ErrorCode,
+		ErrorCode:    int(apiResp.Results[0].ErrorCode),
 		ErrorMessage: apiResp.Results[0].ErrorMessage,
 	}, nil
 }

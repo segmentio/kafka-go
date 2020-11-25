@@ -19,7 +19,7 @@ type ListGroupsResponse struct {
 
 type ListGroupsResponseGroup struct {
 	GroupID     string
-	Coordinator int32
+	Coordinator int
 }
 
 func (c *Client) ListGroups(
@@ -36,7 +36,7 @@ func (c *Client) ListGroups(
 	for _, apiGroupInfo := range apiResp.Groups {
 		resp.Groups = append(resp.Groups, ListGroupsResponseGroup{
 			GroupID:     apiGroupInfo.GroupID,
-			Coordinator: apiGroupInfo.BrokerID,
+			Coordinator: int(apiGroupInfo.BrokerID),
 		})
 	}
 

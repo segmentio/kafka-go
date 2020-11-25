@@ -18,20 +18,20 @@ type AlterPartitionReassignmentsRequest struct {
 }
 
 type AlterPartitionReassignmentsRequestAssignment struct {
-	PartitionID int32
-	BrokerIDs   []int32
+	PartitionID int
+	BrokerIDs   []int
 }
 
 type AlterPartitionReassignmentsResponse struct {
-	ErrorCode    int16
+	ErrorCode    int
 	ErrorMessage string
 
 	PartitionResults []AlterPartitionReassignmentsResponsePartitionResult
 }
 
 type AlterPartitionReassignmentsResponsePartitionResult struct {
-	PartitionID  int32
-	ErrorCode    int16
+	PartitionID  int
+	ErrorCode    int
 	ErrorMessage string
 }
 
@@ -42,11 +42,16 @@ func (c *Client) AlterPartitionReassignments(
 	apiPartitions := []alterpartitionreassignments.RequestPartition{}
 
 	for _, assignment := range req.Assignments {
+		replicas := []int32{}
+		for _, brokerID := range assignment.BrokerIDs {
+			replicas = append(replicas, int32(brokerID))
+		}
+
 		apiPartitions = append(
 			apiPartitions,
 			alterpartitionreassignments.RequestPartition{
-				PartitionIndex: assignment.PartitionID,
-				Replicas:       assignment.BrokerIDs,
+				PartitionIndex: int32(assignment.PartitionID),
+				Replicas:       replicas,
 			},
 		)
 	}
@@ -72,7 +77,7 @@ func (c *Client) AlterPartitionReassignments(
 	apiResp := protoResp.(*alterpartitionreassignments.Response)
 
 	resp := &AlterPartitionReassignmentsResponse{
-		ErrorCode:    apiResp.ErrorCode,
+		ErrorCode:    int(apiResp.ErrorCode),
 		ErrorMessage: apiResp.ErrorMessage,
 	}
 
@@ -81,8 +86,8 @@ func (c *Client) AlterPartitionReassignments(
 			resp.PartitionResults = append(
 				resp.PartitionResults,
 				AlterPartitionReassignmentsResponsePartitionResult{
-					PartitionID:  partitionResult.PartitionIndex,
-					ErrorCode:    partitionResult.ErrorCode,
+					PartitionID:  int(partitionResult.PartitionIndex),
+					ErrorCode:    int(partitionResult.ErrorCode),
 					ErrorMessage: partitionResult.ErrorMessage,
 				},
 			)

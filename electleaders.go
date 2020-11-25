@@ -13,19 +13,19 @@ type ElectLeadersRequest struct {
 	Addr net.Addr
 
 	Topic      string
-	Partitions []int32
+	Partitions []int
 
 	Timeout time.Duration
 }
 
 type ElectLeadersResponse struct {
-	ErrorCode        int16
+	ErrorCode        int
 	PartitionResults []ElectLeadersResponsePartitionResult
 }
 
 type ElectLeadersResponsePartitionResult struct {
-	Partition    int32
-	ErrorCode    int16
+	Partition    int
+	ErrorCode    int
 	ErrorMessage string
 }
 
@@ -33,6 +33,11 @@ func (c *Client) ElectLeaders(
 	ctx context.Context,
 	req ElectLeadersRequest,
 ) (*ElectLeadersResponse, error) {
+	partitions32 := []int32{}
+	for _, partition := range req.Partitions {
+		partitions32 = append(partitions32, int32(partition))
+	}
+
 	protoResp, err := c.roundTrip(
 		ctx,
 		req.Addr,
@@ -40,7 +45,7 @@ func (c *Client) ElectLeaders(
 			TopicPartitions: []electleaders.RequestTopicPartitions{
 				{
 					Topic:        req.Topic,
-					PartitionIDs: req.Partitions,
+					PartitionIDs: partitions32,
 				},
 			},
 			TimeoutMs: int32(req.Timeout.Milliseconds()),
@@ -52,7 +57,7 @@ func (c *Client) ElectLeaders(
 	apiResp := protoResp.(*electleaders.Response)
 
 	resp := &ElectLeadersResponse{
-		ErrorCode: apiResp.ErrorCode,
+		ErrorCode: int(apiResp.ErrorCode),
 	}
 
 	for _, topicResult := range apiResp.ReplicaElectionResults {
@@ -60,8 +65,8 @@ func (c *Client) ElectLeaders(
 			resp.PartitionResults = append(
 				resp.PartitionResults,
 				ElectLeadersResponsePartitionResult{
-					Partition:    partitionResult.PartitionID,
-					ErrorCode:    partitionResult.ErrorCode,
+					Partition:    int(partitionResult.PartitionID),
+					ErrorCode:    int(partitionResult.ErrorCode),
 					ErrorMessage: partitionResult.ErrorMessage,
 				},
 			)

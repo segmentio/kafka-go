@@ -14,15 +14,15 @@ type ApiVersionsRequest struct {
 }
 
 type ApiVersionsResponse struct {
-	ErrorCode int16
+	ErrorCode int
 	ApiKeys   []ApiVersionsResponseApiKey
 }
 
 type ApiVersionsResponseApiKey struct {
-	ApiKey     int16
+	ApiKey     int
 	ApiName    string
-	MinVersion int16
-	MaxVersion int16
+	MinVersion int
+	MaxVersion int
 }
 
 func (c *Client) ApiVersions(
@@ -35,19 +35,22 @@ func (c *Client) ApiVersions(
 		req.Addr,
 		apiReq,
 	)
+	if err != nil {
+		return nil, err
+	}
 	apiResp := protoResp.(*apiversions.Response)
 
 	resp := &ApiVersionsResponse{
-		ErrorCode: apiResp.ErrorCode,
+		ErrorCode: int(apiResp.ErrorCode),
 	}
 	for _, apiKey := range apiResp.ApiKeys {
 		resp.ApiKeys = append(
 			resp.ApiKeys,
 			ApiVersionsResponseApiKey{
-				ApiKey:     apiKey.ApiKey,
+				ApiKey:     int(apiKey.ApiKey),
 				ApiName:    protocol.ApiKey(apiKey.ApiKey).String(),
-				MinVersion: apiKey.MinVersion,
-				MaxVersion: apiKey.MaxVersion,
+				MinVersion: int(apiKey.MinVersion),
+				MaxVersion: int(apiKey.MaxVersion),
 			},
 		)
 	}

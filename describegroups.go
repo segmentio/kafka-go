@@ -37,14 +37,14 @@ type DescribeGroupsResponseMember struct {
 
 // GroupMemberMetadata stores metadata associated with a group member.
 type DescribeGroupsResponseMemberMetadata struct {
-	Version  int16
+	Version  int
 	Topics   []string
 	UserData []byte
 }
 
 // GroupMemberAssignmentsInfo stores the topic partition assignment data for a group member.
 type DescribeGroupsResponseAssignments struct {
-	Version  int16
+	Version  int
 	Topics   []GroupMemberTopic
 	UserData []byte
 }
@@ -53,7 +53,7 @@ type DescribeGroupsResponseAssignments struct {
 // to represent the topic partitions that have been assigned to a group member.
 type GroupMemberTopic struct {
 	Topic      string
-	Partitions []int32
+	Partitions []int
 }
 
 func (c *Client) DescribeGroup(
@@ -295,10 +295,13 @@ func decodeMemberMetadata(rawMetadata []byte) (DescribeGroupsResponseMemberMetad
 	remain := len(rawMetadata)
 
 	var err error
+	var version16 int16
 
-	if remain, err = readInt16(bufReader, remain, &mm.Version); err != nil {
+	if remain, err = readInt16(bufReader, remain, &version16); err != nil {
 		return mm, err
 	}
+	mm.Version = int(version16)
+
 	if remain, err = readStringArray(bufReader, remain, &mm.Topics); err != nil {
 		return mm, err
 	}
@@ -327,22 +330,27 @@ func decodeMemberAssignments(rawAssignments []byte) (DescribeGroupsResponseAssig
 	remain := len(rawAssignments)
 
 	var err error
+	var version16 int16
 
-	if remain, err = readInt16(bufReader, remain, &ma.Version); err != nil {
+	if remain, err = readInt16(bufReader, remain, &version16); err != nil {
 		return ma, err
 	}
+	ma.Version = int(version16)
 
 	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		item := GroupMemberTopic{
-			Partitions: []int32{},
-		}
+		item := GroupMemberTopic{}
 
 		if fnRemain, fnErr = readString(r, size, &item.Topic); fnErr != nil {
 			return
 		}
 
-		if fnRemain, fnErr = readInt32Array(r, fnRemain, &item.Partitions); fnErr != nil {
+		partitions := []int32{}
+
+		if fnRemain, fnErr = readInt32Array(r, fnRemain, &partitions); fnErr != nil {
 			return
+		}
+		for _, partition := range partitions {
+			item.Partitions = append(item.Partitions, int(partition))
 		}
 
 		ma.Topics = append(ma.Topics, item)
