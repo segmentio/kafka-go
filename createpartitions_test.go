@@ -19,9 +19,9 @@ func TestClientCreatePartitions(t *testing.T) {
 			TopicPartitionsConfig{
 				Name:  topic,
 				Count: 2,
-				PartitionReplicaAssignments: []PartitionReplicaAssignment{
-					PartitionReplicaAssignment{
-						Replicas: []int{0},
+				TopicPartitionAssignments: []TopicPartitionAssignment{
+					TopicPartitionAssignment{
+						BrokerIDs: []int32{0},
 					},
 				},
 			},

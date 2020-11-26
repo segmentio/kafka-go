@@ -80,38 +80,24 @@ type TopicPartitionsConfig struct {
 	// Topic partition's count.
 	Count int32
 
-	// PartitionReplicaAssignments among kafka brokers for this topic partitions.
-	PartitionReplicaAssignments []PartitionReplicaAssignment
+	// TopicPartitionAssignments among kafka brokers for this topic partitions.
+	TopicPartitionAssignments []TopicPartitionAssignment
 }
 
 func (t *TopicPartitionsConfig) assignments() []createpartitions.RequestAssignment {
-	if len(t.PartitionReplicaAssignments) == 0 {
+	if len(t.TopicPartitionAssignments) == 0 {
 		return nil
 	}
-	assignments := make([]createpartitions.RequestAssignment, len(t.PartitionReplicaAssignments))
-	for i, a := range t.PartitionReplicaAssignments {
+	assignments := make([]createpartitions.RequestAssignment, len(t.TopicPartitionAssignments))
+	for i, a := range t.TopicPartitionAssignments {
 		assignments[i] = createpartitions.RequestAssignment{
-			BrokerIDs: a.brokerIDs(),
+			BrokerIDs: a.BrokerIDs,
 		}
 	}
 	return assignments
 }
 
-type PartitionReplicaAssignment struct {
-	// The list of brokers where the partition should be allocated. There must
-	// be as many entries in thie list as there are replicas of the partition.
-	// The first entry represents the broker that will be the preferred leader
-	// for the partition.
-	Replicas []int
-}
-
-func (a *PartitionReplicaAssignment) brokerIDs() []int32 {
-	if len(a.Replicas) == 0 {
-		return nil
-	}
-	replicas := make([]int32, len(a.Replicas))
-	for i, r := range a.Replicas {
-		replicas[i] = int32(r)
-	}
-	return replicas
+type TopicPartitionAssignment struct {
+	// Broker IDs
+	BrokerIDs []int32
 }
