@@ -182,6 +182,9 @@ type Writer struct {
 	// If nil, DefaultTransport is used.
 	Transport RoundTripper
 
+	// Setting this flag to true enables automatic topic creation.
+	AutoCreateTopic bool
+
 	// Atomic flag indicating whether the writer has been closed.
 	closed uint32
 	group  sync.WaitGroup
@@ -308,6 +311,9 @@ type WriterConfig struct {
 	// ErrorLogger is the logger used to report errors. If nil, the writer falls
 	// back to using Logger instead.
 	ErrorLogger Logger
+
+	// Setting this flag to true enables automatic topic creation.
+	AutoCreateTopic bool
 }
 
 type topicPartition struct {
@@ -410,14 +416,14 @@ func NewWriter(config WriterConfig) *Writer {
 		kafkaDialer = config.Dialer
 	}
 
-	dialer := (&net.Dialer{
+	dialer := &net.Dialer{
 		Timeout:       kafkaDialer.Timeout,
 		Deadline:      kafkaDialer.Deadline,
 		LocalAddr:     kafkaDialer.LocalAddr,
 		DualStack:     kafkaDialer.DualStack,
 		FallbackDelay: kafkaDialer.FallbackDelay,
 		KeepAlive:     kafkaDialer.KeepAlive,
-	})
+	}
 
 	var resolver Resolver
 	if r, ok := kafkaDialer.Resolver.(*net.Resolver); ok {
@@ -466,22 +472,23 @@ func NewWriter(config WriterConfig) *Writer {
 	}
 
 	w := &Writer{
-		Addr:         TCP(config.Brokers...),
-		Topic:        config.Topic,
-		MaxAttempts:  config.MaxAttempts,
-		BatchSize:    config.BatchSize,
-		Balancer:     config.Balancer,
-		BatchBytes:   int64(config.BatchBytes),
-		BatchTimeout: config.BatchTimeout,
-		ReadTimeout:  config.ReadTimeout,
-		WriteTimeout: config.WriteTimeout,
-		RequiredAcks: RequiredAcks(config.RequiredAcks),
-		Async:        config.Async,
-		Logger:       config.Logger,
-		ErrorLogger:  config.ErrorLogger,
-		Transport:    transport,
-		transport:    transport,
-		writerStats:  stats,
+		Addr:            TCP(config.Brokers...),
+		Topic:           config.Topic,
+		MaxAttempts:     config.MaxAttempts,
+		BatchSize:       config.BatchSize,
+		Balancer:        config.Balancer,
+		BatchBytes:      int64(config.BatchBytes),
+		BatchTimeout:    config.BatchTimeout,
+		ReadTimeout:     config.ReadTimeout,
+		WriteTimeout:    config.WriteTimeout,
+		RequiredAcks:    RequiredAcks(config.RequiredAcks),
+		Async:           config.Async,
+		AutoCreateTopic: config.AutoCreateTopic,
+		Logger:          config.Logger,
+		ErrorLogger:     config.ErrorLogger,
+		Transport:       transport,
+		transport:       transport,
+		writerStats:     stats,
 	}
 
 	if config.RequiredAcks == 0 {
@@ -593,7 +600,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		numPartitions, err := w.partitions(ctx, topic)
-		if err != nil {
+		if !w.AutoCreateTopic && err != nil {
 			return err
 		}
 
