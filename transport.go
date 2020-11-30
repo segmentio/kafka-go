@@ -358,9 +358,8 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		if state.err != nil {
 			return nil, state.err
 		}
-		if !m.AllowAutoTopicCreation {
-			return filterMetadataResponse(m, state.metadata), nil
-		}
+		return filterMetadataResponse(m, state.metadata), nil
+
 	case *createtopics.Request:
 		// Force an update of the metadata when adding topics,
 		// otherwise the cached state would get out of sync.
@@ -681,6 +680,7 @@ func filterMetadataResponse(req *meta.Request, res *meta.Response) *meta.Respons
 					ErrorCode: int16(UnknownTopicOrPartition),
 					Name:      topicName,
 				}
+
 			}
 		}
 	}
