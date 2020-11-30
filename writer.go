@@ -1097,5 +1097,5 @@ func loadCachedPartitions(numPartitions int) []int {
 	}
 
 	partitionsCache.Store(partitions)
-	return partitions[:numPartitions+1]
+	return partitions[:numPartitions]
 }

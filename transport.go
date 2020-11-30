@@ -358,8 +358,9 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		if state.err != nil {
 			return nil, state.err
 		}
-		return filterMetadataResponse(m, state.metadata), nil
-
+		if !m.AllowAutoTopicCreation {
+			return filterMetadataResponse(m, state.metadata), nil
+		}
 	case *createtopics.Request:
 		// Force an update of the metadata when adding topics,
 		// otherwise the cached state would get out of sync.
