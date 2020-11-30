@@ -600,7 +600,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 
 		numPartitions, err := w.partitions(ctx, topic)
-		if !w.AutoCreateTopic && err != nil {
+		if err != nil {
 			return err
 		}
 
@@ -830,7 +830,8 @@ func (w *Writer) partitions(ctx context.Context, topic string) (int, error) {
 	// It is expected that the transport will optimize this request by
 	// caching recent results (the kafka.Transport types does).
 	r, err := client.transport().RoundTrip(ctx, client.Addr, &metadataAPI.Request{
-		TopicNames: []string{topic},
+		TopicNames:             []string{topic},
+		AllowAutoTopicCreation: w.AutoCreateTopic,
 	})
 	if err != nil {
 		return 0, err
