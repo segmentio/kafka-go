@@ -82,7 +82,7 @@ func (c mockCoordinator) offsetCommit(req offsetCommitRequestV2) (offsetCommitRe
 	return c.offsetCommitFunc(req)
 }
 
-func (c mockCoordinator) ReadPartitions(topics ...string) ([]Partition, error) {
+func (c mockCoordinator) readPartitions(topics ...string) ([]Partition, error) {
 	if c.readPartitionsFunc == nil {
 		return nil, errors.New("no Readpartitions behavior specified")
 	}

@@ -72,14 +72,9 @@ type leastBytesCounter struct {
 
 // Balance satisfies the Balancer interface.
 func (lb *LeastBytes) Balance(msg Message, partitions ...int) int {
-	lb.mutex.Lock()
-	defer lb.mutex.Unlock()
-
-	for _, p := range partitions {
-		if c := lb.counterOf(p); c == nil {
-			lb.counters = lb.makeCounters(partitions...)
-			break
-		}
+	// partitions change
+	if len(partitions) != len(lb.counters) {
+		lb.counters = lb.makeCounters(partitions...)
 	}
 
 	minBytes := lb.counters[0].bytes
@@ -95,16 +90,6 @@ func (lb *LeastBytes) Balance(msg Message, partitions ...int) int {
 	c := &lb.counters[minIndex]
 	c.bytes += uint64(len(msg.Key)) + uint64(len(msg.Value))
 	return c.partition
-}
-
-func (lb *LeastBytes) counterOf(partition int) *leastBytesCounter {
-	i := sort.Search(len(lb.counters), func(i int) bool {
-		return lb.counters[i].partition >= partition
-	})
-	if i == len(lb.counters) || lb.counters[i].partition != partition {
-		return nil
-	}
-	return &lb.counters[i]
 }
 
 func (lb *LeastBytes) makeCounters(partitions ...int) (counters []leastBytesCounter) {
