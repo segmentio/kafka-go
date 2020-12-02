@@ -355,10 +355,17 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		//
 		// This reduces the number of round trips to kafka brokers while keeping
 		// the logic simple when applying partitioning strategies.
-		if state.err != nil {
-			return nil, state.err
+		if m.AllowAutoTopicCreation {
+			expectTopics = make([]string, len(m.TopicNames))
+			for i := range m.TopicNames {
+				expectTopics[i] = m.TopicNames[i]
+			}
+		} else {
+			if state.err != nil {
+				return nil, state.err
+			}
+			return filterMetadataResponse(m, state.metadata), nil
 		}
-		return filterMetadataResponse(m, state.metadata), nil
 
 	case *createtopics.Request:
 		// Force an update of the metadata when adding topics,
