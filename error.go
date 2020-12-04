@@ -93,6 +93,12 @@ const (
 	PreferredLeaderNotAvailable        Error = 80
 	GroupMaxSizeReached                Error = 81
 	FencedInstanceID                   Error = 82
+	EligibleLeadersNotAvailable        Error = 83
+	ElectionNotNeeded                  Error = 84
+	NoReassignmentInProgress           Error = 85
+	GroupSubscribedToTopic             Error = 86
+	InvalidRecord                      Error = 87
+	UnstableOffsetCommit               Error = 88
 )
 
 // Error satisfies the error interface.
@@ -130,9 +136,13 @@ func (e Error) Temporary() bool {
 		FencedLeaderEpoch,
 		UnknownLeaderEpoch,
 		OffsetNotAvailable,
-		PreferredLeaderNotAvailable:
+		PreferredLeaderNotAvailable,
+		EligibleLeadersNotAvailable,
+		ElectionNotNeeded,
+		NoReassignmentInProgress,
+		GroupSubscribedToTopic,
+		UnstableOffsetCommit:
 		return true
-
 	default:
 		return false
 	}
@@ -293,6 +303,18 @@ func (e Error) Title() string {
 		return "Unknown Leader Epoch"
 	case UnsupportedCompressionType:
 		return "Unsupported Compression Type"
+	case EligibleLeadersNotAvailable:
+		return "Eligible Leader Not Available"
+	case ElectionNotNeeded:
+		return "Election Not Needed"
+	case NoReassignmentInProgress:
+		return "No Reassignment In Progress"
+	case GroupSubscribedToTopic:
+		return "Group Subscribed To Topic"
+	case InvalidRecord:
+		return "Invalid Record"
+	case UnstableOffsetCommit:
+		return "Unstable Offset Commit"
 	}
 	return ""
 }
@@ -452,6 +474,18 @@ func (e Error) Description() string {
 		return "the leader epoch in the request is newer than the epoch on the broker"
 	case UnsupportedCompressionType:
 		return "the requesting client does not support the compression type of given partition"
+	case EligibleLeadersNotAvailable:
+		return "eligible topic partition leaders are not available"
+	case ElectionNotNeeded:
+		return "leader election not needed for topic partition"
+	case NoReassignmentInProgress:
+		return "no partition reassignment is in progress"
+	case GroupSubscribedToTopic:
+		return "deleting offsets of a topic is forbidden while the consumer group is actively subscribed to it"
+	case InvalidRecord:
+		return "this record has failed the validation on broker and hence be rejected"
+	case UnstableOffsetCommit:
+		return "there are unstable offsets that need to be cleared"
 	}
 	return ""
 }
@@ -498,6 +532,65 @@ type MessageTooLargeError struct {
 	Remaining []Message
 }
 
+func messageTooLarge(msgs []Message, i int) MessageTooLargeError {
+	remain := make([]Message, 0, len(msgs)-1)
+	remain = append(remain, msgs[:i]...)
+	remain = append(remain, msgs[i+1:]...)
+	return MessageTooLargeError{
+		Message:   msgs[i],
+		Remaining: remain,
+	}
+}
+
 func (e MessageTooLargeError) Error() string {
 	return MessageSizeTooLarge.Error()
+}
+
+func makeError(code int16, message string) error {
+	if code == 0 {
+		return nil
+	}
+	if message == "" {
+		return Error(code)
+	}
+	return fmt.Errorf("%w: %s", Error(code), message)
+}
+
+// WriteError is returned by kafka.(*Writer).WriteMessages when the writer is
+// not configured to write messages asynchronously. WriteError values contain
+// a list of errors where each entry matches the position of a message in the
+// WriteMessages call. The program can determine the status of each message by
+// looping over the error:
+//
+//	switch err := w.WriteMessages(ctx, msgs...).(type) {
+//	case nil:
+//	case kafka.WriteErrors:
+//		for i := range msgs {
+//			if err[i] != nil {
+//				// handle the error writing msgs[i]
+//				...
+//			}
+//		}
+//	default:
+//		// handle other errors
+//		...
+//	}
+//
+type WriteErrors []error
+
+// Count counts the number of non-nil errors in err.
+func (err WriteErrors) Count() int {
+	n := 0
+
+	for _, e := range err {
+		if e != nil {
+			n++
+		}
+	}
+
+	return n
+}
+
+func (err WriteErrors) Error() string {
+	return fmt.Sprintf("kafka write errors (%d/%d)", err.Count(), len(err))
 }

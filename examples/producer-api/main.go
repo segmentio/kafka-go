@@ -30,11 +30,11 @@ func producerHandler(kafkaWriter *kafka.Writer) func(http.ResponseWriter, *http.
 }
 
 func getKafkaWriter(kafkaURL, topic string) *kafka.Writer {
-	return kafka.NewWriter(kafka.WriterConfig{
-		Brokers:  []string{kafkaURL},
+	return &kafka.Writer{
+		Addr:     kafka.TCP(kafkaURL),
 		Topic:    topic,
 		Balancer: &kafka.LeastBytes{},
-	})
+	}
 }
 
 func main() {

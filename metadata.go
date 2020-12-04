@@ -1,5 +1,112 @@
 package kafka
 
+import (
+	"context"
+	"fmt"
+	"net"
+	"time"
+
+	metadataAPI "github.com/segmentio/kafka-go/protocol/metadata"
+)
+
+// MetadataRequest represents a request sent to a kafka broker to retrieve its
+// cluster metadata.
+type MetadataRequest struct {
+	// Address of the kafka broker to send the request to.
+	Addr net.Addr
+
+	// The list of topics to retrieve metadata for.
+	Topics []string
+}
+
+// MetadatResponse represents a response from a kafka broker to a metadata
+// request.
+type MetadataResponse struct {
+	// The amount of time that the broker throttled the request.
+	Throttle time.Duration
+
+	// Name of the kafka cluster that client retrieved metadata from.
+	ClusterID string
+
+	// The broker which is currently the controller for the cluster.
+	Controller Broker
+
+	// The list of brokers registered to the cluster.
+	Brokers []Broker
+
+	// The list of topics available on the cluster.
+	Topics []Topic
+}
+
+// Metadata sends a metadata request to a kafka broker and returns the response.
+func (c *Client) Metadata(ctx context.Context, req *MetadataRequest) (*MetadataResponse, error) {
+	m, err := c.roundTrip(ctx, req.Addr, &metadataAPI.Request{
+		TopicNames: req.Topics,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).Metadata: %w", err)
+	}
+
+	res := m.(*metadataAPI.Response)
+	ret := &MetadataResponse{
+		Throttle:  makeDuration(res.ThrottleTimeMs),
+		Brokers:   make([]Broker, len(res.Brokers)),
+		Topics:    make([]Topic, len(res.Topics)),
+		ClusterID: res.ClusterID,
+	}
+
+	brokers := make(map[int32]Broker, len(res.Brokers))
+
+	for i, b := range res.Brokers {
+		broker := Broker{
+			Host: b.Host,
+			Port: int(b.Port),
+			ID:   int(b.NodeID),
+			Rack: b.Rack,
+		}
+
+		ret.Brokers[i] = broker
+		brokers[b.NodeID] = broker
+
+		if b.NodeID == res.ControllerID {
+			ret.Controller = broker
+		}
+	}
+
+	for i, t := range res.Topics {
+		ret.Topics[i] = Topic{
+			Name:       t.Name,
+			Internal:   t.IsInternal,
+			Partitions: make([]Partition, len(t.Partitions)),
+			Error:      makeError(t.ErrorCode, ""),
+		}
+
+		for j, p := range t.Partitions {
+			partition := Partition{
+				Topic:    t.Name,
+				ID:       int(p.PartitionIndex),
+				Leader:   brokers[p.LeaderID],
+				Replicas: make([]Broker, len(p.ReplicaNodes)),
+				Isr:      make([]Broker, len(p.IsrNodes)),
+				Error:    makeError(p.ErrorCode, ""),
+			}
+
+			for i, id := range p.ReplicaNodes {
+				partition.Replicas[i] = brokers[id]
+			}
+
+			for i, id := range p.IsrNodes {
+				partition.Isr[i] = brokers[id]
+			}
+
+			ret.Topics[i].Partitions[j] = partition
+		}
+	}
+
+	return ret, nil
+}
+
 type topicMetadataRequestV1 []string
 
 func (r topicMetadataRequestV1) size() int32 {

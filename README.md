@@ -30,6 +30,35 @@ APIs for interacting with Kafka, mirroring concepts and implementing interfaces 
 the Go standard library to make it easy to use and integrate with existing
 software.
 
+## Migrating to 0.4
+
+Version 0.4 introduces a few breaking changes to the repository structure which
+should have minimal impact on programs and should only manifest at compile time
+(the runtime behavior should remain unchanged).
+
+* Programs do not need to import compression packages anymore in order to read
+compressed messages from kafka. All compression codecs are supported by default.
+
+* Programs that used the compression codecs directly must be adapted.
+Compression codecs are now exposed in the `compress` sub-package.
+
+* The experimental `kafka.Client` API has been updated and slightly modified:
+the `kafka.NewClient` function and `kafka.ClientConfig` type were removed.
+Programs now configure the client values directly through exported fields.
+
+* The `kafka.(*Client).ConsumerOffsets` method is now deprecated (along with the
+`kafka.TopicAndGroup` type, and will be removed when we release version 1.0.
+Programs should use the `kafka.(*Client).OffsetFetch` API instead.
+
+With 0.4, we know that we are starting to introduce a bit more complexity in the
+code, but the plan is to eventually converge towards a simpler and more effective
+API, allowing us to keep up with Kafka's ever growing feature set, and bringing
+a more efficient implementation to programs depending on kafka-go.
+
+We truly appreciate everyone's input and contributions, which have made this
+project way more than what it was when we started it, and we're looking forward
+to receive more feedback on where we should take it.
+
 ## Kafka versions
 
 `kafka-go` is currently compatible with Kafka versions from 0.10.1.0 to 2.1.0. While latest versions will be working,
@@ -318,11 +347,11 @@ to use in most cases as it provides additional features:
 
 ```go
 // make a writer that produces to topic-A, using the least-bytes distribution
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9092"},
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
 	Topic:   "topic-A",
 	Balancer: &kafka.LeastBytes{},
-})
+}
 
 err := w.WriteMessages(context.Background(),
 	kafka.Message{
@@ -350,6 +379,28 @@ if err := w.Close(); err != nil {
 **Note:** Even though kafka.Message contain ```Topic``` and ```Partition``` fields, they **MUST NOT** be
 set when writing messages.  They are intended for read use only.
 
+### Writing to multiple topics
+
+Each writer is bound to a single topic, to write to multiple topics, a program
+must create multiple writers.
+
+We considered making the `kafka.Writer` type interpret the `Topic` field of
+`kafka.Message` values, batching messages per partition or topic/partition pairs
+does not introduce much more complexity. However, supporting this means we would
+also have to report stats broken down by topic. It would also raise the question
+of how we would manage configuration specific to each topic (e.g. different
+compression algorithms). Overall, the amount of coupling between the various
+properties of `kafka.Writer` suggest that we should not support publishing to
+multiple topics from a single writer, and instead encourage the program to
+create a writer for each topic it needs to publish to.
+
+The split of connection management into the `kafka.Transport` in kafka-go 0.4 has
+made writers really cheap to create as they barely manage any state, programs can
+construct new writers configured to publish to kafka topics when needed.
+
+Adding new APIs to facilitate the management of writer sets is an option, and we
+would welcome contributions in this area.
+
 ### Compatibility with other clients
 
 #### Sarama
@@ -359,11 +410,11 @@ partitioning, you can use the ```kafka.Hash``` balancer.  ```kafka.Hash``` route
 messages to the same partitions that Sarama's default partitioner would route to.
 
 ```go
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers:  []string{"localhost:9092"},
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
 	Topic:    "topic-A",
 	Balancer: &kafka.Hash{},
-})
+}
 ```
 
 #### librdkafka and confluent-kafka-go
@@ -372,11 +423,11 @@ Use the ```kafka.CRC32Balancer``` balancer to get the same behaviour as librdkaf
 default ```consistent_random``` partition strategy.
 
 ```go
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers:  []string{"localhost:9092"},
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
 	Topic:    "topic-A",
 	Balancer: kafka.CRC32Balancer{},
-})
+}
 ```
 
 #### Java
@@ -386,34 +437,32 @@ Java client's default partitioner.  Note: the Java class allows you to directly 
 the partition which is not permitted.
 
 ```go
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers:  []string{"localhost:9092"},
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
 	Topic:    "topic-A",
 	Balancer: kafka.Murmur2Balancer{},
-})
+}
 ```
 
 ### Compression
 
-Compression can be enabled on the `Writer` by configuring the `CompressionCodec`:
+Compression can be enabled on the `Writer` by setting the `Compression` field:
 
 ```go
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9092"},
-	Topic:   "topic-A",
-	CompressionCodec: snappy.NewCompressionCodec(),
-})
+w := &kafka.Writer{
+	Addr:        kafka.TCP("localhost:9092"),
+	Topic:       "topic-A",
+	Compression: kafka.Snappy,
+}
 ```
 
 The `Reader` will by determine if the consumed messages are compressed by
 examining the message attributes.  However, the package(s) for all expected
-codecs must be imported so that they get loaded correctly.  For example, if you
-are going to be receiving messages compressed with Snappy, add the following
-import:
+codecs must be imported so that they get loaded correctly.
 
-```go
-import _ "github.com/segmentio/kafka-go/snappy"
-```
+_Note: in versions prior to 0.4 programs had to import compression packages to
+install codecs and support reading compressed messages from kafka. This is no
+longer the case and import of the compression packages are now no-ops._
 
 ## TLS Support
 

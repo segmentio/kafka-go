@@ -3,9 +3,30 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"reflect"
 	"testing"
 )
+
+func TestClientDeleteTopics(t *testing.T) {
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+
+	res, err := client.DeleteTopics(context.Background(), &DeleteTopicsRequest{
+		Topics: []string{topic},
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := res.Errors[topic]; err != nil {
+		t.Error(err)
+	}
+}
 
 func TestDeleteTopicsResponseV1(t *testing.T) {
 	item := deleteTopicsResponseV0{

@@ -10,10 +10,13 @@ import (
 
 // Message is a data structure representing kafka messages.
 type Message struct {
-	// Topic is reads only and MUST NOT be set when writing messages
+	// Topic indicates which topic this message was consumed from via Reader.
+	//
+	// When being used with Writer, this can be used to configured the topic if
+	// not already specified on the writer itself.
 	Topic string
 
-	// Partition is reads only and MUST NOT be set when writing messages
+	// Partition is read-only and MUST NOT be set when writing messages
 	Partition int
 	Offset    int64
 	Key       []byte
@@ -40,7 +43,7 @@ func (msg Message) message(cw *crc32Writer) message {
 
 const timestampSize = 8
 
-func (msg Message) size() int32 {
+func (msg *Message) size() int32 {
 	return 4 + 1 + 1 + sizeofBytes(msg.Key) + sizeofBytes(msg.Value) + timestampSize
 }
 
@@ -351,11 +354,6 @@ func extractOffset(base int64, msgSet []byte) (offset int64, err error) {
 	}
 	offset = base - offset
 	return
-}
-
-type Header struct {
-	Key   string
-	Value []byte
 }
 
 type messageSetHeaderV2 struct {

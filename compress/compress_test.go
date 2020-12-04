@@ -1,12 +1,14 @@
-package kafka_test
+package compress_test
 
 import (
 	"bytes"
-	compressGzip "compress/gzip"
+	stdgzip "compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,27 +17,44 @@ import (
 	"time"
 
 	kafka "github.com/segmentio/kafka-go"
-	"github.com/segmentio/kafka-go/gzip"
-	"github.com/segmentio/kafka-go/lz4"
-	"github.com/segmentio/kafka-go/snappy"
+	pkg "github.com/segmentio/kafka-go/compress"
+	"github.com/segmentio/kafka-go/compress/gzip"
+	"github.com/segmentio/kafka-go/compress/lz4"
+	"github.com/segmentio/kafka-go/compress/snappy"
+	"github.com/segmentio/kafka-go/compress/zstd"
 	ktesting "github.com/segmentio/kafka-go/testing"
-	"github.com/segmentio/kafka-go/zstd"
 )
+
+func init() {
+	// Seeding the random source is important to prevent multiple test runs from
+	// reusing the same topic names.
+	rand.Seed(time.Now().UnixNano())
+}
+
+func TestCodecs(t *testing.T) {
+	for i, c := range pkg.Codecs {
+		if c != nil {
+			if code := c.Code(); int8(code) != int8(i) {
+				t.Fatal("default compression codec table is misconfigured for", c.Name())
+			}
+		}
+	}
+}
 
 func TestCompression(t *testing.T) {
 	msg := kafka.Message{
 		Value: []byte("message"),
 	}
 
-	testEncodeDecode(t, msg, gzip.NewCompressionCodec())
-	testEncodeDecode(t, msg, snappy.NewCompressionCodec())
-	testEncodeDecode(t, msg, lz4.NewCompressionCodec())
+	testEncodeDecode(t, msg, new(gzip.Codec))
+	testEncodeDecode(t, msg, new(snappy.Codec))
+	testEncodeDecode(t, msg, new(lz4.Codec))
 	if ktesting.KafkaIsAtLeast("2.1.0") {
-		testEncodeDecode(t, msg, zstd.NewCompressionCodec())
+		testEncodeDecode(t, msg, new(zstd.Codec))
 	}
 }
 
-func compress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
+func compress(codec pkg.Codec, src []byte) ([]byte, error) {
 	b := new(bytes.Buffer)
 	r := bytes.NewReader(src)
 	w := codec.NewWriter(b)
@@ -49,7 +68,7 @@ func compress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func decompress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
+func decompress(codec pkg.Codec, src []byte) ([]byte, error) {
 	b := new(bytes.Buffer)
 	r := codec.NewReader(bytes.NewReader(src))
 	if _, err := io.Copy(b, r); err != nil {
@@ -62,51 +81,57 @@ func decompress(codec kafka.CompressionCodec, src []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func testEncodeDecode(t *testing.T, m kafka.Message, codec kafka.CompressionCodec) {
+func testEncodeDecode(t *testing.T, m kafka.Message, codec pkg.Codec) {
 	var r1, r2 []byte
 	var err error
 
 	t.Run("encode with "+codec.Name(), func(t *testing.T) {
 		r1, err = compress(codec, m.Value)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 	})
 
 	t.Run("decode with "+codec.Name(), func(t *testing.T) {
+		if r1 == nil {
+			if r1, err = compress(codec, m.Value); err != nil {
+				t.Fatal(err)
+			}
+		}
 		r2, err = decompress(codec, r1)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		if string(r2) != "message" {
 			t.Error("bad message")
-			t.Log("got: ", string(r2))
-			t.Log("expected: ", string(m.Value))
+			t.Logf("expected: %q", string(m.Value))
+			t.Logf("got:      %q", string(r2))
 		}
 	})
 }
 
 func TestCompressedMessages(t *testing.T) {
-	testCompressedMessages(t, gzip.NewCompressionCodec())
-	testCompressedMessages(t, snappy.NewCompressionCodec())
-	testCompressedMessages(t, lz4.NewCompressionCodec())
+	testCompressedMessages(t, new(gzip.Codec))
+	testCompressedMessages(t, new(snappy.Codec))
+	testCompressedMessages(t, new(lz4.Codec))
 
 	if ktesting.KafkaIsAtLeast("2.1.0") {
-		testCompressedMessages(t, zstd.NewCompressionCodec())
+		testCompressedMessages(t, new(zstd.Codec))
 	}
 }
 
-func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
-	t.Run("produce/consume with"+codec.Name(), func(t *testing.T) {
-		t.Parallel()
+func testCompressedMessages(t *testing.T, codec pkg.Codec) {
+	t.Run(codec.Name(), func(t *testing.T) {
+		client, topic, shutdown := newLocalClientAndTopic()
+		defer shutdown()
 
-		topic := kafka.CreateTopic(t, 1)
-		w := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:          []string{"127.0.0.1:9092"},
-			Topic:            topic,
-			CompressionCodec: codec,
-			BatchTimeout:     10 * time.Millisecond,
-		})
+		w := &kafka.Writer{
+			Addr:         kafka.TCP("127.0.0.1:9092"),
+			Topic:        topic,
+			Compression:  kafka.Compression(codec.Code()),
+			BatchTimeout: 10 * time.Millisecond,
+			Transport:    client.Transport,
+		}
 		defer w.Close()
 
 		offset := 0
@@ -149,16 +174,16 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 			for i := base; i < len(values); i++ {
 				msg, err := r.ReadMessage(ctx)
 				if err != nil {
-					t.Errorf("error receiving message at loop %d, offset %d, reason: %+v", base, i, err)
+					t.Fatalf("error receiving message at loop %d, offset %d, reason: %+v", base, i, err)
 				}
 				if msg.Offset != int64(i) {
-					t.Errorf("wrong offset at loop %d...expected %d but got %d", base, i, msg.Offset)
+					t.Fatalf("wrong offset at loop %d...expected %d but got %d", base, i, msg.Offset)
 				}
 				if strconv.Itoa(i) != string(msg.Key) {
-					t.Errorf("wrong message key at loop %d...expected %d but got %s", base, i, string(msg.Key))
+					t.Fatalf("wrong message key at loop %d...expected %d but got %s", base, i, string(msg.Key))
 				}
 				if values[i] != string(msg.Value) {
-					t.Errorf("wrong message value at loop %d...expected %s but got %s", base, values[i], string(msg.Value))
+					t.Fatalf("wrong message value at loop %d...expected %s but got %s", base, values[i], string(msg.Value))
 				}
 			}
 		}
@@ -166,19 +191,22 @@ func testCompressedMessages(t *testing.T, codec kafka.CompressionCodec) {
 }
 
 func TestMixedCompressedMessages(t *testing.T) {
-	t.Parallel()
-
-	topic := kafka.CreateTopic(t, 1)
+	client, topic, shutdown := newLocalClientAndTopic()
+	defer shutdown()
 
 	offset := 0
 	var values []string
-	produce := func(n int, codec kafka.CompressionCodec) {
-		w := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:          []string{"127.0.0.1:9092"},
-			Topic:            topic,
-			CompressionCodec: codec,
-		})
+	produce := func(n int, codec pkg.Codec) {
+		w := &kafka.Writer{
+			Addr:      kafka.TCP("127.0.0.1:9092"),
+			Topic:     topic,
+			Transport: client.Transport,
+		}
 		defer w.Close()
+
+		if codec != nil {
+			w.Compression = kafka.Compression(codec.Code())
+		}
 
 		msgs := make([]kafka.Message, n)
 		for i := range msgs {
@@ -199,10 +227,10 @@ func TestMixedCompressedMessages(t *testing.T) {
 	// different compression codecs.  reader should be able to properly handle
 	// all of them.
 	produce(10, nil)
-	produce(20, gzip.NewCompressionCodec())
+	produce(20, new(gzip.Codec))
 	produce(5, nil)
-	produce(10, snappy.NewCompressionCodec())
-	produce(10, lz4.NewCompressionCodec())
+	produce(10, new(snappy.Codec))
+	produce(10, new(lz4.Codec))
 	produce(5, nil)
 
 	r := kafka.NewReader(kafka.ReaderConfig{
@@ -261,27 +289,27 @@ func (nopWriteCloser) Close() error { return nil }
 
 func BenchmarkCompression(b *testing.B) {
 	benchmarks := []struct {
-		codec    kafka.CompressionCodec
-		function func(*testing.B, kafka.CompressionCodec, *bytes.Buffer, []byte) float64
+		codec    pkg.Codec
+		function func(*testing.B, pkg.Codec, *bytes.Buffer, []byte) float64
 	}{
 		{
 			codec:    &noopCodec{},
 			function: benchmarkCompression,
 		},
 		{
-			codec:    gzip.NewCompressionCodec(),
+			codec:    new(gzip.Codec),
 			function: benchmarkCompression,
 		},
 		{
-			codec:    snappy.NewCompressionCodec(),
+			codec:    new(snappy.Codec),
 			function: benchmarkCompression,
 		},
 		{
-			codec:    lz4.NewCompressionCodec(),
+			codec:    new(lz4.Codec),
 			function: benchmarkCompression,
 		},
 		{
-			codec:    zstd.NewCompressionCodec(),
+			codec:    new(zstd.Codec),
 			function: benchmarkCompression,
 		},
 	}
@@ -292,7 +320,7 @@ func BenchmarkCompression(b *testing.B) {
 	}
 	defer f.Close()
 
-	z, err := compressGzip.NewReader(f)
+	z, err := stdgzip.NewReader(f)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -327,7 +355,7 @@ func BenchmarkCompression(b *testing.B) {
 	}
 }
 
-func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, buf *bytes.Buffer, payload []byte) float64 {
+func benchmarkCompression(b *testing.B, codec pkg.Codec, buf *bytes.Buffer, payload []byte) float64 {
 	// In case only the decompression benchmark are run, we use this flags to
 	// detect whether we have to compress the payload before the decompression
 	// benchmarks.
@@ -387,4 +415,74 @@ func benchmarkCompression(b *testing.B, codec kafka.CompressionCodec, buf *bytes
 	})
 
 	return 1 - (float64(buf.Len()) / float64(len(payload)))
+}
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
+func makeTopic() string {
+	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
+}
+
+func newLocalClientAndTopic() (*kafka.Client, string, func()) {
+	topic := makeTopic()
+	client, shutdown := newLocalClient()
+
+	_, err := client.CreateTopics(context.Background(), &kafka.CreateTopicsRequest{
+		Topics: []kafka.TopicConfig{{
+			Topic:             topic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		}},
+	})
+	if err != nil {
+		shutdown()
+		panic(err)
+	}
+
+	// Topic creation seems to be asynchronous. Metadata for the topic partition
+	// layout in the cluster is available in the controller before being synced
+	// with the other brokers, which causes "Error:[3] Unknown Topic Or Partition"
+	// when sending requests to the partition leaders.
+	for i := 0; i < 20; i++ {
+		r, err := client.Fetch(context.Background(), &kafka.FetchRequest{
+			Topic:     topic,
+			Partition: 0,
+			Offset:    0,
+		})
+		if err == nil && r.Error == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return client, topic, func() {
+		client.DeleteTopics(context.Background(), &kafka.DeleteTopicsRequest{
+			Topics: []string{topic},
+		})
+		shutdown()
+	}
+}
+
+func newLocalClient() (*kafka.Client, func()) {
+	return newClient(kafka.TCP("127.0.0.1:9092"))
+}
+
+func newClient(addr net.Addr) (*kafka.Client, func()) {
+	conns := &ktesting.ConnWaitGroup{
+		DialFunc: (&net.Dialer{}).DialContext,
+	}
+
+	transport := &kafka.Transport{
+		Dial: conns.Dial,
+	}
+
+	client := &kafka.Client{
+		Addr:      addr,
+		Timeout:   5 * time.Second,
+		Transport: transport,
+	}
+
+	return client, func() { transport.CloseIdleConnections(); conns.Wait() }
 }

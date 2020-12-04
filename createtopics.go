@@ -2,8 +2,85 @@ package kafka
 
 import (
 	"bufio"
+	"context"
+	"fmt"
+	"net"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol/createtopics"
 )
+
+// CreateTopicRequests represents a request sent to a kafka broker to create
+// new topics.
+type CreateTopicsRequest struct {
+	// Address of the kafka broker to send the request to.
+	Addr net.Addr
+
+	// List of topics to create and their configuration.
+	Topics []TopicConfig
+
+	// When set to true, topics are not created but the configuration is
+	// validated as if they were.
+	//
+	// This field will be ignored if the kafka broker did no support the
+	// CreateTopics API in version 1 or above.
+	ValidateOnly bool
+}
+
+// CreateTopicResponse represents a response from a kafka broker to a topic
+// creation request.
+type CreateTopicsResponse struct {
+	// The amount of time that the broker throttled the request.
+	//
+	// This field will be zero if the kafka broker did no support the
+	// CreateTopics API in version 2 or above.
+	Throttle time.Duration
+
+	// Mapping of topic names to errors that occurred while attempting to create
+	// the topics.
+	//
+	// The errors contain the kafka error code. Programs may use the standard
+	// errors.Is function to test the error against kafka error codes.
+	Errors map[string]error
+}
+
+// CreateTopics sends a topic creation request to a kafka broker and returns the
+// response.
+func (c *Client) CreateTopics(ctx context.Context, req *CreateTopicsRequest) (*CreateTopicsResponse, error) {
+	topics := make([]createtopics.RequestTopic, len(req.Topics))
+
+	for i, t := range req.Topics {
+		topics[i] = createtopics.RequestTopic{
+			Name:              t.Topic,
+			NumPartitions:     int32(t.NumPartitions),
+			ReplicationFactor: int16(t.ReplicationFactor),
+			Assignments:       t.assignments(),
+			Configs:           t.configs(),
+		}
+	}
+
+	m, err := c.roundTrip(ctx, req.Addr, &createtopics.Request{
+		Topics:       topics,
+		TimeoutMs:    c.timeoutMs(ctx, defaultCreateTopicsTimeout),
+		ValidateOnly: req.ValidateOnly,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).CreateTopics: %w", err)
+	}
+
+	res := m.(*createtopics.Response)
+	ret := &CreateTopicsResponse{
+		Throttle: makeDuration(res.ThrottleTimeMs),
+		Errors:   make(map[string]error, len(res.Topics)),
+	}
+
+	for _, t := range res.Topics {
+		ret.Errors[t.Name] = makeError(t.ErrorCode, t.ErrorMessage)
+	}
+
+	return ret, nil
+}
 
 type ConfigEntry struct {
 	ConfigName  string
@@ -34,29 +111,55 @@ func (t createTopicsRequestV0ConfigEntry) writeTo(wb *writeBuffer) {
 
 type ReplicaAssignment struct {
 	Partition int
-	Replicas  int
+	// The list of brokers where the partition should be allocated. There must
+	// be as many entries in thie list as there are replicas of the partition.
+	// The first entry represents the broker that will be the preferred leader
+	// for the partition.
+	//
+	// This field changed in 0.4 from `int` to `[]int`. It was invalid to pass
+	// a single integer as this is supposed to be a list. While this introduces
+	// a breaking change, it probably never worked before.
+	Replicas []int
+}
+
+func (a *ReplicaAssignment) partitionIndex() int32 {
+	return int32(a.Partition)
+}
+
+func (a *ReplicaAssignment) brokerIDs() []int32 {
+	if len(a.Replicas) == 0 {
+		return nil
+	}
+	replicas := make([]int32, len(a.Replicas))
+	for i, r := range a.Replicas {
+		replicas[i] = int32(r)
+	}
+	return replicas
 }
 
 func (a ReplicaAssignment) toCreateTopicsRequestV0ReplicaAssignment() createTopicsRequestV0ReplicaAssignment {
 	return createTopicsRequestV0ReplicaAssignment{
 		Partition: int32(a.Partition),
-		Replicas:  int32(a.Replicas),
+		Replicas:  a.brokerIDs(),
 	}
 }
 
 type createTopicsRequestV0ReplicaAssignment struct {
 	Partition int32
-	Replicas  int32
+	Replicas  []int32
 }
 
 func (t createTopicsRequestV0ReplicaAssignment) size() int32 {
 	return sizeofInt32(t.Partition) +
-		sizeofInt32(t.Replicas)
+		(int32(len(t.Replicas)+1) * sizeofInt32(0)) // N+1 because the array length is a int32
 }
 
 func (t createTopicsRequestV0ReplicaAssignment) writeTo(wb *writeBuffer) {
 	wb.writeInt32(t.Partition)
-	wb.writeInt32(t.Replicas)
+	wb.writeInt32(int32(len(t.Replicas)))
+	for _, r := range t.Replicas {
+		wb.writeInt32(int32(r))
+	}
 }
 
 type TopicConfig struct {
@@ -75,6 +178,34 @@ type TopicConfig struct {
 
 	// ConfigEntries holds topic level configuration for topic to be set.
 	ConfigEntries []ConfigEntry
+}
+
+func (t *TopicConfig) assignments() []createtopics.RequestAssignment {
+	if len(t.ReplicaAssignments) == 0 {
+		return nil
+	}
+	assignments := make([]createtopics.RequestAssignment, len(t.ReplicaAssignments))
+	for i, a := range t.ReplicaAssignments {
+		assignments[i] = createtopics.RequestAssignment{
+			PartitionIndex: a.partitionIndex(),
+			BrokerIDs:      a.brokerIDs(),
+		}
+	}
+	return assignments
+}
+
+func (t *TopicConfig) configs() []createtopics.RequestConfig {
+	if len(t.ConfigEntries) == 0 {
+		return nil
+	}
+	configs := make([]createtopics.RequestConfig, len(t.ConfigEntries))
+	for i, c := range t.ConfigEntries {
+		configs[i] = createtopics.RequestConfig{
+			Name:  c.ConfigName,
+			Value: c.ConfigValue,
+		}
+	}
+	return configs
 }
 
 func (t TopicConfig) toCreateTopicsRequestV0Topic() createTopicsRequestV0Topic {

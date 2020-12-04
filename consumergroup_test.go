@@ -101,11 +101,11 @@ func TestValidateConsumerGroupConfig(t *testing.T) {
 		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", SessionTimeout: -1}, errorOccured: true},
 		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: -1}, errorOccured: true},
 		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: -2}, errorOccured: true},
-		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: -2}, errorOccured: true},
-		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, StartOffset: 123}, errorOccured: true},
-		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, PartitionWatchInterval: -1}, errorOccured: true},
-		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, PartitionWatchInterval: 1, JoinGroupBackoff: -1}, errorOccured: true},
-		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, PartitionWatchInterval: 1, JoinGroupBackoff: 1}, errorOccured: false},
+		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: -1}, errorOccured: true},
+		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, StartOffset: 123}, errorOccured: true},
+		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, PartitionWatchInterval: -1}, errorOccured: true},
+		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, PartitionWatchInterval: 1, JoinGroupBackoff: -1}, errorOccured: true},
+		{config: ConsumerGroupConfig{Brokers: []string{"broker1"}, Topics: []string{"t1"}, ID: "group1", HeartbeatInterval: 2, SessionTimeout: 2, RebalanceTimeout: 2, RetentionTime: 1, PartitionWatchInterval: 1, JoinGroupBackoff: 1}, errorOccured: false},
 	}
 	for _, test := range tests {
 		err := test.config.Validate()
@@ -237,8 +237,6 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 }
 
 func TestConsumerGroup(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		scenario string
 		function func(*testing.T, context.Context, *ConsumerGroup)
@@ -314,11 +312,10 @@ func TestConsumerGroup(t *testing.T) {
 
 	topic := makeTopic()
 	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-
 			group, err := NewConsumerGroup(ConsumerGroupConfig{
 				ID:                makeGroupID(),
 				Topics:            []string{topic},
@@ -342,8 +339,6 @@ func TestConsumerGroup(t *testing.T) {
 }
 
 func TestConsumerGroupErrors(t *testing.T) {
-	t.Parallel()
-
 	var left []string
 	var lock sync.Mutex
 	mc := mockCoordinator{
