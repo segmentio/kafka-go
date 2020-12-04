@@ -24,6 +24,13 @@ const (
 	defaultCommitRetries = 3
 )
 
+const (
+	// defaultFetchMinBytes of 1 byte means that fetch requests are answered as
+	// soon as a single byte of data is available or the fetch request times out
+	// waiting for data to arrive.
+	defaultFetchMinBytes = 1
+)
+
 var (
 	errOnlyAvailableWithGroup = errors.New("unavailable when GroupID is not set")
 	errNotAvailableWithGroup  = errors.New("unavailable when GroupID is set")
@@ -581,7 +588,7 @@ func NewReader(config ReaderConfig) *Reader {
 	}
 
 	if config.MinBytes == 0 {
-		config.MinBytes = config.MaxBytes
+		config.MinBytes = defaultFetchMinBytes
 	}
 
 	if config.MaxWait == 0 {
