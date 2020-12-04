@@ -564,7 +564,7 @@ func testWriterMissingTopic(t *testing.T) {
 	}
 }
 
-func testWriterUnexpectedMessageTopic(t *testing.T) {
+func testWriterInvalidPartition(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -589,7 +589,7 @@ func testWriterUnexpectedMessageTopic(t *testing.T) {
 	}
 }
 
-func testWriterInvalidPartition(t *testing.T) {
+func testWriterUnexpectedMessageTopic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
