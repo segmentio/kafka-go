@@ -2,9 +2,12 @@ package kafka
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"github.com/segmentio/kafka-go/sasl"
 	"io"
+	"log"
 	"math"
 	"net"
 	"os"
@@ -64,6 +67,9 @@ type Conn struct {
 	apiVersions atomic.Value // apiVersionMap
 
 	transactionalID *string
+
+	authLock                 sync.RWMutex
+	cancelNextAuthentication chan struct{}
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -160,15 +166,16 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	}
 
 	c := &Conn{
-		conn:            conn,
-		rbuf:            *bufio.NewReader(conn),
-		wbuf:            *bufio.NewWriter(conn),
-		clientID:        config.ClientID,
-		topic:           config.Topic,
-		partition:       int32(config.Partition),
-		offset:          FirstOffset,
-		requiredAcks:    -1,
-		transactionalID: emptyToNullable(config.TransactionalID),
+		conn:                     conn,
+		rbuf:                     *bufio.NewReader(conn),
+		wbuf:                     *bufio.NewWriter(conn),
+		clientID:                 config.ClientID,
+		topic:                    config.Topic,
+		partition:                int32(config.Partition),
+		offset:                   FirstOffset,
+		requiredAcks:             -1,
+		transactionalID:          emptyToNullable(config.TransactionalID),
+		cancelNextAuthentication: make(chan struct{}),
 	}
 
 	c.wb.w = &c.wbuf
@@ -534,6 +541,10 @@ func (c *Conn) syncGroup(request syncGroupRequestV0) (syncGroupResponseV0, error
 
 // Close closes the kafka connection.
 func (c *Conn) Close() error {
+	select {
+	case c.cancelNextAuthentication <- struct{}{}:
+	default:
+	}
 	return c.conn.Close()
 }
 
@@ -778,6 +789,9 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	if err != nil {
 		return &Batch{err: dontExpectEOF(err)}
 	}
+
+	c.authLock.RLock()
+	defer c.authLock.RUnlock()
 
 	id, err := c.doRequest(&c.rdeadline, func(deadline time.Time, id int32) error {
 		now := time.Now()
@@ -1286,7 +1300,7 @@ func (c *Conn) concurrency() int {
 	return int(atomic.LoadInt32(&c.inflight))
 }
 
-func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func(time.Time, int) error) error {
+func (c *Conn) doNoWaitForAuth(d *connDeadline, write func(time.Time, int32) error, read func(time.Time, int) error) error {
 	id, err := c.doRequest(d, write)
 	if err != nil {
 		return err
@@ -1301,13 +1315,19 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func
 		switch err.(type) {
 		case Error:
 		default:
-			c.conn.Close()
+			c.Close()
 		}
 	}
 
 	d.unsetConnReadDeadline()
 	lock.Unlock()
 	return err
+}
+
+func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func(time.Time, int) error) error {
+	c.authLock.RLock()
+	defer c.authLock.RUnlock()
+	return c.doNoWaitForAuth(d, write, read)
 }
 
 func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32) error) (id int32, err error) {
@@ -1322,7 +1342,7 @@ func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32) error) (i
 		// When an error occurs there's no way to know if the connection is in a
 		// recoverable state so we're better off just giving up at this point to
 		// avoid any risk of corrupting the following operations.
-		c.conn.Close()
+		c.Close()
 		c.leave()
 	}
 
@@ -1393,6 +1413,9 @@ func (c *Conn) ApiVersions() ([]ApiVersion, error) {
 		// produce request.
 		deadline = &c.wdeadline
 	}
+
+	c.authLock.RLock()
+	defer c.authLock.RUnlock()
 
 	id, err := c.doRequest(deadline, func(_ time.Time, id int32) error {
 		h := requestHeader{
@@ -1515,18 +1538,14 @@ func (d *connDeadline) unsetConnWriteDeadline() {
 // therefore the client should already know which mechanisms are supported.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslHandshake
-func (c *Conn) saslHandshake(mechanism string) error {
+func (c *Conn) saslHandshake(mechanism string, version apiVersion) error {
 	// The wire format for V0 and V1 is identical, but the version
 	// number will affect how the SASL authentication
 	// challenge/responses are sent
 	var resp saslHandshakeResponseV0
 
-	version, err := c.negotiateVersion(saslHandshake, v0, v1)
-	if err != nil {
-		return err
-	}
-
-	err = c.writeOperation(
+	err := c.doNoWaitForAuth(
+		&c.wdeadline,
 		func(deadline time.Time, id int32) error {
 			return c.writeRequest(saslHandshake, version, id, &saslHandshakeRequestV0{Mechanism: mechanism})
 		},
@@ -1542,25 +1561,87 @@ func (c *Conn) saslHandshake(mechanism string) error {
 	return err
 }
 
+// performs all of the required requests to authenticate this
+// connection.  If any step fails, this function returns with an error.  A nil
+// error indicates successful authentication.
+//
+// In case of error, this function *does not* close the connection.  That is the
+// responsibility of the caller.
+func (c *Conn) authenticateSASL(ctx context.Context, mechanism sasl.Mechanism, version apiVersion) error {
+	//Prevent other requests from being sent while re-authenticating
+	c.authLock.Lock()
+	defer c.authLock.Unlock()
+
+	if err := c.saslHandshake(mechanism.Name(), version); err != nil {
+		return err
+	}
+
+	sess, state, err := mechanism.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	var sessionLifeTimeMs int64
+	for completed := false; !completed; {
+		var challenge []byte
+		challenge, sessionLifeTimeMs, err = c.saslAuthenticate(state)
+		switch err {
+		case nil:
+		case io.EOF:
+			// the broker may communicate a failed exchange by closing the
+			// connection (esp. in the case where we're passing opaque sasl
+			// data over the wire since there's no protocol info).
+			return SASLAuthenticationFailed
+		default:
+			return err
+		}
+
+		completed, state, err = sess.Next(ctx, challenge)
+		if err != nil {
+			return err
+		}
+	}
+
+	if sessionLifeTimeMs > 0 {
+		// schedule re-authentication after 80% of the session lifetime elapsed
+		// maybe a minimum timeout should be implemented, in order to avoid cloging the application
+		// when a broker returns a session life time too short?
+		t := time.NewTimer(time.Duration(sessionLifeTimeMs*80/100) * time.Millisecond)
+		go func() {
+			select {
+			case <-t.C:
+				if err := c.authenticateSASL(ctx, mechanism, version); err != nil {
+					log.Printf("error authenticating connection: %v", err)
+				}
+			case <-c.cancelNextAuthentication:
+			}
+		}()
+	}
+
+	return nil
+}
+
 // saslAuthenticate sends the SASL authenticate message.  This function must
 // be immediately preceded by a successful saslHandshake.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
-func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
+func (c *Conn) saslAuthenticate(data []byte) ([]byte, int64, error) {
 	// if we sent a v1 handshake, then we must encapsulate the authentication
 	// request in a saslAuthenticateRequest.  otherwise, we read and write raw
 	// bytes.
 	version, err := c.negotiateVersion(saslHandshake, v0, v1)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	if version == v1 {
-		var request = saslAuthenticateRequestV0{Data: data}
-		var response saslAuthenticateResponseV0
 
-		err := c.writeOperation(
+	if version == v1 {
+		var request = saslAuthenticateRequestV1{Data: data}
+		var response saslAuthenticateResponseV1
+
+		err := c.doNoWaitForAuth(
+			&c.wdeadline,
 			func(deadline time.Time, id int32) error {
-				return c.writeRequest(saslAuthenticate, v0, id, request)
+				return c.writeRequest(saslAuthenticate, v1, id, request)
 			},
 			func(deadline time.Time, size int) error {
 				return expectZeroSize(func() (remain int, err error) {
@@ -1571,24 +1652,24 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 		if err == nil && response.ErrorCode != 0 {
 			err = Error(response.ErrorCode)
 		}
-		return response.Data, err
+		return response.Data, response.SessionLifeTimeMs, err
 	}
 
 	// fall back to opaque bytes on the wire.  the broker is expecting these if
 	// it just processed a v0 sasl handshake.
 	c.wb.writeInt32(int32(len(data)))
 	if _, err := c.wb.Write(data); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if err := c.wb.Flush(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	var respLen int32
 	if _, err := readInt32(&c.rbuf, 4, &respLen); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	resp, _, err := readNewBytes(&c.rbuf, int(respLen), int(respLen))
-	return resp, err
+	return resp, 0, err
 }

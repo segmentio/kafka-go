@@ -3,7 +3,6 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
-	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -279,7 +278,7 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 	conn := NewConnWith(c, connCfg)
 
 	if d.SASLMechanism != nil {
-		if err := d.authenticateSASL(ctx, conn); err != nil {
+		if err := d.authenticateSASLFirstTime(ctx, conn); err != nil {
 			_ = conn.Close()
 			return nil, err
 		}
@@ -288,42 +287,15 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 	return conn, nil
 }
 
-// authenticateSASL performs all of the required requests to authenticate this
-// connection.  If any step fails, this function returns with an error.  A nil
-// error indicates successful authentication.
-//
-// In case of error, this function *does not* close the connection.  That is the
-// responsibility of the caller.
-func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
-	if err := conn.saslHandshake(d.SASLMechanism.Name()); err != nil {
-		return err
-	}
-
-	sess, state, err := d.SASLMechanism.Start(ctx)
+// negotiates the version for future SASL authentication procedures
+// and attempts to authenticate the connection for the first time
+func (d *Dialer) authenticateSASLFirstTime(ctx context.Context, conn *Conn) error {
+	version, err := conn.negotiateVersion(saslHandshake, v0, v1)
 	if err != nil {
 		return err
 	}
 
-	for completed := false; !completed; {
-		challenge, err := conn.saslAuthenticate(state)
-		switch err {
-		case nil:
-		case io.EOF:
-			// the broker may communicate a failed exchange by closing the
-			// connection (esp. in the case where we're passing opaque sasl
-			// data over the wire since there's no protocol info).
-			return SASLAuthenticationFailed
-		default:
-			return err
-		}
-
-		completed, state, err = sess.Next(ctx, challenge)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return conn.authenticateSASL(ctx, d.SASLMechanism, version)
 }
 
 func (d *Dialer) dialContext(ctx context.Context, network string, addr string) (net.Conn, error) {

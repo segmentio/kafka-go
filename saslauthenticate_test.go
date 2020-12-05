@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestSASLAuthenticateRequestV0(t *testing.T) {
-	item := saslAuthenticateRequestV0{
+func TestSASLAuthenticateRequestV1(t *testing.T) {
+	item := saslAuthenticateRequestV1{
 		Data: []byte("\x00user\x00pass"),
 	}
 
@@ -16,7 +16,7 @@ func TestSASLAuthenticateRequestV0(t *testing.T) {
 	w := &writeBuffer{w: b}
 	item.writeTo(w)
 
-	var found saslAuthenticateRequestV0
+	var found saslAuthenticateRequestV1
 	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
@@ -32,18 +32,19 @@ func TestSASLAuthenticateRequestV0(t *testing.T) {
 	}
 }
 
-func TestSASLAuthenticateResponseV0(t *testing.T) {
-	item := saslAuthenticateResponseV0{
-		ErrorCode:    2,
-		ErrorMessage: "Message",
-		Data:         []byte("bytes"),
+func TestSASLAuthenticateResponseV1(t *testing.T) {
+	item := saslAuthenticateResponseV1{
+		ErrorCode:         2,
+		ErrorMessage:      "Message",
+		Data:              []byte("bytes"),
+		SessionLifeTimeMs: 1000,
 	}
 
 	b := bytes.NewBuffer(nil)
 	w := &writeBuffer{w: b}
 	item.writeTo(w)
 
-	var found saslAuthenticateResponseV0
+	var found saslAuthenticateResponseV1
 	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)

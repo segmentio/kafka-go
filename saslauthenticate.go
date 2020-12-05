@@ -4,43 +4,45 @@ import (
 	"bufio"
 )
 
-type saslAuthenticateRequestV0 struct {
+type saslAuthenticateRequestV1 struct {
 	// Data holds the SASL payload
 	Data []byte
 }
 
-func (t saslAuthenticateRequestV0) size() int32 {
+func (t saslAuthenticateRequestV1) size() int32 {
 	return sizeofBytes(t.Data)
 }
 
-func (t *saslAuthenticateRequestV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
+func (t *saslAuthenticateRequestV1) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
 	return readBytes(r, sz, &t.Data)
 }
 
-func (t saslAuthenticateRequestV0) writeTo(wb *writeBuffer) {
+func (t saslAuthenticateRequestV1) writeTo(wb *writeBuffer) {
 	wb.writeBytes(t.Data)
 }
 
-type saslAuthenticateResponseV0 struct {
-	// ErrorCode holds response error code
+type saslAuthenticateResponseV1 struct {
 	ErrorCode int16
 
 	ErrorMessage string
 
 	Data []byte
+
+	SessionLifeTimeMs int64
 }
 
-func (t saslAuthenticateResponseV0) size() int32 {
-	return sizeofInt16(t.ErrorCode) + sizeofString(t.ErrorMessage) + sizeofBytes(t.Data)
+func (t saslAuthenticateResponseV1) size() int32 {
+	return sizeofInt16(t.ErrorCode) + sizeofString(t.ErrorMessage) + sizeofBytes(t.Data) + sizeofInt64(t.SessionLifeTimeMs)
 }
 
-func (t saslAuthenticateResponseV0) writeTo(wb *writeBuffer) {
+func (t saslAuthenticateResponseV1) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.ErrorCode)
 	wb.writeString(t.ErrorMessage)
 	wb.writeBytes(t.Data)
+	wb.writeInt64(t.SessionLifeTimeMs)
 }
 
-func (t *saslAuthenticateResponseV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
+func (t *saslAuthenticateResponseV1) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
 	if remain, err = readInt16(r, sz, &t.ErrorCode); err != nil {
 		return
 	}
@@ -50,5 +52,9 @@ func (t *saslAuthenticateResponseV0) readFrom(r *bufio.Reader, sz int) (remain i
 	if remain, err = readBytes(r, remain, &t.Data); err != nil {
 		return
 	}
+	if remain, err = readInt64(r, remain, &t.SessionLifeTimeMs); err != nil {
+		return
+	}
+
 	return
 }
