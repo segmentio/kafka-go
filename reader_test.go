@@ -1349,7 +1349,6 @@ func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
 			ID:      config.GroupID,
 			Brokers: config.Brokers,
 			Dialer:  config.Dialer,
-			connect: connect,
 		},
 	}
 
