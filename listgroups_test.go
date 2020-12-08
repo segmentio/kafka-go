@@ -53,6 +53,7 @@ func TestClientListGroups(t *testing.T) {
 
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
+	time.Sleep(time.Second)
 
 	w := &Writer{
 		Addr:  client.Addr,
