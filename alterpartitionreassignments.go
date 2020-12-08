@@ -8,36 +8,59 @@ import (
 	"github.com/segmentio/kafka-go/protocol/alterpartitionreassignments"
 )
 
+// AlterPartitionReassignmentsRequest is a request to the AlterPartitionReassignments API.
 type AlterPartitionReassignmentsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	Topic       string
+	// Topic is the name of the topic to alter partitions in.
+	Topic string
+
+	// Assignments is the list of partition reassignments to submit to the API.
 	Assignments []AlterPartitionReassignmentsRequestAssignment
-	Timeout     time.Duration
+
+	// Timeout is the amount of time to wait for the request to complete.
+	Timeout time.Duration
 }
 
+// AlterPartitionReassignmentsRequestAssignment contains the requested reassignments for a single
+// partition.
 type AlterPartitionReassignmentsRequestAssignment struct {
+	// PartitionID is the ID of the partition to make the reassignments in.
 	PartitionID int
-	BrokerIDs   []int
+
+	// BrokerIDs is a slice of brokers to set the partition replicas to.
+	BrokerIDs []int
 }
 
+// AlterPartitionReassignmentsResponse is a response from the AlterPartitionReassignments API.
 type AlterPartitionReassignmentsResponse struct {
-	ErrorCode    int
+	// ErrorCode is set to a non-zero value if a top-level error was encountered.
+	ErrorCode int
+
+	// ErrorMessage describes the top-level error that occured.
 	ErrorMessage string
 
+	// PartitionResults contains the specific results for each partition.
 	PartitionResults []AlterPartitionReassignmentsResponsePartitionResult
 }
 
+// AlterPartitionReassignmentsResponsePartitionResult contains the detailed result of
+// doing reassignments for a single partition.
 type AlterPartitionReassignmentsResponsePartitionResult struct {
-	PartitionID  int
-	ErrorCode    int
+	// PartitionID is the ID of the partition that was altered.
+	PartitionID int
+
+	// ErrorCode is set to a non-zero value if an error was encountered during the update.
+	ErrorCode int
+
+	// ErrorMessage describes the partition-specific error that occurred.
 	ErrorMessage string
 }
 
 func (c *Client) AlterPartitionReassignments(
 	ctx context.Context,
-	req AlterPartitionReassignmentsRequest,
+	req *AlterPartitionReassignmentsRequest,
 ) (*AlterPartitionReassignmentsResponse, error) {
 	apiPartitions := []alterpartitionreassignments.RequestPartition{}
 

@@ -8,23 +8,30 @@ import (
 	"github.com/segmentio/kafka-go/protocol/listgroups"
 )
 
+// ListGroupsRequest is a request to the ListGroups API.
 type ListGroupsRequest struct {
-	// Address of the kafka broker to send the request to.
+	// Addr is the address of the kafka broker to send the request to.
 	Addr net.Addr
 }
 
+// ListGroupsResponse is a response from the ListGroups API.
 type ListGroupsResponse struct {
+	// Groups contains the list of groups.
 	Groups []ListGroupsResponseGroup
 }
 
+// ListGroupsResponseGroup contains the response details for a single group.
 type ListGroupsResponseGroup struct {
-	GroupID     string
+	// GroupID is the ID of the group.
+	GroupID string
+
+	// Coordinator is the ID of the coordinator broker for the group.
 	Coordinator int
 }
 
 func (c *Client) ListGroups(
 	ctx context.Context,
-	req ListGroupsRequest,
+	req *ListGroupsRequest,
 ) (*ListGroupsResponse, error) {
 	protoResp, err := c.roundTrip(ctx, req.Addr, &listgroups.Request{})
 	if err != nil {

@@ -10,55 +10,88 @@ import (
 	"github.com/segmentio/kafka-go/protocol/describegroups"
 )
 
+// DescribeGroupsRequest is a request to the DescribeGroups API.
 type DescribeGroupsRequest struct {
-	// Address of the kafka broker to send the request to.
-	Addr     net.Addr
+	// Addr is the address of the kafka broker to send the request to.
+	Addr net.Addr
+
+	// GroupIDs is a slice of groups to get details for.
 	GroupIDs []string
 }
 
+// DescribeGroupsResponse is a response from the DescribeGroups API.
 type DescribeGroupsResponse struct {
+	// Groups is a slice of details for the requested groups.
 	Groups []DescribeGroupsResponseGroup
 }
 
+// DescribeGroupsResponseGroup contains the response details for a single group.
 type DescribeGroupsResponseGroup struct {
-	GroupID    string
+	// GroupID is the ID of the group.
+	GroupID string
+
+	// GroupState is a description of the group state.
 	GroupState string
-	Members    []DescribeGroupsResponseMember
+
+	// Members contains details about each member of the group.
+	Members []DescribeGroupsResponseMember
 }
 
 // MemberInfo represents the membership information for a single group member.
 type DescribeGroupsResponseMember struct {
-	MemberID          string
-	ClientID          string
-	ClientHost        string
-	MemberMetadata    DescribeGroupsResponseMemberMetadata
+	// MemberID is the ID of the group member.
+	MemberID string
+
+	// ClientID is the ID of the client that the group member is using.
+	ClientID string
+
+	// ClientHost is the host of the client that the group member is connecting from.
+	ClientHost string
+
+	// MemberMetadata contains metadata about this group member.
+	MemberMetadata DescribeGroupsResponseMemberMetadata
+
+	// MemberAssignments contains the topic partitions that this member is assigned to.
 	MemberAssignments DescribeGroupsResponseAssignments
 }
 
 // GroupMemberMetadata stores metadata associated with a group member.
 type DescribeGroupsResponseMemberMetadata struct {
-	Version  int
-	Topics   []string
+	// Version is the version of the metadata.
+	Version int
+
+	// Topics is the list of topics that the member is assigned to.
+	Topics []string
+
+	// UserData is the user data for the member.
 	UserData []byte
 }
 
 // GroupMemberAssignmentsInfo stores the topic partition assignment data for a group member.
 type DescribeGroupsResponseAssignments struct {
-	Version  int
-	Topics   []GroupMemberTopic
+	// Version is the version of the assignments data.
+	Version int
+
+	// Topics contains the details of the partition assignments for each topic.
+	Topics []GroupMemberTopic
+
+	// UserData is the user data for the member.
 	UserData []byte
 }
 
 // GroupMemberTopic is a mapping from a topic to a list of partitions in the topic. It is used
 // to represent the topic partitions that have been assigned to a group member.
 type GroupMemberTopic struct {
-	Topic      string
+	// Topic is the name of the topic.
+	Topic string
+
+	// Partitions is a slice of partition IDs that this member is assigned to in the topic.
 	Partitions []int
 }
 
-func (c *Client) DescribeGroup(
+func (c *Client) DescribeGroups(
 	ctx context.Context,
-	req DescribeGroupsRequest,
+	req *DescribeGroupsRequest,
 ) (*DescribeGroupsResponse, error) {
 	protoResp, err := c.roundTrip(
 		ctx,

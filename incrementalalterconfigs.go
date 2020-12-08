@@ -2,129 +2,136 @@ package kafka
 
 import (
 	"context"
-	"fmt"
 	"net"
 
 	"github.com/segmentio/kafka-go/protocol/incrementalalterconfigs"
 )
 
-type AlterBrokerConfigsRequest struct {
-	// Address of the kafka broker to send the request to.
+type ConfigOperation int8
+
+const (
+	ConfigOperationSet      ConfigOperation = 0
+	ConfigOperationDelete   ConfigOperation = 1
+	ConfigOperationAppend   ConfigOperation = 2
+	ConfigOperationSubtract ConfigOperation = 3
+)
+
+// IncrementalAlterConfigsRequest is a request to the IncrementalAlterConfigs API.
+type IncrementalAlterConfigsRequest struct {
+	// Addr is the address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	BrokerID      int
-	ConfigEntries []ConfigEntry
+	// Resources contains the list of resources to update configs for.
+	Resources []IncrementalAlterConfigsRequestResource
+
+	// ValidateOnly indicates whether Kafka should validate the changes without actually
+	// applying them.
+	ValidateOnly bool
 }
 
-type AlterBrokerConfigsResponse struct {
-	ErrorCode    int
+// IncrementalAlterConfigsRequestResource contains the details of a single resource type whose
+// configs should be altered.
+type IncrementalAlterConfigsRequestResource struct {
+	// ResourceType is the type of resource to update.
+	ResourceType ResourceType
+
+	// ResourceName is the name of the resource to update (i.e., topic name or broker ID).
+	ResourceName string
+
+	// Configs contains the list of config key/values to update.
+	Configs []IncrementalAlterConfigsRequestConfig
+}
+
+// IncrementalAlterConfigsRequestConfig describes a single config key/value pair that should
+// be altered.
+type IncrementalAlterConfigsRequestConfig struct {
+	// Name is the name of the config.
+	Name string
+
+	// Value is the value to set for this config.
+	Value string
+
+	// ConfigOperation indicates how this config should be updated (e.g., add, delete, etc.).
+	ConfigOperation ConfigOperation
+}
+
+// IncrementalAlterConfigsResponse is a response from the IncrementalAlterConfigs API.
+type IncrementalAlterConfigsResponse struct {
+	// Resources contains details of each resource config that was updated.
+	Resources []IncrementalAlterConfigsResponseResource
+}
+
+// IncrementalAlterConfigsResponseResource contains the response details for a single resource
+// whose configs were updated.
+type IncrementalAlterConfigsResponseResource struct {
+	// ErrorCode is set to a non-zero value if there was an error updating the configs for this
+	// resource.
+	ErrorCode int
+
+	// ErrorMessage describes any errors that were encountered.
 	ErrorMessage string
+
+	// ResourceType is the type of resource that was updated.
+	ResourceType ResourceType
+
+	// ResourceName is the name of the resource that was updated.
+	ResourceName string
 }
 
-type AlterTopicConfigsRequest struct {
-	// Address of the kafka broker to send the request to.
-	Addr net.Addr
-
-	Topic         string
-	ConfigEntries []ConfigEntry
-}
-
-type AlterTopicConfigsResponse struct {
-	ErrorCode    int
-	ErrorMessage string
-}
-
-func (c *Client) AlterBrokerConfigs(
+func (c *Client) IncrementalAlterConfigs(
 	ctx context.Context,
-	req AlterBrokerConfigsRequest,
-) (*AlterBrokerConfigsResponse, error) {
-	configs := configEntriesToConfigs(req.ConfigEntries)
+	req *IncrementalAlterConfigsRequest,
+) (*IncrementalAlterConfigsResponse, error) {
 	apiReq := &incrementalalterconfigs.Request{
-		Resources: []incrementalalterconfigs.RequestResource{
-			{
-				ResourceType: incrementalalterconfigs.ResourceTypeBroker,
-				ResourceName: fmt.Sprintf("%d", req.BrokerID),
-				Configs:      configs,
-			},
-		},
+		ValidateOnly: req.ValidateOnly,
 	}
 
-	protoResp, err := c.roundTrip(
-		ctx,
-		req.Addr,
-		apiReq,
-	)
-	if err != nil {
-		return nil, err
-	}
-	apiResp := protoResp.(*incrementalalterconfigs.Response)
-	if len(apiResp.Responses) == 0 {
-		return nil, fmt.Errorf("Empty response")
-	}
+	for _, res := range req.Resources {
+		apiRes := incrementalalterconfigs.RequestResource{
+			ResourceType: int8(res.ResourceType),
+			ResourceName: res.ResourceName,
+		}
 
-	return &AlterBrokerConfigsResponse{
-		ErrorCode:    int(apiResp.Responses[0].ErrorCode),
-		ErrorMessage: apiResp.Responses[0].ErrorMessage,
-	}, nil
-}
-
-func (c *Client) AlterTopicConfigs(
-	ctx context.Context,
-	req AlterTopicConfigsRequest,
-) (*AlterTopicConfigsResponse, error) {
-	configs := configEntriesToConfigs(req.ConfigEntries)
-	apiReq := &incrementalalterconfigs.Request{
-		Resources: []incrementalalterconfigs.RequestResource{
-			{
-				ResourceType: incrementalalterconfigs.ResourceTypeTopic,
-				ResourceName: req.Topic,
-				Configs:      configs,
-			},
-		},
-	}
-
-	protoResp, err := c.roundTrip(
-		ctx,
-		req.Addr,
-		apiReq,
-	)
-	if err != nil {
-		return nil, err
-	}
-	apiResp := protoResp.(*incrementalalterconfigs.Response)
-
-	if len(apiResp.Responses) == 0 {
-		return nil, fmt.Errorf("Empty response")
-	}
-
-	return &AlterTopicConfigsResponse{
-		ErrorCode:    int(apiResp.Responses[0].ErrorCode),
-		ErrorMessage: apiResp.Responses[0].ErrorMessage,
-	}, nil
-}
-
-func configEntriesToConfigs(entries []ConfigEntry) []incrementalalterconfigs.RequestConfig {
-	configs := []incrementalalterconfigs.RequestConfig{}
-	for _, entry := range entries {
-		if entry.ConfigValue != "" {
-			configs = append(
-				configs,
+		for _, config := range res.Configs {
+			apiRes.Configs = append(
+				apiRes.Configs,
 				incrementalalterconfigs.RequestConfig{
-					Name:            entry.ConfigName,
-					Value:           entry.ConfigValue,
-					ConfigOperation: incrementalalterconfigs.OpTypeSet,
-				},
-			)
-		} else {
-			configs = append(
-				configs,
-				incrementalalterconfigs.RequestConfig{
-					Name:            entry.ConfigName,
-					ConfigOperation: incrementalalterconfigs.OpTypeDelete,
+					Name:            config.Name,
+					Value:           config.Value,
+					ConfigOperation: int8(config.ConfigOperation),
 				},
 			)
 		}
+
+		apiReq.Resources = append(
+			apiReq.Resources,
+			apiRes,
+		)
 	}
 
-	return configs
+	protoResp, err := c.roundTrip(
+		ctx,
+		req.Addr,
+		apiReq,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &IncrementalAlterConfigsResponse{}
+
+	apiResp := protoResp.(*incrementalalterconfigs.Response)
+	for _, res := range apiResp.Responses {
+		resp.Resources = append(
+			resp.Resources,
+			IncrementalAlterConfigsResponseResource{
+				ErrorCode:    int(res.ErrorCode),
+				ErrorMessage: res.ErrorMessage,
+				ResourceType: ResourceType(res.ResourceType),
+				ResourceName: res.ResourceName,
+			},
+		)
+	}
+
+	return resp, nil
 }

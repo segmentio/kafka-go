@@ -7,13 +7,7 @@ import (
 )
 
 const (
-	ResourceTypeBroker int8 = 4
-	ResourceTypeTopic  int8 = 2
-
-	OpTypeSet      int8 = 0
-	OpTypeDelete   int8 = 1
-	OpTypeAppend   int8 = 2
-	OpTypeSubtract int8 = 3
+	resourceTypeBroker int8 = 4
 )
 
 func init() {
@@ -43,7 +37,7 @@ func (r *Request) ApiKey() protocol.ApiKey { return protocol.IncrementalAlterCon
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	// TODO: Support updating multiple broker configs in single request?
 	for _, resource := range r.Resources {
-		if resource.ResourceType == ResourceTypeBroker {
+		if resource.ResourceType == resourceTypeBroker {
 			brokerID, err := strconv.Atoi(resource.ResourceName)
 			if err != nil {
 				return protocol.Broker{}, err
