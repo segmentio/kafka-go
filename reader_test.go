@@ -605,6 +605,19 @@ func TestReaderLagWhenConsumerGroupsEnabled(t *testing.T) {
 	}
 }
 
+func TestReaderReadLagReturnsZeroLagWhenConsumerGroupsEnabled(t *testing.T) {
+	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
+	lag, err := r.ReadLag(context.Background())
+
+	if err != errNotAvailableWithGroup {
+		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
+	}
+
+	if lag != 0 {
+		t.Fatalf("expected 0; got %d", lag)
+	}
+}
+
 func TestReaderPartitionWhenConsumerGroupsEnabled(t *testing.T) {
 	invoke := func() (boom bool) {
 		defer func() {
@@ -1368,4 +1381,44 @@ func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
 	}
 
 	return m
+}
+
+const (
+	connTO     = 1 * time.Second
+	connTestTO = 2 * connTO
+)
+
+func TestErrorCannotConnect(t *testing.T) {
+	r := NewReader(ReaderConfig{
+		Brokers:     []string{"localhost:9093"},
+		Dialer:      &Dialer{Timeout: connTO},
+		MaxAttempts: 1,
+		Topic:       makeTopic(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), connTestTO)
+	defer cancel()
+
+	_, err := r.FetchMessage(ctx)
+	if err == nil || ctx.Err() != nil {
+		t.Errorf("Reader.FetchMessage must fail when it cannot " +
+			"connect")
+	}
+}
+
+func TestErrorCannotConnectGroupSubscription(t *testing.T) {
+	r := NewReader(ReaderConfig{
+		Brokers:     []string{"localhost:9093"},
+		Dialer:      &Dialer{Timeout: 1 * time.Second},
+		GroupID:     "foobar",
+		MaxAttempts: 1,
+		Topic:       makeTopic(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), connTestTO)
+	defer cancel()
+
+	_, err := r.FetchMessage(ctx)
+	if err == nil || ctx.Err() != nil {
+		t.Errorf("Reader.FetchMessage with a group subscription " +
+			"must fail when it cannot connect")
+	}
 }

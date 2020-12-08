@@ -55,6 +55,10 @@ const (
 	// defaultPartitionWatchTime contains the amount of time the kafka-go will wait to
 	// query the brokers looking for partition changes.
 	defaultPartitionWatchTime = 5 * time.Second
+
+	// defaultTimeout is the deadline to set when interacting with the
+	// consumer group coordinator.
+	defaultTimeout = 5 * time.Second
 )
 
 // ConsumerGroupConfig is a configuration object used to create new instances of
@@ -142,6 +146,17 @@ type ConsumerGroupConfig struct {
 	// ErrorLogger is the logger used to report errors. If nil, the reader falls
 	// back to using Logger instead.
 	ErrorLogger Logger
+
+	// Timeout is the network timeout used when communicating with the consumer
+	// group coordinator.  This value should not be too small since errors
+	// communicating with the broker will generally cause a consumer group
+	// rebalance, and it's undesirable that a transient network error intoduce
+	// that overhead.  Similarly, it should not be too large or the consumer
+	// group may be slow to respond to the coordinator failing over to another
+	// broker.
+	//
+	// Default: 5s
+	Timeout time.Duration
 
 	// connect is a function for dialing the coordinator.  This is provided for
 	// unit testing to mock broker connections.
@@ -231,8 +246,12 @@ func (config *ConsumerGroupConfig) Validate() error {
 		return errors.New(fmt.Sprintf("StartOffset is not valid %d", config.StartOffset))
 	}
 
+	if config.Timeout == 0 {
+		config.Timeout = defaultTimeout
+	}
+
 	if config.connect == nil {
-		config.connect = connect
+		config.connect = makeConnect(*config)
 	}
 
 	return nil
@@ -442,7 +461,7 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		ops, err := g.conn.ReadPartitions(topic)
+		ops, err := g.conn.readPartitions(topic)
 		if err != nil {
 			g.logError(func(l Logger) {
 				l.Printf("Problem getting partitions during startup, %v\n, Returning and setting up nextGeneration", err)
@@ -455,7 +474,7 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				ops, err := g.conn.ReadPartitions(topic)
+				ops, err := g.conn.readPartitions(topic)
 				switch err {
 				case nil, UnknownTopicOrPartition:
 					if len(ops) != oParts {
@@ -480,8 +499,6 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 	})
 }
 
-var _ coordinator = &Conn{}
-
 // coordinator is a subset of the functionality in Conn in order to facilitate
 // testing the consumer group...especially for error conditions that are
 // difficult to instigate with a live broker running in docker.
@@ -494,7 +511,84 @@ type coordinator interface {
 	heartbeat(heartbeatRequestV0) (heartbeatResponseV0, error)
 	offsetFetch(offsetFetchRequestV1) (offsetFetchResponseV1, error)
 	offsetCommit(offsetCommitRequestV2) (offsetCommitResponseV2, error)
-	ReadPartitions(...string) ([]Partition, error)
+	readPartitions(...string) ([]Partition, error)
+}
+
+// timeoutCoordinator wraps the Conn to ensure that every operation has a
+// deadline.  Otherwise, it would be possible for requests to block indefinitely
+// if the remote server never responds.  There are many spots where the consumer
+// group needs to interact with the broker, so it feels less error prone to
+// factor all of the deadline management into this shared location as opposed to
+// peppering it all through where the code actually interacts with the broker.
+type timeoutCoordinator struct {
+	timeout          time.Duration
+	sessionTimeout   time.Duration
+	rebalanceTimeout time.Duration
+	conn             *Conn
+}
+
+func (t *timeoutCoordinator) Close() error {
+	return t.conn.Close()
+}
+
+func (t *timeoutCoordinator) findCoordinator(req findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
+		return findCoordinatorResponseV0{}, err
+	}
+	return t.conn.findCoordinator(req)
+}
+
+func (t *timeoutCoordinator) joinGroup(req joinGroupRequestV1) (joinGroupResponseV1, error) {
+	// in the case of join group, the consumer group coordinator may wait up
+	// to rebalance timeout in order to wait for all members to join.
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout + t.rebalanceTimeout)); err != nil {
+		return joinGroupResponseV1{}, err
+	}
+	return t.conn.joinGroup(req)
+}
+
+func (t *timeoutCoordinator) syncGroup(req syncGroupRequestV0) (syncGroupResponseV0, error) {
+	// in the case of sync group, the consumer group leader is given up to
+	// the session timeout to respond before the coordinator will give up.
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout + t.sessionTimeout)); err != nil {
+		return syncGroupResponseV0{}, err
+	}
+	return t.conn.syncGroup(req)
+}
+
+func (t *timeoutCoordinator) leaveGroup(req leaveGroupRequestV0) (leaveGroupResponseV0, error) {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
+		return leaveGroupResponseV0{}, err
+	}
+	return t.conn.leaveGroup(req)
+}
+
+func (t *timeoutCoordinator) heartbeat(req heartbeatRequestV0) (heartbeatResponseV0, error) {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
+		return heartbeatResponseV0{}, err
+	}
+	return t.conn.heartbeat(req)
+}
+
+func (t *timeoutCoordinator) offsetFetch(req offsetFetchRequestV1) (offsetFetchResponseV1, error) {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
+		return offsetFetchResponseV1{}, err
+	}
+	return t.conn.offsetFetch(req)
+}
+
+func (t *timeoutCoordinator) offsetCommit(req offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
+		return offsetCommitResponseV2{}, err
+	}
+	return t.conn.offsetCommit(req)
+}
+
+func (t *timeoutCoordinator) readPartitions(topics ...string) ([]Partition, error) {
+	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
+		return nil, err
+	}
+	return t.conn.ReadPartitions(topics...)
 }
 
 // NewConsumerGroup creates a new ConsumerGroup.  It returns an error if the
@@ -726,13 +820,22 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 }
 
 // connect returns a connection to ANY broker
-func connect(dialer *Dialer, brokers ...string) (conn coordinator, err error) {
-	for _, broker := range brokers {
-		if conn, err = dialer.Dial("tcp", broker); err == nil {
-			return
+func makeConnect(config ConsumerGroupConfig) func(dialer *Dialer, brokers ...string) (coordinator, error) {
+	return func(dialer *Dialer, brokers ...string) (coordinator, error) {
+		var err error
+		for _, broker := range brokers {
+			var conn *Conn
+			if conn, err = dialer.Dial("tcp", broker); err == nil {
+				return &timeoutCoordinator{
+					conn:             conn,
+					timeout:          config.Timeout,
+					sessionTimeout:   config.SessionTimeout,
+					rebalanceTimeout: config.RebalanceTimeout,
+				}, nil
+			}
 		}
+		return nil, err // err will be non-nil
 	}
-	return // err will be non-nil
 }
 
 // coordinator establishes a connection to the coordinator for this consumer
@@ -868,7 +971,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	}
 
 	topics := extractTopics(members)
-	partitions, err := conn.ReadPartitions(topics...)
+	partitions, err := conn.readPartitions(topics...)
 
 	// it's not a failure if the topic doesn't exist yet.  it results in no
 	// assignments for the topic.  this matches the behavior of the official

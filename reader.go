@@ -24,6 +24,13 @@ const (
 	defaultCommitRetries = 3
 )
 
+const (
+	// defaultFetchMinBytes of 1 byte means that fetch requests are answered as
+	// soon as a single byte of data is available or the fetch request times out
+	// waiting for data to arrive.
+	defaultFetchMinBytes = 1
+)
+
 var (
 	errOnlyAvailableWithGroup = errors.New("unavailable when GroupID is not set")
 	errNotAvailableWithGroup  = errors.New("unavailable when GroupID is set")
@@ -58,6 +65,16 @@ type Reader struct {
 	offset  int64
 	lag     int64
 	closed  bool
+
+	// Without a group subscription (when Reader.config.GroupID == ""),
+	// when errors occur, the Reader gets a synthetic readerMessage with
+	// a non-nil err set. With group subscriptions however, when an error
+	// occurs in Reader.run, there's no reader running (sic, cf. reader vs.
+	// Reader) and there's no way to let the high-level methods like
+	// FetchMessage know that an error indeed occurred. If an error in run
+	// occurs, it will be non-block-sent to this unbuffered channel, where
+	// the high-level methods can select{} on it and notify the caller.
+	runError chan error
 
 	// reader stats are all made of atomic values, no need for synchronization.
 	once  uint32
@@ -253,8 +270,15 @@ func (r *Reader) run(cg *ConsumerGroup) {
 	})
 
 	for {
-		gen, err := cg.Next(r.stctx)
-		if err != nil {
+		// Limit the number of attempts at waiting for the next
+		// consumer generation.
+		var err error
+		var gen *Generation
+		for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
+			gen, err = cg.Next(r.stctx)
+			if err == nil {
+				break
+			}
 			if err == r.stctx.Err() {
 				return
 			}
@@ -262,6 +286,17 @@ func (r *Reader) run(cg *ConsumerGroup) {
 			r.withErrorLogger(func(l Logger) {
 				l.Printf(err.Error())
 			})
+			// Continue with next attempt...
+		}
+		if err != nil {
+			// All attempts have failed.
+			select {
+			case r.runError <- err:
+				// If somebody's receiving on the runError, let
+				// them know the error occurred.
+			default:
+				// Otherwise, don't block to allow healing.
+			}
 			continue
 		}
 
@@ -531,7 +566,6 @@ type readerStats struct {
 // NewReader creates and returns a new Reader configured with config.
 // The offset is initialized to FirstOffset.
 func NewReader(config ReaderConfig) *Reader {
-
 	if err := config.Validate(); err != nil {
 		panic(err)
 	}
@@ -554,7 +588,7 @@ func NewReader(config ReaderConfig) *Reader {
 	}
 
 	if config.MinBytes == 0 {
-		config.MinBytes = config.MaxBytes
+		config.MinBytes = defaultFetchMinBytes
 	}
 
 	if config.MaxWait == 0 {
@@ -619,9 +653,9 @@ func NewReader(config ReaderConfig) *Reader {
 		},
 		version: version,
 	}
-
 	if r.useConsumerGroup() {
 		r.done = make(chan struct{})
+		r.runError = make(chan error)
 		cg, err := NewConsumerGroup(ConsumerGroupConfig{
 			ID:                     r.config.GroupID,
 			Brokers:                r.config.Brokers,
@@ -729,6 +763,9 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 		select {
 		case <-ctx.Done():
 			return Message{}, ctx.Err()
+
+		case err := <-r.runError:
+			return Message{}, err
 
 		case m, ok := <-r.msgs:
 			if !ok {
@@ -1161,8 +1198,9 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			})
 			continue
 		default:
-			// Wait 4 attempts before reporting the first errors, this helps
-			// mitigate situations where the kafka server is temporarily
+			// Perform a configured number of attempts before
+			// reporting first errors, this helps mitigate
+			// situations where the kafka server is temporarily
 			// unavailable.
 			if attempt >= r.maxAttempts {
 				r.sendError(ctx, err)

@@ -277,3 +277,78 @@ func TestMurmur2Balancer(t *testing.T) {
 		}
 	})
 }
+
+func TestLeastBytes(t *testing.T) {
+	testCases := map[string]struct {
+		Keys       [][]byte
+		Partitions [][]int
+		Partition  int
+	}{
+		"single message": {
+			Keys: [][]byte{
+				[]byte("key"),
+			},
+			Partitions: [][]int{
+				{0, 1, 2},
+			},
+			Partition: 0,
+		},
+		"multiple messages, no partition change": {
+			Keys: [][]byte{
+				[]byte("a"),
+				[]byte("ab"),
+				[]byte("abc"),
+				[]byte("abcd"),
+			},
+			Partitions: [][]int{
+				{0, 1, 2},
+				{0, 1, 2},
+				{0, 1, 2},
+				{0, 1, 2},
+			},
+			Partition: 0,
+		},
+		"partition gained": {
+			Keys: [][]byte{
+				[]byte("hello world 1"),
+				[]byte("hello world 2"),
+				[]byte("hello world 3"),
+			},
+			Partitions: [][]int{
+				{0, 1},
+				{0, 1},
+				{0, 1, 2},
+			},
+			Partition: 0,
+		},
+		"partition lost": {
+			Keys: [][]byte{
+				[]byte("hello world 1"),
+				[]byte("hello world 2"),
+				[]byte("hello world 3"),
+			},
+			Partitions: [][]int{
+				{0, 1, 2},
+				{0, 1, 2},
+				{0, 1},
+			},
+			Partition: 0,
+		},
+	}
+
+	for label, test := range testCases {
+		t.Run(label, func(t *testing.T) {
+			lb := &LeastBytes{}
+
+			var partition int
+			for i, key := range test.Keys {
+				msg := Message{Key: key}
+				partition = lb.Balance(msg, test.Partitions[i]...)
+			}
+
+			if partition != test.Partition {
+				t.Errorf("expected %v; got %v", test.Partition, partition)
+			}
+		})
+	}
+}

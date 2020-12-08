@@ -81,7 +81,6 @@ func (c *Conn) SetVersions(versions map[ApiKey]int16) {
 func (c *Conn) RoundTrip(msg Message) (Message, error) {
 	correlationID := atomic.AddInt32(&c.idgen, +1)
 	versions, _ := c.versions.Load().(map[ApiKey]int16)
-
 	apiVersion := versions[msg.ApiKey()]
 
 	if p, _ := msg.(PreparedMessage); p != nil {

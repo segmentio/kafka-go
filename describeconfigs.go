@@ -4,119 +4,171 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strconv"
+	"time"
 
 	"github.com/segmentio/kafka-go/protocol/describeconfigs"
 )
 
+// DescribeConfigsRequest represents a request sent to a kafka broker to describe configs
 type DescribeConfigsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	Topics          []string
-	Brokers         []int
-	IncludeDefaults bool
+	// List of resources to update.
+	Resources []DescribeConfigRequestResource
+
+	// Ignored if API version is less than v1
+	IncludeSynonyms bool
+
+	// Ignored if API version is less than v3
+	IncludeDocumentation bool
 }
 
+type ResourceType int8
+
+const (
+	ResourceTypeUnknown ResourceType = 0
+	ResourceTypeAny     ResourceType = 1
+	ResourceTypeTopic   ResourceType = 2
+	ResourceTypeGroup   ResourceType = 3
+	ResourceTypeCluster ResourceType = 4
+	ResourceTypeBroker  ResourceType = 5
+)
+
+type DescribeConfigRequestResource struct {
+	// Resource Type
+	ResourceType ResourceType
+
+	// Resource Name
+	ResourceName string
+
+	// ConfigNames is a list of configurations to update.
+	ConfigNames []string
+}
+
+// DescribeConfigsResponse represents a response from a kafka broker to a describe config request.
 type DescribeConfigsResponse struct {
-	Brokers []DescribeConfigsResponseBroker
-	Topics  []DescribeConfigsResponseTopic
+	// The amount of time that the broker throttled the request.
+	Throttle time.Duration
+
+	// Resources
+	Resources []DescribeConfigResponseResource
 }
 
-type DescribeConfigsResponseBroker struct {
-	BrokerID int
-	Configs  map[string]string
+// DescribeConfigResponseResource
+type DescribeConfigResponseResource struct {
+	// Resource Type
+	ResourceType int8
+
+	// Resource Name
+	ResourceName string
+
+	// Error
+	Error error
+
+	// ConfigEntries
+	ConfigEntries []DescribeConfigResponseConfigEntry
 }
 
-type DescribeConfigsResponseTopic struct {
-	Topic   string
-	Configs map[string]string
+// DescribeConfigResponseConfigEntry
+type DescribeConfigResponseConfigEntry struct {
+	ConfigName  string
+	ConfigValue string
+	ReadOnly    bool
+
+	// Ignored if API version is greater than v0
+	IsDefault bool
+
+	// Ignored if API version is less than v1
+	ConfigSource int8
+
+	IsSensitive bool
+
+	// Ignored if API version is less than v1
+	ConfigSynonyms []DescribeConfigResponseConfigSynonym
+
+	// Ignored if API version is less than v3
+	ConfigType int8
+
+	// Ignored if API version is less than v3
+	ConfigDocumentation string
 }
 
-func (c *Client) DescribeConfigs(
-	ctx context.Context,
-	req DescribeConfigsRequest,
-) (*DescribeConfigsResponse, error) {
-	resources := []describeconfigs.RequestResource{}
+// DescribeConfigResponseConfigSynonym
+type DescribeConfigResponseConfigSynonym struct {
+	// Ignored if API version is less than v1
+	ConfigName string
 
-	for _, broker := range req.Brokers {
-		resources = append(
-			resources,
-			describeconfigs.RequestResource{
-				ResourceType: describeconfigs.ResourceTypeBroker,
-				ResourceName: fmt.Sprintf("%d", broker),
-			},
-		)
-	}
+	// Ignored if API version is less than v1
+	ConfigValue string
 
-	for _, topic := range req.Topics {
-		resources = append(
-			resources,
-			describeconfigs.RequestResource{
-				ResourceType: describeconfigs.ResourceTypeTopic,
-				ResourceName: topic,
-			},
-		)
-	}
+	// Ignored if API version is less than v1
+	ConfigSource int8
+}
 
-	protoResp, err := c.roundTrip(
-		ctx,
-		req.Addr,
-		&describeconfigs.Request{
-			Resources: resources,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	apiResp := protoResp.(*describeconfigs.Response)
+// DescribeConfigs sends a config altering request to a kafka broker and returns the
+// response.
+func (c *Client) DescribeConfigs(ctx context.Context, req *DescribeConfigsRequest) (*DescribeConfigsResponse, error) {
+	resources := make([]describeconfigs.RequestResource, len(req.Resources))
 
-	resp := &DescribeConfigsResponse{}
-
-	for _, resource := range apiResp.Resources {
-		switch resource.ResourceType {
-		case describeconfigs.ResourceTypeBroker:
-			configs := map[string]string{}
-			for _, entry := range resource.ConfigEntries {
-				if !req.IncludeDefaults && (entry.IsDefault ||
-					entry.ConfigSource == describeconfigs.ConfigSourceDefaultConfig ||
-					entry.ConfigSource == describeconfigs.ConfigSourceStaticBrokerConfig ||
-					entry.ConfigSource == describeconfigs.ConfigSourceDynamicDefaultBrokerConfig) {
-					continue
-				}
-
-				configs[entry.ConfigName] = entry.ConfigValue
-			}
-
-			brokerID, err := strconv.Atoi(resource.ResourceName)
-			if err != nil {
-				return nil, err
-			}
-
-			resp.Brokers = append(resp.Brokers, DescribeConfigsResponseBroker{
-				BrokerID: brokerID,
-				Configs:  configs,
-			})
-		case describeconfigs.ResourceTypeTopic:
-			configs := map[string]string{}
-			for _, entry := range resource.ConfigEntries {
-				if !req.IncludeDefaults && (entry.IsDefault ||
-					entry.ConfigSource == describeconfigs.ConfigSourceDefaultConfig ||
-					entry.ConfigSource == describeconfigs.ConfigSourceStaticBrokerConfig) {
-					continue
-				}
-
-				configs[entry.ConfigName] = entry.ConfigValue
-			}
-
-			resp.Topics = append(resp.Topics, DescribeConfigsResponseTopic{
-				Topic:   resource.ResourceName,
-				Configs: configs,
-			})
-		default:
-			return nil, fmt.Errorf("Unrecognized resource type: %d", resource.ResourceType)
+	for i, t := range req.Resources {
+		resources[i] = describeconfigs.RequestResource{
+			ResourceType: int8(t.ResourceType),
+			ResourceName: t.ResourceName,
+			ConfigNames:  t.ConfigNames,
 		}
 	}
 
-	return resp, nil
+	m, err := c.roundTrip(ctx, req.Addr, &describeconfigs.Request{
+		Resources:            resources,
+		IncludeSynonyms:      req.IncludeSynonyms,
+		IncludeDocumentation: req.IncludeDocumentation,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).DescribeConfigs: %w", err)
+	}
+
+	res := m.(*describeconfigs.Response)
+	ret := &DescribeConfigsResponse{
+		Throttle:  makeDuration(res.ThrottleTimeMs),
+		Resources: make([]DescribeConfigResponseResource, len(res.Resources)),
+	}
+
+	for i, t := range res.Resources {
+
+		configEntries := make([]DescribeConfigResponseConfigEntry, len(t.ConfigEntries))
+		for j, v := range t.ConfigEntries {
+
+			configSynonyms := make([]DescribeConfigResponseConfigSynonym, len(v.ConfigSynonyms))
+			for k, cs := range v.ConfigSynonyms {
+				configSynonyms[k] = DescribeConfigResponseConfigSynonym{
+					ConfigName:   cs.ConfigName,
+					ConfigValue:  cs.ConfigValue,
+					ConfigSource: cs.ConfigSource,
+				}
+			}
+
+			configEntries[j] = DescribeConfigResponseConfigEntry{
+				ConfigName:          v.ConfigName,
+				ConfigValue:         v.ConfigValue,
+				ReadOnly:            v.ReadOnly,
+				ConfigSource:        v.ConfigSource,
+				IsDefault:           v.IsDefault,
+				IsSensitive:         v.IsSensitive,
+				ConfigSynonyms:      configSynonyms,
+				ConfigType:          v.ConfigType,
+				ConfigDocumentation: v.ConfigDocumentation,
+			}
+		}
+
+		ret.Resources[i] = DescribeConfigResponseResource{
+			ResourceType:  t.ResourceType,
+			ResourceName:  t.ResourceName,
+			Error:         makeError(t.ErrorCode, t.ErrorMessage),
+			ConfigEntries: configEntries,
+		}
+	}
+
+	return ret, nil
 }
