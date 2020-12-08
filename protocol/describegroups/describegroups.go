@@ -8,6 +8,7 @@ func init() {
 	protocol.Register(&Request{}, &Response{})
 }
 
+// Detailed API definition: https://kafka.apache.org/protocol#The_Messages_DescribeGroups
 type Request struct {
 	Groups                      []string `kafka:"min=v0,max=v4"`
 	IncludeAuthorizedOperations bool     `kafka:"min=v3,max=v4"`

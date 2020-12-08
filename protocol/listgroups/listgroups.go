@@ -8,6 +8,7 @@ func init() {
 	protocol.Register(&Request{}, &Response{})
 }
 
+// Detailed API definition: https://kafka.apache.org/protocol#The_Messages_ListGroups
 type Request struct {
 	_        struct{} `kafka:"min=v0,max=v2"`
 	brokerID int32

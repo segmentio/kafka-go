@@ -6,6 +6,7 @@ func init() {
 	protocol.Register(&Request{}, &Response{})
 }
 
+// Detailed API definition: https://kafka.apache.org/protocol#The_Messages_ElectLeaders
 type Request struct {
 	ElectionType    int8                     `kafka:"min=v1,max=v1"`
 	TopicPartitions []RequestTopicPartitions `kafka:"min=v0,max=v1"`
