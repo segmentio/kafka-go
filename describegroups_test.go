@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 )
@@ -140,6 +141,12 @@ func TestClientDescribeGroups(t *testing.T) {
 			"got", mt.Topic,
 		)
 	}
+
+	// Partitions can be in any order, sort them
+	sort.Slice(mt.Partitions, func(a, b int) bool {
+		return mt.Partitions[a] < mt.Partitions[b]
+	})
+
 	if !reflect.DeepEqual([]int{0, 1}, mt.Partitions) {
 		t.Error(
 			"Wrong member assignment partitions",

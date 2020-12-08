@@ -51,7 +51,7 @@ func TestClientListGroups(t *testing.T) {
 	topic := makeTopic()
 	gid := fmt.Sprintf("%s-test-group", topic)
 
-	createTopic(t, topic, 2)
+	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
 
 	w := &Writer{
