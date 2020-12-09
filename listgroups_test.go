@@ -54,10 +54,9 @@ func TestClientListGroups(t *testing.T) {
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
 
-	w := &Writer{
-		Addr:  client.Addr,
+	w := newTestWriter(WriterConfig{
 		Topic: topic,
-	}
+	})
 	err := w.WriteMessages(
 		ctx,
 		Message{
@@ -66,7 +65,7 @@ func TestClientListGroups(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 
 	r := NewReader(ReaderConfig{

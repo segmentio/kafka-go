@@ -66,10 +66,9 @@ func TestClientDescribeGroups(t *testing.T) {
 	createTopic(t, topic, 2)
 	defer deleteTopic(t, topic)
 
-	w := &Writer{
-		Addr:  client.Addr,
+	w := newTestWriter(WriterConfig{
 		Topic: topic,
-	}
+	})
 	err := w.WriteMessages(
 		ctx,
 		Message{
