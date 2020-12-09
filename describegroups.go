@@ -300,6 +300,9 @@ func (t *describeGroupsResponseV0) readFrom(r *bufio.Reader, sz int) (remain int
 
 // decodeMemberAssignments converts raw assignment bytes to a DescribeGroupsResponseAssignments
 // struct.
+//
+// See https://github.com/apache/kafka/blob/2.4/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerProtocol.java#L49
+// for protocol details.
 func decodeMemberAssignments(rawAssignments []byte) (DescribeGroupsResponseAssignments, error) {
 	ma := DescribeGroupsResponseAssignments{}
 
