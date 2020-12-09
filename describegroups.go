@@ -316,6 +316,9 @@ func (t *describeGroupsResponseV0) readFrom(r *bufio.Reader, sz int) (remain int
 
 // decodeMemberMetadata converts raw metadata bytes to a
 // DescribeGroupsResponseMemberMetadata struct.
+//
+// See https://github.com/apache/kafka/blob/2.4/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerProtocol.java#L49
+// for protocol details.
 func decodeMemberMetadata(rawMetadata []byte) (DescribeGroupsResponseMemberMetadata, error) {
 	mm := DescribeGroupsResponseMemberMetadata{}
 
