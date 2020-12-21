@@ -41,6 +41,11 @@ func (batch *Batch) HighWaterMark() int64 {
 	return batch.highWaterMark
 }
 
+// Partition returns the batch partition.
+func (batch *Batch) Partition() int {
+	return batch.partition
+}
+
 // Offset returns the offset of the next message in the batch.
 func (batch *Batch) Offset() int64 {
 	batch.mutex.Lock()
