@@ -15,6 +15,13 @@ func TestClientApiVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if resp.Error != nil {
+		t.Fatal(
+			"Unexpected error in response",
+			"expected", nil,
+			"got", resp.Error,
+		)
+	}
 
 	if len(resp.ApiKeys) == 0 {
 		t.Error(
