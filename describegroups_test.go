@@ -119,6 +119,13 @@ func TestClientDescribeGroups(t *testing.T) {
 		)
 	}
 	g := resp.Groups[0]
+	if g.Error != nil {
+		t.Fatal(
+			"Wrong error in group response",
+			"expected", nil,
+			"got", g.Error,
+		)
+	}
 
 	if g.GroupID != gid {
 		t.Error(

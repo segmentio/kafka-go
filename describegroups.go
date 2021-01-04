@@ -27,6 +27,10 @@ type DescribeGroupsResponse struct {
 
 // DescribeGroupsResponseGroup contains the response details for a single group.
 type DescribeGroupsResponseGroup struct {
+	// Error is set to a non-nil value if there was an error fetching the details
+	// for this group.
+	Error error
+
 	// GroupID is the ID of the group.
 	GroupID string
 
@@ -110,6 +114,7 @@ func (c *Client) DescribeGroups(
 
 	for _, apiGroup := range apiResp.Groups {
 		group := DescribeGroupsResponseGroup{
+			Error:      makeError(apiGroup.ErrorCode, ""),
 			GroupID:    apiGroup.GroupID,
 			GroupState: apiGroup.GroupState,
 			Members:    []DescribeGroupsResponseMember{},

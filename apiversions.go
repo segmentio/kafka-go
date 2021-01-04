@@ -16,8 +16,8 @@ type ApiVersionsRequest struct {
 
 // ApiVersionsResponse is a response from the ApiVersions API.
 type ApiVersionsResponse struct {
-	// ErrorCode is set to a non-zero value if an error was encountered.
-	ErrorCode int
+	// Error is set to a non-nil value if an error was encountered.
+	Error error
 
 	// ApiKeys contains the specific details of each supported API.
 	ApiKeys []ApiVersionsResponseApiKey
@@ -54,7 +54,7 @@ func (c *Client) ApiVersions(
 	apiResp := protoResp.(*apiversions.Response)
 
 	resp := &ApiVersionsResponse{
-		ErrorCode: int(apiResp.ErrorCode),
+		Error: makeError(apiResp.ErrorCode, ""),
 	}
 	for _, apiKey := range apiResp.ApiKeys {
 		resp.ApiKeys = append(

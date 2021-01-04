@@ -16,6 +16,10 @@ type ListGroupsRequest struct {
 
 // ListGroupsResponse is a response from the ListGroups API.
 type ListGroupsResponse struct {
+	// Error is set to a non-nil value if a top-level error occurred while fetching
+	// groups.
+	Error error
+
 	// Groups contains the list of groups.
 	Groups []ListGroupsResponseGroup
 }
@@ -38,7 +42,9 @@ func (c *Client) ListGroups(
 		return nil, err
 	}
 	apiResp := protoResp.(*listgroups.Response)
-	resp := &ListGroupsResponse{}
+	resp := &ListGroupsResponse{
+		Error: makeError(apiResp.ErrorCode, ""),
+	}
 
 	for _, apiGroupInfo := range apiResp.Groups {
 		resp.Groups = append(resp.Groups, ListGroupsResponseGroup{

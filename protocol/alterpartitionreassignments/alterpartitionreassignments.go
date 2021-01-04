@@ -8,12 +8,12 @@ func init() {
 
 // Detailed API definition: https://kafka.apache.org/protocol#The_Messages_AlterPartitionReassignments
 type Request struct {
-	TimeoutMs int32          `kafka:"min=v0,max=v0"`
-	Topics    []RequestTopic `kafka:"min=v0,max=v0"`
-
 	// We need at least one tagged field to indicate that this is a "flexible" message
 	// type.
 	_ struct{} `kafka:"min=v0,max=v0,tag"`
+
+	TimeoutMs int32          `kafka:"min=v0,max=v0"`
+	Topics    []RequestTopic `kafka:"min=v0,max=v0"`
 }
 
 type RequestTopic struct {
@@ -35,14 +35,14 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 }
 
 type Response struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_ struct{} `kafka:"min=v0,max=v0,tag"`
+
 	ThrottleTimeMs int32            `kafka:"min=v0,max=v0"`
 	ErrorCode      int16            `kafka:"min=v0,max=v0"`
 	ErrorMessage   string           `kafka:"min=v0,max=v0,nullable"`
 	Results        []ResponseResult `kafka:"min=v0,max=v0"`
-
-	// We need at least one tagged field to indicate that this is a "flexible" message
-	// type.
-	_ struct{} `kafka:"min=v0,max=v0,tag"`
 }
 
 type ResponseResult struct {

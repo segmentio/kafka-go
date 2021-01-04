@@ -35,11 +35,9 @@ type AlterPartitionReassignmentsRequestAssignment struct {
 
 // AlterPartitionReassignmentsResponse is a response from the AlterPartitionReassignments API.
 type AlterPartitionReassignmentsResponse struct {
-	// ErrorCode is set to a non-zero value if a top-level error was encountered.
-	ErrorCode int
-
-	// ErrorMessage describes the top-level error that occured.
-	ErrorMessage string
+	// Error is set to a non-nil value including the code and message if a top-level
+	// error was encountered when doing the update.
+	Error error
 
 	// PartitionResults contains the specific results for each partition.
 	PartitionResults []AlterPartitionReassignmentsResponsePartitionResult
@@ -51,11 +49,9 @@ type AlterPartitionReassignmentsResponsePartitionResult struct {
 	// PartitionID is the ID of the partition that was altered.
 	PartitionID int
 
-	// ErrorCode is set to a non-zero value if an error was encountered during the update.
-	ErrorCode int
-
-	// ErrorMessage describes the partition-specific error that occurred.
-	ErrorMessage string
+	// Error is set to a non-nil value including the code and message if an error was encountered
+	// during the update for this partition.
+	Error error
 }
 
 func (c *Client) AlterPartitionReassignments(
@@ -100,8 +96,7 @@ func (c *Client) AlterPartitionReassignments(
 	apiResp := protoResp.(*alterpartitionreassignments.Response)
 
 	resp := &AlterPartitionReassignmentsResponse{
-		ErrorCode:    int(apiResp.ErrorCode),
-		ErrorMessage: apiResp.ErrorMessage,
+		Error: makeError(apiResp.ErrorCode, apiResp.ErrorMessage),
 	}
 
 	for _, topicResult := range apiResp.Results {
@@ -109,9 +104,8 @@ func (c *Client) AlterPartitionReassignments(
 			resp.PartitionResults = append(
 				resp.PartitionResults,
 				AlterPartitionReassignmentsResponsePartitionResult{
-					PartitionID:  int(partitionResult.PartitionIndex),
-					ErrorCode:    int(partitionResult.ErrorCode),
-					ErrorMessage: partitionResult.ErrorMessage,
+					PartitionID: int(partitionResult.PartitionIndex),
+					Error:       makeError(partitionResult.ErrorCode, partitionResult.ErrorMessage),
 				},
 			)
 		}

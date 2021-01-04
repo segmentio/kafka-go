@@ -64,12 +64,9 @@ type IncrementalAlterConfigsResponse struct {
 // IncrementalAlterConfigsResponseResource contains the response details for a single resource
 // whose configs were updated.
 type IncrementalAlterConfigsResponseResource struct {
-	// ErrorCode is set to a non-zero value if there was an error updating the configs for this
-	// resource.
-	ErrorCode int
-
-	// ErrorMessage describes any errors that were encountered.
-	ErrorMessage string
+	// Error is set to a non-nil value if an error occurred while updating this specific
+	// config.
+	Error error
 
 	// ResourceType is the type of resource that was updated.
 	ResourceType ResourceType
@@ -125,8 +122,7 @@ func (c *Client) IncrementalAlterConfigs(
 		resp.Resources = append(
 			resp.Resources,
 			IncrementalAlterConfigsResponseResource{
-				ErrorCode:    int(res.ErrorCode),
-				ErrorMessage: res.ErrorMessage,
+				Error:        makeError(res.ErrorCode, res.ErrorMessage),
 				ResourceType: ResourceType(res.ResourceType),
 				ResourceName: res.ResourceName,
 			},

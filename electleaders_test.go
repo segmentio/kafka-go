@@ -32,13 +32,6 @@ func TestClientElectLeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.ErrorCode != 0 {
-		t.Error(
-			"Bad error code in response",
-			"expected", 0,
-			"got", resp.ErrorCode,
-		)
-	}
 	if len(resp.PartitionResults) != 2 {
 		t.Error(
 			"Unexpected length of partition results",

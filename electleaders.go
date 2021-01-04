@@ -25,8 +25,8 @@ type ElectLeadersRequest struct {
 
 // ElectLeadersResponse is a response from the ElectLeaders API.
 type ElectLeadersResponse struct {
-	// ErrorCode is set to a non-zero value if a top-level error occurred.
-	ErrorCode int
+	// ErrorCode is set to a non-nil value if a top-level error occurred.
+	Error error
 
 	// PartitionResults contains the results for each partition leader election.
 	PartitionResults []ElectLeadersResponsePartitionResult
@@ -37,11 +37,9 @@ type ElectLeadersResponsePartitionResult struct {
 	// Partition is the ID of the partition.
 	Partition int
 
-	// ErrorCode is set to a non-zero value if an error happened for this partition's election.
-	ErrorCode int
-
-	// ErrorMessage describes the partition-specific election error that occurred.
-	ErrorMessage string
+	// Error is set to a non-nil value if an error occurred electing leaders
+	// for this partition.
+	Error error
 }
 
 func (c *Client) ElectLeaders(
@@ -72,7 +70,7 @@ func (c *Client) ElectLeaders(
 	apiResp := protoResp.(*electleaders.Response)
 
 	resp := &ElectLeadersResponse{
-		ErrorCode: int(apiResp.ErrorCode),
+		Error: makeError(apiResp.ErrorCode, ""),
 	}
 
 	for _, topicResult := range apiResp.ReplicaElectionResults {
@@ -80,9 +78,8 @@ func (c *Client) ElectLeaders(
 			resp.PartitionResults = append(
 				resp.PartitionResults,
 				ElectLeadersResponsePartitionResult{
-					Partition:    int(partitionResult.PartitionID),
-					ErrorCode:    int(partitionResult.ErrorCode),
-					ErrorMessage: partitionResult.ErrorMessage,
+					Partition: int(partitionResult.PartitionID),
+					Error:     makeError(partitionResult.ErrorCode, partitionResult.ErrorMessage),
 				},
 			)
 		}

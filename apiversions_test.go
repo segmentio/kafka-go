@@ -16,14 +16,6 @@ func TestClientApiVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resp.ErrorCode != 0 {
-		t.Error(
-			"Unexpected error code",
-			"expected", 0,
-			"got", resp.ErrorCode,
-		)
-	}
-
 	if len(resp.ApiKeys) == 0 {
 		t.Error(
 			"Unexpected apiKeys length",
