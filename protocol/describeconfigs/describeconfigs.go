@@ -45,9 +45,7 @@ func (r *Request) Split(cluster protocol.Cluster) (
 	error,
 ) {
 	messages := []protocol.Message{}
-	topicsMessage := Request{
-		Resources: []RequestResource{},
-	}
+	topicsMessage := Request{}
 
 	for _, resource := range r.Resources {
 		// Split out broker requests to separate brokers

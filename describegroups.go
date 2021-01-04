@@ -108,16 +108,13 @@ func (c *Client) DescribeGroups(
 		return nil, err
 	}
 	apiResp := protoResp.(*describegroups.Response)
-	resp := &DescribeGroupsResponse{
-		Groups: []DescribeGroupsResponseGroup{},
-	}
+	resp := &DescribeGroupsResponse{}
 
 	for _, apiGroup := range apiResp.Groups {
 		group := DescribeGroupsResponseGroup{
 			Error:      makeError(apiGroup.ErrorCode, ""),
 			GroupID:    apiGroup.GroupID,
 			GroupState: apiGroup.GroupState,
-			Members:    []DescribeGroupsResponseMember{},
 		}
 
 		for _, member := range apiGroup.Members {
