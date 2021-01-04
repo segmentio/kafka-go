@@ -57,17 +57,28 @@ func TestMetadataRequestBroker(t *testing.T) {
 			},
 		},
 	}
-	_, err := req.Broker(protocol.Cluster{
+	b, err := req.Broker(protocol.Cluster{
 		Brokers: map[int32]protocol.Broker{
-			0: {},
-			1: {},
+			0: {
+				ID: 0,
+			},
+			1: {
+				ID: 1,
+			},
 		},
 	})
 	if err != nil {
-		t.Error(
+		t.Fatal(
 			"Unexpected error getting request broker",
 			"expected", nil,
 			"got", err,
+		)
+	}
+	if b.ID != 1 {
+		t.Error(
+			"Unexpected id returned for request broker",
+			"expected", 1,
+			"got", b.ID,
 		)
 	}
 
@@ -98,13 +109,19 @@ func TestMetadataRequestBroker(t *testing.T) {
 
 	_, err = req.Broker(protocol.Cluster{
 		Brokers: map[int32]protocol.Broker{
-			0: {},
-			1: {},
-			2: {},
+			0: {
+				ID: 0,
+			},
+			1: {
+				ID: 1,
+			},
+			2: {
+				ID: 1,
+			},
 		},
 	})
 	if err == nil {
-		t.Error(
+		t.Fatal(
 			"Unexpected error getting request broker",
 			"expected", "non-nil",
 			"got", err,
