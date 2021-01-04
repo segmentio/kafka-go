@@ -1,6 +1,7 @@
 package incrementalalterconfigs
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -35,7 +36,20 @@ type RequestConfig struct {
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.IncrementalAlterConfigs }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
-	// TODO: Support updating multiple broker configs in single request?
+	// Check that at most only one broker is being updated.
+	//
+	// TODO: Support updating multiple brokers in a single request.
+	brokers := map[string]struct{}{}
+	for _, resource := range r.Resources {
+		if resource.ResourceType == resourceTypeBroker {
+			brokers[resource.ResourceName] = struct{}{}
+		}
+	}
+	if len(brokers) > 1 {
+		return protocol.Broker{},
+			errors.New("Updating more than one broker in a single request is not supported yet")
+	}
+
 	for _, resource := range r.Resources {
 		if resource.ResourceType == resourceTypeBroker {
 			brokerID, err := strconv.Atoi(resource.ResourceName)
