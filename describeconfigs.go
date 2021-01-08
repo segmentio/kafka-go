@@ -27,12 +27,10 @@ type DescribeConfigsRequest struct {
 type ResourceType int8
 
 const (
+	// See https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/config/ConfigResource.java#L36
 	ResourceTypeUnknown ResourceType = 0
-	ResourceTypeAny     ResourceType = 1
 	ResourceTypeTopic   ResourceType = 2
-	ResourceTypeGroup   ResourceType = 3
-	ResourceTypeCluster ResourceType = 4
-	ResourceTypeBroker  ResourceType = 5
+	ResourceTypeBroker  ResourceType = 4
 )
 
 type DescribeConfigRequestResource struct {

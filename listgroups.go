@@ -2,8 +2,61 @@ package kafka
 
 import (
 	"bufio"
+	"context"
+	"net"
+
+	"github.com/segmentio/kafka-go/protocol/listgroups"
 )
 
+// ListGroupsRequest is a request to the ListGroups API.
+type ListGroupsRequest struct {
+	// Addr is the address of the kafka broker to send the request to.
+	Addr net.Addr
+}
+
+// ListGroupsResponse is a response from the ListGroups API.
+type ListGroupsResponse struct {
+	// Error is set to a non-nil value if a top-level error occurred while fetching
+	// groups.
+	Error error
+
+	// Groups contains the list of groups.
+	Groups []ListGroupsResponseGroup
+}
+
+// ListGroupsResponseGroup contains the response details for a single group.
+type ListGroupsResponseGroup struct {
+	// GroupID is the ID of the group.
+	GroupID string
+
+	// Coordinator is the ID of the coordinator broker for the group.
+	Coordinator int
+}
+
+func (c *Client) ListGroups(
+	ctx context.Context,
+	req *ListGroupsRequest,
+) (*ListGroupsResponse, error) {
+	protoResp, err := c.roundTrip(ctx, req.Addr, &listgroups.Request{})
+	if err != nil {
+		return nil, err
+	}
+	apiResp := protoResp.(*listgroups.Response)
+	resp := &ListGroupsResponse{
+		Error: makeError(apiResp.ErrorCode, ""),
+	}
+
+	for _, apiGroupInfo := range apiResp.Groups {
+		resp.Groups = append(resp.Groups, ListGroupsResponseGroup{
+			GroupID:     apiGroupInfo.GroupID,
+			Coordinator: int(apiGroupInfo.BrokerID),
+		})
+	}
+
+	return resp, nil
+}
+
+// TODO: Remove everything below and use protocol-based version above everywhere.
 type listGroupsRequestV1 struct {
 }
 

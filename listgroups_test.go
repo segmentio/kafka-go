@@ -3,8 +3,11 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestListGroupsResponseV1(t *testing.T) {
@@ -35,5 +38,71 @@ func TestListGroupsResponseV1(t *testing.T) {
 	if !reflect.DeepEqual(item, found) {
 		t.Error("expected item and found to be the same")
 		t.FailNow()
+	}
+}
+
+func TestClientListGroups(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	topic := makeTopic()
+	gid := fmt.Sprintf("%s-test-group", topic)
+
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	w := newTestWriter(WriterConfig{
+		Topic: topic,
+	})
+	err := w.WriteMessages(
+		ctx,
+		Message{
+			Key:   []byte("key"),
+			Value: []byte("value"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := NewReader(ReaderConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    topic,
+		GroupID:  gid,
+		MinBytes: 10,
+		MaxBytes: 1000,
+	})
+	_, err = r.ReadMessage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := client.ListGroups(
+		ctx,
+		&ListGroupsRequest{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error != nil {
+		t.Error(
+			"Unexpected error in response",
+			"expected", nil,
+			"got", resp.Error,
+		)
+	}
+	hasGroup := false
+	for _, group := range resp.Groups {
+		if group.GroupID == gid {
+			hasGroup = true
+			break
+		}
+	}
+
+	if !hasGroup {
+		t.Error("Group not found in list")
 	}
 }
