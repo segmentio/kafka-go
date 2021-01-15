@@ -346,7 +346,7 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		}
 	}()
 
-	var state = p.grabState()
+	state := p.grabState()
 	var response promise
 
 	switch m := req.(type) {
@@ -495,6 +495,7 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 		}
 
 		state.metadata, state.layout = metadata, layout
+		state.err = nil
 	}
 
 	defer p.setReady()
@@ -543,7 +544,7 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 	defer timer.Stop()
 
 	var notify event
-	var done = ctx.Done()
+	done := ctx.Done()
 
 	for {
 		c, err := p.grabClusterConn(ctx)
@@ -917,15 +918,15 @@ func (g *connGroup) closeIdleConns() {
 }
 
 func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
-	var rslv = g.pool.resolver
-	var addr = g.addr
+	rslv := g.pool.resolver
+	addr := g.addr
 	var c *conn
 
 	if rslv == nil {
 		c = g.grabConn()
 	} else {
 		var err error
-		var broker = g.broker
+		broker := g.broker
 
 		if broker.ID < 0 {
 			host, port, err := net.SplitHostPort(addr.String())
@@ -1084,8 +1085,8 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 
-	var network = strings.Split(addr.Network(), ",")
-	var address = strings.Split(addr.String(), ",")
+	network := strings.Split(addr.Network(), ",")
+	address := strings.Split(addr.String(), ",")
 	var netConn net.Conn
 	var netAddr net.Addr
 	var err error
@@ -1293,6 +1294,4 @@ func saslAuthenticateRoundTrip(pc *protocol.Conn, data []byte) ([]byte, error) {
 	return res.AuthBytes, err
 }
 
-var (
-	_ RoundTripper = (*Transport)(nil)
-)
+var _ RoundTripper = (*Transport)(nil)
