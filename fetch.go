@@ -73,6 +73,15 @@ type FetchResponse struct {
 	// the one that was requested. It is the program's responsibility to skip
 	// the offsets that it is not interested in.
 	Records RecordReader
+
+	// The preferred read replica for the partition.
+	//
+	// The Preferred Read Replica gives the ability to a client to consume data
+	// to a replica which is not the leader of the partition.
+	// If the client defined a rack id, the Preferred Read Replica will be the
+	// closest replica from that rack. The leader of the partition decides which
+	// replica is preferred.
+	PreferredReadReplica int32
 }
 
 // Fetch sends a fetch request to a kafka broker and returns the response.
@@ -108,6 +117,7 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 				PartitionMaxBytes:  int32(req.MaxBytes),
 			}},
 		}},
+		RackID: c.RackID,
 	})
 
 	if err != nil {
@@ -125,14 +135,15 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	partition := &topic.Partitions[0]
 
 	ret := &FetchResponse{
-		Throttle:         makeDuration(res.ThrottleTimeMs),
-		Topic:            topic.Topic,
-		Partition:        int(partition.Partition),
-		Error:            makeError(res.ErrorCode, ""),
-		HighWatermark:    partition.HighWatermark,
-		LastStableOffset: partition.LastStableOffset,
-		LogStartOffset:   partition.LogStartOffset,
-		Records:          partition.RecordSet.Records,
+		Throttle:             makeDuration(res.ThrottleTimeMs),
+		Topic:                topic.Topic,
+		Partition:            int(partition.Partition),
+		Error:                makeError(res.ErrorCode, ""),
+		HighWatermark:        partition.HighWatermark,
+		LastStableOffset:     partition.LastStableOffset,
+		LogStartOffset:       partition.LogStartOffset,
+		Records:              partition.RecordSet.Records,
+		PreferredReadReplica: partition.PreferredReadReplica,
 	}
 
 	if partition.ErrorCode != 0 {

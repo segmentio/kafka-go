@@ -40,6 +40,9 @@ type Client struct {
 	//
 	// If nil, DefaultTransport is used.
 	Transport RoundTripper
+
+	// Rack ID define where the client is running in a rack aware deployment.
+	RackID string
 }
 
 // A ConsumerGroup and Topic as these are both strings we define a type for
