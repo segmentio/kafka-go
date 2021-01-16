@@ -288,3 +288,84 @@ func murmur2(data []byte) uint32 {
 
 	return h
 }
+
+// StickyPartitioner is an Balancer implementation that the Message key is NOT used as part of the balancing strategy
+// in this balancer. Messages with the same key are not guaranteed to be sent to the same partition.
+// If a partition is specified in the Message, use it
+// Otherwise choose the sticky partition that changes when the batch is full.
+type StickyPartitioner struct {
+	spc stickyPartitionCache
+}
+
+// Balance satisfies the Balancer interface.
+func (sp *StickyPartitioner) Balance(msg Message, partitions ...int) int {
+	return sp.balance(msg, partitions)
+}
+
+func (sp *StickyPartitioner) balance(msg Message, partitions []int) int {
+	return sp.spc.partition(msg, partitions)
+}
+
+// OnNewBatch changes the sticky partition If a batch completed for the current sticky partition.
+// Alternately, if no sticky partition has been determined, set one.
+func (sp *StickyPartitioner) OnNewBatch(msg Message, partitions []int, prevPartition int) int {
+	return sp.spc.nextPartition(msg, partitions, prevPartition)
+}
+
+// stickyPartitionCache implements a cache used for sticky partitioning behavior. The cache tracks the current sticky
+// partition for any given topic.
+type stickyPartitionCache struct {
+	lock       sync.Mutex
+	indexCache map[string]int
+}
+
+func (spc *stickyPartitionCache) nextPartition(msg Message, partitions []int, prevPartition int) int {
+	oldPartition, prs := spc.getIndex(msg)
+	newPartition := oldPartition
+	if !prs {
+		newPartition = -1
+	}
+
+	if prs && oldPartition != prevPartition {
+		finalPartition, _ := spc.getIndex(msg)
+		return finalPartition
+	}
+
+	if len(partitions) < 1 {
+		newPartition = rand.Intn(len(partitions))
+	} else if len(partitions) == 1 {
+		newPartition = partitions[0]
+	} else {
+		for newPartition == -1 || newPartition == oldPartition {
+			newPartition = rand.Intn(len(partitions))
+		}
+	}
+	spc.setIndex(msg, newPartition)
+
+	finalPartition, _ := spc.getIndex(msg)
+	return finalPartition
+}
+
+func (spc *stickyPartitionCache) partition(msg Message, partitions []int) int {
+	if spc.indexCache == nil {
+		spc.indexCache = make(map[string]int)
+	}
+	partition, prs := spc.getIndex(msg)
+	if prs {
+		return partition
+	}
+	return spc.nextPartition(msg, partitions, -1)
+}
+
+func (spc *stickyPartitionCache) getIndex(msg Message) (int, bool) {
+	spc.lock.Lock()
+	defer spc.lock.Unlock()
+	index, prs := spc.indexCache[msg.Topic]
+	return index, prs
+}
+
+func (spc *stickyPartitionCache) setIndex(msg Message, index int) {
+	spc.lock.Lock()
+	defer spc.lock.Unlock()
+	spc.indexCache[msg.Topic] = index
+}
