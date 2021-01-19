@@ -1083,7 +1083,7 @@ func (r *Reader) readLag(ctx context.Context) {
 		if err != nil {
 			r.stats.errors.observe(1)
 			r.withErrorLogger(func(log Logger) {
-				log.Printf("kafka reader failed to read lag of partition %d of %s", r.config.Partition, r.config.Topic)
+				log.Printf("kafka reader failed to read lag of partition %d of %s: %s", r.config.Partition, r.config.Topic, err)
 			})
 		} else {
 			r.stats.lag.observe(lag)
