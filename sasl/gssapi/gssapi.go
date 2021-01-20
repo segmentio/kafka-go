@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"strings"
 
 	"github.com/jcmturner/gofork/encoding/asn1"
 	"github.com/jcmturner/gokrb5/v8/asn1tools"
@@ -28,18 +30,18 @@ const (
 )
 
 type mechanism struct {
-	principal string
-	realm     string
-	spn       string
-	cfg       *config.Config
-	kt        *keytab.Keytab
+	principal   string
+	realm       string
+	serviceName string
+	cfg         *config.Config
+	kt          *keytab.Keytab
 }
 
 // KerberosConfig contains the necessary data for authenticating via Kerberos.
 type KerberosConfig struct {
 	Principal     string
 	Realm         string
-	SPN           string
+	ServiceName   string
 	Configuration io.Reader
 	Keytab        io.Reader
 }
@@ -63,11 +65,11 @@ func Mechanism(conf KerberosConfig) (sasl.Mechanism, error) {
 	}
 
 	return &mechanism{
-		principal: conf.Principal,
-		realm:     conf.Realm,
-		spn:       conf.SPN,
-		cfg:       cfg,
-		kt:        kt,
+		principal:   conf.Principal,
+		realm:       conf.Realm,
+		serviceName: conf.ServiceName,
+		cfg:         cfg,
+		kt:          kt,
 	}, nil
 }
 
@@ -101,7 +103,12 @@ func (m *mechanism) Start(ctx context.Context) (sasl.StateMachine, []byte, error
 		return nil, nil, err
 	}
 
-	ticket, encKey, err := cl.GetServiceTicket(m.spn)
+	metadata := sasl.MetadataFromContext(ctx)
+
+	host := strings.SplitN(metadata.Address, ":", 2)[0]
+	spn := fmt.Sprintf("%s/%s", m.serviceName, host)
+
+	ticket, encKey, err := cl.GetServiceTicket(spn)
 	if err != nil {
 		return nil, nil, err
 	}
