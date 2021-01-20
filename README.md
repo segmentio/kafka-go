@@ -543,7 +543,7 @@ kt, _ := os.Open("keytab")
 config := KerberosConfig{
     Principal:     "principal/principal",
     Realm:         "realm",
-    SPN:           "kafka/domain",
+    ServiceName:   "kafka",
     Configuration: conf,
     Keytab:        kt,
 }
