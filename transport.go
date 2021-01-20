@@ -1161,7 +1161,10 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	pc.SetDeadline(time.Time{})
 
 	if g.pool.sasl != nil {
-		if err := authenticateSASL(ctx, pc, g.pool.sasl); err != nil {
+		metadata := sasl.Metadata{
+			Address: netAddr.String(),
+		}
+		if err := authenticateSASL(metadata.WithContext(ctx), pc, g.pool.sasl); err != nil {
 			return nil, err
 		}
 	}
