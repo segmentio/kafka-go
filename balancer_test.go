@@ -392,65 +392,65 @@ func TestStickyPartitionerWithTwoPartitions(t *testing.T) {
 	}
 }
 
-// func TestStickyPartitionerWithThreePartitions(t *testing.T) {
-// 	testCases := map[string]struct {
-// 		messages   []Message
-// 		Partitions []int
-// 	}{
-// 		"first test": {
-// 			messages: []Message{
-// 				{
-// 					Topic: "A",
-// 				},
-// 				{
-// 					Topic: "B",
-// 				},
-// 			},
-// 			Partitions: []int{
-// 				0, 1, 2,
-// 			},
-// 		},
-// 	}
+func TestStickyPartitionerWithThreePartitions(t *testing.T) {
+	testCases := map[string]struct {
+		messages   []Message
+		Partitions []int
+	}{
+		"first test": {
+			messages: []Message{
+				{
+					Topic: "A",
+				},
+				{
+					Topic: "B",
+				},
+			},
+			Partitions: []int{
+				0, 1, 2,
+			},
+		},
+	}
 
-// 	for label, test := range testCases {
-// 		t.Run(label, func(t *testing.T) {
-// 			sp := &StickyPartitioner{}
-// 			partitionCounter := make(map[int]int)
+	for label, test := range testCases {
+		t.Run(label, func(t *testing.T) {
+			sp := &StickyPartitioner{}
+			partitionCounter := make(map[int]int)
 
-// 			part := 0
-// 			for i := 0; i < 30; i++ {
-// 				part = sp.Balance(test.messages[0], test.Partitions...)
-// 				partitionCounter[part]++
-// 				if i%5 == 0 {
-// 					sp.Balance(test.messages[1], test.Partitions...)
-// 				}
-// 			}
-// 			sp.OnNewBatch(test.messages[0], test.Partitions, part)
-// 			oldPartition := part
-// 			for i := 0; i < 30; i++ {
-// 				part = sp.Balance(test.messages[0], test.Partitions...)
-// 				partitionCounter[part]++
-// 				if i%5 == 0 {
-// 					sp.Balance(test.messages[1], test.Partitions...)
-// 				}
-// 			}
-// 			newPartition := part
+			part := 0
+			for i := 0; i < 30; i++ {
+				part = sp.Balance(test.messages[0], test.Partitions...)
+				partitionCounter[part]++
+				if i%5 == 0 {
+					sp.Balance(test.messages[1], test.Partitions...)
+				}
+			}
+			sp.OnNewBatch(test.messages[0], test.Partitions, part)
+			oldPartition := part
+			for i := 0; i < 30; i++ {
+				part = sp.Balance(test.messages[0], test.Partitions...)
+				partitionCounter[part]++
+				if i%5 == 0 {
+					sp.Balance(test.messages[1], test.Partitions...)
+				}
+			}
+			newPartition := part
 
-// 			sp.OnNewBatch(test.messages[0], test.Partitions, oldPartition)
-// 			for i := 0; i < 30; i++ {
-// 				part = sp.Balance(test.messages[0], test.Partitions...)
-// 				partitionCounter[part]++
-// 				if i%5 == 0 {
-// 					sp.Balance(test.messages[1], test.Partitions...)
-// 				}
-// 			}
+			sp.OnNewBatch(test.messages[0], test.Partitions, oldPartition)
+			for i := 0; i < 30; i++ {
+				part = sp.Balance(test.messages[0], test.Partitions...)
+				partitionCounter[part]++
+				if i%5 == 0 {
+					sp.Balance(test.messages[1], test.Partitions...)
+				}
+			}
 
-// 			if partitionCounter[oldPartition] != 30 {
-// 				t.Errorf("Old partition batch must contains 30 messages")
-// 			}
-// 			if partitionCounter[newPartition] != 60 {
-// 				t.Errorf("New partition batch must contains 60 messages")
-// 			}
-// 		})
-// 	}
-// }
+			if partitionCounter[oldPartition] != 30 {
+				t.Errorf("Old partition batch must contains 30 messages")
+			}
+			if partitionCounter[newPartition] != 60 {
+				t.Errorf("New partition batch must contains 60 messages")
+			}
+		})
+	}
+}
