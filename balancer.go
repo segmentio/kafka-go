@@ -331,9 +331,7 @@ func (spc *stickyPartitionCache) nextPartition(msg Message, partitions []int, pr
 		return finalPartition
 	}
 
-	if len(partitions) < 1 {
-		newPartition = rand.Intn(len(partitions))
-	} else if len(partitions) == 1 {
+	if len(partitions) == 1 {
 		newPartition = partitions[0]
 	} else {
 		for newPartition == -1 || newPartition == oldPartition {
