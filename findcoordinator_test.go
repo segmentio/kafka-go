@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"reflect"
 	"testing"
 )
@@ -34,5 +35,23 @@ func TestFindCoordinatorResponseV0(t *testing.T) {
 	if !reflect.DeepEqual(item, found) {
 		t.Error("expected item and found to be the same")
 		t.FailNow()
+	}
+}
+
+func TestClientFindCoordinator(t *testing.T) {
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	resp, err := client.FindCoordinator(context.Background(), &FindCoordinatorRequest{
+		Addr:    client.Addr,
+		Key:     "TransactionalID-1",
+		KeyType: CoordinatorKeyTypeTransaction,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Coordinator.Host != "localhost" {
+		t.Fatal("Coordinator should be found @ localhost")
 	}
 }
