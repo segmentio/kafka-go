@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestFindCoordinatorResponseV0(t *testing.T) {
@@ -42,14 +44,29 @@ func TestClientFindCoordinator(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	resp, err := client.FindCoordinator(context.Background(), &FindCoordinatorRequest{
-		Addr:    client.Addr,
-		Key:     "TransactionalID-1",
-		KeyType: CoordinatorKeyTypeTransaction,
-	})
+	coordinatorFound := false
+	var err error
+	var resp *FindCoordinatorResponse
+	retries := 3
 
-	if err != nil {
-		t.Fatal(err)
+	for i := 0; i < retries; i++ {
+		resp, err = client.FindCoordinator(context.Background(), &FindCoordinatorRequest{
+			Addr:    client.Addr,
+			Key:     "TransactionalID-1",
+			KeyType: CoordinatorKeyTypeTransaction,
+		})
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			t.Log(fmt.Sprintf("Try: %d | Coordinator not found: ", i), err)
+		} else {
+			coordinatorFound = true
+		}
+		if coordinatorFound {
+			break
+		}
+	}
+	if !coordinatorFound {
+		t.Fatal(fmt.Sprintf("Coordinator should be found in %d attempts", retries))
 	}
 	if resp.Coordinator.Host != "localhost" {
 		t.Fatal("Coordinator should be found @ localhost")
