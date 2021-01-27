@@ -43,7 +43,7 @@ func TestClientFindCoordinator(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	resp, err := client.WaitForCoordinatorIndefinitely(ctx, &FindCoordinatorRequest{
 		Addr:    client.Addr,
