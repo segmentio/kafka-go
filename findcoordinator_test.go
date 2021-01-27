@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -44,30 +43,18 @@ func TestClientFindCoordinator(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	coordinatorFound := false
-	var err error
-	var resp *FindCoordinatorResponse
-	retries := 3
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := client.WaitForCoordinatorIndefinitely(ctx, &FindCoordinatorRequest{
+		Addr:    client.Addr,
+		Key:     "TransactionalID-1",
+		KeyType: CoordinatorKeyTypeTransaction,
+	})
 
-	for i := 0; i < retries; i++ {
-		resp, err = client.FindCoordinator(context.Background(), &FindCoordinatorRequest{
-			Addr:    client.Addr,
-			Key:     "TransactionalID-1",
-			KeyType: CoordinatorKeyTypeTransaction,
-		})
-		if err != nil {
-			time.Sleep(1 * time.Second)
-			t.Log(fmt.Sprintf("Try: %d | Coordinator not found: ", i), err)
-		} else {
-			coordinatorFound = true
-		}
-		if coordinatorFound {
-			break
-		}
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !coordinatorFound {
-		t.Fatal(fmt.Sprintf("Coordinator should be found in %d attempts", retries))
-	}
+
 	if resp.Coordinator.Host != "localhost" {
 		t.Fatal("Coordinator should be found @ localhost")
 	}

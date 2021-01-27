@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/segmentio/kafka-go/protocol/findcoordinator"
@@ -58,6 +59,9 @@ type FindCoordinatorResponse struct {
 	// The error contains both the kafka error code, and an error message
 	// returned by the kafka broker.
 	Error error
+
+	// Error code
+	ErrorCode int
 }
 
 // FindCoordinator sends a findCoordinator request to a kafka broker and returns the
@@ -82,10 +86,30 @@ func (c *Client) FindCoordinator(ctx context.Context, req *FindCoordinatorReques
 	ret := &FindCoordinatorResponse{
 		Throttle:    makeDuration(res.ThrottleTimeMs),
 		Error:       makeError(res.ErrorCode, res.ErrorMessage),
+		ErrorCode:   int(res.ErrorCode),
 		Coordinator: coordinator,
 	}
 
 	return ret, ret.Error
+}
+
+// WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found
+func (c *Client) WaitForCoordinatorIndefinitely(ctx context.Context, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
+	fmt.Println("Trying to find Coordinator")
+	resp, err := c.FindCoordinator(ctx, req)
+	brokerSetupIncomplete := err != nil &&
+		strings.Contains(
+			strings.ToLower(err.Error()),
+			strings.ToLower("unexpected EOF"))
+	coordinatorNotFound := err != nil &&
+		resp != nil &&
+		resp.ErrorCode == int(GroupCoordinatorNotAvailable)
+
+	for (brokerSetupIncomplete || coordinatorNotFound) && ctx.Err() == nil {
+		time.Sleep(1 * time.Second)
+		resp, err = c.FindCoordinator(ctx, req)
+	}
+	return resp, err
 }
 
 // FindCoordinatorRequestV0 requests the coordinator for the specified group or transaction
