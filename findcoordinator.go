@@ -95,8 +95,17 @@ func (c *Client) FindCoordinator(ctx context.Context, req *FindCoordinatorReques
 
 // WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found
 func (c *Client) WaitForCoordinatorIndefinitely(ctx context.Context, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
-	fmt.Println("Trying to find Coordinator")
+	fmt.Println("Trying to find Coordinator.")
 	resp, err := c.FindCoordinator(ctx, req)
+
+	for shouldRetry(resp, err) && ctx.Err() == nil {
+		time.Sleep(1 * time.Second)
+		resp, err = c.FindCoordinator(ctx, req)
+	}
+	return resp, err
+}
+
+func shouldRetry(resp *FindCoordinatorResponse, err error) bool {
 	brokerSetupIncomplete := err != nil &&
 		strings.Contains(
 			strings.ToLower(err.Error()),
@@ -104,12 +113,7 @@ func (c *Client) WaitForCoordinatorIndefinitely(ctx context.Context, req *FindCo
 	coordinatorNotFound := err != nil &&
 		resp != nil &&
 		resp.ErrorCode == int(GroupCoordinatorNotAvailable)
-
-	for (brokerSetupIncomplete || coordinatorNotFound) && ctx.Err() == nil {
-		time.Sleep(1 * time.Second)
-		resp, err = c.FindCoordinator(ctx, req)
-	}
-	return resp, err
+	return brokerSetupIncomplete || coordinatorNotFound
 }
 
 // FindCoordinatorRequestV0 requests the coordinator for the specified group or transaction
