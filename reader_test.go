@@ -1343,7 +1343,7 @@ func TestConsumerGroupWithMissingTopic(t *testing.T) {
 	}
 }
 
-func TestConsumerGroupWithSingleTopic(t *testing.T) {
+func TestConsumerGroupWithTopic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -1395,7 +1395,61 @@ func TestConsumerGroupWithSingleTopic(t *testing.T) {
 	}
 }
 
-func TestConsumerGroupWithMultpleTopics(t *testing.T) {
+func TestConsumerGroupWithGroupTopicsSingle(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conf := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		GroupTopics:            []string{makeTopic()},
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+		Logger:                 newTestKafkaLogger(t, "Reader:"),
+	}
+
+	r := NewReader(conf)
+	defer r.Close()
+
+	recvErr := make(chan error, len(conf.GroupTopics))
+	go func() {
+		msg, err := r.ReadMessage(ctx)
+		t.Log(msg)
+		recvErr <- err
+	}()
+
+	time.Sleep(conf.MaxWait)
+
+	for i, topic := range conf.GroupTopics {
+		client, shutdown := newLocalClientWithTopic(topic, 1)
+		defer shutdown()
+
+		w := &Writer{
+			Addr:         TCP(r.config.Brokers...),
+			Topic:        topic,
+			BatchTimeout: 10 * time.Millisecond,
+			BatchSize:    1,
+			Transport:    client.Transport,
+			Logger:       newTestKafkaLogger(t, fmt.Sprintf("Writer(%d):", i)),
+		}
+		defer w.Close()
+		if err := w.WriteMessages(ctx, Message{Value: []byte(topic)}); err != nil {
+			t.Fatalf("write error: %+v", err)
+		}
+	}
+
+	if err := <-recvErr; err != nil {
+		t.Fatalf("read error: %+v", err)
+	}
+
+	nMsgs := r.Stats().Messages
+	if nMsgs != int64(len(conf.GroupTopics)) {
+		t.Fatalf("expected to receive %d messages, but got %d", len(conf.GroupTopics), nMsgs)
+	}
+}
+
+func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
