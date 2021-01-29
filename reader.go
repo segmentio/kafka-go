@@ -87,6 +87,14 @@ type Reader struct {
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
 func (r *Reader) useConsumerGroup() bool { return r.config.GroupID != "" }
 
+func (r *Reader) getConusmerGroupTopics() []string {
+	if len(r.config.GroupTopics) > 0 {
+		return r.config.GroupTopics[:]
+	}
+
+	return []string{r.config.Topic}
+}
+
 // useSyncCommits indicates whether the Reader is configured to perform sync or
 // async commits.
 func (r *Reader) useSyncCommits() bool { return r.config.CommitInterval == 0 }
@@ -330,6 +338,11 @@ type ReaderConfig struct {
 	// Partition should NOT be specified e.g. 0
 	GroupID string
 
+	// GroupTopics allows specifying multiple topics, but can only be used in
+	// combination with GroupID, as it is a consumer-group feature. As such, if
+	// GroupID is set, then either Topic or GroupTopics must be defined.
+	GroupTopics []string
+
 	// The topic to read messages from.
 	Topic string
 
@@ -473,10 +486,6 @@ func (config *ReaderConfig) Validate() error {
 		return errors.New("cannot create a new kafka reader with an empty list of broker addresses")
 	}
 
-	if len(config.Topic) == 0 {
-		return errors.New("cannot create a new kafka reader with an empty topic")
-	}
-
 	if config.Partition < 0 || config.Partition >= math.MaxInt32 {
 		return errors.New(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
 	}
@@ -489,8 +498,16 @@ func (config *ReaderConfig) Validate() error {
 		return errors.New(fmt.Sprintf("invalid negative maximum batch size (max = %d)", config.MaxBytes))
 	}
 
-	if config.GroupID != "" && config.Partition != 0 {
-		return errors.New("either Partition or GroupID may be specified, but not both")
+	if config.GroupID != "" {
+		if config.Partition != 0 {
+			return errors.New("either Partition or GroupID may be specified, but not both")
+		}
+
+		if len(config.Topic) == 0 && len(config.GroupTopics) == 0 {
+			return errors.New("either Topic or GroupTopics must be specified with GroupID")
+		}
+	} else if len(config.Topic) == 0 {
+		return errors.New("cannot create a new kafka reader with an empty topic")
 	}
 
 	if config.MinBytes > config.MaxBytes {
@@ -660,7 +677,7 @@ func NewReader(config ReaderConfig) *Reader {
 			ID:                     r.config.GroupID,
 			Brokers:                r.config.Brokers,
 			Dialer:                 r.config.Dialer,
-			Topics:                 []string{r.config.Topic},
+			Topics:                 r.getConusmerGroupTopics(),
 			GroupBalancers:         r.config.GroupBalancers,
 			HeartbeatInterval:      r.config.HeartbeatInterval,
 			PartitionWatchInterval: r.config.PartitionWatchInterval,
