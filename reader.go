@@ -112,18 +112,18 @@ func (r *Reader) unsubscribe() {
 	// another consumer to avoid such a race.
 }
 
-func (r *Reader) subscribe(assignments []PartitionAssignment) {
+func (r *Reader) subscribe(topic string, assignments []PartitionAssignment) {
 	offsetsByPartition := make(map[int]int64)
 	for _, assignment := range assignments {
 		offsetsByPartition[assignment.ID] = assignment.Offset
 	}
 
 	r.mutex.Lock()
-	r.start(offsetsByPartition)
+	r.start(topic, offsetsByPartition)
 	r.mutex.Unlock()
 
 	r.withLogger(func(l Logger) {
-		l.Printf("subscribed to partitions: %+v", offsetsByPartition)
+		l.Printf("subscribed to topic %s partitions: %+v", topic, offsetsByPartition)
 	})
 }
 
@@ -310,7 +310,9 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.stats.rebalances.observe(1)
 
-		r.subscribe(gen.Assignments[r.config.Topic])
+		for _, topic := range r.getConusmerGroupTopics() {
+			r.subscribe(topic, gen.Assignments[topic])
+		}
 
 		gen.Start(func(ctx context.Context) {
 			r.commitLoop(ctx, gen)
@@ -771,7 +773,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 		r.mutex.Lock()
 
 		if !r.closed && r.version == 0 {
-			r.start(map[int]int64{r.config.Partition: r.offset})
+			r.start(r.config.Topic, map[int]int64{r.config.Partition: r.offset})
 		}
 
 		version := r.version
@@ -985,7 +987,7 @@ func (r *Reader) SetOffset(offset int64) error {
 		r.offset = offset
 
 		if r.version != 0 {
-			r.start(map[int]int64{r.config.Partition: r.offset})
+			r.start(r.config.Topic, map[int]int64{r.config.Partition: r.offset})
 		}
 
 		r.activateReadLag()
@@ -1114,7 +1116,7 @@ func (r *Reader) readLag(ctx context.Context) {
 	}
 }
 
-func (r *Reader) start(offsetsByPartition map[int]int64) {
+func (r *Reader) start(topic string, offsetsByPartition map[int]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
 		return
@@ -1136,7 +1138,7 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 				logger:          r.config.Logger,
 				errorLogger:     r.config.ErrorLogger,
 				brokers:         r.config.Brokers,
-				topic:           r.config.Topic,
+				topic:           topic,
 				partition:       partition,
 				minBytes:        r.config.MinBytes,
 				maxBytes:        r.config.MaxBytes,
