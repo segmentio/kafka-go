@@ -112,18 +112,24 @@ func (r *Reader) unsubscribe() {
 	// another consumer to avoid such a race.
 }
 
-func (r *Reader) subscribe(topic string, assignments []PartitionAssignment) {
-	offsetsByPartition := make(map[int]int64)
-	for _, assignment := range assignments {
-		offsetsByPartition[assignment.ID] = assignment.Offset
+func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
+	offsets := make(map[topicPartition]int64)
+	for topic, assignments := range allAssignments {
+		for _, assignment := range assignments {
+			key := topicPartition{
+				topic:     topic,
+				partition: int32(assignment.ID),
+			}
+			offsets[key] = assignment.Offset
+		}
 	}
 
 	r.mutex.Lock()
-	r.start(topic, offsetsByPartition)
+	r.start(offsets)
 	r.mutex.Unlock()
 
 	r.withLogger(func(l Logger) {
-		l.Printf("subscribed to topic %s partitions: %+v", topic, offsetsByPartition)
+		l.Printf("subscribed to topics and partitions: %+v", offsets)
 	})
 }
 
@@ -310,9 +316,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.stats.rebalances.observe(1)
 
-		for _, topic := range r.getConusmerGroupTopics() {
-			r.subscribe(topic, gen.Assignments[topic])
-		}
+		r.subscribe(gen.Assignments)
 
 		gen.Start(func(ctx context.Context) {
 			r.commitLoop(ctx, gen)
@@ -773,7 +777,8 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 		r.mutex.Lock()
 
 		if !r.closed && r.version == 0 {
-			r.start(r.config.Topic, map[int]int64{r.config.Partition: r.offset})
+			key := topicPartition{topic: r.config.Topic, partition: int32(r.config.Partition)}
+			r.start(map[topicPartition]int64{key: r.offset})
 		}
 
 		version := r.version
@@ -987,7 +992,8 @@ func (r *Reader) SetOffset(offset int64) error {
 		r.offset = offset
 
 		if r.version != 0 {
-			r.start(r.config.Topic, map[int]int64{r.config.Partition: r.offset})
+			key := topicPartition{topic: r.config.Topic, partition: int32(r.config.Partition)}
+			r.start(map[topicPartition]int64{key: r.offset})
 		}
 
 		r.activateReadLag()
@@ -1116,7 +1122,7 @@ func (r *Reader) readLag(ctx context.Context) {
 	}
 }
 
-func (r *Reader) start(topic string, offsetsByPartition map[int]int64) {
+func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
 		return
@@ -1129,8 +1135,8 @@ func (r *Reader) start(topic string, offsetsByPartition map[int]int64) {
 	r.version++
 
 	r.join.Add(len(offsetsByPartition))
-	for partition, offset := range offsetsByPartition {
-		go func(ctx context.Context, partition int, offset int64, join *sync.WaitGroup) {
+	for key, offset := range offsetsByPartition {
+		go func(ctx context.Context, key topicPartition, offset int64, join *sync.WaitGroup) {
 			defer join.Done()
 
 			(&reader{
@@ -1138,8 +1144,8 @@ func (r *Reader) start(topic string, offsetsByPartition map[int]int64) {
 				logger:          r.config.Logger,
 				errorLogger:     r.config.ErrorLogger,
 				brokers:         r.config.Brokers,
-				topic:           topic,
-				partition:       partition,
+				topic:           key.topic,
+				partition:       int(key.partition),
 				minBytes:        r.config.MinBytes,
 				maxBytes:        r.config.MaxBytes,
 				maxWait:         r.config.MaxWait,
@@ -1151,7 +1157,7 @@ func (r *Reader) start(topic string, offsetsByPartition map[int]int64) {
 				isolationLevel:  r.config.IsolationLevel,
 				maxAttempts:     r.config.MaxAttempts,
 			}).run(ctx, offset)
-		}(ctx, partition, offset, &r.join)
+		}(ctx, key, offset, &r.join)
 	}
 }
 
