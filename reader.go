@@ -87,7 +87,7 @@ type Reader struct {
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
 func (r *Reader) useConsumerGroup() bool { return r.config.GroupID != "" }
 
-func (r *Reader) getConusmerGroupTopics() []string {
+func (r *Reader) getTopics() []string {
 	if len(r.config.GroupTopics) > 0 {
 		return r.config.GroupTopics[:]
 	}
@@ -683,7 +683,7 @@ func NewReader(config ReaderConfig) *Reader {
 			ID:                     r.config.GroupID,
 			Brokers:                r.config.Brokers,
 			Dialer:                 r.config.Dialer,
-			Topics:                 r.getConusmerGroupTopics(),
+			Topics:                 r.getTopics(),
 			GroupBalancers:         r.config.GroupBalancers,
 			HeartbeatInterval:      r.config.HeartbeatInterval,
 			PartitionWatchInterval: r.config.PartitionWatchInterval,
@@ -777,8 +777,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 		r.mutex.Lock()
 
 		if !r.closed && r.version == 0 {
-			key := topicPartition{topic: r.config.Topic, partition: int32(r.config.Partition)}
-			r.start(map[topicPartition]int64{key: r.offset})
+			r.start(r.getTopicPartitionOffset())
 		}
 
 		version := r.version
@@ -992,8 +991,7 @@ func (r *Reader) SetOffset(offset int64) error {
 		r.offset = offset
 
 		if r.version != 0 {
-			key := topicPartition{topic: r.config.Topic, partition: int32(r.config.Partition)}
-			r.start(map[topicPartition]int64{key: r.offset})
+			r.start(r.getTopicPartitionOffset())
 		}
 
 		r.activateReadLag()
@@ -1070,6 +1068,11 @@ func (r *Reader) Stats() ReaderStats {
 	// TODO: remove when we get rid of the deprecated field.
 	stats.DeprecatedFetchesWithTypo = stats.Fetches
 	return stats
+}
+
+func (r *Reader) getTopicPartitionOffset() map[topicPartition]int64 {
+	key := topicPartition{topic: r.config.Topic, partition: int32(r.config.Partition)}
+	return map[topicPartition]int64{key: r.offset}
 }
 
 func (r *Reader) withLogger(do func(Logger)) {
