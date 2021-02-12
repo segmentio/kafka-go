@@ -1328,7 +1328,7 @@ func TestReaderClose(t *testing.T) {
 	defer cancel()
 
 	_, err := r.FetchMessage(ctx)
-	if err != context.Canceled {
+	if err != context.DeadlineExceeded {
 		t.Errorf("bad err: %v", err)
 	}
 
