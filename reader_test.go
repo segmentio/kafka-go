@@ -1322,11 +1322,15 @@ func TestReaderClose(t *testing.T) {
 		Topic:   makeTopic(),
 		MaxWait: 2 * time.Second,
 	})
+	defer r.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, _ = r.FetchMessage(ctx)
+	_, err := r.FetchMessage(ctx)
+	if err != context.Canceled {
+		t.Errorf("bad err: %v", err)
+	}
 
 	t0 := time.Now()
 	r.Close()
