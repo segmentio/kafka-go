@@ -37,13 +37,13 @@ type FindCoordinatorRequest struct {
 // FindCoordinatorResponseCoordinator contains details about the found coordinator
 type FindCoordinatorResponseCoordinator struct {
 	// NodeID holds the broker id.
-	NodeID int32
+	NodeID int
 
 	// Host of the broker
 	Host string
 
 	// Port on which broker accepts requests
-	Port int32
+	Port int
 }
 
 // FindCoordinatorResponse is the response structure for the FindCoordinator function
@@ -58,10 +58,7 @@ type FindCoordinatorResponse struct {
 	//
 	// The error contains both the kafka error code, and an error message
 	// returned by the kafka broker.
-	Error error
-
-	// Error code
-	ErrorCode int
+	Error *ErrorWithCode
 }
 
 // FindCoordinator sends a findCoordinator request to a kafka broker and returns the
@@ -79,40 +76,39 @@ func (c *Client) FindCoordinator(ctx context.Context, req *FindCoordinatorReques
 
 	res := m.(*findcoordinator.Response)
 	coordinator := &FindCoordinatorResponseCoordinator{
-		NodeID: res.NodeID,
+		NodeID: int(res.NodeID),
 		Host:   res.Host,
-		Port:   res.Port,
+		Port:   int(res.Port),
 	}
 	ret := &FindCoordinatorResponse{
 		Throttle:    makeDuration(res.ThrottleTimeMs),
-		Error:       makeError(res.ErrorCode, res.ErrorMessage),
-		ErrorCode:   int(res.ErrorCode),
+		Error:       makeErrorWithCode(res.ErrorCode, res.ErrorMessage),
 		Coordinator: coordinator,
 	}
 
-	return ret, ret.Error
+	return ret, ret.Error.Error
 }
 
 // WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found
-func (c *Client) WaitForCoordinatorIndefinitely(ctx context.Context, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
+func waitForCoordinatorIndefinitely(ctx context.Context, c *Client, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
 	fmt.Println("Trying to find Coordinator.")
 	resp, err := c.FindCoordinator(ctx, req)
 
-	for shouldRetry(resp, err) && ctx.Err() == nil {
+	for shouldRetryfindingCoordinator(resp, err) && ctx.Err() == nil {
 		time.Sleep(1 * time.Second)
 		resp, err = c.FindCoordinator(ctx, req)
 	}
 	return resp, err
 }
 
-func shouldRetry(resp *FindCoordinatorResponse, err error) bool {
+func shouldRetryfindingCoordinator(resp *FindCoordinatorResponse, err error) bool {
 	brokerSetupIncomplete := err != nil &&
 		strings.Contains(
 			strings.ToLower(err.Error()),
 			strings.ToLower("unexpected EOF"))
 	coordinatorNotFound := err != nil &&
 		resp != nil &&
-		resp.ErrorCode == int(GroupCoordinatorNotAvailable)
+		int(resp.Error.Code) == int(GroupCoordinatorNotAvailable)
 	return brokerSetupIncomplete || coordinatorNotFound
 }
 

@@ -45,7 +45,7 @@ func TestClientFindCoordinator(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	resp, err := client.WaitForCoordinatorIndefinitely(ctx, &FindCoordinatorRequest{
+	resp, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,
 		Key:     "TransactionalID-1",
 		KeyType: CoordinatorKeyTypeTransaction,
