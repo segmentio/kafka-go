@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/segmentio/kafka-go/protocol/findcoordinator"
@@ -87,29 +86,6 @@ func (c *Client) FindCoordinator(ctx context.Context, req *FindCoordinatorReques
 	}
 
 	return ret, ret.Error.Error
-}
-
-// WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found
-func waitForCoordinatorIndefinitely(ctx context.Context, c *Client, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
-	fmt.Println("Trying to find Coordinator.")
-	resp, err := c.FindCoordinator(ctx, req)
-
-	for shouldRetryfindingCoordinator(resp, err) && ctx.Err() == nil {
-		time.Sleep(1 * time.Second)
-		resp, err = c.FindCoordinator(ctx, req)
-	}
-	return resp, err
-}
-
-func shouldRetryfindingCoordinator(resp *FindCoordinatorResponse, err error) bool {
-	brokerSetupIncomplete := err != nil &&
-		strings.Contains(
-			strings.ToLower(err.Error()),
-			strings.ToLower("unexpected EOF"))
-	coordinatorNotFound := err != nil &&
-		resp != nil &&
-		int(resp.Error.Code) == int(GroupCoordinatorNotAvailable)
-	return brokerSetupIncomplete || coordinatorNotFound
 }
 
 // FindCoordinatorRequestV0 requests the coordinator for the specified group or transaction

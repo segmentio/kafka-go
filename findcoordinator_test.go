@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,4 +60,27 @@ func TestClientFindCoordinator(t *testing.T) {
 	if resp.Coordinator.Host != "localhost" {
 		t.Fatal("Coordinator should be found @ localhost")
 	}
+}
+
+// WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found
+func waitForCoordinatorIndefinitely(ctx context.Context, c *Client, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
+	fmt.Println("Trying to find Coordinator.")
+	resp, err := c.FindCoordinator(ctx, req)
+
+	for shouldRetryfindingCoordinator(resp, err) && ctx.Err() == nil {
+		time.Sleep(1 * time.Second)
+		resp, err = c.FindCoordinator(ctx, req)
+	}
+	return resp, err
+}
+
+func shouldRetryfindingCoordinator(resp *FindCoordinatorResponse, err error) bool {
+	brokerSetupIncomplete := err != nil &&
+		strings.Contains(
+			strings.ToLower(err.Error()),
+			strings.ToLower("unexpected EOF"))
+	coordinatorNotFound := err != nil &&
+		resp != nil &&
+		int(resp.Error.Code) == int(GroupCoordinatorNotAvailable)
+	return brokerSetupIncomplete || coordinatorNotFound
 }
