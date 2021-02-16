@@ -57,7 +57,7 @@ type FindCoordinatorResponse struct {
 	//
 	// The error contains both the kafka error code, and an error message
 	// returned by the kafka broker.
-	Error *ErrorWithCode
+	Error error
 }
 
 // FindCoordinator sends a findCoordinator request to a kafka broker and returns the
@@ -81,11 +81,11 @@ func (c *Client) FindCoordinator(ctx context.Context, req *FindCoordinatorReques
 	}
 	ret := &FindCoordinatorResponse{
 		Throttle:    makeDuration(res.ThrottleTimeMs),
-		Error:       makeErrorWithCode(res.ErrorCode, res.ErrorMessage),
+		Error:       makeError(res.ErrorCode, res.ErrorMessage),
 		Coordinator: coordinator,
 	}
 
-	return ret, ret.Error.Error
+	return ret, ret.Error
 }
 
 // FindCoordinatorRequestV0 requests the coordinator for the specified group or transaction

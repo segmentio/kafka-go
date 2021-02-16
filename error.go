@@ -9,12 +9,6 @@ import (
 // https://kafka.apache.org/protocol#protocol_error_codes
 type Error int
 
-// ErrorWithCode retains Error code information while creating an error message
-type ErrorWithCode struct {
-	Error error
-	Code  int16
-}
-
 const (
 	Unknown                            Error = -1
 	OffsetOutOfRange                   Error = 1
@@ -560,13 +554,6 @@ func makeError(code int16, message string) error {
 		return Error(code)
 	}
 	return fmt.Errorf("%w: %s", Error(code), message)
-}
-
-func makeErrorWithCode(code int16, message string) *ErrorWithCode {
-	return &ErrorWithCode{
-		Error: makeError(code, message),
-		Code:  code,
-	}
 }
 
 // WriteError is returned by kafka.(*Writer).WriteMessages when the writer is

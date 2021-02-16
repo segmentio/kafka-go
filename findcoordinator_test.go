@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -81,6 +82,6 @@ func shouldRetryfindingCoordinator(resp *FindCoordinatorResponse, err error) boo
 			strings.ToLower("unexpected EOF"))
 	coordinatorNotFound := err != nil &&
 		resp != nil &&
-		int(resp.Error.Code) == int(GroupCoordinatorNotAvailable)
+		errors.Is(resp.Error, GroupCoordinatorNotAvailable)
 	return brokerSetupIncomplete || coordinatorNotFound
 }
