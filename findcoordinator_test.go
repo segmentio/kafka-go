@@ -75,6 +75,8 @@ func waitForCoordinatorIndefinitely(ctx context.Context, c *Client, req *FindCoo
 	return resp, err
 }
 
+// Should retry looking for coordinator
+// Returns true when the test Kafka broker is still setting up
 func shouldRetryfindingCoordinator(resp *FindCoordinatorResponse, err error) bool {
 	brokerSetupIncomplete := err != nil &&
 		strings.Contains(
