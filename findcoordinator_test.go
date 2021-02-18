@@ -82,8 +82,8 @@ func shouldRetryfindingCoordinator(resp *FindCoordinatorResponse, err error) boo
 		strings.Contains(
 			strings.ToLower(err.Error()),
 			strings.ToLower("unexpected EOF"))
-	coordinatorNotFound := err != nil &&
-		resp != nil &&
+	coordinatorNotFound := resp != nil &&
+		resp.Error != nil &&
 		errors.Is(resp.Error, GroupCoordinatorNotAvailable)
 	return brokerSetupIncomplete || coordinatorNotFound
 }

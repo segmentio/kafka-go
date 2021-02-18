@@ -85,7 +85,7 @@ func (c *Client) FindCoordinator(ctx context.Context, req *FindCoordinatorReques
 		Coordinator: coordinator,
 	}
 
-	return ret, ret.Error
+	return ret, nil
 }
 
 // FindCoordinatorRequestV0 requests the coordinator for the specified group or transaction
