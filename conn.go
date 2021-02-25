@@ -757,10 +757,10 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
 
-	if cfg.MinBytes < 0 || cfg.MinBytes > maxFetch {
+	if cfg.MinBytes <= 0 || cfg.MinBytes > maxFetch {
 		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", cfg.MinBytes, maxFetch)}
 	}
-	if cfg.MaxBytes < 0 || cfg.MaxBytes > maxFetch {
+	if cfg.MaxBytes <= 0 || cfg.MaxBytes > maxFetch {
 		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", cfg.MaxBytes, maxFetch)}
 	}
 	if cfg.MinBytes > cfg.MaxBytes {
