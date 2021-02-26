@@ -97,7 +97,14 @@ type ConnConfig struct {
 
 // ReadBatchConfig is a configuration object used for reading batches of messages.
 type ReadBatchConfig struct {
+	// MinBytes indicates to the broken the minimum size a batch of messages must
+	// be when consuming. Setting a high minimum on a low-volume topic can result
+	// in messages appearing delayed if they never reach the minimum.
 	MinBytes int
+
+	// MaxBytes indicates to the broker the maximum size a batch of messages must
+	// be when consuming. A broker will truncate a message to respect this config,
+	// so use a value higher than the size of your largest message.
 	MaxBytes int
 
 	// IsolationLevel controls the visibility of transactional records.

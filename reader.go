@@ -345,8 +345,18 @@ type ReaderConfig struct {
 	// set.
 	QueueCapacity int
 
-	// Min and max number of bytes to fetch from kafka in each request.
+	// MinBytes indicates to the broken the minimum size a batch of messages must
+	// be when consuming. Setting a high minimum on a low-volume topic can result
+	// in messages appearing delayed if they never reach the minimum.
+	//
+	// Default: 1
 	MinBytes int
+
+	// MaxBytes indicates to the broker the maximum size a batch of messages must
+	// be when consuming. A broker will truncate a message to respect this config,
+	// so use a value higher than the size of your largest message.
+	//
+	// Default: 1MB
 	MaxBytes int
 
 	// Maximum amount of time to wait for new data to come when fetching batches
