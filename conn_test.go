@@ -187,6 +187,11 @@ func TestConn(t *testing.T) {
 		},
 
 		{
+			scenario: "read a batch with no explicit min or max bytes",
+			function: testConnReadBatchWithNoMinMaxBytes,
+		},
+
+		{
 			scenario: "read a batch using explicit max wait time",
 			function: testConnReadBatchWithMaxWait,
 		},
@@ -558,6 +563,37 @@ func testConnReadWatermarkFromBatch(t *testing.T, conn *Conn) {
 	}
 
 	batch.Close()
+}
+
+func testConnReadBatchWithNoMinMaxBytes(t *testing.T, conn *Conn) {
+	if _, err := conn.WriteMessages(makeTestSequence(10)...); err != nil {
+		t.Fatal(err)
+	}
+
+	value := make([]byte, 10e3) // 10 KB
+
+	batch := conn.ReadBatchWith(ReadBatchConfig{})
+
+	for i := 0; i < 10; i++ {
+		_, err := batch.Read(value)
+		if err != nil {
+			if err = batch.Close(); err != nil {
+				t.Fatalf("error trying to read batch message: %s", err)
+			}
+		}
+
+		if batch.HighWaterMark() != 10 {
+			t.Fatal("expected highest offset (watermark) to be 10")
+		}
+	}
+
+	if err := batch.Close(); err != nil {
+		t.Fatal("error trying to close batch")
+	}
+
+	if err := batch.Err(); err != nil {
+		t.Fatal("broken batch")
+	}
 }
 
 func testConnReadBatchWithMaxWait(t *testing.T, conn *Conn) {
