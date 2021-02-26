@@ -187,8 +187,9 @@ func TestConn(t *testing.T) {
 		},
 
 		{
-			scenario: "read a batch with no explicit min or max bytes",
-			function: testConnReadBatchWithNoMinMaxBytes,
+			scenario:   "read a batch with no explicit min or max bytes",
+			function:   testConnReadBatchWithNoMinMaxBytes,
+			minVersion: "0.11.0",
 		},
 
 		{
