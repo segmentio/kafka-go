@@ -589,11 +589,11 @@ func testConnReadBatchWithNoMinMaxBytes(t *testing.T, conn *Conn) {
 	}
 
 	if err := batch.Close(); err != nil {
-		t.Fatal("error trying to close batch")
+		t.Fatalf("error trying to close batch: %s", err)
 	}
 
 	if err := batch.Err(); err != nil {
-		t.Fatal("broken batch")
+		t.Fatalf("broken batch: %s", err)
 	}
 }
 
