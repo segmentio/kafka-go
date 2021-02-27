@@ -345,16 +345,17 @@ type ReaderConfig struct {
 	// set.
 	QueueCapacity int
 
-	// MinBytes indicates to the broker the minimum size a batch of messages must
-	// be when consuming. Setting a high minimum on a low-volume topic can result
-	// in messages appearing delayed if they never reach the minimum.
+	// MinBytes indicates to the broker the minimum batch size that the consumer
+	// will accept. Setting a high minimum when consuming from a low-volume topic
+	// may result in delayed delivery when the broker does not have enough data to
+	// satisfy the defined minimum.
 	//
 	// Default: 1
 	MinBytes int
 
-	// MaxBytes indicates to the broker the maximum size a batch of messages must
-	// be when consuming. A broker will truncate a message to respect this config,
-	// so use a value higher than the size of your largest message.
+	// MaxBytes indicates to the broker the maximum batch size that the consumer
+	// will accept. The broker will truncate a message to satisfy this maximum, so
+	// choose a value that is high enough for your largest message size.
 	//
 	// Default: 1MB
 	MaxBytes int
