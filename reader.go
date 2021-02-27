@@ -345,7 +345,7 @@ type ReaderConfig struct {
 	// set.
 	QueueCapacity int
 
-	// MinBytes indicates to the broken the minimum size a batch of messages must
+	// MinBytes indicates to the broker the minimum size a batch of messages must
 	// be when consuming. Setting a high minimum on a low-volume topic can result
 	// in messages appearing delayed if they never reach the minimum.
 	//
