@@ -4,11 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-<<<<<<< HEAD
 	"errors"
 	"fmt"
-=======
->>>>>>> b6a18d1... Find coordinator implementation merged
 	"reflect"
 	"strings"
 	"testing"
@@ -51,11 +48,7 @@ func TestClientFindCoordinator(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-<<<<<<< HEAD
 	resp, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
-=======
-	resp, err := client.WaitForCoordinatorIndefinitely(ctx, &FindCoordinatorRequest{
->>>>>>> b6a18d1... Find coordinator implementation merged
 		Addr:    client.Addr,
 		Key:     "TransactionalID-1",
 		KeyType: CoordinatorKeyTypeTransaction,
@@ -69,7 +62,6 @@ func TestClientFindCoordinator(t *testing.T) {
 		t.Fatal("Coordinator should be found @ localhost")
 	}
 }
-<<<<<<< HEAD
 
 // WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found
 func waitForCoordinatorIndefinitely(ctx context.Context, c *Client, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
@@ -95,5 +87,3 @@ func shouldRetryfindingCoordinator(resp *FindCoordinatorResponse, err error) boo
 		errors.Is(resp.Error, GroupCoordinatorNotAvailable)
 	return brokerSetupIncomplete || coordinatorNotFound
 }
-=======
->>>>>>> b6a18d1... Find coordinator implementation merged

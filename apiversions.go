@@ -88,8 +88,7 @@ func (c *Client) IsApiKeySupported(
 	keySupported := false
 	for _, k := range supportedKeys.ApiKeys {
 		if int(k.ApiKey) == int(key) {
-			keySupported = true
-			break
+			return true, nil
 		}
 	}
 	return keySupported, nil
