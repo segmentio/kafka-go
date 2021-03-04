@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -72,12 +73,12 @@ func TestClientInitProducerId(t *testing.T) {
 
 	// Checks if transaction timeout is too high
 	// Transaction timeout should never be higher than broker config `transaction.max.timeout.ms`
-	resp, err = client.InitProducerID(context.Background(), &InitProducerIDRequest{
+	resp, _ = client.InitProducerID(context.Background(), &InitProducerIDRequest{
 		Addr:                 client.Addr,
 		TransactionalID:      tid,
 		TransactionTimeoutMs: 30000000,
 	})
-	if err == nil {
-		t.Fatal("Transaction timeout specified is higher than `transaction.max.timeout.ms`")
+	if !errors.Is(resp.Error, InvalidTransactionTimeout) {
+		t.Fatal("Should have errored with: Transaction timeout specified is higher than `transaction.max.timeout.ms`")
 	}
 }
