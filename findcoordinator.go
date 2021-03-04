@@ -11,7 +11,7 @@ import (
 )
 
 // CoordinatorKeyType is used to specify the type of coordinator to look for
-type CoordinatorKeyType int8
+type CoordinatorKeyType int
 
 const (
 	// CoordinatorKeyTypeConsumer type is used when looking for a Group coordinator

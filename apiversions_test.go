@@ -2,7 +2,10 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"testing"
+
+	"github.com/segmentio/kafka-go/protocol"
 )
 
 func TestClientApiVersions(t *testing.T) {
@@ -30,4 +33,24 @@ func TestClientApiVersions(t *testing.T) {
 			"got", 0,
 		)
 	}
+}
+
+// IsApiKeySupported checks if the API key is supported by the broker
+func isAPIKeySupported(ctx context.Context, c *Client, key protocol.ApiKey) (bool, error) {
+	supportedKeys, err := c.ApiVersions(
+		ctx,
+		&ApiVersionsRequest{
+			c.Addr,
+		},
+	)
+	if err != nil {
+		return false, fmt.Errorf("kafka.(*Client).IsApiKeySupported: %w", err)
+	}
+	keySupported := false
+	for _, k := range supportedKeys.ApiKeys {
+		if int(k.ApiKey) == int(key) {
+			return true, nil
+		}
+	}
+	return keySupported, nil
 }

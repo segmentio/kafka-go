@@ -6,7 +6,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/initproducerid"
 )
 
@@ -19,14 +18,16 @@ type InitProducerIDRequest struct {
 	TransactionalID string
 
 	// Time after which a transaction should time out
-	TransactionTimeoutMs int32
+	TransactionTimeoutMs int
 }
 
-// ProducerSession is
+// ProducerSession contains useful information about the producer session from the broker's response
 type ProducerSession struct {
-	IsTransactional bool
-	ProducerID      int64
-	ProducerEpoch   int16
+	// The Producer ID (PID) for the current producer session
+	ProducerID int
+
+	// The epoch associated with the current producer session for the given PID
+	ProducerEpoch int
 }
 
 // InitProducerIDResponse is the response structure for the InitProducerId function
@@ -44,43 +45,27 @@ type InitProducerIDResponse struct {
 	Error error
 }
 
-// InitProducerIdNotSupported is the message to display when InitProducerID is not supported
-const InitProducerIdNotSupported string = "InitProdudcerId is not supported by this broker"
-
 // InitProducerID sends a initProducerId request to a kafka broker and returns the
 // response.
 func (c *Client) InitProducerID(ctx context.Context, req *InitProducerIDRequest) (*InitProducerIDResponse, error) {
 
-	supported, err := c.IsApiKeySupported(ctx, protocol.InitProducerId)
-	if err != nil {
-		return nil, err
-	}
-	if !supported {
-		return nil, fmt.Errorf(InitProducerIdNotSupported)
-	}
-
 	m, err := c.roundTrip(ctx, req.Addr, &initproducerid.Request{
 		TransactionalID:      req.TransactionalID,
-		TransactionTimeoutMs: req.TransactionTimeoutMs,
+		TransactionTimeoutMs: int32(req.TransactionTimeoutMs),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).InitProducerId: %w", err)
 	}
-	isTransactional := false
-	if req.TransactionalID != "" {
-		isTransactional = true
-	}
+
 	res := m.(*initproducerid.Response)
 	producerSession := &ProducerSession{
-		IsTransactional: isTransactional,
-		ProducerID:      res.ProducerID,
-		ProducerEpoch:   res.ProducerEpoch,
+		ProducerID:    int(res.ProducerID),
+		ProducerEpoch: int(res.ProducerEpoch),
 	}
 	ret := &InitProducerIDResponse{
 		Producer: producerSession,
 		Throttle: makeDuration(res.ThrottleTimeMs),
 		Error:    makeError(res.ErrorCode, ""),
 	}
-	return ret, ret.Error
+	return ret, nil
 }

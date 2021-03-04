@@ -5,15 +5,27 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol"
 )
 
 func TestClientInitProducerId(t *testing.T) {
 	client, shutdown := newLocalClient()
+
+	supported, err := isAPIKeySupported(context.Background(), client, protocol.InitProducerId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !supported {
+		t.Log("Skipping test for unsupported broker.")
+		return
+	}
+
 	tid := "transaction1"
 	// Wait for kafka setup and Coordinator to be available.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	respc, err := client.WaitForCoordinatorIndefinitely(ctx, &FindCoordinatorRequest{
+	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,
 		Key:     tid,
 		KeyType: CoordinatorKeyTypeTransaction,
@@ -36,12 +48,6 @@ func TestClientInitProducerId(t *testing.T) {
 		TransactionalID:      tid,
 		TransactionTimeoutMs: 3000,
 	})
-	if err != nil && err.Error() == InitProducerIdNotSupported {
-		t.Log("Skipping test.", InitProducerIdNotSupported)
-		return
-	} else if err != nil {
-		t.Fatal(err)
-	}
 	epoch1 := resp.Producer.ProducerEpoch
 	pid1 := resp.Producer.ProducerID
 
