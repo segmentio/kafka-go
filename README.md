@@ -376,30 +376,50 @@ if err := w.Close(); err != nil {
 }
 ```
 
-**Note:** Even though kafka.Message contain ```Topic``` and ```Partition``` fields, they **MUST NOT** be
-set when writing messages.  They are intended for read use only.
-
 ### Writing to multiple topics
 
-Each writer is bound to a single topic, to write to multiple topics, a program
-must create multiple writers.
+Normally, the `WriterConfig.Topic` is used to initialize a single-topic writer.
+By excluding that particular configuration, you are given the ability to define
+the topic on a per-message basis by setting `Message.Topic`.
 
-We considered making the `kafka.Writer` type interpret the `Topic` field of
-`kafka.Message` values, batching messages per partition or topic/partition pairs
-does not introduce much more complexity. However, supporting this means we would
-also have to report stats broken down by topic. It would also raise the question
-of how we would manage configuration specific to each topic (e.g. different
-compression algorithms). Overall, the amount of coupling between the various
-properties of `kafka.Writer` suggest that we should not support publishing to
-multiple topics from a single writer, and instead encourage the program to
-create a writer for each topic it needs to publish to.
+```go
+w := &kafka.Writer{
+	Addr:     kafka.TCP("localhost:9092"),
+    // NOTE: When Topic is not defined here, each Message must define it instead.
+	Balancer: &kafka.LeastBytes{},
+}
 
-The split of connection management into the `kafka.Transport` in kafka-go 0.4 has
-made writers really cheap to create as they barely manage any state, programs can
-construct new writers configured to publish to kafka topics when needed.
+err := w.WriteMessages(context.Background(),
+    // NOTE: Each Message has Topic defined, otherwise an error is returned.
+	kafka.Message{
+        Topic: "topic-A",
+		Key:   []byte("Key-A"),
+		Value: []byte("Hello World!"),
+	},
+	kafka.Message{
+        Topic: "topic-B",
+		Key:   []byte("Key-B"),
+		Value: []byte("One!"),
+	},
+	kafka.Message{
+        Topic: "topic-C",
+		Key:   []byte("Key-C"),
+		Value: []byte("Two!"),
+	},
+)
+if err != nil {
+    log.Fatal("failed to write messages:", err)
+}
 
-Adding new APIs to facilitate the management of writer sets is an option, and we
-would welcome contributions in this area.
+if err := w.Close(); err != nil {
+    log.Fatal("failed to close writer:", err)
+}
+```
+
+**NOTE:** These 2 patterns are mutually exclusive, if you set `Writer.Topic`,
+you must not also explicitly define `Message.Topic` on the messages you are
+writing. The opposite applies when you do not define a topic for the writer.
+The `Writer` will return an error if it detects this ambiguity.
 
 ### Compatibility with other clients
 
