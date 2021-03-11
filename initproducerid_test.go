@@ -14,15 +14,15 @@ func TestClientInitProducerId(t *testing.T) {
 	if !ktesting.KafkaIsAtLeast("0.11.0") {
 		return
 	}
-	clientInitial, shutdownInitial := newLocalClient()
-	defer shutdownInitial()
+	client, shutdown := newLocalClient()
+	defer shutdown()
 
 	tid := "transaction1"
 	// Wait for kafka setup and Coordinator to be available.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	respc, err := waitForCoordinatorIndefinitely(ctx, clientInitial, &FindCoordinatorRequest{
-		Addr:    clientInitial.Addr,
+	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
+		Addr:    client.Addr,
 		Key:     tid,
 		KeyType: CoordinatorKeyTypeTransaction,
 	})
@@ -32,7 +32,7 @@ func TestClientInitProducerId(t *testing.T) {
 
 	// Now establish a connection with the transaction coordinator
 	transactionCoordinator := TCP(fmt.Sprintf("%s:%d", respc.Coordinator.Host, respc.Coordinator.Port))
-	client, shutdown := newClient(transactionCoordinator)
+	client, shutdown = newClient(transactionCoordinator)
 	defer shutdown()
 
 	// Check if producer epoch increases and PID remains the same when producer is
