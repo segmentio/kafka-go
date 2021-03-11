@@ -58,12 +58,11 @@ func (c *Client) InitProducerID(ctx context.Context, req *InitProducerIDRequest)
 	}
 
 	res := m.(*initproducerid.Response)
-	producerSession := &ProducerSession{
-		ProducerID:    int(res.ProducerID),
-		ProducerEpoch: int(res.ProducerEpoch),
-	}
 	ret := &InitProducerIDResponse{
-		Producer: producerSession,
+		Producer: &ProducerSession{
+			ProducerID:    int(res.ProducerID),
+			ProducerEpoch: int(res.ProducerEpoch),
+		},
 		Throttle: makeDuration(res.ThrottleTimeMs),
 		Error:    makeError(res.ErrorCode, ""),
 	}

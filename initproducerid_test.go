@@ -7,40 +7,33 @@ import (
 	"testing"
 	"time"
 
-	"github.com/segmentio/kafka-go/protocol"
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 func TestClientInitProducerId(t *testing.T) {
-	client, shutdown := newLocalClient()
-
-	supported, err := isAPIKeySupported(context.Background(), client, protocol.InitProducerId)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !supported {
-		t.Log("Skipping test for unsupported broker.")
+	if !ktesting.KafkaIsAtLeast("0.11.0") {
 		return
 	}
+	clientInitial, shutdownInitial := newLocalClient()
+	defer shutdownInitial()
 
 	tid := "transaction1"
 	// Wait for kafka setup and Coordinator to be available.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
-		Addr:    client.Addr,
+	respc, err := waitForCoordinatorIndefinitely(ctx, clientInitial, &FindCoordinatorRequest{
+		Addr:    clientInitial.Addr,
 		Key:     tid,
 		KeyType: CoordinatorKeyTypeTransaction,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Shutdown old client to a random broker (localhost)
-	// Also because it's IDLE timeout would have exceeded by now
-	shutdown()
 
 	// Now establish a connection with the transaction coordinator
 	transactionCoordinator := TCP(fmt.Sprintf("%s:%d", respc.Coordinator.Host, respc.Coordinator.Port))
-	client, shutdown = newClient(transactionCoordinator)
+	client, shutdown := newClient(transactionCoordinator)
+	defer shutdown()
 
 	// Check if producer epoch increases and PID remains the same when producer is
 	// initialized again with the same transactionalID
@@ -49,6 +42,10 @@ func TestClientInitProducerId(t *testing.T) {
 		TransactionalID:      tid,
 		TransactionTimeoutMs: 3000,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	epoch1 := resp.Producer.ProducerEpoch
 	pid1 := resp.Producer.ProducerID
 
