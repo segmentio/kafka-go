@@ -210,6 +210,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	msg.Topic = batch.topic
 	msg.Partition = batch.partition
 	msg.Offset = offset
+	msg.HighWaterMark = batch.highWaterMark
 	msg.Time = makeTime(timestamp)
 	msg.Headers = headers
 
