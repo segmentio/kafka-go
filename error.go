@@ -1,8 +1,10 @@
 package kafka
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net"
 )
 
 // Error represents the different error codes that may be returned by kafka.
@@ -491,17 +493,19 @@ func (e Error) Description() string {
 }
 
 func isTimeout(err error) bool {
-	e, ok := err.(interface {
-		Timeout() bool
-	})
-	return ok && e.Timeout()
+	var opError net.Error
+	if errors.As(err, &opError) {
+		return opError.Timeout()
+	}
+	return false
 }
 
 func isTemporary(err error) bool {
-	e, ok := err.(interface {
-		Temporary() bool
-	})
-	return ok && e.Temporary()
+	var opError net.Error
+	if errors.As(err, &opError) {
+		return opError.Temporary()
+	}
+	return false
 }
 
 func silentEOF(err error) error {
