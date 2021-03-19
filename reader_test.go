@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"net"
@@ -1339,6 +1340,180 @@ func TestConsumerGroupWithMissingTopic(t *testing.T) {
 	nMsgs := r.Stats().Messages
 	if nMsgs != 1 {
 		t.Fatalf("expected to receive one message, but got %d", nMsgs)
+	}
+}
+
+func TestConsumerGroupWithTopic(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conf := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		Topic:                  makeTopic(),
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+		Logger:                 newTestKafkaLogger(t, "Reader:"),
+	}
+
+	r := NewReader(conf)
+	defer r.Close()
+
+	recvErr := make(chan error, len(conf.GroupTopics))
+	go func() {
+		msg, err := r.ReadMessage(ctx)
+		t.Log(msg)
+		recvErr <- err
+	}()
+
+	time.Sleep(conf.MaxWait)
+
+	client, shutdown := newLocalClientWithTopic(conf.Topic, 1)
+	defer shutdown()
+
+	w := &Writer{
+		Addr:         TCP(r.config.Brokers...),
+		Topic:        conf.Topic,
+		BatchTimeout: 10 * time.Millisecond,
+		BatchSize:    1,
+		Transport:    client.Transport,
+		Logger:       newTestKafkaLogger(t, "Writer:"),
+	}
+	defer w.Close()
+	if err := w.WriteMessages(ctx, Message{Value: []byte(conf.Topic)}); err != nil {
+		t.Fatalf("write error: %+v", err)
+	}
+
+	if err := <-recvErr; err != nil {
+		t.Fatalf("read error: %+v", err)
+	}
+
+	nMsgs := r.Stats().Messages
+	if nMsgs != 1 {
+		t.Fatalf("expected to receive 1 message, but got %d", nMsgs)
+	}
+}
+
+func TestConsumerGroupWithGroupTopicsSingle(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conf := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		GroupTopics:            []string{makeTopic()},
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+		Logger:                 newTestKafkaLogger(t, "Reader:"),
+	}
+
+	r := NewReader(conf)
+	defer r.Close()
+
+	recvErr := make(chan error, len(conf.GroupTopics))
+	go func() {
+		msg, err := r.ReadMessage(ctx)
+		t.Log(msg)
+		recvErr <- err
+	}()
+
+	time.Sleep(conf.MaxWait)
+
+	for i, topic := range conf.GroupTopics {
+		client, shutdown := newLocalClientWithTopic(topic, 1)
+		defer shutdown()
+
+		w := &Writer{
+			Addr:         TCP(r.config.Brokers...),
+			Topic:        topic,
+			BatchTimeout: 10 * time.Millisecond,
+			BatchSize:    1,
+			Transport:    client.Transport,
+			Logger:       newTestKafkaLogger(t, fmt.Sprintf("Writer(%d):", i)),
+		}
+		defer w.Close()
+		if err := w.WriteMessages(ctx, Message{Value: []byte(topic)}); err != nil {
+			t.Fatalf("write error: %+v", err)
+		}
+	}
+
+	if err := <-recvErr; err != nil {
+		t.Fatalf("read error: %+v", err)
+	}
+
+	nMsgs := r.Stats().Messages
+	if nMsgs != int64(len(conf.GroupTopics)) {
+		t.Fatalf("expected to receive %d messages, but got %d", len(conf.GroupTopics), nMsgs)
+	}
+}
+
+func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	conf := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		GroupTopics:            []string{makeTopic(), makeTopic()},
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+		Logger:                 newTestKafkaLogger(t, "Reader:"),
+	}
+
+	r := NewReader(conf)
+
+	w := &Writer{
+		Addr:         TCP(r.config.Brokers...),
+		BatchTimeout: 10 * time.Millisecond,
+		BatchSize:    1,
+		Transport:    client.Transport,
+		Logger:       newTestKafkaLogger(t, "Writer:"),
+	}
+	defer w.Close()
+
+	time.Sleep(time.Second)
+
+	var msgs []Message
+	for _, topic := range conf.GroupTopics {
+		msgs = append(msgs, Message{Topic: topic})
+	}
+	if err := w.WriteMessages(ctx, msgs...); err != nil {
+		t.Logf("write error: %+v", err)
+	}
+
+	wg := new(sync.WaitGroup)
+	wg.Add(len(msgs))
+
+	go func() {
+		wg.Wait()
+		t.Log("closing reader")
+		r.Close()
+	}()
+
+	for {
+		msg, err := r.ReadMessage(ctx)
+		if err != nil {
+			if err == io.EOF {
+				t.Log("reader closed")
+				break
+			}
+
+			t.Fatalf("read error: %+v", err)
+		} else {
+			t.Logf("message read: %+v", msg)
+			wg.Done()
+		}
+	}
+
+	nMsgs := r.Stats().Messages
+	if nMsgs != int64(len(conf.GroupTopics)) {
+		t.Fatalf("expected to receive %d messages, but got %d", len(conf.GroupTopics), nMsgs)
 	}
 }
 

@@ -171,3 +171,17 @@ func BenchmarkUnmarshal(b *testing.B) {
 		})
 	}
 }
+
+type testKafkaLogger struct {
+	Prefix string
+	T      *testing.T
+}
+
+func newTestKafkaLogger(t *testing.T, prefix string) Logger {
+	return &testKafkaLogger{Prefix: prefix, T: t}
+}
+
+func (l *testKafkaLogger) Printf(msg string, args ...interface{}) {
+	l.T.Helper()
+	l.T.Logf(l.Prefix+" "+msg, args...)
+}
