@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"errors"
 	"fmt"
 	"io"
 )
@@ -491,17 +492,19 @@ func (e Error) Description() string {
 }
 
 func isTimeout(err error) bool {
-	e, ok := err.(interface {
-		Timeout() bool
-	})
-	return ok && e.Timeout()
+	var timeoutError interface{ Timeout() bool }
+	if errors.As(err, &timeoutError) {
+		return timeoutError.Timeout()
+	}
+	return false
 }
 
 func isTemporary(err error) bool {
-	e, ok := err.(interface {
-		Temporary() bool
-	})
-	return ok && e.Temporary()
+	var tempError interface{ Temporary() bool }
+	if errors.As(err, &tempError) {
+		return tempError.Temporary()
+	}
+	return false
 }
 
 func silentEOF(err error) error {
