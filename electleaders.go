@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/segmentio/kafka-go/protocol/electleaders"
+	"github.com/apoorvag-mav/kafka-go/protocol/electleaders"
 )
 
 // ElectLeadersRequest is a request to the ElectLeaders API.

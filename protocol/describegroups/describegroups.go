@@ -1,7 +1,7 @@
 package describegroups
 
 import (
-	"github.com/segmentio/kafka-go/protocol"
+	"github.com/apoorvag-mav/kafka-go/protocol"
 )
 
 func init() {

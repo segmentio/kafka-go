@@ -4,8 +4,8 @@ import (
 	"context"
 	"net"
 
-	"github.com/segmentio/kafka-go/protocol"
-	"github.com/segmentio/kafka-go/protocol/apiversions"
+	"github.com/apoorvag-mav/kafka-go/protocol"
+	"github.com/apoorvag-mav/kafka-go/protocol/apiversions"
 )
 
 // ApiVersionsRequest is a request to the ApiVersions API.

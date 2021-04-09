@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	ktesting "github.com/segmentio/kafka-go/testing"
+	ktesting "github.com/apoorvag-mav/kafka-go/testing"
 	"github.com/stretchr/testify/assert"
 )
 

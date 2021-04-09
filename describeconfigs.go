@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/segmentio/kafka-go/protocol/describeconfigs"
+	"github.com/apoorvag-mav/kafka-go/protocol/describeconfigs"
 )
 
 // DescribeConfigsRequest represents a request sent to a kafka broker to describe configs

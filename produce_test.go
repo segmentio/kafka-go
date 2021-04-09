@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/segmentio/kafka-go/compress"
+	"github.com/apoorvag-mav/kafka-go/compress"
 )
 
 func TestClientProduce(t *testing.T) {

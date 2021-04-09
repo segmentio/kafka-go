@@ -53,7 +53,7 @@ func TestReader(t *testing.T) {
 			function: testReaderReadLag,
 		},
 
-		{ // https://github.com/segmentio/kafka-go/issues/30
+		{ // https://github.com/apoorvag-mav/kafka-go/issues/30
 			scenario: "reading from an out-of-range offset waits until the context is cancelled",
 			function: testReaderOutOfRangeGetsCanceled,
 		},
@@ -1262,7 +1262,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 
 // Test that a reader won't continually rebalance when there are more consumers
 // than partitions in a group.
-// https://github.com/segmentio/kafka-go/issues/200
+// https://github.com/apoorvag-mav/kafka-go/issues/200
 func TestRebalanceTooManyConsumers(t *testing.T) {
 	ctx := context.Background()
 	conf := ReaderConfig{

@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/segmentio/kafka-go/protocol/initproducerid"
+	"github.com/apoorvag-mav/kafka-go/protocol/initproducerid"
 )
 
 // InitProducerIDRequest is the request structure for the InitProducerId function

@@ -138,7 +138,7 @@ var (
 func init() {
 	progname := filepath.Base(os.Args[0])
 	hostname, _ := os.Hostname()
-	DefaultClientID = fmt.Sprintf("%s@%s (github.com/segmentio/kafka-go)", progname, hostname)
+	DefaultClientID = fmt.Sprintf("%s@%s (github.com/apoorvag-mav/kafka-go)", progname, hostname)
 }
 
 // NewConn returns a new kafka connection for the given topic and partition.

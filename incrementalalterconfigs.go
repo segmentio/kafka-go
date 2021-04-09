@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 
-	"github.com/segmentio/kafka-go/protocol/incrementalalterconfigs"
+	"github.com/apoorvag-mav/kafka-go/protocol/incrementalalterconfigs"
 )
 
 type ConfigOperation int8

@@ -3,7 +3,7 @@ jobs:
   # The kafka 0.10 tests are maintained as a separate configuration because
   # kafka only supported plain text SASL in this version.
   kafka-010:
-    working_directory: &working_directory /go/src/github.com/segmentio/kafka-go
+    working_directory: &working_directory /go/src/github.com/apoorvag-mav/kafka-go
     environment:
       KAFKA_VERSION: "0.10.1"
     docker:

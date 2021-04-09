@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/segmentio/kafka-go/protocol/offsetfetch"
+	"github.com/apoorvag-mav/kafka-go/protocol/offsetfetch"
 )
 
 // OffsetFetchRequest represents a request sent to a kafka broker to read the

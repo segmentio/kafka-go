@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	metadataAPI "github.com/segmentio/kafka-go/protocol/metadata"
+	metadataAPI "github.com/apoorvag-mav/kafka-go/protocol/metadata"
 )
 
 // MetadataRequest represents a request sent to a kafka broker to retrieve its

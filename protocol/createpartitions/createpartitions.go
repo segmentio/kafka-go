@@ -1,6 +1,6 @@
 package createpartitions
 
-import "github.com/segmentio/kafka-go/protocol"
+import "github.com/apoorvag-mav/kafka-go/protocol"
 
 func init() {
 	protocol.Register(&Request{}, &Response{})

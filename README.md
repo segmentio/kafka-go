@@ -1,4 +1,4 @@
-# kafka-go [![CircleCI](https://circleci.com/gh/segmentio/kafka-go.svg?style=shield)](https://circleci.com/gh/segmentio/kafka-go) [![Go Report Card](https://goreportcard.com/badge/github.com/segmentio/kafka-go)](https://goreportcard.com/report/github.com/segmentio/kafka-go) [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go)
+# kafka-go [![CircleCI](https://circleci.com/gh/apoorvag-mav/kafka-go.svg?style=shield)](https://circleci.com/gh/apoorvag-mav/kafka-go) [![Go Report Card](https://goreportcard.com/badge/github.com/apoorvag-mav/kafka-go)](https://goreportcard.com/report/github.com/apoorvag-mav/kafka-go) [![GoDoc](https://godoc.org/github.com/apoorvag-mav/kafka-go?status.svg)](https://godoc.org/github.com/apoorvag-mav/kafka-go)
 
 ## Motivations
 
@@ -66,9 +66,9 @@ some features available from the Kafka API may not be implemented yet.
 
 ## Golang version
 
-`kafka-go` is currently compatible with golang version from 1.13+. To use with older versions of golang use release [v0.2.5](https://github.com/segmentio/kafka-go/releases/tag/v0.2.5).
+`kafka-go` is currently compatible with golang version from 1.13+. To use with older versions of golang use release [v0.2.5](https://github.com/apoorvag-mav/kafka-go/releases/tag/v0.2.5).
 
-## Connection [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Conn)
+## Connection [![GoDoc](https://godoc.org/github.com/apoorvag-mav/kafka-go?status.svg)](https://godoc.org/github.com/apoorvag-mav/kafka-go#Conn)
 
 The `Conn` type is the core of the `kafka-go` package. It wraps around a raw
 network connection to expose a low-level API to a Kafka server.
@@ -224,7 +224,7 @@ for k := range m {
 Because it is low level, the `Conn` type turns out to be a great building block
 for higher level abstractions, like the `Reader` for example.
 
-## Reader [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Reader)
+## Reader [![GoDoc](https://godoc.org/github.com/apoorvag-mav/kafka-go?status.svg)](https://godoc.org/github.com/apoorvag-mav/kafka-go#Reader)
 
 A `Reader` is another concept exposed by the `kafka-go` package, which intends
 to make it simpler to implement the typical use case of consuming from a single
@@ -333,7 +333,7 @@ r := kafka.NewReader(kafka.ReaderConfig{
 })
 ```
 
-## Writer [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Writer)
+## Writer [![GoDoc](https://godoc.org/github.com/apoorvag-mav/kafka-go?status.svg)](https://godoc.org/github.com/apoorvag-mav/kafka-go#Writer)
 
 To produce messages to Kafka, a program may use the low-level `Conn` API, but
 the package also provides a higher level `Writer` type which is more appropriate
@@ -540,7 +540,7 @@ You can specify an option on the `Dialer` to use SASL authentication. The `Diale
 
 ### SASL Authentication Types
 
-#### [Plain](https://godoc.org/github.com/segmentio/kafka-go/sasl/plain#Mechanism)
+#### [Plain](https://godoc.org/github.com/apoorvag-mav/kafka-go/sasl/plain#Mechanism)
 ```go
 mechanism := plain.Mechanism{
     Username: "username",
@@ -548,7 +548,7 @@ mechanism := plain.Mechanism{
 }
 ```
 
-#### [SCRAM](https://godoc.org/github.com/segmentio/kafka-go/sasl/scram#Mechanism)
+#### [SCRAM](https://godoc.org/github.com/apoorvag-mav/kafka-go/sasl/scram#Mechanism)
 ```go
 mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
 if err != nil {
