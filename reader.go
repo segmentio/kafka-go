@@ -66,6 +66,10 @@ type Reader struct {
 	lag     int64
 	closed  bool
 
+	// lastMsg holds a reference to the last read Message, which will be committed
+	// on the next call to ReadMessage or Close.
+	lastMsg *readerMessage
+
 	// Without a group subscription (when Reader.config.GroupID == ""),
 	// when errors occur, the Reader gets a synthetic readerMessage with
 	// a non-nil err set. With group subscriptions however, when an error
@@ -86,6 +90,17 @@ type Reader struct {
 
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
 func (r *Reader) useConsumerGroup() bool { return r.config.GroupID != "" }
+
+func (r *Reader) getLastMsg() *readerMessage {
+	if !r.useConsumerGroup() {
+		return nil
+	}
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	return r.lastMsg
+}
 
 func (r *Reader) getTopics() []string {
 	if len(r.config.GroupTopics) > 0 {
@@ -729,6 +744,12 @@ func (r *Reader) Close() error {
 	r.mutex.Lock()
 	closed := r.closed
 	r.closed = true
+	if m := r.getLastMsg(); m != nil {
+		if err := r.CommitMessages(r.stctx, m.message); err != nil {
+			return err
+		}
+	}
+	r.lastMsg = nil
 	r.mutex.Unlock()
 
 	r.cancel()
@@ -759,15 +780,15 @@ func (r *Reader) Close() error {
 // If more fine grained control of when offsets are  committed is required, it
 // is recommended to use FetchMessage with CommitMessages instead.
 func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
+	if m := r.getLastMsg(); m != nil {
+		if err := r.CommitMessages(ctx, m.message); err != nil {
+			return Message{}, err
+		}
+	}
+
 	m, err := r.FetchMessage(ctx)
 	if err != nil {
 		return Message{}, err
-	}
-
-	if r.useConsumerGroup() {
-		if err := r.CommitMessages(ctx, m); err != nil {
-			return Message{}, err
-		}
 	}
 
 	return m, nil
@@ -808,6 +829,10 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 
 			if m.version >= version {
 				r.mutex.Lock()
+
+				if r.useConsumerGroup() {
+					r.lastMsg = &m
+				}
 
 				switch {
 				case m.error != nil:
