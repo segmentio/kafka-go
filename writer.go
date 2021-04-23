@@ -818,7 +818,16 @@ func (w *Writer) produce(key topicPartition, batch *writeBatch) (*ProduceRespons
 }
 
 func (w *Writer) partitions(ctx context.Context, topic string) (int, error) {
-	return w.client(w.readTimeout()).TopicPartitionCount(ctx, topic)
+	partitions, err := w.client(w.readTimeout()).GetTopicPartitions(ctx, topic)
+	if err != nil {
+		return 0, err
+	}
+
+	if _, ok := partitions[topic]; !ok {
+		return 0, UnknownTopicOrPartition
+	}
+
+	return len(partitions[topic]), nil
 }
 
 func (w *Writer) markClosed() {
