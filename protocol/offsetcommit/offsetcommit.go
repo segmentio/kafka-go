@@ -7,11 +7,12 @@ func init() {
 }
 
 type Request struct {
-	GroupID           string         `kafka:"min=v0,max=v2"`
-	GroupGenerationID int32          `kafka:"min=v1,max=v2"`
-	MemberID          string         `kafka:"min=v1,max=v2"`
-	RetentionTime     int64          `kafka:"min=v2,max=v2"`
-	Topics            []RequestTopic `kafka:"min=v0,max=v2"`
+	GroupID         string         `kafka:"min=v0,max=v7"`
+	GenerationID    int32          `kafka:"min=v1,max=v7"`
+	MemberID        string         `kafka:"min=v1,max=v7"`
+	RetentionTimeMs int64          `kafka:"min=v2,max=v4"`
+	GroupInstanceID string         `kafka:"min=v7,max=v7"`
+	Topics          []RequestTopic `kafka:"min=v0,max=v7"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.OffsetCommit }
@@ -19,15 +20,16 @@ func (r *Request) ApiKey() protocol.ApiKey { return protocol.OffsetCommit }
 func (r *Request) Group() string { return r.GroupID }
 
 type RequestTopic struct {
-	Name       string             `kafka:"min=v0,max=v2"`
-	Partitions []RequestPartition `kafka:"min=v0,max=v2"`
+	Name       string             `kafka:"min=v0,max=v7"`
+	Partitions []RequestPartition `kafka:"min=v0,max=v7"`
 }
 
 type RequestPartition struct {
-	Partition int32  `kafka:"min=v0,max=v2"`
-	Offset    int64  `kafka:"min=v0,max=v2"`
-	Timestamp int64  `kafka:"min=v1,max=v1"`
-	Metadata  string `kafka:"min=v0,max=v2,nullable"`
+	PartitionIndex       int32  `kafka:"min=v0,max=v7"`
+	CommittedOffset      int64  `kafka:"min=v0,max=v7"`
+	CommitTimestamp      int64  `kafka:"min=v1,max=v1"`
+	CommittedLeaderEpoch int32  `kafka:"min=v5,max=v7"`
+	CommittedMetadata    string `kafka:"min=v0,max=v7,nullable"`
 }
 
 var (
@@ -35,17 +37,18 @@ var (
 )
 
 type Response struct {
-	Topics []ResponseTopic `kafka:"min=v0,max=v2"`
+	ThrottleTimeMs int32           `kafka:"min=v3,max=v7"`
+	Topics         []ResponseTopic `kafka:"min=v0,max=v7"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.OffsetCommit }
 
 type ResponseTopic struct {
-	Name       string              `kafka:"min=v0,max=v2"`
-	Partitions []ResponsePartition `kafka:"min=v0,max=v2"`
+	Name       string              `kafka:"min=v0,max=v7"`
+	Partitions []ResponsePartition `kafka:"min=v0,max=v7"`
 }
 
 type ResponsePartition struct {
-	Partition int32 `kafka:"min=v0,max=v2"`
-	ErrorCode int16 `kafka:"min=v0,max=v2"`
+	PartitionIndex int32 `kafka:"min=v0,max=v7"`
+	ErrorCode      int16 `kafka:"min=v0,max=v7"`
 }
