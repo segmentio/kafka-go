@@ -36,8 +36,8 @@ type OffsetCommitRequest struct {
 	// ID of the group member submitting the offsets.
 	MemberID string
 
-	// Retention set for the committed offsets.
-	Retention time.Duration
+	// ID of the group instance.
+	InstanceID string
 
 	// Set of topic partitions to publish the offsets for.
 	//
@@ -49,6 +49,9 @@ type OffsetCommitRequest struct {
 // OffsetFetchResponse represents a response from a kafka broker to an offset
 // commit request.
 type OffsetCommitResponse struct {
+	// The amount of time that the broker throttled the request.
+	Throttle time.Duration
+
 	// Set of topic partitions that the kafka broker has accepted offset commits
 	// for.
 	Topics map[string][]OffsetCommitPartition
@@ -72,6 +75,7 @@ type OffsetCommitPartition struct {
 // OffsetCommit sends an offset commit request to a kafka broker and returns the
 // response.
 func (c *Client) OffsetCommit(ctx context.Context, req *OffsetCommitRequest) (*OffsetCommitResponse, error) {
+	now := time.Now().UnixNano() / int64(time.Millisecond)
 	topics := make([]offsetcommit.RequestTopic, 0, len(req.Topics))
 
 	for topicName, commits := range req.Topics {
@@ -79,9 +83,13 @@ func (c *Client) OffsetCommit(ctx context.Context, req *OffsetCommitRequest) (*O
 
 		for i, c := range commits {
 			partitions[i] = offsetcommit.RequestPartition{
-				Partition: int32(c.Partition),
-				Offset:    c.Offset,
-				Metadata:  c.Metadata,
+				PartitionIndex:    int32(c.Partition),
+				CommittedOffset:   c.Offset,
+				CommittedMetadata: c.Metadata,
+				// This field existed in v1 of the OffsetCommit API, setting it
+				// to the current timestamp is probably a safe thing to do, but
+				// it is hard to tell.
+				CommitTimestamp: now,
 			}
 		}
 
@@ -92,11 +100,16 @@ func (c *Client) OffsetCommit(ctx context.Context, req *OffsetCommitRequest) (*O
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &offsetcommit.Request{
-		GroupID:           req.GroupID,
-		GroupGenerationID: int32(req.GenerationID),
-		MemberID:          req.MemberID,
-		RetentionTime:     int64(req.Retention / time.Millisecond),
-		Topics:            topics,
+		GroupID:         req.GroupID,
+		GenerationID:    int32(req.GenerationID),
+		MemberID:        req.MemberID,
+		GroupInstanceID: req.InstanceID,
+		Topics:          topics,
+		// Hardcoded retention; this field existed between v2 and v4 of the
+		// OffsetCommit API, we would have to figure out a way to give the
+		// client control over the API version being used to support configuring
+		// it in the request object.
+		RetentionTimeMs: int64((24 * time.Hour) / time.Millisecond),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).OffsetCommit: %w", err)
@@ -104,7 +117,8 @@ func (c *Client) OffsetCommit(ctx context.Context, req *OffsetCommitRequest) (*O
 	r := m.(*offsetcommit.Response)
 
 	res := &OffsetCommitResponse{
-		Topics: make(map[string][]OffsetCommitPartition, len(r.Topics)),
+		Throttle: makeDuration(r.ThrottleTimeMs),
+		Topics:   make(map[string][]OffsetCommitPartition, len(r.Topics)),
 	}
 
 	for _, topic := range r.Topics {
@@ -112,7 +126,7 @@ func (c *Client) OffsetCommit(ctx context.Context, req *OffsetCommitRequest) (*O
 
 		for i, p := range topic.Partitions {
 			partitions[i] = OffsetCommitPartition{
-				Partition: int(p.Partition),
+				Partition: int(p.PartitionIndex),
 				Error:     makeError(p.ErrorCode, ""),
 			}
 		}
