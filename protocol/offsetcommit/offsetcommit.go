@@ -11,7 +11,7 @@ type Request struct {
 	GenerationID    int32          `kafka:"min=v1,max=v7"`
 	MemberID        string         `kafka:"min=v1,max=v7"`
 	RetentionTimeMs int64          `kafka:"min=v2,max=v4"`
-	GroupInstanceID string         `kafka:"min=v7,max=v7"`
+	GroupInstanceID string         `kafka:"min=v7,max=v7,nullable"`
 	Topics          []RequestTopic `kafka:"min=v0,max=v7"`
 }
 
