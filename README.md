@@ -652,3 +652,16 @@ if err := r.Close(); err != nil {
     log.Fatal("failed to close reader:", err)
 }
 ```
+
+## Developer
+
+There are some flaky and non-runable tests. Execute them locally with
+
+```bash
+docker-compose up -d
+export KAFKA_SKIP_NETTEST=1
+export KAFKA_VERSION=2.3.1
+go test -race -cover ./...
+```
+
+This is encapsulated in a Makefile, so optionally call `make`.
