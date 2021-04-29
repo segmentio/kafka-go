@@ -72,6 +72,9 @@ type leastBytesCounter struct {
 
 // Balance satisfies the Balancer interface.
 func (lb *LeastBytes) Balance(msg Message, partitions ...int) int {
+	lb.mutex.Lock()
+	defer lb.mutex.Unlock()
+
 	// partitions change
 	if len(partitions) != len(lb.counters) {
 		lb.counters = lb.makeCounters(partitions...)
