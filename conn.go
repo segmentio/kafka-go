@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -1599,4 +1600,42 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 
 	resp, _, err := readNewBytes(&c.rbuf, int(respLen), int(respLen))
 	return resp, err
+}
+
+// ListTopics returns a slice of all the topics
+func (c *Conn) ListTopics() (topics []string, err error) {
+	partitions, err := c.ReadPartitions()
+	if err != nil {
+		return nil, err
+	}
+
+	topicsMap := map[string]struct{}{}
+
+	for i := range partitions {
+		topicsMap[partitions[i].Topic] = struct{}{}
+	}
+
+	topics = make([]string, len(topicsMap))
+
+	i := 0
+	for key := range topicsMap {
+		topics[i] = key
+		i++
+	}
+	return topics, nil
+}
+
+// ListTopicsRegex returns a slice of topics that match a regex
+func (c *Conn) ListTopicsRegex(match regexp.Regexp) (topics []string, err error) {
+	alltopics, err := c.ListTopics()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, val := range alltopics {
+		if match.Find([]byte(val)) != nil {
+			topics = append(topics, val)
+		}
+	}
+	return topics, nil
 }

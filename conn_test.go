@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"testing"
 	"time"
@@ -265,6 +266,14 @@ func TestConn(t *testing.T) {
 		{
 			scenario: "test list brokers",
 			function: testBrokers,
+		},
+		{
+			scenario: "test list topics",
+			function: testListTopics,
+		},
+		{
+			scenario: "test list topics regex",
+			function: testListTopicsRegex,
 		},
 	}
 
@@ -1320,5 +1329,40 @@ func TestEmptyToNullableLeavesStringsIntact(t *testing.T) {
 	r := emptyToNullable(s)
 	if *r != s {
 		t.Error("Non empty string is not equal to the original string")
+	}
+}
+
+func testListTopics(t *testing.T, conn *Conn) {
+	conn.topic = ""
+	topics, err := conn.ListTopics()
+	if err != nil {
+		t.Errorf("Got error calling ListTopics: %v", err)
+	}
+	if len(topics) == 0 {
+		t.Errorf("Got the wrong number of topics from ListTopics. Expected more than 0 and got 0)")
+	}
+}
+
+func testListTopicsRegex(t *testing.T, conn *Conn) {
+	conn.topic = ""
+	topicName := "kafka-go-test-topic"
+	err := conn.CreateTopics(
+		TopicConfig{
+			Topic:             topicName,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+	)
+	if err != nil {
+		t.Fatalf("bad CreateTopics: %v", err)
+	}
+
+	re := regexp.MustCompile(`.*go-test.*`)
+	topics, err := conn.ListTopicsRegex(*re)
+	if err != nil {
+		t.Errorf("Got error calling ListTopicsRegex: %v", err)
+	}
+	if len(topics) != 1 {
+		t.Errorf("Got the wrong number of topics from ListTopicsRegex. Expected 1 and got %v", len(topics))
 	}
 }
