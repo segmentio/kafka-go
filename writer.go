@@ -975,8 +975,10 @@ func (w *Writer) Stats() WriterStats {
 func (w *Writer) chooseTopic(msg Message) (string, error) {
 	// w.Topic and msg.Topic are mutually exclusive, meaning only 1 must be set
 	// otherwise we will return an error.
-	if (w.Topic != "" && msg.Topic != "") || (w.Topic == "" && msg.Topic == "") {
-		return "", InvalidMessage
+	if w.Topic != "" && msg.Topic != "" {
+		return "", errors.New("kafka.(*Writer): Topic must not be specified for both Writer and Message")
+	} else if w.Topic == "" && msg.Topic == "" {
+		return "", errors.New("kafka.(*Writer): Topic must be specified for Writer or Message")
 	}
 
 	// now we choose the topic, depending on which one is not empty
