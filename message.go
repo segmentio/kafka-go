@@ -468,7 +468,9 @@ func (r *messageSetReaderV2) readMessage(min int64,
 	val func(*bufio.Reader, int, int) (int, error),
 ) (offset int64, timestamp int64, headers []Header, err error) {
 
-	if r.messageCount == 0 {
+	// If we reached messageCount == 0, we have to read the next message set
+	// header.  As a message set might contain zero messages, we need to loop.
+	for r.messageCount == 0 {
 		if r.remain == 0 {
 			if r.parent != nil {
 				r.readerStack = r.parent
