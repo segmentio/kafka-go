@@ -1113,7 +1113,14 @@ func (cg *ConsumerGroup) fetchOffsets(conn coordinator, subs map[string][]int32)
 				if partition == pr.Partition {
 					offset := pr.Offset
 					if offset < 0 {
-						offset = cg.config.StartOffset
+						// If offset is one of the magic sentinel numbers (-1, -2), respect it.
+						// Whereas if offset is otherwise negative, set it to the default StartOffset.
+						switch offset {
+						case FirstOffset:
+						case LastOffset:
+						default:
+							offset = cg.config.StartOffset
+						}
 					}
 					offsetsByPartition[int(partition)] = offset
 				}
