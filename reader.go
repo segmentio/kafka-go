@@ -381,6 +381,8 @@ type ReaderConfig struct {
 
 	// Maximum amount of time to wait for new data to come when fetching batches
 	// of messages from kafka.
+	//
+	// Default: 10s
 	MaxWait time.Duration
 
 	// ReadLagInterval sets the frequency at which the reader lag is updated.
