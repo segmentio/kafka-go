@@ -777,7 +777,7 @@ func (w *Writer) writeBatch(key topicPartition, batch *writeBatch) {
 			log.Printf("error writing messages to %s (partition %d): %s", key.topic, key.partition, err)
 		})
 
-		if !isTemporary(err) {
+		if !isTemporary(err) && !isTransientNetworkError(err) {
 			break
 		}
 	}
