@@ -340,11 +340,6 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 	}
 
 	var expectTopics []string
-	defer func() {
-		if len(expectTopics) != 0 {
-			p.refreshMetadata(ctx, expectTopics)
-		}
-	}()
 
 	state := p.grabState()
 	var response promise
@@ -387,7 +382,16 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		response = p.sendRequest(ctx, req, state)
 	}
 
-	return response.await(ctx)
+	r, err := response.await(ctx)
+	if err != nil {
+		return r, err
+	}
+
+	if len(expectTopics) != 0 {
+		p.refreshMetadata(ctx, expectTopics)
+	}
+
+	return r, nil
 }
 
 // refreshMetadata forces an update of the cached cluster metadata, and waits
