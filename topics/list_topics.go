@@ -4,12 +4,12 @@ import (
 	"context"
 	"regexp"
 
-	kafkago "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go"
 )
 
 // ListTopics returns a slice of all the Topics
-func ListTopics(ctx context.Context, client *kafkago.Client) (topics []kafkago.Topic, err error) {
-	response, err := client.Metadata(ctx, &kafkago.MetadataRequest{
+func ListTopics(ctx context.Context, client *kafka.Client) (topics []kafka.Topic, err error) {
+	response, err := client.Metadata(ctx, &kafka.MetadataRequest{
 		Addr: client.Addr,
 	})
 	if err != nil {
@@ -20,7 +20,7 @@ func ListTopics(ctx context.Context, client *kafkago.Client) (topics []kafkago.T
 }
 
 // ListTopicsRegex returns a slice of Topics that match a regex
-func ListTopicsRegex(ctx context.Context, client *kafkago.Client, match regexp.Regexp) (topics []string, err error) {
+func ListTopicsRegex(ctx context.Context, client *kafka.Client, match regexp.Regexp) (topics []string, err error) {
 	alltopics, err := ListTopics(ctx, client)
 	if err != nil {
 		return nil, err
