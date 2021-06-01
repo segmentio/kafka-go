@@ -7,8 +7,8 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// ListTopics returns a slice of all the Topics
-func ListTopics(ctx context.Context, client *kafka.Client) (topics []kafka.Topic, err error) {
+// List returns a slice of all the Topics
+func List(ctx context.Context, client *kafka.Client) (topics []kafka.Topic, err error) {
 	response, err := client.Metadata(ctx, &kafka.MetadataRequest{
 		Addr: client.Addr,
 	})
@@ -19,9 +19,9 @@ func ListTopics(ctx context.Context, client *kafka.Client) (topics []kafka.Topic
 	return response.Topics, nil
 }
 
-// ListTopicsRegex returns a slice of Topics that match a regex
-func ListTopicsRegex(ctx context.Context, cli *kafka.Client, re *regexp.Regexp) (topics []string, err error) {
-	alltopics, err := ListTopics(ctx, cli)
+// ListRe returns a slice of Topics that match a regex
+func ListRe(ctx context.Context, cli *kafka.Client, re *regexp.Regexp) (topics []string, err error) {
+	alltopics, err := List(ctx, cli)
 	if err != nil {
 		return nil, err
 	}
