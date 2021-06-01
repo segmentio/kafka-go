@@ -20,14 +20,14 @@ func ListTopics(ctx context.Context, client *kafka.Client) (topics []kafka.Topic
 }
 
 // ListTopicsRegex returns a slice of Topics that match a regex
-func ListTopicsRegex(ctx context.Context, client *kafka.Client, match regexp.Regexp) (topics []string, err error) {
-	alltopics, err := ListTopics(ctx, client)
+func ListTopicsRegex(ctx context.Context, cli *kafka.Client, re *regexp.Regexp) (topics []string, err error) {
+	alltopics, err := ListTopics(ctx, cli)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, val := range alltopics {
-		if match.Find([]byte(val.Name)) != nil {
+		if re.Find([]byte(val.Name)) != nil {
 			topics = append(topics, val.Name)
 		}
 	}
