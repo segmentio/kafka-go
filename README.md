@@ -670,5 +670,3 @@ KAFKA_VERSION=2.3.1
 KAFKA_SKIP_NETTEST=1
 go test -race ./...
 ```
-
-This is encapsulated in a Makefile, so optionally call `make`.
