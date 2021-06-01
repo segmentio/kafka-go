@@ -653,7 +653,7 @@ if err := r.Close(); err != nil {
 }
 ```
 
-## Developer
+## Testing
 
 Subtle behavior changes in later Kafka versions have caused some historical tests to break, if you are running against Kafka 2.3.1 or later, exporting the `KAFKA_SKIP_NETTEST=1` environment variables will skip those tests.
 
