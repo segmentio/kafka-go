@@ -27,7 +27,7 @@ func ListTopicsRegex(ctx context.Context, cli *kafka.Client, re *regexp.Regexp) 
 	}
 
 	for _, val := range alltopics {
-		if re.Find([]byte(val.Name)) != nil {
+		if re.MatchString(val.Name) {
 			topics = append(topics, val.Name)
 		}
 	}
