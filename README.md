@@ -666,7 +666,7 @@ docker-compose up -d
 Run tests
 
 ```bash
-KAFKA_VERSION=2.3.1
-KAFKA_SKIP_NETTEST=1
-go test -race ./...
+KAFKA_VERSION=2.3.1 \
+  KAFKA_SKIP_NETTEST=1 \
+  go test -race ./...
 ```
