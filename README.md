@@ -655,13 +655,20 @@ if err := r.Close(); err != nil {
 
 ## Developer
 
-There are some flaky and non-runable tests. Execute them locally with
+Subtle behavior changes in later Kafka versions have caused some historical tests to break, if you are running against Kafka 2.3.1 or later, exporting the `KAFKA_SKIP_NETTEST=1` environment variables will skip those tests.
+
+Run Kafka locally in docker
 
 ```bash
 docker-compose up -d
-export KAFKA_SKIP_NETTEST=1
-export KAFKA_VERSION=2.3.1
-go test -race -cover ./...
+```
+
+Run tests
+
+```bash
+KAFKA_VERSION=2.3.1
+KAFKA_SKIP_NETTEST=1
+go test -race ./...
 ```
 
 This is encapsulated in a Makefile, so optionally call `make`.
