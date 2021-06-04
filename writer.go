@@ -282,7 +282,7 @@ type WriterConfig struct {
 	// transport.
 	RebalanceInterval time.Duration
 
-	// DEPRECACTED: in versions prior to 0.4, the writer used to manage connections
+	// DEPRECATED: in versions prior to 0.4, the writer used to manage connections
 	// to the kafka cluster directly. With the change to use a transport to manage
 	// connections, the writer has no connections to manage directly anymore.
 	IdleConnTimeout time.Duration
