@@ -5,6 +5,7 @@ package topics
 
 import (
 	"context"
+	"errors"
 	"regexp"
 
 	"github.com/segmentio/kafka-go"
@@ -12,6 +13,9 @@ import (
 
 // List returns a slice of all the Topics
 func List(ctx context.Context, client *kafka.Client) (topics []kafka.Topic, err error) {
+	if client == nil {
+		return nil, errors.New("client is required")
+	}
 	response, err := client.Metadata(ctx, &kafka.MetadataRequest{
 		Addr: client.Addr,
 	})
