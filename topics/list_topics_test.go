@@ -1,6 +1,3 @@
-// Package topics is an experimental package that provides additional tooling
-// around Kafka Topics. This package does not make any promises around
-// backwards compatibility.
 package topics
 
 import (
