@@ -27,7 +27,7 @@ func List(ctx context.Context, client *kafka.Client) (topics []kafka.Topic, err 
 }
 
 // ListRe returns a slice of Topics that match a regex
-func ListRe(ctx context.Context, cli *kafka.Client, re *regexp.Regexp) (topics []string, err error) {
+func ListRe(ctx context.Context, cli *kafka.Client, re *regexp.Regexp) (topics []kafka.Topic, err error) {
 	alltopics, err := List(ctx, cli)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func ListRe(ctx context.Context, cli *kafka.Client, re *regexp.Regexp) (topics [
 
 	for _, val := range alltopics {
 		if re.MatchString(val.Name) {
-			topics = append(topics, val.Name)
+			topics = append(topics, val)
 		}
 	}
 	return topics, nil
