@@ -135,12 +135,15 @@ type Writer struct {
 	//  RequireOne  (1)  wait for the leader to acknowledge the writes
 	//  RequireAll  (-1) wait for the full ISR to acknowledge the writes
 	//
+	// Defaults to RequireNone.
 	RequiredAcks RequiredAcks
 
 	// Setting this flag to true causes the WriteMessages method to never block.
 	// It also means that errors are ignored since the caller will not receive
 	// the returned value. Use this only if you don't care about guarantees of
 	// whether the messages were written to kafka.
+	//
+	// Defaults to false.
 	Async bool
 
 	// An optional function called when the writer succeeds or fails the
