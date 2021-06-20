@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"syscall"
 )
 
 // Error represents the different error codes that may be returned by kafka.
@@ -505,6 +506,13 @@ func isTemporary(err error) bool {
 		return tempError.Temporary()
 	}
 	return false
+}
+
+func isTransientNetworkError(err error) bool {
+	return errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE)
 }
 
 func silentEOF(err error) error {
