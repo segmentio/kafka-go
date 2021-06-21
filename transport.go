@@ -339,8 +339,6 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		return nil, ctx.Err()
 	}
 
-	var expectTopics []string
-
 	state := p.grabState()
 	var response promise
 
@@ -354,14 +352,6 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 			return nil, state.err
 		}
 		return filterMetadataResponse(m, state.metadata), nil
-
-	case *createtopics.Request:
-		// Force an update of the metadata when adding topics,
-		// otherwise the cached state would get out of sync.
-		expectTopics = make([]string, len(m.Topics))
-		for i := range m.Topics {
-			expectTopics[i] = m.Topics[i].Name
-		}
 
 	case protocol.Splitter:
 		// Messages that implement the Splitter interface trigger the creation of
@@ -387,8 +377,21 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		return r, err
 	}
 
-	if len(expectTopics) != 0 {
-		p.refreshMetadata(ctx, expectTopics)
+	switch resp := r.(type) {
+	case *createtopics.Response:
+		// Force an update of the metadata when adding topics,
+		// otherwise the cached state would get out of sync.
+		topicsToRefresh := make([]string, 0, len(resp.Topics))
+		for _, topic := range resp.Topics {
+			// fixes issue 672: don't refresh topics that failed to create, it causes the library to hang indefinitely
+			if topic.ErrorCode != 0 {
+				continue
+			}
+
+			topicsToRefresh = append(topicsToRefresh, topic.Name)
+		}
+
+		p.refreshMetadata(ctx, topicsToRefresh)
 	}
 
 	return r, nil
