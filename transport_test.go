@@ -60,6 +60,9 @@ func TestIssue672(t *testing.T) {
 			case <-ctx.Done():
 				return
 			case e := <-wake:
+				if e == nil {
+					return
+				}
 				e.trigger()
 			}
 		}
