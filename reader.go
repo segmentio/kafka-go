@@ -47,7 +47,7 @@ const (
 //
 // A Reader automatically manages reconnections to a kafka server, and
 // blocking methods have context support for asynchronous cancellations.
-
+//
 // Note that it is important to call `Close()` on a `Reader` when a process exits.
 // The kafka server needs a graceful disconnect to stop it from continuing to
 // attempt to send messages to the connected clients. The given example will not
