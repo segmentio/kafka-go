@@ -47,6 +47,15 @@ const (
 //
 // A Reader automatically manages reconnections to a kafka server, and
 // blocking methods have context support for asynchronous cancellations.
+//
+// Note that it is important to call `Close()` on a `Reader` when a process exits.
+// The kafka server needs a graceful disconnect to stop it from continuing to
+// attempt to send messages to the connected clients. The given example will not
+// call `Close()` if the process is terminated with SIGINT (ctrl-c at the shell) or
+// SIGTERM (as docker stop or a kubernetes restart does). This can result in a
+// delay when a new reader on the same topic connects (e.g. new process started
+// or new container running). Use a `signal.Notify` handler to close the reader on
+// process shutdown.
 type Reader struct {
 	// immutable fields of the reader
 	config ReaderConfig
