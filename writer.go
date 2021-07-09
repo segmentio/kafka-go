@@ -831,7 +831,8 @@ func (w *Writer) partitions(ctx context.Context, topic string) (int, error) {
 	// It is expected that the transport will optimize this request by
 	// caching recent results (the kafka.Transport types does).
 	r, err := client.transport().RoundTrip(ctx, client.Addr, &metadataAPI.Request{
-		TopicNames: []string{topic},
+		TopicNames:             []string{topic},
+		AllowAutoTopicCreation: true,
 	})
 	if err != nil {
 		return 0, err
