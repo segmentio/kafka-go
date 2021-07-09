@@ -95,6 +95,12 @@ To make changes to kafka-go's source:
     git remote add upstream git@github.com:USERNAME/kafka-go.git
     ```
 
+1. Push your branch (the remote name, "upstream" in this example, is arbitrary):
+
+   ```bash
+   git push upstream  
+   ```
+
 1. You are now ready to submit a PR based upon the new branch in your forked repository.
 
 ### Using the forked library
