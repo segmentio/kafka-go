@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -860,8 +861,7 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	address := fmt.Sprintf("%v:%v", out.Coordinator.Host, out.Coordinator.Port)
+	address := net.JoinHostPort(out.Coordinator.Host, fmt.Sprintf("%d", out.Coordinator.Port))
 	return cg.config.connect(cg.config.Dialer, address)
 }
 

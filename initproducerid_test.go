@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func TestClientInitProducerId(t *testing.T) {
 	}
 
 	// Now establish a connection with the transaction coordinator
-	transactionCoordinator := TCP(fmt.Sprintf("%s:%d", respc.Coordinator.Host, respc.Coordinator.Port))
+	transactionCoordinator := TCP(net.JoinHostPort(respc.Coordinator.Host, fmt.Sprintf("%d", respc.Coordinator.Port)))
 	client, shutdown = newClient(transactionCoordinator)
 	defer shutdown()
 
