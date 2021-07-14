@@ -35,11 +35,11 @@ func TestDeleteTopicsResponse(t *testing.T) {
 		Responses: []deletetopics.ResponseTopic{
 			{
 				Name:      "foo",
-				ErrorCode: 0,
+				ErrorCode: 1,
 			},
 			{
 				Name:      "bar",
-				ErrorCode: 0,
+				ErrorCode: 1,
 			},
 		},
 	})
@@ -49,11 +49,11 @@ func TestDeleteTopicsResponse(t *testing.T) {
 		Responses: []deletetopics.ResponseTopic{
 			{
 				Name:      "foo",
-				ErrorCode: 0,
+				ErrorCode: 1,
 			},
 			{
 				Name:      "bar",
-				ErrorCode: 0,
+				ErrorCode: 1,
 			},
 		},
 	})
@@ -63,11 +63,11 @@ func TestDeleteTopicsResponse(t *testing.T) {
 		Responses: []deletetopics.ResponseTopic{
 			{
 				Name:      "foo",
-				ErrorCode: 0,
+				ErrorCode: 1,
 			},
 			{
 				Name:      "bar",
-				ErrorCode: 0,
+				ErrorCode: 1,
 			},
 		},
 	})

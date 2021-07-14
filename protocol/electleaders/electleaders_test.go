@@ -52,7 +52,7 @@ func TestElectLeadersResponse(t *testing.T) {
 
 	prototest.TestResponse(t, v1, &electleaders.Response{
 		ThrottleTime: 500,
-		ErrorCode:    0,
+		ErrorCode:    1,
 		ReplicaElectionResults: []electleaders.ResponseReplicaElectionResult{
 			{
 				Topic: "foo",

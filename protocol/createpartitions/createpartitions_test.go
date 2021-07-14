@@ -52,7 +52,7 @@ func TestCreatePartitionsResponse(t *testing.T) {
 		Results: []createpartitions.ResponseResult{
 			{
 				Name:         "foo",
-				ErrorCode:    0,
+				ErrorCode:    1,
 				ErrorMessage: "foo",
 			},
 		},
@@ -63,7 +63,7 @@ func TestCreatePartitionsResponse(t *testing.T) {
 		Results: []createpartitions.ResponseResult{
 			{
 				Name:         "foo",
-				ErrorCode:    0,
+				ErrorCode:    1,
 				ErrorMessage: "foo",
 			},
 		},

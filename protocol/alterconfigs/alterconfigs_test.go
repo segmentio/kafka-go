@@ -17,7 +17,7 @@ func TestAlterConfigsRequest(t *testing.T) {
 		ValidateOnly: true,
 		Resources: []alterconfigs.RequestResources{
 			{
-				ResourceType: 0,
+				ResourceType: 1,
 				ResourceName: "foo",
 				Configs: []alterconfigs.RequestConfig{
 					{
@@ -33,7 +33,7 @@ func TestAlterConfigsRequest(t *testing.T) {
 		ValidateOnly: true,
 		Resources: []alterconfigs.RequestResources{
 			{
-				ResourceType: 0,
+				ResourceType: 1,
 				ResourceName: "foo",
 				Configs: []alterconfigs.RequestConfig{
 					{
@@ -51,9 +51,9 @@ func TestAlterConfigsResponse(t *testing.T) {
 		ThrottleTimeMs: 500,
 		Responses: []alterconfigs.ResponseResponses{
 			{
-				ErrorCode:    0,
+				ErrorCode:    1,
 				ErrorMessage: "foo",
-				ResourceType: 0,
+				ResourceType: 1,
 				ResourceName: "foo",
 			},
 		},
@@ -63,9 +63,9 @@ func TestAlterConfigsResponse(t *testing.T) {
 		ThrottleTimeMs: 500,
 		Responses: []alterconfigs.ResponseResponses{
 			{
-				ErrorCode:    0,
+				ErrorCode:    1,
 				ErrorMessage: "foo",
-				ResourceType: 0,
+				ResourceType: 1,
 				ResourceName: "foo",
 			},
 		},
