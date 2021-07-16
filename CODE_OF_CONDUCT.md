@@ -1,12 +1,12 @@
-# Citizen Code of Conduct
+# Code of Conduct
 
 ## 1. Purpose
 
-A primary goal of Kafka Go is to be inclusive to the largest number of contributors, with the most varied and diverse backgrounds possible. As such, we are committed to providing a friendly, safe and welcoming environment for all, regardless of gender, sexual orientation, ability, ethnicity, socioeconomic status, and religion (or lack thereof).
+A primary goal of kafka-go is to be inclusive to the largest number of contributors, with the most varied and diverse backgrounds possible. As such, we are committed to providing a friendly, safe and welcoming environment for all, regardless of gender, sexual orientation, ability, ethnicity, socioeconomic status, and religion (or lack thereof).
 
 This code of conduct outlines our expectations for all those who participate in our community, as well as the consequences for unacceptable behavior.
 
-We invite all those who participate in Kafka Go to help us create safe and positive experiences for everyone.
+We invite all those who participate in kafka-go to help us create safe and positive experiences for everyone.
 
 ## 2. Open Source Citizenship
 
@@ -38,7 +38,7 @@ The following behaviors are considered harassment and are unacceptable within ou
 * Personal insults, particularly those related to gender, sexual orientation, race, religion, or disability.
 * Inappropriate photography or recording.
 * Inappropriate physical contact. You should have someone's consent before touching them.
-* Unwelcome sexual attention. This includes, sexualized comments or jokes; inappropriate touching, groping, and unwelcomed sexual advances.
+* Unwelcome sexual attention. This includes, sexualized comments or jokes; inappropriate touching, groping, and not welcome sexual advances.
 * Deliberate intimidation, stalking or following (online or in person).
 * Advocating for, or encouraging, any of the above behavior.
 * Sustained disruption of community events, including talks and presentations.
@@ -53,29 +53,23 @@ If a community member engages in unacceptable behavior, the community organizers
 
 ## 6. Reporting Guidelines
 
-If you are subject to or witness unacceptable behavior, or have any other concerns, please notify a community organizer as soon as possible. [CONTACT_INFO_HERE].
-
-[LINK_TO_REPORTING_GUIDELINES]
+If you are subject to or witness unacceptable behavior, or have any other concerns, please notify a community organizer as soon as possible. Community organizers can be found on the [#kafka-go](https://gophers.slack.com/archives/CG4H0N9PX).
 
 Additionally, community organizers are available to help community members engage with local law enforcement or to otherwise help those experiencing unacceptable behavior feel safe. In the context of in-person events, organizers will also provide escorts as desired by the person experiencing distress.
 
-## 7. Addressing Grievances
-
-If you feel you have been falsely or unfairly accused of violating this Code of Conduct, you should notify SegmentIO with a concise description of your grievance. Your grievance will be handled in accordance with our existing governing policies. [LINK_TO_POLICY]
-
-## 8. Scope
+## 7. Scope
 
 We expect all community participants (contributors, paid or otherwise; sponsors; and other guests) to abide by this Code of Conduct in all community venues--online and in-person--as well as in all one-on-one communications pertaining to community business.
 
 This code of conduct and its related procedures also applies to unacceptable behavior occurring outside the scope of community activities when such behavior has the potential to adversely affect the safety and well-being of community members.
 
-## 9. Contact info
+## 8. Contact info
 
-[YOUR CONTACT INFO HERE -- this should be a single person or a small team who can respond to issues directly]
+Community Organizer are available at [#kafka-go](https://gophers.slack.com/archives/CG4H0N9PX)
 
 ## 11. License and attribution
 
-The Citizen Code of Conduct is distributed by [OUR INFORMATION] under a [Creative Commons Attribution-ShareAlike license](http://creativecommons.org/licenses/by-sa/3.0/).
+The Citizen Code of Conduct is distributed by the community organizers of kafka-go under a [Creative Commons Attribution-ShareAlike license](http://creativecommons.org/licenses/by-sa/3.0/).
 
 Portions of text derived from the [Django Code of Conduct](https://www.djangoproject.com/conduct/), the [Geek Feminism Anti-Harassment Policy](http://geekfeminism.wikia.com/wiki/Conference_anti-harassment/Policy), and the [Stumptown Syndicate](https://github.com/stumpsyn/policies/blob/master/citizen_code_of_conduct.md).
 

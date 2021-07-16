@@ -1,6 +1,6 @@
-# Contributing to Kafka-Go
+# Contributing to kafka-go
 
-Kafka-Go is an open source project.  We welcome contributions to Kafka-Go of any kind including documentation,
+kafka-go is an open source project.  We welcome contributions to kafka-go of any kind including documentation,
 organization, tutorials, bug reports, issues, feature requests, feature implementations, pull requests, etc.
 
 ## Table of Contents
@@ -10,20 +10,20 @@ organization, tutorials, bug reports, issues, feature requests, feature implemen
   * [Code Contribution Guidelines](#code-contribution-guidelines)
   * [Git Commit Message Guidelines](#git-commit-message-guidelines)
   * [Fetching the Source From GitHub](#fetching-the-sources-from-github)
-  * [Building Kafka-Go with Your Changes](#building-kakfa-go-with-your-changes)
+  * [Building kafka-go with Your Changes](#building-kakfa-go-with-your-changes)
 
 ## Reporting Issues
 
-If you believe you have found a defect in Kafka-Go, use the GitHub issue tracker to report
+If you believe you have found a defect in kafka-go, use the GitHub issue tracker to report
 the problem to the maintainers.  
-When reporting the issue, please provide the version of Kafka-Go, what version(s) of Kafka 
+When reporting the issue, please provide the version of kafka-go, what version(s) of Kafka 
 are you testing against, and your operating system.
 
- - [Kafka-Go Issues segmentio/kafka-go](https://github.com/segmentio/kafka-go/issues)
+ - [kafka-go Issues segmentio/kafka-go](https://github.com/segmentio/kafka-go/issues)
 
 ## Submitting Patches
 
-Kafka-go project welcomes all contributors and contributions regardless of skill or experience levels.  If you are
+kafka-go project welcomes all contributors and contributions regardless of skill or experience levels.  If you are
 interested in helping with the project, we will help you with your contribution.
 
 ### Code Contribution
@@ -132,5 +132,8 @@ To replace the original version of kafka-go library with a forked version is acc
         ...
     )
     ```
+1. Depending on if you are using `vendor`ing or not you might need to run the following command to pull in the new bits.
 
-1. You can now
+    ```bash
+    > go mod vendor
+    ```
