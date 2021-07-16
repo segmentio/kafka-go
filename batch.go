@@ -243,6 +243,16 @@ func (batch *Batch) readMessage(
 			// consumed or a batch whose connection is in an error state.
 			batch.err = dontExpectEOF(err)
 		case batch.msgs.remaining() == 0:
+
+			// our batch is reporting as not empty despite there being no more messages remaining.
+			// occasionally you could receive a batch with an empty message at the end.
+			// This will  attempt to be discarded, but as the conn expects one more read
+			// the messageSetReader is never emptied. In this scenario we should advance the
+			// batch offset and move on
+			if !batch.msgs.empty {
+				batch.offset++
+			}
+
 			// Because we use the adjusted deadline we could end up returning
 			// before the actual deadline occurred. This is necessary otherwise
 			// timing out the connection for real could end up leaving it in an
