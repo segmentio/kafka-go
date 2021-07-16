@@ -32,7 +32,7 @@ func TestClientInitProducerId(t *testing.T) {
 	}
 
 	// Now establish a connection with the transaction coordinator
-	transactionCoordinator := TCP(net.JoinHostPort(respc.Coordinator.Host, fmt.Sprintf("%d", respc.Coordinator.Port)))
+	transactionCoordinator := TCP(net.JoinHostPort(respc.Coordinator.Host, strconv.Itoa(respc.Coordinator.Port)))
 	client, shutdown = newClient(transactionCoordinator)
 	defer shutdown()
 
