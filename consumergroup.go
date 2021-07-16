@@ -861,7 +861,7 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 	if err != nil {
 		return nil, err
 	}
-	address := net.JoinHostPort(out.Coordinator.Host, fmt.Sprintf("%d", out.Coordinator.Port))
+	address := net.JoinHostPort(out.Coordinator.Host, strconv.Itoa(out.Coordinator.Port))
 	return cg.config.connect(cg.config.Dialer, address)
 }
 
