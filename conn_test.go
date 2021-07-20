@@ -258,13 +258,20 @@ func TestConn(t *testing.T) {
 			scenario: "test delete topics with an invalid topic",
 			function: testDeleteTopicsInvalidTopic,
 		},
+
 		{
 			scenario: "test retrieve controller",
 			function: testController,
 		},
+
 		{
 			scenario: "test list brokers",
 			function: testBrokers,
+		},
+
+		{
+			scenario: "the connection advertises the broker that it is connected to",
+			function: testConnBroker,
 		},
 	}
 
@@ -1122,6 +1129,16 @@ func testBrokers(t *testing.T, conn *Conn) {
 
 	if brokers[0].ID != 1 {
 		t.Errorf("expected ID 1 received %d", brokers[0].ID)
+	}
+}
+
+func testConnBroker(t *testing.T, conn *Conn) {
+	if broker := conn.Broker(); broker != (Broker{
+		Host: "::1",
+		Port: 9092,
+		ID:   1,
+	}) {
+		t.Errorf("unexpected broker: %+v", broker)
 	}
 }
 

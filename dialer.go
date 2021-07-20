@@ -143,6 +143,8 @@ func (d *Dialer) DialPartition(ctx context.Context, network string, address stri
 		ClientID:        d.ClientID,
 		Topic:           partition.Topic,
 		Partition:       partition.ID,
+		Broker:          partition.Leader.ID,
+		Rack:            partition.Leader.Rack,
 		TransactionalID: d.TransactionalID,
 	})
 }
