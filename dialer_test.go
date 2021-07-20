@@ -356,11 +356,10 @@ func TestDialerResolver(t *testing.T) {
 			}
 
 			// Write a message to ensure the partition gets created.
-			w := NewWriter(WriterConfig{
-				Brokers: []string{"localhost:9092"},
-				Topic:   topic,
-				Dialer:  &d,
-			})
+			w := Writer{
+				Addr:  TCP("localhost:9092"),
+				Topic: topic,
+			}
 			w.WriteMessages(context.Background(), Message{})
 			w.Close()
 
