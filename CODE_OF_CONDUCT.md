@@ -53,7 +53,7 @@ If a community member engages in unacceptable behavior, the community organizers
 
 ## 6. Reporting Guidelines
 
-If you are subject to or witness unacceptable behavior, or have any other concerns, please notify a community organizer as soon as possible. Community organizers can be found on the [#kafka-go](https://gophers.slack.com/archives/CG4H0N9PX).
+If you are subject to or witness unacceptable behavior, or have any other concerns, please notify a community organizer as soon as possible. Community organizers can be found on the [#kafka-go](https://gophers.slack.com/archives/CG4H0N9PX) channel inside the [Gophers Slack](https://gophers.slack.com).
 
 Additionally, community organizers are available to help community members engage with local law enforcement or to otherwise help those experiencing unacceptable behavior feel safe. In the context of in-person events, organizers will also provide escorts as desired by the person experiencing distress.
 
@@ -67,7 +67,7 @@ This code of conduct and its related procedures also applies to unacceptable beh
 
 Community Organizer are available at [#kafka-go](https://gophers.slack.com/archives/CG4H0N9PX)
 
-## 11. License and attribution
+## 9. License and attribution
 
 The Citizen Code of Conduct is distributed by the community organizers of kafka-go under a [Creative Commons Attribution-ShareAlike license](http://creativecommons.org/licenses/by-sa/3.0/).
 
