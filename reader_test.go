@@ -310,57 +310,6 @@ func createTopic(t *testing.T, topic string, partitions int) {
 		t.Error(err)
 		t.FailNow()
 	}
-
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	waitForTopic(ctx, t, topic)
-}
-
-// Block until topic exists
-func waitForTopic(ctx context.Context, t *testing.T, topic string) {
-	t.Helper()
-
-	for {
-		select {
-		case <-ctx.Done():
-			t.Fatalf("reached deadline before verifying topic existence")
-		default:
-		}
-
-		cli := &Client{
-			Addr:    TCP("localhost:9092"),
-			Timeout: 5 * time.Second,
-		}
-
-		response, err := cli.Metadata(ctx, &MetadataRequest{
-			Addr:   cli.Addr,
-			Topics: []string{topic},
-		})
-		if err != nil {
-			t.Fatalf("waitForTopic: error listing topics: %s", err.Error())
-		}
-
-		// Find a topic which has at least 1 partition in the metadata response
-		for _, top := range response.Topics {
-			if top.Name != topic {
-				continue
-			}
-
-			numPartitions := len(top.Partitions)
-			t.Logf("waitForTopic: found topic %q with %d partitions",
-				topic, numPartitions)
-
-			if numPartitions > 0 {
-				return
-			}
-		}
-
-		t.Logf("retrying after 1s")
-		time.Sleep(time.Second)
-		continue
-	}
 }
 
 func deleteTopic(t *testing.T, topic ...string) {
