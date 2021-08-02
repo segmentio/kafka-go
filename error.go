@@ -567,7 +567,7 @@ func makeError(code int16, message string) error {
 	return fmt.Errorf("%w: %s", Error(code), message)
 }
 
-// WriteError is returned by kafka.(*Writer).WriteMessages when the writer is
+// WriteErrors is returned by kafka.(*Writer).WriteMessages when the writer is
 // not configured to write messages asynchronously. WriteError values contain
 // a list of errors where each entry matches the position of a message in the
 // WriteMessages call. The program can determine the status of each message by
@@ -602,6 +602,11 @@ func (err WriteErrors) Count() int {
 	return n
 }
 
+// Error prints the Error of the first error plus the number of messages out of
+// all messages passed to WriteMessages which encountered an error
 func (err WriteErrors) Error() string {
-	return fmt.Sprintf("kafka write errors (%d/%d)", err.Count(), len(err))
+	if err.Count() < 1 {
+		return ""
+	}
+	return fmt.Sprintf("kafka-go.WriteErrors: %s (%d/%d)", err[0].Error(), err.Count(), len(err))
 }
