@@ -92,15 +92,28 @@ func testBatchQueueGetWorksAfterClose(t *testing.T) {
 	}
 }
 
+// TestWriter tests behavior of the Writer interface against two different
+// ways of instantiation:
+// - the NewWriter constructor (deprecated, but still in use so we should
+//   continue to test it)
+// - the Writer{} struct literal
 func TestWriter(t *testing.T) {
 	tests := []struct {
+
+		// description to be used for subtest name
 		scenario string
+
+		// write your test of Writer behavior in this function
 		function func(*testing.T, *Writer)
-		writer   Writer
+
+		// the literal Writer - used directly for literal tests and converted to
+		// WriterConfig for constructor tests
+		writer Writer
 
 		// set the topic on the Writer
 		setTopic bool
 
+		// create the topic in Kafka
 		createTopic bool
 
 		// number of partitions on the created topic. Defaults to 1
@@ -132,7 +145,6 @@ func TestWriter(t *testing.T) {
 				MaxAttempts: 3,
 			},
 		},
-
 		{
 			scenario:    "writing a message larger then the max bytes should return an error",
 			function:    testWriterMaxBytes,
@@ -142,7 +154,6 @@ func TestWriter(t *testing.T) {
 				BatchBytes: 25,
 			},
 		},
-
 		{
 			scenario:    "writing a batch of message based on batch byte size",
 			function:    testWriterBatchBytes,
@@ -154,40 +165,61 @@ func TestWriter(t *testing.T) {
 				Balancer:     &RoundRobin{},
 			},
 		},
-
-		// {
-		// 	scenario: "writing a batch of messages",
-		// 	function: testWriterBatchSize,
-		// },
-		//
-		// {
-		// 	scenario: "writing messsages with a small batch byte size",
-		// 	function: testWriterSmallBatchBytes,
-		// },
-		// {
-		// 	scenario: "setting a non default balancer on the writer",
-		// 	function: testWriterSetsRightBalancer,
-		// },
-		// {
-		// 	scenario: "setting RequiredAcks to None in Writer does not cause a panic",
-		// 	function: testWriterRequiredAcksNone,
-		// },
-		// {
-		// 	scenario: "writing messages to multiple topics",
-		// 	function: testWriterMultipleTopics,
-		// },
-		// {
-		// 	scenario: "writing messages without specifying a topic",
-		// 	function: testWriterMissingTopic,
-		// },
-		// {
-		// 	scenario: "specifying topic for message when already set for writer",
-		// 	function: testWriterUnexpectedMessageTopic,
-		// },
-		// {
-		// 	scenario: "writing a message to an invalid partition",
-		// 	function: testWriterInvalidPartition,
-		// },
+		{
+			scenario:    "writing a batch of messages",
+			function:    testWriterBatchSize,
+			setTopic:    true,
+			createTopic: true,
+			writer: Writer{
+				BatchSize:    2,
+				BatchTimeout: math.MaxInt32 * time.Second,
+				Balancer:     &RoundRobin{},
+			},
+		},
+		{
+			scenario:    "writing messages with a small batch byte size",
+			function:    testWriterSmallBatchBytes,
+			setTopic:    true,
+			createTopic: true,
+			writer: Writer{
+				BatchBytes:   25,
+				BatchTimeout: 50 * time.Millisecond,
+				Balancer:     &RoundRobin{},
+			},
+		},
+		{
+			scenario: "writing messages to multiple topics",
+			function: testWriterMultipleTopics,
+			writer: Writer{
+				Balancer: &RoundRobin{},
+			},
+		},
+		{
+			scenario: "writing messages without specifying a topic",
+			function: testWriterMissingTopic,
+			writer: Writer{
+				Balancer: &RoundRobin{},
+			},
+		},
+		{
+			scenario:    "specifying topic for message when already set for writer",
+			function:    testWriterUnexpectedMessageTopic,
+			setTopic:    true,
+			createTopic: true,
+			writer: Writer{
+				Balancer: &RoundRobin{},
+			},
+		},
+		{
+			scenario:    "writing a message to an invalid partition",
+			function:    testWriterInvalidPartition,
+			setTopic:    true,
+			createTopic: true,
+			writer: Writer{
+				Balancer:    &staticBalancer{partition: -1},
+				MaxAttempts: 1,
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -207,15 +239,14 @@ func TestWriter(t *testing.T) {
 		}
 
 		t.Run(test.scenario, func(t *testing.T) {
-
 			// run test against deprecated constructor style
 			t.Run("constructor", func(t *testing.T) {
-				t.Parallel()
 
 				cfg := WriterConfig{
 					Balancer:     test.writer.Balancer,
 					MaxAttempts:  test.writer.MaxAttempts,
 					BatchBytes:   int(test.writer.BatchBytes),
+					BatchSize:    test.writer.BatchSize,
 					BatchTimeout: test.writer.BatchTimeout,
 				}
 				if test.setTopic {
@@ -239,8 +270,6 @@ func TestWriter(t *testing.T) {
 
 			// run test against struct literal style
 			t.Run("literal", func(t *testing.T) {
-				t.Parallel()
-
 				w := test.writer
 				if test.setTopic {
 					w.Topic = makeTopic()
@@ -276,10 +305,11 @@ func testWriterClose(t *testing.T, w *Writer) {
 	}
 }
 
-func testWriterRequiredAcksNone(t *testing.T) {
+// Converting to standalone test since constructor does not support Transport
+// configuration
+func TestWriterRequiredAcksNone(t *testing.T) {
 	topic := makeTopic()
 	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
 
 	transport := &Transport{}
 	defer transport.CloseIdleConnections()
@@ -298,17 +328,21 @@ func testWriterRequiredAcksNone(t *testing.T) {
 		Value: []byte("Test message for required acks test"),
 	}
 
-	err := writer.WriteMessages(context.Background(), msg)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := writer.WriteMessages(ctx, msg)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-func testWriterSetsRightBalancer(t *testing.T) {
-	const topic = "test-writer-1"
+// Moving this test to be a standalone test since it only applies to the
+// constructor, not the literal construction
+func TestWriterSetsRightBalancer(t *testing.T) {
+	t.Log(`setting a non default balancer on the writer`)
+
 	balancer := &CRC32Balancer{}
 	w := newTestWriter(WriterConfig{
-		Topic:    topic,
 		Balancer: balancer,
 	})
 	defer w.Close()
@@ -328,7 +362,7 @@ func testWriterRoundRobin1(t *testing.T, w *Writer) {
 	if err := w.WriteMessages(context.Background(), Message{
 		Value: []byte("Hello World!"),
 	}); err != nil {
-		t.Error(err)
+		t.Error(err.Error())
 		return
 	}
 
@@ -509,8 +543,14 @@ func testWriterBatchBytes(t *testing.T, w *Writer) {
 		return
 	}
 
+	t.Logf("number of messages: %d", len(msgs))
 	if len(msgs) != 4 {
 		t.Error("bad messages in partition", msgs)
+
+		for _, m := range msgs {
+			t.Logf("message offset=%d key=%q value=%q", m.Offset,
+				string(m.Key), string(m.Value))
+		}
 		return
 	}
 
@@ -522,26 +562,16 @@ func testWriterBatchBytes(t *testing.T, w *Writer) {
 	}
 }
 
-func testWriterBatchSize(t *testing.T) {
-	topic := makeTopic()
-	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
+func testWriterBatchSize(t *testing.T, w *Writer) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
+	topic := w.Topic
 	offset, err := readOffset(topic, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	w := newTestWriter(WriterConfig{
-		Topic:        topic,
-		BatchSize:    2,
-		BatchTimeout: math.MaxInt32 * time.Second,
-		Balancer:     &RoundRobin{},
-	})
-	defer w.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
 		Message{Value: []byte("Hi")}, // 24 Bytes
 		Message{Value: []byte("By")}, // 24 Bytes
@@ -573,26 +603,17 @@ func testWriterBatchSize(t *testing.T) {
 	}
 }
 
-func testWriterSmallBatchBytes(t *testing.T) {
-	topic := makeTopic()
-	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
+func testWriterSmallBatchBytes(t *testing.T, w *Writer) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	topic := w.Topic
 
 	offset, err := readOffset(topic, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	w := newTestWriter(WriterConfig{
-		Topic:        topic,
-		BatchBytes:   25,
-		BatchTimeout: 50 * time.Millisecond,
-		Balancer:     &RoundRobin{},
-	})
-	defer w.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
 		Message{Value: []byte("Hi")}, // 24 Bytes
 		Message{Value: []byte("By")}, // 24 Bytes
@@ -624,10 +645,9 @@ func testWriterSmallBatchBytes(t *testing.T) {
 	}
 }
 
-func testWriterMultipleTopics(t *testing.T) {
+func testWriterMultipleTopics(t *testing.T, w *Writer) {
 	topic1 := makeTopic()
 	createTopic(t, topic1, 1)
-	defer deleteTopic(t, topic1)
 
 	offset1, err := readOffset(topic1, 0)
 	if err != nil {
@@ -636,23 +656,18 @@ func testWriterMultipleTopics(t *testing.T) {
 
 	topic2 := makeTopic()
 	createTopic(t, topic2, 1)
-	defer deleteTopic(t, topic2)
 
 	offset2, err := readOffset(topic2, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	w := newTestWriter(WriterConfig{
-		Balancer: &RoundRobin{},
-	})
-	defer w.Close()
-
 	msg1 := Message{Topic: topic1, Value: []byte("Hello")}
 	msg2 := Message{Topic: topic2, Value: []byte("World")}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	if err := w.WriteMessages(ctx, msg1, msg2); err != nil {
 		t.Error(err)
 		return
@@ -690,15 +705,9 @@ func testWriterMultipleTopics(t *testing.T) {
 	}
 }
 
-func testWriterMissingTopic(t *testing.T) {
+func testWriterMissingTopic(t *testing.T, w *Writer) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	w := newTestWriter(WriterConfig{
-		// no topic
-		Balancer: &RoundRobin{},
-	})
-	defer w.Close()
 
 	msg := Message{Value: []byte("Hello World")} // no topic
 
@@ -708,20 +717,9 @@ func testWriterMissingTopic(t *testing.T) {
 	}
 }
 
-func testWriterInvalidPartition(t *testing.T) {
+func testWriterInvalidPartition(t *testing.T, w *Writer) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	topic := makeTopic()
-	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
-
-	w := newTestWriter(WriterConfig{
-		Topic:       topic,
-		MaxAttempts: 1,                              // only try once to get the error back immediately
-		Balancer:    &staticBalancer{partition: -1}, // intentionally invalid partition
-	})
-	defer w.Close()
 
 	msg := Message{
 		Value: []byte("Hello World!"),
@@ -733,19 +731,9 @@ func testWriterInvalidPartition(t *testing.T) {
 	}
 }
 
-func testWriterUnexpectedMessageTopic(t *testing.T) {
+func testWriterUnexpectedMessageTopic(t *testing.T, w *Writer) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	topic := makeTopic()
-	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
-
-	w := newTestWriter(WriterConfig{
-		Topic:    topic,
-		Balancer: &RoundRobin{},
-	})
-	defer w.Close()
 
 	msg := Message{Topic: "should-fail", Value: []byte("Hello World")}
 

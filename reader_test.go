@@ -53,7 +53,8 @@ func TestReader(t *testing.T) {
 			function: testReaderReadLag,
 		},
 
-		{ // https://github.com/segmentio/kafka-go/issues/30
+		{
+			// https://github.com/segmentio/kafka-go/issues/30
 			scenario: "reading from an out-of-range offset waits until the context is cancelled",
 			function: testReaderOutOfRangeGetsCanceled,
 		},
@@ -265,10 +266,17 @@ func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Read
 	}
 }
 
+// creates a topic for a test
+// if you need to create a topic and block until it's ready,
+// use clientCreateTopic
 func createTopic(t *testing.T, topic string, partitions int) {
 	t.Helper()
 
 	t.Logf("createTopic(%s, %d)", topic, partitions)
+
+	if topic == "" {
+		topic = fmt.Sprintf("%s-%d", t.Name(), time.Now().Unix())
+	}
 
 	conn, err := Dial("tcp", "localhost:9092")
 	if err != nil {
@@ -1198,12 +1206,50 @@ func TestValidateReader(t *testing.T) {
 		errorOccured bool
 	}{
 		{config: ReaderConfig{}, errorOccured: true},
-		{config: ReaderConfig{Brokers: []string{"broker1"}}, errorOccured: true},
-		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1"}, errorOccured: false},
-		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: -1}, errorOccured: true},
-		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: -1}, errorOccured: true},
-		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: 5, MaxBytes: -1}, errorOccured: true},
-		{config: ReaderConfig{Brokers: []string{"broker1"}, Topic: "topic1", Partition: 1, MinBytes: 5, MaxBytes: 6}, errorOccured: false},
+		{
+			config:       ReaderConfig{Brokers: []string{"broker1"}},
+			errorOccured: true,
+		},
+		{
+			config: ReaderConfig{
+				Brokers: []string{"broker1"},
+				Topic:   "topic1",
+			},
+			errorOccured: false,
+		},
+		{
+			config: ReaderConfig{
+				Brokers:   []string{"broker1"},
+				Topic:     "topic1",
+				Partition: -1,
+			}, errorOccured: true,
+		},
+		{
+			config: ReaderConfig{
+				Brokers:   []string{"broker1"},
+				Topic:     "topic1",
+				Partition: 1,
+				MinBytes:  -1,
+			}, errorOccured: true,
+		},
+		{
+			config: ReaderConfig{
+				Brokers:   []string{"broker1"},
+				Topic:     "topic1",
+				Partition: 1,
+				MinBytes:  5,
+				MaxBytes:  -1,
+			}, errorOccured: true,
+		},
+		{
+			config: ReaderConfig{
+				Brokers:   []string{"broker1"},
+				Topic:     "topic1",
+				Partition: 1,
+				MinBytes:  5,
+				MaxBytes:  6,
+			}, errorOccured: false,
+		},
 	}
 	for _, test := range tests {
 		err := test.config.Validate()
@@ -1543,10 +1589,12 @@ func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
 
 	offsets, err := conn.offsetFetch(offsetFetchRequestV1{
 		GroupID: config.GroupID,
-		Topics: []offsetFetchRequestV1Topic{{
-			Topic:      config.Topic,
-			Partitions: []int32{0},
-		}},
+		Topics: []offsetFetchRequestV1Topic{
+			{
+				Topic:      config.Topic,
+				Partitions: []int32{0},
+			},
+		},
 	})
 	if err != nil {
 		t.Errorf("bad fetchOffsets: %v", err)
