@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -48,7 +47,7 @@ func TestClientFindCoordinator(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	resp, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
+	resp, err := waitForCoordinatorIndefinitely(ctx, t, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,
 		Key:     "TransactionalID-1",
 		KeyType: CoordinatorKeyTypeTransaction,
@@ -64,8 +63,9 @@ func TestClientFindCoordinator(t *testing.T) {
 }
 
 // WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found
-func waitForCoordinatorIndefinitely(ctx context.Context, c *Client, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
-	fmt.Println("Trying to find Coordinator.")
+func waitForCoordinatorIndefinitely(ctx context.Context, t testing.TB, c *Client, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
+	t.Helper()
+	t.Log("Trying to find Coordinator.")
 	resp, err := c.FindCoordinator(ctx, req)
 
 	for shouldRetryfindingCoordinator(resp, err) && ctx.Err() == nil {

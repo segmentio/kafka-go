@@ -22,7 +22,7 @@ func TestClientInitProducerId(t *testing.T) {
 	// Wait for kafka setup and Coordinator to be available.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
+	respc, err := waitForCoordinatorIndefinitely(ctx, t, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,
 		Key:     tid,
 		KeyType: CoordinatorKeyTypeTransaction,
