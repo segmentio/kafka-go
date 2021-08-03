@@ -347,22 +347,13 @@ func TestDialerResolver(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
-			topic := makeTopic()
+			topic := makeTopicT(t)
 			createTopic(t, topic, 1)
 			defer deleteTopic(t, topic)
 
 			d := Dialer{
 				Resolver: &mockResolver{addrs: test.resolver},
 			}
-
-			// Write a message to ensure the partition gets created.
-			w := NewWriter(WriterConfig{
-				Brokers: []string{"localhost:9092"},
-				Topic:   topic,
-				Dialer:  &d,
-			})
-			w.WriteMessages(context.Background(), Message{})
-			w.Close()
 
 			partitions, err := d.LookupPartitions(ctx, "tcp", test.address, topic)
 			if err != nil {
