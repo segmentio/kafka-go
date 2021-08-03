@@ -107,7 +107,8 @@ func makeTopic() string {
 
 // Use an atomic counter for makeTestTopic so 2 topics created quickly from the same test
 // don't collide
-var topicCounter int64
+// Start the counter at current time so topics between test runs don't collide
+var topicCounter = time.Now().UnixNano()
 
 // makeTestTopic generates a topic name based on the test name.
 // This makes it easier to trace back a topic to a specific test.

@@ -197,9 +197,13 @@ func (batch *Batch) ReadMessage() (Message, error) {
 			return
 		},
 	)
+
+	if err != nil {
+		err = fmt.Errorf("batch.ReadMessage: error in readMessage: %w", err)
+	}
+
 	for batch.conn != nil && offset < batch.conn.offset {
 		if err != nil {
-			err = fmt.Errorf("batch.ReadMessage: error in readMessage: %w", err)
 			break
 		}
 		offset, timestamp, headers, err = batch.readMessage(
