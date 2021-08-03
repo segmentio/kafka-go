@@ -9,11 +9,13 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
-	ktesting "github.com/segmentio/kafka-go/testing"
 	"golang.org/x/net/nettest"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 type timeout struct{}
@@ -99,6 +101,12 @@ func init() {
 
 func makeTopic() string {
 	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
+}
+
+// generate a topic name based on the test name
+func makeTopicT(t *testing.T) string {
+	s := fmt.Sprintf("%s-%d", t.Name(), time.Now().Unix())
+	return strings.ReplaceAll(s, "/", "_")
 }
 
 func makeGroupID() string {

@@ -341,7 +341,7 @@ func deleteTopic(t *testing.T, topic ...string) {
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 
 	if err := conn.DeleteTopics(topic...); err != nil {
-		t.Fatal(err)
+		t.Logf("deleteTopic: error deleting %v: %s", topic, err.Error())
 	}
 }
 
