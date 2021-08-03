@@ -257,6 +257,9 @@ func TestWriter(t *testing.T) {
 					if err != nil {
 						t.Fatal(err.Error())
 					}
+					t.Cleanup(func() {
+						deleteTopic(t, cfg.Topic)
+					})
 				}
 				if test.writer.Addr != nil {
 					cfg.Brokers = []string{test.writer.Addr.String()}
@@ -279,6 +282,9 @@ func TestWriter(t *testing.T) {
 					if err != nil {
 						t.Fatal(err.Error())
 					}
+					t.Cleanup(func() {
+						deleteTopic(t, w.Topic)
+					})
 				}
 				if w.Addr == nil {
 					w.Addr = TCP("localhost:9092")
@@ -648,6 +654,9 @@ func testWriterSmallBatchBytes(t *testing.T, w *Writer) {
 func testWriterMultipleTopics(t *testing.T, w *Writer) {
 	topic1 := makeTopic()
 	createTopic(t, topic1, 1)
+	t.Cleanup(func() {
+		deleteTopic(t, topic1)
+	})
 
 	offset1, err := readOffset(topic1, 0)
 	if err != nil {
@@ -656,6 +665,9 @@ func testWriterMultipleTopics(t *testing.T, w *Writer) {
 
 	topic2 := makeTopic()
 	createTopic(t, topic2, 1)
+	t.Cleanup(func() {
+		deleteTopic(t, topic2)
+	})
 
 	offset2, err := readOffset(topic2, 0)
 	if err != nil {

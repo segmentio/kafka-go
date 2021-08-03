@@ -247,7 +247,7 @@ func TestConsumerGroup(t *testing.T) {
 					t.Errorf("expected generation 1 not to be nil")
 				}
 				if err != nil {
-					t.Errorf("expected no error, but got %+v", err)
+					t.Fatalf("expected no error, but got %+v", err)
 				}
 				// returning from this function should cause the generation to
 				// exit.
@@ -310,7 +310,6 @@ func TestConsumerGroup(t *testing.T) {
 
 	topic := makeTopic()
 	createTopic(t, topic, 1)
-	defer deleteTopic(t, topic)
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {

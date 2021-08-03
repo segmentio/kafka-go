@@ -18,7 +18,6 @@ func TestClientElectLeaders(t *testing.T) {
 
 	topic := makeTopic()
 	createTopic(t, topic, 2)
-	defer deleteTopic(t, topic)
 
 	// Local kafka only has 1 broker, so leader elections are no-ops.
 	resp, err := client.ElectLeaders(

@@ -348,7 +348,7 @@ func decodeMemberMetadata(rawMetadata []byte) (DescribeGroupsResponseMemberMetad
 	}
 
 	if remain != 0 {
-		return mm, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
+		return mm, fmt.Errorf("decodeMemberMetadata: Got non-zero number of bytes remaining: %d", remain)
 	}
 
 	return mm, nil
@@ -406,7 +406,7 @@ func decodeMemberAssignments(rawAssignments []byte) (DescribeGroupsResponseAssig
 	}
 
 	if remain != 0 {
-		return ma, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
+		return ma, fmt.Errorf("decodeMemberAssignments: Got non-zero number of bytes remaining: %d", remain)
 	}
 
 	return ma, nil
