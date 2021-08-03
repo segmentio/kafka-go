@@ -106,7 +106,7 @@ func makeTopic() string {
 // generate a topic name based on the test name
 func makeTopicT(t *testing.T) string {
 	s := fmt.Sprintf("%s-%d", t.Name(), time.Now().Unix())
-	return strings.ReplaceAll(s, "/", "_")
+	return strings.NewReplacer("/", "_", "#", "_").Replace(s)
 }
 
 func makeGroupID() string {
