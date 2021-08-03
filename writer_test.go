@@ -382,7 +382,8 @@ func testWriterRoundRobin1(t *testing.T, w *Writer) {
 
 	msgs, err := readPartition(topic, 0, offset)
 	if err != nil {
-		t.Error("error reading partition", err)
+		w.Logger.Printf("error reading partition: %s", err.Error())
+		t.Fail()
 		return
 	}
 
