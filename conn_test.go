@@ -103,7 +103,8 @@ func makeTopic() string {
 	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
 }
 
-// generate a topic name based on the test name
+// makeTopicT generates a topic name based on the test name.
+// This makes it easier to trace back a topic to a specific test.
 func makeTopicT(t *testing.T) string {
 	s := fmt.Sprintf("%s-%d", t.Name(), time.Now().Unix())
 	return strings.NewReplacer("/", "_", "#", "_").Replace(s)

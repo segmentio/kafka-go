@@ -503,12 +503,13 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 	var conn *Conn
 
 	if conn, err = DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition); err != nil {
+		err = fmt.Errorf("readPartition: error in DialLeader: %w", err)
 		return
 	}
 	defer conn.Close()
 
 	conn.Seek(offset, SeekAbsolute)
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	batch := conn.ReadBatch(0, 1000000000)
 	defer batch.Close()
 
@@ -518,6 +519,9 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 		if msg, err = batch.ReadMessage(); err != nil {
 			if err == io.EOF {
 				err = nil
+			}
+			if err != nil {
+				err = fmt.Errorf("readPartition: error in ReadMessage: %w", err)
 			}
 			return
 		}
