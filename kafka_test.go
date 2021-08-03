@@ -5,7 +5,9 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestMarshalUnmarshal(t *testing.T) {
@@ -173,8 +175,11 @@ func BenchmarkUnmarshal(b *testing.B) {
 }
 
 type testKafkaLogger struct {
-	Prefix string
-	T      *testing.T
+	Prefix    string
+	T         *testing.T
+
+	mu sync.Mutex
+	startTime time.Time
 }
 
 func newTestKafkaLogger(t *testing.T, prefix string) Logger {
@@ -182,6 +187,16 @@ func newTestKafkaLogger(t *testing.T, prefix string) Logger {
 }
 
 func (l *testKafkaLogger) Printf(msg string, args ...interface{}) {
+	l.mu.Lock()
+	if l.startTime.IsZero() {
+		l.startTime = time.Now()
+	}
+	elapsedTime := time.Since(l.startTime)
+	l.mu.Unlock()
+
 	l.T.Helper()
-	l.T.Logf(l.Prefix+" "+msg, args...)
+	elapsedStr := fmt.Sprintf("+%0.3fs", elapsedTime.Seconds())
+	prefix := elapsedStr + " " + l.Prefix
+
+	l.T.Logf(prefix + " "+msg, args...)
 }

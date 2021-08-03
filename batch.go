@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -183,24 +184,37 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	offset, timestamp, headers, err = batch.readMessage(
 		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
 			msg.Key, remain, err = readNewBytes(r, size, nbytes)
+			if err != nil {
+				err = fmt.Errorf("batch.ReadMessage: error in key readNewBytes: %w", err)
+			}
 			return
 		},
 		func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
 			msg.Value, remain, err = readNewBytes(r, size, nbytes)
+			if err != nil {
+				err = fmt.Errorf("batch.ReadMessage: error in value readNewBytes: %w", err)
+			}
 			return
 		},
 	)
 	for batch.conn != nil && offset < batch.conn.offset {
 		if err != nil {
+			err = fmt.Errorf("batch.ReadMessage: error in readMessage: %w", err)
 			break
 		}
 		offset, timestamp, headers, err = batch.readMessage(
 			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
 				msg.Key, remain, err = readNewBytes(r, size, nbytes)
+				if err != nil {
+					err = fmt.Errorf("batch.ReadMessage loop: error in key readNewBytes: %w", err)
+				}
 				return
 			},
 			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
 				msg.Value, remain, err = readNewBytes(r, size, nbytes)
+				if err != nil {
+					err = fmt.Errorf("batch.ReadMessage loop:: error in value readNewBytes: %w", err)
+				}
 				return
 			},
 		)
