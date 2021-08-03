@@ -104,13 +104,13 @@ func makeTopic() string {
 	return fmt.Sprintf("kafka-go-%016x", rand.Int63())
 }
 
-// Use an atomic counter for makeTopicT so 2 topics created quickly from the same test
+// Use an atomic counter for makeTestTopic so 2 topics created quickly from the same test
 // don't collide
 var topicCounter int64
 
-// makeTopicT generates a topic name based on the test name.
+// makeTestTopic generates a topic name based on the test name.
 // This makes it easier to trace back a topic to a specific test.
-func makeTopicT(t *testing.T) string {
+func makeTestTopic(t testing.TB) string {
 	s := fmt.Sprintf("%s-%d", t.Name(), atomic.AddInt64(&topicCounter, 1))
 	return strings.NewReplacer("/", "_", "#", "_").Replace(s)
 }

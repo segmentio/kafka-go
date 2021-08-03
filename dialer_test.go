@@ -347,7 +347,7 @@ func TestDialerResolver(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
-			topic := makeTopicT(t)
+			topic := makeTestTopic(t)
 			createTopic(t, topic, 1)
 			defer deleteTopic(t, topic)
 
