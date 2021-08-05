@@ -42,9 +42,6 @@ func TestListGroupsResponseV1(t *testing.T) {
 }
 
 func TestClientListGroups(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
@@ -57,6 +54,10 @@ func TestClientListGroups(t *testing.T) {
 	w := newTestWriter(WriterConfig{
 		Topic: topic,
 	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	err := w.WriteMessages(
 		ctx,
 		Message{
