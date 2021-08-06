@@ -264,6 +264,26 @@ func (batch *Batch) readMessage(
 				batch.offset++
 			}
 		}
+	// in an instance where the last message of a batch doesn't exist we need to advance past it to
+	// prevent falling into a state where the consumer cannot advance. errEndOfBatch errors are returned
+	// under a scenario where no bytes remain on a reader but a read attempt is being made because our
+	// conn struct is expecting an additional message (i.e it's offset is set to the deleted / end of batch offset)
+	case errEndOfBatch:
+		err = batch.msgs.discard()
+		switch {
+		case err != nil:
+			batch.err = dontExpectEOF(err)
+		case batch.msgs.remaining() == 0:
+			err = checkTimeoutErr(batch.deadline)
+			batch.err = err
+			// Where our checkTimeoutErr results in an io.EOF and our batch offset is equal to our connection offset
+			// we advance the batch to move past the deleted message.
+			if !batch.msgs.empty &&
+				batch.offset == batch.conn.offset &&
+				batch.err == io.EOF {
+				batch.offset++
+			}
+		}
 	default:
 		// Since io.EOF is used by the batch to indicate that there is are
 		// no more messages to consume, it is crucial that any io.EOF errors

@@ -472,6 +472,10 @@ func (r *messageSetReaderV2) readMessage(min int64,
 		if r.remain == 0 {
 			if r.parent != nil {
 				r.readerStack = r.parent
+			} else {
+				// we can't replace the readerstack and there's no bytes remaining left to read
+				err = errEndOfBatch
+				return
 			}
 		}
 

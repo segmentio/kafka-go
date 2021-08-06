@@ -12,7 +12,10 @@ type readable interface {
 	readFrom(*bufio.Reader, int) (int, error)
 }
 
-var errShortRead = errors.New("not enough bytes available to load the response")
+var (
+	errShortRead = errors.New("not enough bytes available to load the response")
+	errEndOfBatch = errors.New("no bytes remaining on a read attempt")
+)
 
 func peekRead(r *bufio.Reader, sz int, n int, f func([]byte)) (int, error) {
 	if n > sz {
