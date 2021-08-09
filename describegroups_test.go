@@ -63,9 +63,6 @@ func TestClientDescribeGroups(t *testing.T) {
 		t.Skip("Skipping because kafka version is 2.3.1")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
@@ -78,6 +75,10 @@ func TestClientDescribeGroups(t *testing.T) {
 	w := newTestWriter(WriterConfig{
 		Topic: topic,
 	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	err := w.WriteMessages(
 		ctx,
 		Message{

@@ -3,8 +3,6 @@ package kafka
 import (
 	"context"
 	"errors"
-	"log"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -323,7 +321,7 @@ func TestConsumerGroup(t *testing.T) {
 				HeartbeatInterval: 2 * time.Second,
 				RebalanceTimeout:  2 * time.Second,
 				RetentionTime:     time.Hour,
-				Logger:            log.New(os.Stdout, "cg-test: ", 0),
+				Logger:            &testKafkaLogger{T: t},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -569,7 +567,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 				connect: func(*Dialer, ...string) (coordinator, error) {
 					return mc, nil
 				},
-				Logger: log.New(os.Stdout, "cg-errors-test: ", 0),
+				Logger: &testKafkaLogger{T: t},
 			})
 			if err != nil {
 				t.Fatal(err)
