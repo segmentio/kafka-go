@@ -1139,7 +1139,7 @@ func (ptw *ptWriter) close() {
 		ptw.currBatch = nil
 		batch.trigger()
 	}
-
+	ptw.w = nil
 	ptw.queue.Close()
 
 	ptw.group.Wait()
