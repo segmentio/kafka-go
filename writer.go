@@ -189,7 +189,7 @@ type Writer struct {
 	closed uint32
 	group  sync.WaitGroup
 
-	// Manages the curret set of partition-topic writers.
+	// Manages the current set of partition-topic writers.
 	mutex   sync.Mutex
 	writers map[topicPartition]*ptWriter
 
