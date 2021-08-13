@@ -53,7 +53,7 @@ func testBatchQueuePutWakesSleepingGetter(t *testing.T) {
 	var wg sync.WaitGroup
 	ready := make(chan struct{})
 	go func() {
-		wg.Add(2)
+		wg.Add(1)
 		defer wg.Done()
 		close(ready)
 		dequeueBatch = bq.Get(dequeueBatch)
