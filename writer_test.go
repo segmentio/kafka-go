@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"strconv"
@@ -426,15 +427,23 @@ func testWriterMaxBytes(t *testing.T) {
 	}
 }
 
+// readOffset gets the latest offset for the given topic/partition.
 func readOffset(topic string, partition int) (offset int64, err error) {
 	var conn *Conn
 
-	if conn, err = DialLeader(context.Background(), "tcp", "localhost:9092", topic, partition); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if conn, err = DialLeader(ctx, "tcp", "localhost:9092", topic, partition); err != nil {
+		err = fmt.Errorf("readOffset, DialLeader: %w", err)
 		return
 	}
 	defer conn.Close()
 
 	offset, err = conn.ReadLastOffset()
+	if err != nil {
+		err = fmt.Errorf("readOffset, conn.ReadLastOffset: %w", err)
+	}
 	return
 }
 
@@ -447,7 +456,7 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 	defer conn.Close()
 
 	conn.Seek(offset, SeekAbsolute)
-	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	batch := conn.ReadBatch(0, 1000000000)
 	defer batch.Close()
 
@@ -466,10 +475,7 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 }
 
 func testWriterBatchBytes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	topic := "test-writer-1-bytes"
+	topic := makeTopic()
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
 
@@ -486,6 +492,8 @@ func testWriterBatchBytes(t *testing.T) {
 	})
 	defer w.Close()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
 		{Value: []byte("M0")}, // 24 Bytes
 		{Value: []byte("M1")}, // 24 Bytes
@@ -520,9 +528,6 @@ func testWriterBatchBytes(t *testing.T) {
 }
 
 func testWriterBatchSize(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	topic := makeTopic()
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
@@ -540,6 +545,8 @@ func testWriterBatchSize(t *testing.T) {
 	})
 	defer w.Close()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
 		Message{Value: []byte("Hi")}, // 24 Bytes
 		Message{Value: []byte("By")}, // 24 Bytes
@@ -572,9 +579,6 @@ func testWriterBatchSize(t *testing.T) {
 }
 
 func testWriterSmallBatchBytes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	topic := makeTopic()
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
@@ -592,6 +596,8 @@ func testWriterSmallBatchBytes(t *testing.T) {
 	})
 	defer w.Close()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
 		Message{Value: []byte("Hi")}, // 24 Bytes
 		Message{Value: []byte("By")}, // 24 Bytes
@@ -624,9 +630,6 @@ func testWriterSmallBatchBytes(t *testing.T) {
 }
 
 func testWriterMultipleTopics(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	topic1 := makeTopic()
 	createTopic(t, topic1, 1)
 	defer deleteTopic(t, topic1)
@@ -653,6 +656,8 @@ func testWriterMultipleTopics(t *testing.T) {
 	msg1 := Message{Topic: topic1, Value: []byte("Hello")}
 	msg2 := Message{Topic: topic2, Value: []byte("World")}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if err := w.WriteMessages(ctx, msg1, msg2); err != nil {
 		t.Error(err)
 		return
