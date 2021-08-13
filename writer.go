@@ -969,15 +969,16 @@ func (ptw *ptWriter) writeMessages(msgs []Message, indexes []int32) map[*writeBa
 	ptw.group.Add(1)
 	defer ptw.group.Done()
 
+	ptw.mutex.Lock()
+	defer ptw.mutex.Unlock()
+
+	batchSize := ptw.w.batchSize()
+	batchBytes := ptw.w.batchBytes()
+
 	var batches map[*writeBatch][]int32
 	if !ptw.w.Async {
 		batches = make(map[*writeBatch][]int32, 1)
 	}
-	batchSize := ptw.w.batchSize()
-	batchBytes := ptw.w.batchBytes()
-
-	ptw.mutex.Lock()
-	defer ptw.mutex.Unlock()
 
 	for _, i := range indexes {
 	assignMessage:
@@ -1006,6 +1007,7 @@ func (ptw *ptWriter) writeMessages(msgs []Message, indexes []int32) map[*writeBa
 	return batches
 }
 
+// ptw.w can be accessed here because this is called with the lock ptw.mutex already held.
 func (ptw *ptWriter) newWriteBatch() *writeBatch {
 	batch := newWriteBatch(time.Now(), ptw.w.batchTimeout())
 	ptw.group.Add(1)
@@ -1044,7 +1046,8 @@ func (ptw *ptWriter) awaitBatch(batch *writeBatch) {
 }
 
 func (ptw *ptWriter) writeBatch(batch *writeBatch) {
-	stats := ptw.w.stats()
+	w := ptw.writer()
+	stats := w.stats()
 	stats.batchTime.observe(int64(time.Since(batch.time)))
 	stats.batchSize.observe(int64(len(batch.msgs)))
 	stats.batchSizeBytes.observe(batch.bytes)
@@ -1052,7 +1055,7 @@ func (ptw *ptWriter) writeBatch(batch *writeBatch) {
 	var res *ProduceResponse
 	var err error
 	key := ptw.meta
-	for attempt, maxAttempts := 0, ptw.w.maxAttempts(); attempt < maxAttempts; attempt++ {
+	for attempt, maxAttempts := 0, w.maxAttempts(); attempt < maxAttempts; attempt++ {
 		if attempt != 0 {
 			stats.retries.observe(1)
 			// TODO: should there be a way to asynchronously cancel this
@@ -1066,18 +1069,18 @@ func (ptw *ptWriter) writeBatch(batch *writeBatch) {
 			//   on close.
 			//
 			delay := backoff(attempt, 100*time.Millisecond, 1*time.Second)
-			ptw.w.withLogger(func(log Logger) {
+			w.withLogger(func(log Logger) {
 				log.Printf("backing off %s writing %d messages to %s (partition: %d)", delay, len(batch.msgs), key.topic, key.partition)
 			})
 			time.Sleep(delay)
 		}
 
-		ptw.w.withLogger(func(log Logger) {
+		w.withLogger(func(log Logger) {
 			log.Printf("writing %d messages to %s (partition: %d)", len(batch.msgs), key.topic, key.partition)
 		})
 
 		start := time.Now()
-		res, err = ptw.w.produce(key, batch)
+		res, err = w.produce(key, batch)
 
 		stats.writes.observe(1)
 		stats.messages.observe(int64(len(batch.msgs)))
@@ -1100,7 +1103,7 @@ func (ptw *ptWriter) writeBatch(batch *writeBatch) {
 
 		stats.errors.observe(1)
 
-		ptw.w.withErrorLogger(func(log Logger) {
+		w.withErrorLogger(func(log Logger) {
 			log.Printf("error writing messages to %s (partition %d): %s", key.topic, key.partition, err)
 		})
 
@@ -1122,8 +1125,8 @@ func (ptw *ptWriter) writeBatch(batch *writeBatch) {
 		}
 	}
 
-	if ptw.w.Completion != nil {
-		ptw.w.Completion(batch.msgs, err)
+	if w.Completion != nil {
+		w.Completion(batch.msgs, err)
 	}
 
 	batch.complete(err)
@@ -1143,6 +1146,12 @@ func (ptw *ptWriter) close() {
 	ptw.queue.Close()
 
 	ptw.group.Wait()
+}
+
+func (ptw *ptWriter) writer() *Writer {
+	ptw.mutex.Lock()
+	defer ptw.mutex.Unlock()
+	return ptw.w
 }
 
 type writeBatch struct {
