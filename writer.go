@@ -191,7 +191,7 @@ type Writer struct {
 
 	// Manages the current set of partition-topic writers.
 	mutex   sync.Mutex
-	writers map[topicPartition]*ptWriter
+	writers map[topicPartition]*partitionWriter
 
 	// writer stats are all made of atomic values, no need for synchronization.
 	// Use a pointer to ensure 64-bit alignment of the values. The once value is
@@ -518,6 +518,10 @@ func (w *Writer) Close() error {
 		writer.close()
 	}
 
+	for partition := range w.writers {
+		delete(w.writers, partition)
+	}
+
 	w.mutex.Unlock()
 	w.group.Wait()
 
@@ -653,7 +657,7 @@ func (w *Writer) batchMessages(messages []Message, assignments map[topicPartitio
 	defer w.mutex.Unlock()
 
 	if w.writers == nil {
-		w.writers = map[topicPartition]*ptWriter{}
+		w.writers = map[topicPartition]*partitionWriter{}
 	}
 
 	for key, indexes := range assignments {
@@ -862,7 +866,9 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 type batchQueue struct {
 	queue []*writeBatch
 
-	cond   sync.Cond
+	mutex sync.Mutex
+	cond  sync.Cond
+
 	closed bool
 }
 
@@ -886,8 +892,14 @@ func (b *batchQueue) Get(batches []*writeBatch) []*writeBatch {
 		b.cond.Wait()
 	}
 
+	limit := cap(batches) - len(batches)
+	if limit == 0 {
+		// ensure some progress is made at the cost of a reallocation.
+		limit = 1
+	}
+	queueMax := len(b.queue)
 	var i int
-	for i = 0; i < cap(batches) && i < len(b.queue); i++ {
+	for i = 0; i < limit && i < queueMax; i++ {
 		batches = append(batches, b.queue[i])
 		b.queue[i] = nil
 	}
@@ -905,20 +917,21 @@ func (b *batchQueue) Close() {
 	b.closed = true
 }
 
-func newBatchQueue(initialSize int) *batchQueue {
-	return &batchQueue{
+func newBatchQueue(initialSize int) batchQueue {
+	bq := batchQueue{
 		queue: make([]*writeBatch, 0, initialSize),
-		cond: sync.Cond{
-			L: &sync.Mutex{},
-		},
 	}
+
+	bq.cond.L = &bq.mutex
+
+	return bq
 }
 
-// ptWriter is a writer for a topic-partion pair. It maintains messaging order
+// partitionWriter is a writer for a topic-partion pair. It maintains messaging order
 // across batches of messages.
-type ptWriter struct {
+type partitionWriter struct {
 	meta  topicPartition
-	queue *batchQueue
+	queue batchQueue
 
 	mutex     sync.Mutex
 	currBatch *writeBatch
@@ -930,22 +943,22 @@ type ptWriter struct {
 	w *Writer
 }
 
-func newPartitionWriter(w *Writer, key topicPartition) *ptWriter {
-	writer := &ptWriter{
+func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
+	writer := &partitionWriter{
 		meta:  key,
 		queue: newBatchQueue(10),
 		w:     w,
 	}
-	go writer.writeBatches()
+	go func() {
+		writer.group.Add(1)
+		defer writer.group.Done()
+		writer.writeBatches()
+	}()
 
 	return writer
 }
 
-func (ptw *ptWriter) writeBatches() {
-	ptw.group.Add(1)
-	defer ptw.group.Done()
-
-	// Should we make this configurable?
+func (ptw *partitionWriter) writeBatches() {
 	batches := make([]*writeBatch, 0, 10)
 
 	for {
@@ -965,7 +978,7 @@ func (ptw *ptWriter) writeBatches() {
 	}
 }
 
-func (ptw *ptWriter) writeMessages(msgs []Message, indexes []int32) map[*writeBatch][]int32 {
+func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*writeBatch][]int32 {
 	ptw.group.Add(1)
 	defer ptw.group.Done()
 
@@ -1008,7 +1021,7 @@ func (ptw *ptWriter) writeMessages(msgs []Message, indexes []int32) map[*writeBa
 }
 
 // ptw.w can be accessed here because this is called with the lock ptw.mutex already held.
-func (ptw *ptWriter) newWriteBatch() *writeBatch {
+func (ptw *partitionWriter) newWriteBatch() *writeBatch {
 	batch := newWriteBatch(time.Now(), ptw.w.batchTimeout())
 	ptw.group.Add(1)
 	go func() {
@@ -1021,7 +1034,7 @@ func (ptw *ptWriter) newWriteBatch() *writeBatch {
 // awaitBatch waits for a batch to either fill up or time out.
 // If the batch is full it only stops the timer, if the timer
 // expires it will queue the batch for writing if needed.
-func (ptw *ptWriter) awaitBatch(batch *writeBatch) {
+func (ptw *partitionWriter) awaitBatch(batch *writeBatch) {
 	select {
 	case <-batch.timer.C:
 		ptw.mutex.Lock()
@@ -1045,9 +1058,8 @@ func (ptw *ptWriter) awaitBatch(batch *writeBatch) {
 	}
 }
 
-func (ptw *ptWriter) writeBatch(batch *writeBatch) {
-	w := ptw.writer()
-	stats := w.stats()
+func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
+	stats := ptw.w.stats()
 	stats.batchTime.observe(int64(time.Since(batch.time)))
 	stats.batchSize.observe(int64(len(batch.msgs)))
 	stats.batchSizeBytes.observe(batch.bytes)
@@ -1055,7 +1067,7 @@ func (ptw *ptWriter) writeBatch(batch *writeBatch) {
 	var res *ProduceResponse
 	var err error
 	key := ptw.meta
-	for attempt, maxAttempts := 0, w.maxAttempts(); attempt < maxAttempts; attempt++ {
+	for attempt, maxAttempts := 0, ptw.w.maxAttempts(); attempt < maxAttempts; attempt++ {
 		if attempt != 0 {
 			stats.retries.observe(1)
 			// TODO: should there be a way to asynchronously cancel this
@@ -1069,18 +1081,18 @@ func (ptw *ptWriter) writeBatch(batch *writeBatch) {
 			//   on close.
 			//
 			delay := backoff(attempt, 100*time.Millisecond, 1*time.Second)
-			w.withLogger(func(log Logger) {
+			ptw.w.withLogger(func(log Logger) {
 				log.Printf("backing off %s writing %d messages to %s (partition: %d)", delay, len(batch.msgs), key.topic, key.partition)
 			})
 			time.Sleep(delay)
 		}
 
-		w.withLogger(func(log Logger) {
+		ptw.w.withLogger(func(log Logger) {
 			log.Printf("writing %d messages to %s (partition: %d)", len(batch.msgs), key.topic, key.partition)
 		})
 
 		start := time.Now()
-		res, err = w.produce(key, batch)
+		res, err = ptw.w.produce(key, batch)
 
 		stats.writes.observe(1)
 		stats.messages.observe(int64(len(batch.msgs)))
@@ -1103,7 +1115,7 @@ func (ptw *ptWriter) writeBatch(batch *writeBatch) {
 
 		stats.errors.observe(1)
 
-		w.withErrorLogger(func(log Logger) {
+		ptw.w.withErrorLogger(func(log Logger) {
 			log.Printf("error writing messages to %s (partition %d): %s", key.topic, key.partition, err)
 		})
 
@@ -1125,14 +1137,14 @@ func (ptw *ptWriter) writeBatch(batch *writeBatch) {
 		}
 	}
 
-	if w.Completion != nil {
-		w.Completion(batch.msgs, err)
+	if ptw.w.Completion != nil {
+		ptw.w.Completion(batch.msgs, err)
 	}
 
 	batch.complete(err)
 }
 
-func (ptw *ptWriter) close() {
+func (ptw *partitionWriter) close() {
 	ptw.mutex.Lock()
 	defer ptw.mutex.Unlock()
 
@@ -1142,16 +1154,9 @@ func (ptw *ptWriter) close() {
 		ptw.currBatch = nil
 		batch.trigger()
 	}
-	ptw.w = nil
 	ptw.queue.Close()
 
 	ptw.group.Wait()
-}
-
-func (ptw *ptWriter) writer() *Writer {
-	ptw.mutex.Lock()
-	defer ptw.mutex.Unlock()
-	return ptw.w
 }
 
 type writeBatch struct {
