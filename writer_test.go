@@ -17,16 +17,8 @@ func TestBatchQueue(t *testing.T) {
 		function func(*testing.T)
 	}{
 		{
-			scenario: "the size of the input slice for get is respected",
-			function: testBatchQueueGetSizeRespected,
-		},
-		{
 			scenario: "the remaining items in a queue can be gotten after closing",
 			function: testBatchQueueGetWorksAfterClose,
-		},
-		{
-			scenario: "if we call get with a larger slice than items in the queue, we only dequeue what's in the queue",
-			function: testBatchQueueGetLargerThanQueue,
 		},
 		{
 			scenario: "putting into a closed queue fails",
@@ -49,20 +41,20 @@ func TestBatchQueue(t *testing.T) {
 
 func testBatchQueuePutWakesSleepingGetter(t *testing.T) {
 	bq := newBatchQueue(10)
-	dequeueBatch := make([]*writeBatch, 0, 10)
 	var wg sync.WaitGroup
 	ready := make(chan struct{})
+	var batch *writeBatch
 	go func() {
 		wg.Add(1)
 		defer wg.Done()
 		close(ready)
-		dequeueBatch = bq.Get(dequeueBatch)
+		batch = bq.Get()
 	}()
 	<-ready
 	bq.Put(newWriteBatch(time.Now(), time.Hour*100))
 	wg.Wait()
-	if len(dequeueBatch) != 1 {
-		t.Fatal("unexpected get result")
+	if batch == nil {
+		t.Fatal("got nil batch")
 	}
 }
 
@@ -71,28 +63,6 @@ func testBatchQueuePutAfterCloseFails(t *testing.T) {
 	bq.Close()
 	if put := bq.Put(newWriteBatch(time.Now(), time.Hour*100)); put {
 		t.Fatal("put batch into closed queue")
-	}
-}
-
-func testBatchQueueGetLargerThanQueue(t *testing.T) {
-	bq := newBatchQueue(10)
-	defer bq.Close()
-	enqueueBatches := []*writeBatch{
-		newWriteBatch(time.Now(), time.Hour*100),
-		newWriteBatch(time.Now(), time.Hour*100),
-	}
-
-	for _, batch := range enqueueBatches {
-		put := bq.Put(batch)
-		if !put {
-			t.Fatal("failed to put batch into queue")
-		}
-	}
-
-	dequeueBatch := make([]*writeBatch, 0, 10)
-	dequeueBatch = bq.Get(dequeueBatch)
-	if len(dequeueBatch) != 2 {
-		t.Fatalf("get returned more items than present in the queue; expected: 2 got: %d", len(dequeueBatch))
 	}
 }
 
@@ -112,43 +82,11 @@ func testBatchQueueGetWorksAfterClose(t *testing.T) {
 
 	bq.Close()
 
-	dequeueBatch := make([]*writeBatch, 0, 1)
 	batchesGotten := 0
 	for batchesGotten != 2 {
-		dequeueBatch = dequeueBatch[:0]
-		dequeueBatch = bq.Get(dequeueBatch)
-		if len(dequeueBatch) == 0 {
-			t.Fatalf("batches not returned after close; gotten %d batches", batchesGotten)
-		}
-		batchesGotten++
-	}
-}
-
-func testBatchQueueGetSizeRespected(t *testing.T) {
-	bq := newBatchQueue(10)
-	defer bq.Close()
-	enqueueBatches := []*writeBatch{
-		newWriteBatch(time.Now(), time.Hour*100),
-		newWriteBatch(time.Now(), time.Hour*100),
-		newWriteBatch(time.Now(), time.Hour*100),
-		newWriteBatch(time.Now(), time.Hour*100),
-		newWriteBatch(time.Now(), time.Hour*100),
-	}
-
-	for _, batch := range enqueueBatches {
-		put := bq.Put(batch)
-		if !put {
-			t.Fatal("failed to put batch into queue")
-		}
-	}
-
-	dequeueBatch := make([]*writeBatch, 0, 2)
-	batchesGotten := 0
-	for batchesGotten != 3 {
-		dequeueBatch = dequeueBatch[:0]
-		dequeueBatch = bq.Get(dequeueBatch)
-		if cap(dequeueBatch) != 2 {
-			t.Error("dequeue batch input cap was changed")
+		dequeueBatch := bq.Get()
+		if dequeueBatch == nil {
+			t.Fatalf("no batch returned from get")
 		}
 		batchesGotten++
 	}

@@ -884,7 +884,7 @@ func (b *batchQueue) Put(batch *writeBatch) bool {
 	return true
 }
 
-func (b *batchQueue) Get(batches []*writeBatch) []*writeBatch {
+func (b *batchQueue) Get() *writeBatch {
 	b.cond.L.Lock()
 	defer b.cond.L.Unlock()
 
@@ -892,21 +892,14 @@ func (b *batchQueue) Get(batches []*writeBatch) []*writeBatch {
 		b.cond.Wait()
 	}
 
-	limit := cap(batches) - len(batches)
-	if limit == 0 {
-		// ensure some progress is made at the cost of a reallocation.
-		limit = 1
-	}
-	queueMax := len(b.queue)
-	var i int
-	for i = 0; i < limit && i < queueMax; i++ {
-		batches = append(batches, b.queue[i])
-		b.queue[i] = nil
+	if len(b.queue) == 0 {
+		return nil
 	}
 
-	b.queue = b.queue[i:]
+	var batch *writeBatch
+	batch, b.queue = b.queue[0], b.queue[1:]
 
-	return batches
+	return batch
 }
 
 func (b *batchQueue) Close() {
@@ -959,22 +952,18 @@ func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
 }
 
 func (ptw *partitionWriter) writeBatches() {
-	batches := make([]*writeBatch, 0, 10)
-
 	for {
-		batches = ptw.queue.Get(batches)
+		batch := ptw.queue.Get()
 
-		// The only time we can return 0 batches is when the queue is closed
+		// The only time we can return nil is when the queue is closed
 		// and empty. If the queue is closed that means
 		// the Writer is closed so once we're here it's time to exit.
-		if len(batches) == 0 {
+		if batch == nil {
 			return
 		}
 
-		for _, batch := range batches {
-			ptw.writeBatch(batch)
-		}
-		batches = batches[:0]
+		ptw.writeBatch(batch)
+
 	}
 }
 
