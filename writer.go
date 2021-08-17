@@ -896,8 +896,9 @@ func (b *batchQueue) Get() *writeBatch {
 		return nil
 	}
 
-	var batch *writeBatch
-	batch, b.queue = b.queue[0], b.queue[1:]
+	batch := b.queue[0]
+	b.queue[0] = nil
+	b.queue = b.queue[1:]
 
 	return batch
 }
