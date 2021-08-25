@@ -279,11 +279,11 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 	conn := NewConnWith(c, connCfg)
 
 	if d.SASLMechanism != nil {
-		metadata := sasl.Metadata{
+		metadata := &sasl.Metadata{
 			BrokerAddress: address,
 		}
 
-		if err := d.authenticateSASL(metadata.WithContext(ctx), conn); err != nil {
+		if err := d.authenticateSASL(sasl.WithMetadata(ctx, metadata), conn); err != nil {
 			_ = conn.Close()
 			return nil, err
 		}

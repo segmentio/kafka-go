@@ -52,8 +52,8 @@ type Metadata struct {
 	BrokerAddress string
 }
 
-// WithContext returns a copy of the context with associated Metadata.
-func (m *Metadata) WithContext(ctx context.Context) context.Context {
+// WithMetadata returns a copy of the context with associated Metadata.
+func WithMetadata(ctx context.Context, m *Metadata) context.Context {
 	return context.WithValue(ctx, ctxKey{}, m)
 }
 
