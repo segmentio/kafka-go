@@ -47,7 +47,9 @@ type StateMachine interface {
 
 // Metadata contains additional data for performing SASL authentication.
 type Metadata struct {
-	Address string
+	// BrokerAddress is the address of the broker the authentication will be
+	// performed on.
+	BrokerAddress string
 }
 
 // WithContext returns a copy of the context with associated Metadata.
@@ -57,8 +59,6 @@ func (m *Metadata) WithContext(ctx context.Context) context.Context {
 
 // MetadataFromContext retrieves the Metadata from the context.
 func MetadataFromContext(ctx context.Context) *Metadata {
-	if m, ok := ctx.Value(ctxKey{}).(*Metadata); ok {
-		return m
-	}
-	return nil
+	m, _ := ctx.Value(ctxKey{}).(*Metadata)
+	return m
 }
