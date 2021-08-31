@@ -258,13 +258,20 @@ func TestConn(t *testing.T) {
 			scenario: "test delete topics with an invalid topic",
 			function: testDeleteTopicsInvalidTopic,
 		},
+
 		{
 			scenario: "test retrieve controller",
 			function: testController,
 		},
+
 		{
 			scenario: "test list brokers",
 			function: testBrokers,
+		},
+
+		{
+			scenario: "the connection advertises the broker that it is connected to",
+			function: testConnBroker,
 		},
 	}
 
@@ -1122,6 +1129,23 @@ func testBrokers(t *testing.T, conn *Conn) {
 
 	if brokers[0].ID != 1 {
 		t.Errorf("expected ID 1 received %d", brokers[0].ID)
+	}
+}
+
+func testConnBroker(t *testing.T, conn *Conn) {
+	broker := conn.Broker()
+	// Depending on the environment the test is being run, IPv4 or IPv6 may be used.
+	if broker.Host != "::1" && broker.Host != "127.0.0.1" {
+		t.Errorf("invalid broker address: %q", broker.Host)
+	}
+	if broker.Port != 9092 {
+		t.Errorf("invalid broker port: %d", broker.Port)
+	}
+	if broker.ID != 1 {
+		t.Errorf("invalid broker id: %d", broker.ID)
+	}
+	if broker.Rack != "" {
+		t.Errorf("invalid broker rack: %q", broker.Rack)
 	}
 }
 

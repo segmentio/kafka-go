@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,6 +54,8 @@ type Conn struct {
 	partition     int32
 	fetchMaxBytes int32
 	fetchMinSize  int32
+	broker        int32
+	rack          string
 
 	// correlation ID generator (synchronized on wlock)
 	correlationID int32
@@ -87,6 +90,8 @@ type ConnConfig struct {
 	ClientID  string
 	Topic     string
 	Partition int
+	Broker    int
+	Rack      string
 
 	// The transactional id to use for transactional delivery. Idempotent
 	// deliver should be enabled if transactional id is configured.
@@ -174,6 +179,8 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		clientID:        config.ClientID,
 		topic:           config.Topic,
 		partition:       int32(config.Partition),
+		broker:          int32(config.Broker),
+		rack:            config.Rack,
 		offset:          FirstOffset,
 		requiredAcks:    -1,
 		transactionalID: emptyToNullable(config.TransactionalID),
@@ -228,6 +235,20 @@ func (c *Conn) loadVersions() (apiVersionMap, error) {
 
 	c.apiVersions.Store(v)
 	return v, nil
+}
+
+// Broker returns a Broker value representing the kafka broker that this
+// connection was established to.
+func (c *Conn) Broker() Broker {
+	addr := c.conn.RemoteAddr()
+	host, port, _ := net.SplitHostPort(addr.String())
+	portNumber, _ := strconv.Atoi(port)
+	return Broker{
+		Host: host,
+		Port: portNumber,
+		ID:   int(c.broker),
+		Rack: c.rack,
+	}
 }
 
 // Controller requests kafka for the current controller and returns its URL
