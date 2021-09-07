@@ -1137,7 +1137,7 @@ func (cg *ConsumerGroup) makeAssignments(assignments map[string][]int32, offsets
 			if ok {
 				offset, ok = partitionOffsets[int(partition)]
 			}
-			if !ok {
+			if !ok || cg.config.StartOffset == LastOffset {
 				offset = cg.config.StartOffset
 			}
 			topicAssignments[topic] = append(topicAssignments[topic], PartitionAssignment{
