@@ -5,9 +5,92 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestBatchQueue(t *testing.T) {
+	tests := []struct {
+		scenario string
+		function func(*testing.T)
+	}{
+		{
+			scenario: "the remaining items in a queue can be gotten after closing",
+			function: testBatchQueueGetWorksAfterClose,
+		},
+		{
+			scenario: "putting into a closed queue fails",
+			function: testBatchQueuePutAfterCloseFails,
+		},
+		{
+			scenario: "putting into a queue awakes a goroutine in a get call",
+			function: testBatchQueuePutWakesSleepingGetter,
+		},
+	}
+
+	for _, test := range tests {
+		testFunc := test.function
+		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
+			testFunc(t)
+		})
+	}
+}
+
+func testBatchQueuePutWakesSleepingGetter(t *testing.T) {
+	bq := newBatchQueue(10)
+	var wg sync.WaitGroup
+	ready := make(chan struct{})
+	var batch *writeBatch
+	go func() {
+		wg.Add(1)
+		defer wg.Done()
+		close(ready)
+		batch = bq.Get()
+	}()
+	<-ready
+	bq.Put(newWriteBatch(time.Now(), time.Hour*100))
+	wg.Wait()
+	if batch == nil {
+		t.Fatal("got nil batch")
+	}
+}
+
+func testBatchQueuePutAfterCloseFails(t *testing.T) {
+	bq := newBatchQueue(10)
+	bq.Close()
+	if put := bq.Put(newWriteBatch(time.Now(), time.Hour*100)); put {
+		t.Fatal("put batch into closed queue")
+	}
+}
+
+func testBatchQueueGetWorksAfterClose(t *testing.T) {
+	bq := newBatchQueue(10)
+	enqueueBatches := []*writeBatch{
+		newWriteBatch(time.Now(), time.Hour*100),
+		newWriteBatch(time.Now(), time.Hour*100),
+	}
+
+	for _, batch := range enqueueBatches {
+		put := bq.Put(batch)
+		if !put {
+			t.Fatal("failed to put batch into queue")
+		}
+	}
+
+	bq.Close()
+
+	batchesGotten := 0
+	for batchesGotten != 2 {
+		dequeueBatch := bq.Get()
+		if dequeueBatch == nil {
+			t.Fatalf("no batch returned from get")
+		}
+		batchesGotten++
+	}
+}
 
 func TestWriter(t *testing.T) {
 	tests := []struct {
@@ -123,7 +206,8 @@ func testWriterRequiredAcksNone(t *testing.T) {
 
 	msg := Message{
 		Key:   []byte("ThisIsAKey"),
-		Value: []byte("Test message for required acks test")}
+		Value: []byte("Test message for required acks test"),
+	}
 
 	err := writer.WriteMessages(context.Background(), msg)
 	if err != nil {
@@ -169,7 +253,6 @@ func testWriterRoundRobin1(t *testing.T) {
 	}
 
 	msgs, err := readPartition(topic, 0, offset)
-
 	if err != nil {
 		t.Error("error reading partition", err)
 		return
@@ -282,7 +365,7 @@ func testWriterMaxBytes(t *testing.T) {
 	}
 }
 
-// readOffset gets the latest offset for the given topic/partition
+// readOffset gets the latest offset for the given topic/partition.
 func readOffset(topic string, partition int) (offset int64, err error) {
 	var conn *Conn
 
@@ -350,39 +433,39 @@ func testWriterBatchBytes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
-		Message{Value: []byte("Hi")}, // 24 Bytes
-		Message{Value: []byte("By")}, // 24 Bytes
+		{Value: []byte("M0")}, // 24 Bytes
+		{Value: []byte("M1")}, // 24 Bytes
+		{Value: []byte("M2")}, // 24 Bytes
+		{Value: []byte("M3")}, // 24 Bytes
 	}...); err != nil {
 		t.Error(err)
 		return
 	}
 
-	if w.Stats().Writes > 1 {
-		t.Error("didn't batch messages")
+	if w.Stats().Writes != 2 {
+		t.Error("didn't create expected batches")
 		return
 	}
 	msgs, err := readPartition(topic, 0, offset)
-
 	if err != nil {
 		t.Error("error reading partition", err)
 		return
 	}
 
-	if len(msgs) != 2 {
+	if len(msgs) != 4 {
 		t.Error("bad messages in partition", msgs)
 		return
 	}
 
-	for _, m := range msgs {
-		if string(m.Value) == "Hi" || string(m.Value) == "By" {
+	for i, m := range msgs {
+		if string(m.Value) == "M"+strconv.Itoa(i) {
 			continue
 		}
-		t.Error("bad messages in partition", msgs)
+		t.Error("bad messages in partition", string(m.Value))
 	}
 }
 
 func testWriterBatchSize(t *testing.T) {
-
 	topic := makeTopic()
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
@@ -402,7 +485,6 @@ func testWriterBatchSize(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
 	if err := w.WriteMessages(ctx, []Message{
 		Message{Value: []byte("Hi")}, // 24 Bytes
 		Message{Value: []byte("By")}, // 24 Bytes
@@ -416,7 +498,6 @@ func testWriterBatchSize(t *testing.T) {
 		return
 	}
 	msgs, err := readPartition(topic, 0, offset)
-
 	if err != nil {
 		t.Error("error reading partition", err)
 		return
@@ -436,7 +517,6 @@ func testWriterBatchSize(t *testing.T) {
 }
 
 func testWriterSmallBatchBytes(t *testing.T) {
-
 	topic := makeTopic()
 	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
@@ -469,7 +549,6 @@ func testWriterSmallBatchBytes(t *testing.T) {
 		return
 	}
 	msgs, err := readPartition(topic, 0, offset)
-
 	if err != nil {
 		t.Error("error reading partition", err)
 		return
@@ -489,7 +568,6 @@ func testWriterSmallBatchBytes(t *testing.T) {
 }
 
 func testWriterMultipleTopics(t *testing.T) {
-
 	topic1 := makeTopic()
 	createTopic(t, topic1, 1)
 	defer deleteTopic(t, topic1)
