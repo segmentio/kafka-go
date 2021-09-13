@@ -153,7 +153,7 @@ func TestClientOffsetCommit(t *testing.T) {
 		}
 
 		if r.CommittedOffset != 10 {
-			t.Fatalf("expected committed offset to be 9; got: %v for partition: %v", r.CommittedOffset, r.Partition)
+			t.Fatalf("expected committed offset to be 10; got: %v for partition: %v", r.CommittedOffset, r.Partition)
 		}
 	}
 }
