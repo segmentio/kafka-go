@@ -41,7 +41,7 @@ func TestClientInitProducerId(t *testing.T) {
 	resp, err := client.InitProducerID(context.Background(), &InitProducerIDRequest{
 		Addr:                 transactionCoordinator,
 		TransactionalID:      tid,
-		TransactionTimeoutMs: 3000,
+		TransactionTimeoutMs: 30000,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,9 @@ func TestClientInitProducerId(t *testing.T) {
 	resp, err = client.InitProducerID(context.Background(), &InitProducerIDRequest{
 		Addr:                 transactionCoordinator,
 		TransactionalID:      tid,
-		TransactionTimeoutMs: 3000,
+		TransactionTimeoutMs: 30000,
+		ProducerID:           pid1,
+		ProducerEpoch:        epoch1,
 	})
 	if err != nil {
 		t.Fatal(err)

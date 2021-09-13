@@ -105,6 +105,10 @@ func makeGroupID() string {
 	return fmt.Sprintf("kafka-go-group-%016x", rand.Int63())
 }
 
+func makeTransactionalID() string {
+	return fmt.Sprintf("kafka-go-transactional-id-%016x", rand.Int63())
+}
+
 func TestConn(t *testing.T) {
 	tests := []struct {
 		scenario   string
@@ -324,13 +328,13 @@ func TestConn(t *testing.T) {
 		t.Parallel()
 
 		nettest.TestConn(t, func() (c1 net.Conn, c2 net.Conn, stop func(), err error) {
-			var topic1 = makeTopic()
-			var topic2 = makeTopic()
+			topic1 := makeTopic()
+			topic2 := makeTopic()
 			var t1Reader *Conn
 			var t2Reader *Conn
 			var t1Writer *Conn
 			var t2Writer *Conn
-			var dialer = &Dialer{}
+			dialer := &Dialer{}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -378,7 +382,6 @@ func testConnFirstOffset(t *testing.T, conn *Conn) {
 func testConnWrite(t *testing.T, conn *Conn) {
 	b := []byte("Hello World!")
 	n, err := conn.Write(b)
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -952,11 +955,10 @@ func testConnFetchAndCommitOffsets(t *testing.T, conn *Conn) {
 }
 
 func testConnWriteReadConcurrently(t *testing.T, conn *Conn) {
-
 	const N = 1000
-	var msgs = make([]string, N)
-	var done = make(chan struct{})
-	var written = make(chan struct{}, N/10)
+	msgs := make([]string, N)
+	done := make(chan struct{})
+	written := make(chan struct{}, N/10)
 
 	for i := 0; i != N; i++ {
 		msgs[i] = strconv.Itoa(i)
