@@ -88,6 +88,16 @@ func WriteResponse(w io.Writer, apiVersion int16, correlationID int32, msg Messa
 	e := &encoder{writer: b}
 	e.writeInt32(0) // placeholder for the response size
 	e.writeInt32(correlationID)
+	if r.flexible {
+		// Flexible messages use extra space for a tag buffer,
+		// which begins with a size value. Since we're not writing any fields into the
+		// latter, we can just write zero for now.
+		//
+		// See
+		// https://cwiki.apache.org/confluence/display/KAFKA/KIP-482%3A+The+Kafka+Protocol+should+Support+Optional+Tagged+Fields
+		// for details.
+		e.writeUnsignedVarInt(0)
+	}
 	r.encode(e, v)
 	err := e.err
 
