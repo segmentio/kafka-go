@@ -67,6 +67,17 @@ func clientCreateTopic(client *Client, topic string, partitions int) error {
 	return nil
 }
 
+func clientEndTxn(client *Client, req *EndTxnRequest) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	resp, err := client.EndTxn(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	return resp.Error
+}
+
 func newLocalClient() (*Client, func()) {
 	return newClient(TCP("localhost"))
 }
