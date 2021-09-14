@@ -47,6 +47,10 @@ func TestClientInitProducerId(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if resp.Error != nil {
+		t.Fatal(resp.Error)
+	}
+
 	epoch1 := resp.Producer.ProducerEpoch
 	pid1 := resp.Producer.ProducerID
 
@@ -58,11 +62,16 @@ func TestClientInitProducerId(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	if resp.Error != nil {
+		t.Fatal(resp.Error)
+	}
+
 	epoch2 := resp.Producer.ProducerEpoch
 	pid2 := resp.Producer.ProducerID
 
 	if pid1 != pid2 {
-		t.Fatal("PID should stay the same across producer sessions")
+		t.Fatalf("PID should stay the same across producer sessions; expected: %v got: %v", pid1, pid2)
 	}
 
 	if epoch2-epoch1 <= 0 {

@@ -19,6 +19,17 @@ type InitProducerIDRequest struct {
 
 	// Time after which a transaction should time out
 	TransactionTimeoutMs int
+
+	// The Producer ID (PID).
+	// This is used to disambiguate requests if a transactional id is reused following its expiration.
+	// Only supported in version >=3 of the request, will be ignore otherwise.
+	ProducerID int
+
+	// The producer's current epoch.
+	// This will be checked against the producer epoch on the broker,
+	// and the request will return an error if they do not match.
+	// Only supported in version >=3 of the request, will be ignore otherwise.
+	ProducerEpoch int
 }
 
 // ProducerSession contains useful information about the producer session from the broker's response
@@ -48,10 +59,11 @@ type InitProducerIDResponse struct {
 // InitProducerID sends a initProducerId request to a kafka broker and returns the
 // response.
 func (c *Client) InitProducerID(ctx context.Context, req *InitProducerIDRequest) (*InitProducerIDResponse, error) {
-
 	m, err := c.roundTrip(ctx, req.Addr, &initproducerid.Request{
 		TransactionalID:      req.TransactionalID,
 		TransactionTimeoutMs: int32(req.TransactionTimeoutMs),
+		ProducerID:           int64(req.ProducerID),
+		ProducerEpoch:        int16(req.ProducerEpoch),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).InitProducerId: %w", err)
