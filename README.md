@@ -1,10 +1,5 @@
 # kafka-go [![CircleCI](https://circleci.com/gh/segmentio/kafka-go.svg?style=shield)](https://circleci.com/gh/segmentio/kafka-go) [![Go Report Card](https://goreportcard.com/badge/github.com/segmentio/kafka-go)](https://goreportcard.com/report/github.com/segmentio/kafka-go) [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go)
 
-#### Note:
-
-In order to better align  with our newly adopted Code of Contact, the kafka-go project is renaming our default branch to `main`.  
-For the full details of our Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
-
 ## Motivations
 
 We rely on both Go and Kafka a lot at Segment. Unfortunately, the state of the Go
@@ -34,6 +29,11 @@ This is where `kafka-go` comes into play. It provides both low and high level
 APIs for interacting with Kafka, mirroring concepts and implementing interfaces of
 the Go standard library to make it easy to use and integrate with existing
 software.
+
+#### Note:
+
+In order to better align  with our newly adopted Code of Contact, the kafka-go project has renamed our default branch to `main`.  
+For the full details of our Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
 
 ## Migrating to 0.4
 
