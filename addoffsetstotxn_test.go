@@ -2,7 +2,9 @@ package kafka
 
 import (
 	"context"
+	"log"
 	"net"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -10,31 +12,61 @@ import (
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
-func TestClientAddPartitionsToTxn(t *testing.T) {
+func TestClientAddOffsetsToTxn(t *testing.T) {
 	if !ktesting.KafkaIsAtLeast("0.11.0") {
 		t.Skip("Skipping test because kafka version is not high enough.")
 	}
-	topic1 := makeTopic()
-	topic2 := makeTopic()
-
+	topic := makeTopic()
+	transactionalID := makeTransactionalID()
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	err := clientCreateTopic(client, topic1, 3)
+	err := clientCreateTopic(client, topic, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	err = clientCreateTopic(client, topic2, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	transactionalID := makeTransactionalID()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
+		Addr:    client.Addr,
+		Key:     transactionalID,
+		KeyType: CoordinatorKeyTypeConsumer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if respc.Error != nil {
+		t.Fatal(err)
+	}
+
+	groupID := makeGroupID()
+
+	group, err := NewConsumerGroup(ConsumerGroupConfig{
+		ID:                groupID,
+		Topics:            []string{topic},
+		Brokers:           []string{"localhost:9092"},
+		HeartbeatInterval: 2 * time.Second,
+		RebalanceTimeout:  2 * time.Second,
+		RetentionTime:     time.Hour,
+		Logger:            log.New(os.Stdout, "cg-test: ", 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer group.Close()
+
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	_, err = group.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	respc, err = waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,
 		Key:     transactionalID,
 		KeyType: CoordinatorKeyTypeTransaction,
@@ -73,54 +105,18 @@ func TestClientAddPartitionsToTxn(t *testing.T) {
 
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	resp, err := client.AddPartitionsToTxn(ctx, &AddPartitionsToTxnRequest{
+
+	resp, err := client.AddOffsetsToTxn(ctx, &AddOffsetsToTxnRequest{
 		TransactionalID: transactionalID,
 		ProducerID:      ipResp.Producer.ProducerID,
 		ProducerEpoch:   ipResp.Producer.ProducerEpoch,
-		Topics: map[string][]AddPartitionToTxn{
-			topic1: {
-				{
-					Partition: 0,
-				},
-				{
-					Partition: 1,
-				},
-				{
-					Partition: 2,
-				},
-			},
-			topic2: {
-				{
-					Partition: 0,
-				},
-				{
-					Partition: 2,
-				},
-			},
-		},
+		GroupID:         groupID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(resp.Topics) != 2 {
-		t.Errorf("expected responses for 2 topics; got: %d", len(resp.Topics))
-	}
-	for topic, partitions := range resp.Topics {
-		if topic == topic1 {
-			if len(partitions) != 3 {
-				t.Errorf("expected 3 partitions in response for topic %s; got: %d", topic, len(partitions))
-			}
-		}
-		if topic == topic2 {
-			if len(partitions) != 2 {
-				t.Errorf("expected 2 partitions in response for topic %s; got: %d", topic, len(partitions))
-			}
-		}
-		for _, partition := range partitions {
-			if partition.Error != nil {
-				t.Error(partition.Error)
-			}
-		}
+	if resp.Error != nil {
+		t.Fatal(err)
 	}
 }
