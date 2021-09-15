@@ -30,6 +30,11 @@ APIs for interacting with Kafka, mirroring concepts and implementing interfaces 
 the Go standard library to make it easy to use and integrate with existing
 software.
 
+#### Note:
+
+In order to better align  with our newly adopted Code of Contact, the kafka-go project has renamed our default branch to `main`.  
+For the full details of our Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
+
 ## Migrating to 0.4
 
 Version 0.4 introduces a few breaking changes to the repository structure which
