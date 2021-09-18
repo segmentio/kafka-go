@@ -19,6 +19,10 @@ type Request struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.InitProducerId }
 
+func (r *Request) Transaction() string { return r.TransactionalID }
+
+var _ protocol.TransactionalMessage = (*Request)(nil)
+
 type Response struct {
 	// We need at least one tagged field to indicate that this is a "flexible" message
 	// type.
