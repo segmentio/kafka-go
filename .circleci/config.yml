@@ -71,6 +71,7 @@ jobs:
         KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
         KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
         CUSTOM_INIT_SCRIPT: |-
+          apk add libgcc;
           echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
           /opt/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
     steps: *steps
@@ -224,6 +225,33 @@ jobs:
       - 9093:9093
       environment: *environment
     steps: *steps
+
+  kafka-271:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "2.7.1"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: wurstmeister/zookeeper
+      ports:
+      - 2181:2181
+    - image: wurstmeister/kafka:2.13-2.7.1
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+    steps: *steps
        
 workflows:
   version: 2
@@ -239,3 +267,4 @@ workflows:
     - kafka-231
     - kafka-241
     - kafka-260
+    - kafka-271
