@@ -649,6 +649,16 @@ func (p *connPool) sendRequest(ctx context.Context, req Request, state connPoolS
 			return reject(err)
 		}
 		brokerID = r.(*findcoordinator.Response).NodeID
+	case protocol.TransactionalMessage:
+		p := p.sendRequest(ctx, &findcoordinator.Request{
+			Key:     m.Transaction(),
+			KeyType: int8(CoordinatorKeyTypeTransaction),
+		}, state)
+		r, err := p.await(ctx)
+		if err != nil {
+			return reject(err)
+		}
+		brokerID = r.(*findcoordinator.Response).NodeID
 	}
 
 	var c *conn

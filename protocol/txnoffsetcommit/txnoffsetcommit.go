@@ -43,6 +43,10 @@ type RequestPartition struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.TxnOffsetCommit }
 
+func (r *Request) Group() string { return r.GroupID }
+
+var _ protocol.GroupMessage = (*Request)(nil)
+
 type Response struct {
 	// We need at least one tagged field to indicate that this is a "flexible" message
 	// type.

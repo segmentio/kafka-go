@@ -438,6 +438,14 @@ type GroupMessage interface {
 	Group() string
 }
 
+// TransactionalMessage is an extension of the Message interface implemented by some
+// request types to inform the program that they should be reouted to a transaction
+// coordinator.
+type TransactionalMessage interface {
+	// Returns the transactional id configured on the message.
+	Transaction() string
+}
+
 // PreparedMessage is an extension of the Message interface implemented by some
 // request types which may need to run some pre-processing on their state before
 // being sent.
