@@ -439,7 +439,7 @@ type GroupMessage interface {
 }
 
 // TransactionalMessage is an extension of the Message interface implemented by some
-// request types to inform the program that they should be reouted to a transaction
+// request types to inform the program that they should be routed to a transaction
 // coordinator.
 type TransactionalMessage interface {
 	// Returns the transactional id configured on the message.

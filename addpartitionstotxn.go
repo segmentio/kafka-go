@@ -35,8 +35,8 @@ type AddPartitionsToTxnRequest struct {
 	Topics map[string][]AddPartitionToTxn
 }
 
-// AddPartitioinsToTxnResponse is the response structure for the AddPartitioinsToTxn function.
-type AddPartitioinsToTxnResponse struct {
+// AddPartitionsToTxnResponse is the response structure for the AddPartitionsToTxn function.
+type AddPartitionsToTxnResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration
 
@@ -62,7 +62,7 @@ type AddPartitionToTxnPartition struct {
 func (c *Client) AddPartitionsToTxn(
 	ctx context.Context,
 	req *AddPartitionsToTxnRequest,
-) (*AddPartitioinsToTxnResponse, error) {
+) (*AddPartitionsToTxnResponse, error) {
 	protoReq := &addpartitionstotxn.Request{
 		TransactionalID: req.TransactionalID,
 		ProducerID:      int64(req.ProducerID),
@@ -88,7 +88,7 @@ func (c *Client) AddPartitionsToTxn(
 
 	r := m.(*addpartitionstotxn.Response)
 
-	res := &AddPartitioinsToTxnResponse{
+	res := &AddPartitionsToTxnResponse{
 		Throttle: makeDuration(r.ThrottleTimeMs),
 		Topics:   make(map[string][]AddPartitionToTxnPartition, len(r.Results)),
 	}
