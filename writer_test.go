@@ -95,7 +95,7 @@ func testBatchQueueGetWorksAfterClose(t *testing.T) {
 
 // TestWriter tests behavior of the Writer interface against two different
 // ways of instantiation:
-// - the NewWriter constructor (deprecated, but still in use so we should
+// - the NewWriter constructor (deprecated, but still in use, so we should
 //   continue to test it)
 // - the Writer{} struct literal
 func TestWriter(t *testing.T) {
@@ -109,7 +109,7 @@ func TestWriter(t *testing.T) {
 
 		// the literal Writer - used directly for literal tests and converted to
 		// WriterConfig for constructor tests
-		writer Writer
+		writer *Writer
 
 		// set the topic on the Writer
 		setTopic bool
@@ -131,7 +131,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterRoundRobin1,
 			setTopic:    true,
 			createTopic: true,
-			writer: Writer{
+			writer: &Writer{
 				Balancer: &RoundRobin{},
 			},
 		},
@@ -140,7 +140,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterMaxAttemptsErr,
 			setTopic:    true,
 			createTopic: true,
-			writer: Writer{
+			writer: &Writer{
 				Addr:        TCP("localhost:9999"),
 				Balancer:    &RoundRobin{},
 				MaxAttempts: 3,
@@ -151,7 +151,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterMaxBytes,
 			setTopic:    true,
 			createTopic: true,
-			writer: Writer{
+			writer: &Writer{
 				BatchBytes: 25,
 			},
 		},
@@ -160,7 +160,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterBatchBytes,
 			setTopic:    true,
 			createTopic: true,
-			writer: Writer{
+			writer: &Writer{
 				BatchBytes:   48,
 				BatchTimeout: math.MaxInt32 * time.Second,
 				Balancer:     &RoundRobin{},
@@ -171,7 +171,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterBatchSize,
 			setTopic:    true,
 			createTopic: true,
-			writer: Writer{
+			writer: &Writer{
 				BatchSize:    2,
 				BatchTimeout: math.MaxInt32 * time.Second,
 				Balancer:     &RoundRobin{},
@@ -182,7 +182,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterSmallBatchBytes,
 			setTopic:    true,
 			createTopic: true,
-			writer: Writer{
+			writer: &Writer{
 				BatchBytes:   25,
 				BatchTimeout: 50 * time.Millisecond,
 				Balancer:     &RoundRobin{},
@@ -191,14 +191,14 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "writing messages to multiple topics",
 			function: testWriterMultipleTopics,
-			writer: Writer{
+			writer: &Writer{
 				Balancer: &RoundRobin{},
 			},
 		},
 		{
 			scenario: "writing messages without specifying a topic",
 			function: testWriterMissingTopic,
-			writer: Writer{
+			writer: &Writer{
 				Balancer: &RoundRobin{},
 			},
 		},
@@ -207,7 +207,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterUnexpectedMessageTopic,
 			setTopic:    true,
 			createTopic: true,
-			writer: Writer{
+			writer: &Writer{
 				Balancer: &RoundRobin{},
 			},
 		},
@@ -216,7 +216,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterInvalidPartition,
 			setTopic:    true,
 			createTopic: true,
-			writer: Writer{
+			writer: &Writer{
 				Balancer:    &staticBalancer{partition: -1},
 				MaxAttempts: 1,
 			},
@@ -270,7 +270,10 @@ func TestWriter(t *testing.T) {
 				}
 				w := newTestWriter(cfg)
 				t.Cleanup(func() {
-					w.Close()
+					err := w.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
 				})
 				testFunc(t, w)
 			})
@@ -298,9 +301,12 @@ func TestWriter(t *testing.T) {
 					w.Addr = TCP("localhost:9092")
 				}
 				t.Cleanup(func() {
-					w.Close()
+					err := w.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
 				})
-				testFunc(t, &w)
+				testFunc(t, w)
 			})
 		})
 	}
@@ -402,28 +408,28 @@ func testWriterRoundRobin1(t *testing.T, w *Writer) {
 
 func TestValidateWriter(t *testing.T) {
 	tests := []struct {
-		config       WriterConfig
-		errorOccured bool
+		config        WriterConfig
+		errorOccurred bool
 	}{
-		{config: WriterConfig{}, errorOccured: true},
+		{config: WriterConfig{}, errorOccurred: true},
 		{
-			config:       WriterConfig{Brokers: []string{"broker1", "broker2"}},
-			errorOccured: false,
+			config:        WriterConfig{Brokers: []string{"broker1", "broker2"}},
+			errorOccurred: false,
 		},
 		{
 			config: WriterConfig{
 				Brokers: []string{"broker1"},
 				Topic:   "topic1",
 			},
-			errorOccured: false,
+			errorOccurred: false,
 		},
 	}
 	for _, test := range tests {
 		err := test.config.Validate()
-		if test.errorOccured && err == nil {
+		if test.errorOccurred && err == nil {
 			t.Fail()
 		}
-		if !test.errorOccured && err != nil {
+		if !test.errorOccurred && err != nil {
 			t.Fail()
 		}
 	}
@@ -591,8 +597,8 @@ func testWriterBatchSize(t *testing.T, w *Writer) {
 	}
 
 	if err := w.WriteMessages(ctx, []Message{
-		Message{Value: []byte("Hi")}, // 24 Bytes
-		Message{Value: []byte("By")}, // 24 Bytes
+		{Value: []byte("Hi")}, // 24 Bytes
+		{Value: []byte("By")}, // 24 Bytes
 	}...); err != nil {
 		t.Error(err)
 		return
@@ -633,8 +639,8 @@ func testWriterSmallBatchBytes(t *testing.T, w *Writer) {
 	}
 
 	if err := w.WriteMessages(ctx, []Message{
-		Message{Value: []byte("Hi")}, // 24 Bytes
-		Message{Value: []byte("By")}, // 24 Bytes
+		{Value: []byte("Hi")}, // 24 Bytes
+		{Value: []byte("By")}, // 24 Bytes
 	}...); err != nil {
 		t.Error(err)
 		return
@@ -771,6 +777,6 @@ type staticBalancer struct {
 	partition int
 }
 
-func (b *staticBalancer) Balance(_ Message, partitions ...int) int {
+func (b *staticBalancer) Balance(Message, ...int) int {
 	return b.partition
 }
