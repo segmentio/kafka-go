@@ -109,7 +109,7 @@ func TestWriter(t *testing.T) {
 
 		// the literal Writer - used directly for literal tests and converted to
 		// WriterConfig for constructor tests
-		writer *Writer
+		writer Writer
 
 		// set the topic on the Writer
 		setTopic bool
@@ -125,14 +125,13 @@ func TestWriter(t *testing.T) {
 			function:    testWriterClose,
 			setTopic:    true,
 			createTopic: true,
-			writer:      &Writer{},
 		},
 		{
 			scenario:    "writing 1 message through a writer using round-robin balancing produces 1 message to the first partition",
 			function:    testWriterRoundRobin1,
 			setTopic:    true,
 			createTopic: true,
-			writer: &Writer{
+			writer: Writer{
 				Balancer: &RoundRobin{},
 			},
 		},
@@ -141,7 +140,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterMaxAttemptsErr,
 			setTopic:    true,
 			createTopic: true,
-			writer: &Writer{
+			writer: Writer{
 				Addr:        TCP("localhost:9999"),
 				Balancer:    &RoundRobin{},
 				MaxAttempts: 3,
@@ -152,7 +151,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterMaxBytes,
 			setTopic:    true,
 			createTopic: true,
-			writer: &Writer{
+			writer: Writer{
 				BatchBytes: 25,
 			},
 		},
@@ -161,7 +160,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterBatchBytes,
 			setTopic:    true,
 			createTopic: true,
-			writer: &Writer{
+			writer: Writer{
 				BatchBytes:   48,
 				BatchTimeout: math.MaxInt32 * time.Second,
 				Balancer:     &RoundRobin{},
@@ -172,7 +171,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterBatchSize,
 			setTopic:    true,
 			createTopic: true,
-			writer: &Writer{
+			writer: Writer{
 				BatchSize:    2,
 				BatchTimeout: math.MaxInt32 * time.Second,
 				Balancer:     &RoundRobin{},
@@ -183,7 +182,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterSmallBatchBytes,
 			setTopic:    true,
 			createTopic: true,
-			writer: &Writer{
+			writer: Writer{
 				BatchBytes:   25,
 				BatchTimeout: 50 * time.Millisecond,
 				Balancer:     &RoundRobin{},
@@ -192,14 +191,14 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "writing messages to multiple topics",
 			function: testWriterMultipleTopics,
-			writer: &Writer{
+			writer: Writer{
 				Balancer: &RoundRobin{},
 			},
 		},
 		{
 			scenario: "writing messages without specifying a topic",
 			function: testWriterMissingTopic,
-			writer: &Writer{
+			writer: Writer{
 				Balancer: &RoundRobin{},
 			},
 		},
@@ -208,7 +207,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterUnexpectedMessageTopic,
 			setTopic:    true,
 			createTopic: true,
-			writer: &Writer{
+			writer: Writer{
 				Balancer: &RoundRobin{},
 			},
 		},
@@ -217,7 +216,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterInvalidPartition,
 			setTopic:    true,
 			createTopic: true,
-			writer: &Writer{
+			writer: Writer{
 				Balancer:    &staticBalancer{partition: -1},
 				MaxAttempts: 1,
 			},
@@ -233,15 +232,17 @@ func TestWriter(t *testing.T) {
 		}
 
 		// client for making topics if necessary
-		client := &Client{}
+		client := &Client{
+			Addr: test.writer.Addr,
+		}
 
-		if test.writer == nil || test.writer.Addr == nil {
+		if client.Addr == nil {
 			client.Addr = TCP("localhost:9092")
-		} else {
-			client.Addr = test.writer.Addr
 		}
 
 		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
+
 			// run test against deprecated constructor style
 			t.Run("constructor", func(t *testing.T) {
 				t.Parallel()
@@ -308,7 +309,7 @@ func TestWriter(t *testing.T) {
 						t.Fatal(err)
 					}
 				})
-				testFunc(t, w)
+				testFunc(t, &w)
 			})
 		})
 	}
