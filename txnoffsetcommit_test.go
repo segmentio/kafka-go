@@ -53,7 +53,7 @@ func TestClientTxnOffsetCommit(t *testing.T) {
 
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
+	respc, err := waitForCoordinatorIndefinitely(ctx, t, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,
 		Key:     transactionalID,
 		KeyType: CoordinatorKeyTypeTransaction,
@@ -68,7 +68,7 @@ func TestClientTxnOffsetCommit(t *testing.T) {
 
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	respc, err = waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
+	respc, err = waitForCoordinatorIndefinitely(ctx, t, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,
 		Key:     transactionalID,
 		KeyType: CoordinatorKeyTypeConsumer,
