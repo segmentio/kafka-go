@@ -2,9 +2,7 @@ package kafka
 
 import (
 	"context"
-	"log"
 	"net"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -50,7 +48,7 @@ func TestClientAddOffsetsToTxn(t *testing.T) {
 		HeartbeatInterval: 2 * time.Second,
 		RebalanceTimeout:  2 * time.Second,
 		RetentionTime:     time.Hour,
-		Logger:            log.New(os.Stdout, "cg-test: ", 0),
+		Logger:            LoggerFunc(t.Logf),
 	})
 	if err != nil {
 		t.Fatal(err)
