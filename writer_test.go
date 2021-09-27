@@ -125,6 +125,7 @@ func TestWriter(t *testing.T) {
 			function:    testWriterClose,
 			setTopic:    true,
 			createTopic: true,
+			writer:      &Writer{},
 		},
 		{
 			scenario:    "writing 1 message through a writer using round-robin balancing produces 1 message to the first partition",
@@ -232,11 +233,12 @@ func TestWriter(t *testing.T) {
 		}
 
 		// client for making topics if necessary
-		client := &Client{
-			Addr: test.writer.Addr,
-		}
-		if client.Addr == nil {
+		client := &Client{}
+
+		if test.writer == nil || test.writer.Addr == nil {
 			client.Addr = TCP("localhost:9092")
+		} else {
+			client.Addr = test.writer.Addr
 		}
 
 		t.Run(test.scenario, func(t *testing.T) {
@@ -413,7 +415,12 @@ func TestValidateWriter(t *testing.T) {
 	}{
 		{config: WriterConfig{}, errorOccurred: true},
 		{
-			config:        WriterConfig{Brokers: []string{"broker1", "broker2"}},
+			config: WriterConfig{
+				Brokers: []string{
+					"broker1",
+					"broker2",
+				},
+			},
 			errorOccurred: false,
 		},
 		{
