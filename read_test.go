@@ -17,15 +17,15 @@ type VarIntTestCase struct {
 
 func TestReadVarInt(t *testing.T) {
 	testCases := []*VarIntTestCase{
-		&VarIntTestCase{v: 0, r: 3, tc: []byte{0, 1, 10, 0}},
-		&VarIntTestCase{v: -1, r: 3, tc: []byte{1, 1, 10, 0}},
-		&VarIntTestCase{v: 1, r: 3, tc: []byte{2, 1, 10, 0}},
-		&VarIntTestCase{v: -2, r: 3, tc: []byte{3, 1, 10, 0}},
-		&VarIntTestCase{v: 2, r: 3, tc: []byte{4, 1, 10, 0}},
-		&VarIntTestCase{v: 64, r: 2, tc: []byte{128, 1, 10, 0}},
-		&VarIntTestCase{v: -64, r: 3, tc: []byte{127, 1, 10, 0}},
-		&VarIntTestCase{v: -196, r: 2, tc: []byte{135, 3, 10, 0}},
-		&VarIntTestCase{v: -24772, r: 1, tc: []byte{135, 131, 3, 0}},
+		{v: 0, r: 3, tc: []byte{0, 1, 10, 0}},
+		{v: -1, r: 3, tc: []byte{1, 1, 10, 0}},
+		{v: 1, r: 3, tc: []byte{2, 1, 10, 0}},
+		{v: -2, r: 3, tc: []byte{3, 1, 10, 0}},
+		{v: 2, r: 3, tc: []byte{4, 1, 10, 0}},
+		{v: 64, r: 2, tc: []byte{128, 1, 10, 0}},
+		{v: -64, r: 3, tc: []byte{127, 1, 10, 0}},
+		{v: -196, r: 2, tc: []byte{135, 3, 10, 0}},
+		{v: -24772, r: 1, tc: []byte{135, 131, 3, 0}},
 	}
 
 	for _, tc := range testCases {

@@ -101,7 +101,7 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 		r, err := c.ListOffsets(ctx, &ListOffsetsRequest{
 			Addr: req.Addr,
 			Topics: map[string][]OffsetRequest{
-				topic: []OffsetRequest{{
+				topic: {{
 					Partition: partition,
 					Timestamp: offset,
 				}},

@@ -311,7 +311,6 @@ func createTopic(t *testing.T, topic string, partitions int) {
 		t.FailNow()
 	}
 
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 

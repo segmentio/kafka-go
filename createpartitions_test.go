@@ -21,11 +21,11 @@ func TestClientCreatePartitions(t *testing.T) {
 
 	res, err := client.CreatePartitions(context.Background(), &CreatePartitionsRequest{
 		Topics: []TopicPartitionsConfig{
-			TopicPartitionsConfig{
+			{
 				Name:  topic,
 				Count: 2,
 				TopicPartitionAssignments: []TopicPartitionAssignment{
-					TopicPartitionAssignment{
+					{
 						BrokerIDs: []int32{1},
 					},
 				},

@@ -25,14 +25,14 @@ type WriteVarIntTestCase struct {
 
 func TestWriteVarInt(t *testing.T) {
 	testCases := []*WriteVarIntTestCase{
-		&WriteVarIntTestCase{v: []byte{0}, tc: 0},
-		&WriteVarIntTestCase{v: []byte{2}, tc: 1},
-		&WriteVarIntTestCase{v: []byte{1}, tc: -1},
-		&WriteVarIntTestCase{v: []byte{3}, tc: -2},
-		&WriteVarIntTestCase{v: []byte{128, 2}, tc: 128},
-		&WriteVarIntTestCase{v: []byte{254, 1}, tc: 127},
-		&WriteVarIntTestCase{v: []byte{142, 6}, tc: 391},
-		&WriteVarIntTestCase{v: []byte{142, 134, 6}, tc: 49543},
+		{v: []byte{0}, tc: 0},
+		{v: []byte{2}, tc: 1},
+		{v: []byte{1}, tc: -1},
+		{v: []byte{3}, tc: -2},
+		{v: []byte{128, 2}, tc: 128},
+		{v: []byte{254, 1}, tc: 127},
+		{v: []byte{142, 6}, tc: 391},
+		{v: []byte{142, 134, 6}, tc: 49543},
 	}
 
 	for _, tc := range testCases {
@@ -203,7 +203,7 @@ func TestWriteV2RecordBatch(t *testing.T) {
 	msgs := make([]Message, 15)
 	for i := range msgs {
 		value := fmt.Sprintf("Sample message content: %d!", i)
-		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{Header{Key: "hk", Value: []byte("hv")}}}
+		msgs[i] = Message{Key: []byte("Key"), Value: []byte(value), Headers: []Header{{Key: "hk", Value: []byte("hv")}}}
 	}
 
 	w := &Writer{
