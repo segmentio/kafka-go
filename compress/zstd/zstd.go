@@ -144,7 +144,7 @@ func (w *writer) Close() error {
 		if err != nil {
 			w.err = err
 		}
-		w.enc.Reset(devNull{}) // don't retain the underyling writer
+		w.enc.Reset(devNull{}) // don't retain the underlying writer
 		w.c.encoderPool.Put(w.enc)
 		w.enc = nil
 		return err

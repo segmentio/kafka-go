@@ -50,7 +50,7 @@ type AddPartitionToTxnPartition struct {
 	// The ID of the partition.
 	Partition int
 
-	// An error that may have occured when attempting to add the partition
+	// An error that may have occurred when attempting to add the partition
 	// to a transaction.
 	//
 	// The errors contain the kafka error code. Programs may use the standard

@@ -23,7 +23,7 @@ type EndTxnRequest struct {
 	// The epoch associated with the current producer session for the given PID
 	ProducerEpoch int
 
-	// Committed should be set to true if the transaction was commited, false otherwise.
+	// Committed should be set to true if the transaction was committed, false otherwise.
 	Committed bool
 }
 
