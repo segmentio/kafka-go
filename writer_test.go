@@ -486,8 +486,8 @@ func testWriterBatchSize(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
-		Message{Value: []byte("Hi")}, // 24 Bytes
-		Message{Value: []byte("By")}, // 24 Bytes
+		{Value: []byte("Hi")}, // 24 Bytes
+		{Value: []byte("By")}, // 24 Bytes
 	}...); err != nil {
 		t.Error(err)
 		return
@@ -537,8 +537,8 @@ func testWriterSmallBatchBytes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
-		Message{Value: []byte("Hi")}, // 24 Bytes
-		Message{Value: []byte("By")}, // 24 Bytes
+		{Value: []byte("Hi")}, // 24 Bytes
+		{Value: []byte("By")}, // 24 Bytes
 	}...); err != nil {
 		t.Error(err)
 		return
