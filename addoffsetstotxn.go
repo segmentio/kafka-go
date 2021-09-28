@@ -33,7 +33,7 @@ type AddOffsetsToTxnResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration
 
-	// An error that may have occured when attempting to add the offsets
+	// An error that may have occurred when attempting to add the offsets
 	// to a transaction.
 	//
 	// The errors contain the kafka error code. Programs may use the standard

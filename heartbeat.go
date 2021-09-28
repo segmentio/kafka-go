@@ -30,7 +30,7 @@ type HeartbeatRequest struct {
 
 // HeartbeatResponse represents a response from a heartbeat request.
 type HeartbeatResponse struct {
-	// Error is set to non-nil if an error occured.
+	// Error is set to non-nil if an error occurred.
 	Error error
 
 	// The amount of time that the broker throttled the request.
