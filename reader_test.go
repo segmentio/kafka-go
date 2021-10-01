@@ -596,14 +596,20 @@ func TestCloseLeavesGroup(t *testing.T) {
 	}
 	defer conn.Close()
 
-	descGroups := func() describeGroupsResponseV0 {
-		resp, err := conn.describeGroups(describeGroupsRequestV0{
-			GroupIDs: []string{groupID},
-		})
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	descGroups := func() DescribeGroupsResponse {
+		resp, err := client.DescribeGroups(
+			ctx,
+			&DescribeGroupsRequest{
+				GroupIDs: []string{groupID},
+			},
+		)
 		if err != nil {
 			t.Fatalf("error from describeGroups %v", err)
 		}
-		return resp
+		return *resp
 	}
 
 	_, err = r.ReadMessage(ctx)

@@ -202,12 +202,6 @@ func TestConn(t *testing.T) {
 		},
 
 		{
-			scenario:   "describe groups retrieves all groups when no groupID specified",
-			function:   testConnDescribeGroupRetrievesAllGroups,
-			minVersion: "0.11.0",
-		},
-
-		{
 			scenario: "find the group coordinator",
 			function: testConnFindCoordinator,
 		},
@@ -733,26 +727,6 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 	}
 
 	return
-}
-
-func testConnDescribeGroupRetrievesAllGroups(t *testing.T, conn *Conn) {
-	groupID := makeGroupID()
-	_, _, stop1 := createGroup(t, conn, groupID)
-	defer stop1()
-
-	out, err := conn.describeGroups(describeGroupsRequestV0{
-		GroupIDs: []string{groupID},
-	})
-	if err != nil {
-		t.Fatalf("bad describeGroups: %s", err)
-	}
-
-	if v := len(out.Groups); v != 1 {
-		t.Fatalf("expected 1 group, got %v", v)
-	}
-	if id := out.Groups[0].GroupID; id != groupID {
-		t.Errorf("bad group: got %v, expected %v", id, groupID)
-	}
 }
 
 func testConnFindCoordinator(t *testing.T, conn *Conn) {
