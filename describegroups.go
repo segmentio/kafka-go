@@ -105,6 +105,9 @@ type GroupMemberTopic struct {
 	Partitions []int
 }
 
+// DescribeGroups calls the Kafka DescribeGroups API to get information about one or more
+// consumer groups. See https://kafka.apache.org/protocol#The_Messages_DescribeGroups for
+// more information.
 func (c *Client) DescribeGroups(
 	ctx context.Context,
 	req *DescribeGroupsRequest,
@@ -153,6 +156,7 @@ func (c *Client) DescribeGroups(
 	return resp, nil
 }
 
+// readFrom
 func (t *DescribeGroupsResponseMemberMetadataOwnedPartition) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readString(r, size, &t.Topic); err != nil {
 		return
