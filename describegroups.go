@@ -207,11 +207,12 @@ func decodeMemberMetadata(rawMetadata []byte) (DescribeGroupsResponseMemberMetad
 			if fnRemain, fnErr = readString(r, size, &op.Topic); fnErr != nil {
 				return
 			}
-			ps := []int32{}
 
-			if fnRemain, fnErr = readInt32Array(r, remain, &ps); fnErr != nil {
+			ps := []int32{}
+			if fnRemain, fnErr = readInt32Array(r, fnRemain, &ps); fnErr != nil {
 				return
 			}
+
 			for _, p := range ps {
 				op.Partitions = append(op.Partitions, int(p))
 			}
