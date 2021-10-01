@@ -156,7 +156,7 @@ func (c *Client) DescribeGroups(
 	return resp, nil
 }
 
-// readFrom
+// readFrom decodes an owned partition item from the member metadata.
 func (t *DescribeGroupsResponseMemberMetadataOwnedPartition) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readString(r, size, &t.Topic); err != nil {
 		return
