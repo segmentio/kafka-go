@@ -70,9 +70,8 @@ type DescribeGroupsResponseMemberMetadata struct {
 	// UserData is the user data for the member.
 	UserData []byte
 
-	// OwnedPartitions contains the partitions owned by this group member.
-	//
-	// Note: Only set if the member metadata is using version 1 of the protocol.
+	// OwnedPartitions contains the partitions owned by this group member; only set if
+	// consumers are using a cooperative rebalancing assignor protocol.
 	OwnedPartitions []DescribeGroupsResponseMemberMetadataOwnedPartition
 }
 
