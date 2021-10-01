@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"os"
 	"reflect"
 	"strconv"
 	"sync"
@@ -571,6 +572,14 @@ func BenchmarkReader(b *testing.B) {
 }
 
 func TestCloseLeavesGroup(t *testing.T) {
+	if os.Getenv("KAFKA_VERSION") == "2.3.1" {
+		// There's a bug in 2.3.1 that causes the MemberMetadata to be in the wrong format and thus
+		// leads to an error when decoding the DescribeGroupsResponse.
+		//
+		// See https://issues.apache.org/jira/browse/KAFKA-9150 for details.
+		t.Skip("Skipping because kafka version is 2.3.1")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -596,14 +605,20 @@ func TestCloseLeavesGroup(t *testing.T) {
 	}
 	defer conn.Close()
 
-	descGroups := func() describeGroupsResponseV0 {
-		resp, err := conn.describeGroups(describeGroupsRequestV0{
-			GroupIDs: []string{groupID},
-		})
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	descGroups := func() DescribeGroupsResponse {
+		resp, err := client.DescribeGroups(
+			ctx,
+			&DescribeGroupsRequest{
+				GroupIDs: []string{groupID},
+			},
+		)
 		if err != nil {
 			t.Fatalf("error from describeGroups %v", err)
 		}
-		return resp
+		return *resp
 	}
 
 	_, err = r.ReadMessage(ctx)

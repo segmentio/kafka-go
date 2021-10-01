@@ -315,34 +315,6 @@ func (c *Conn) DeleteTopics(topics ...string) error {
 	return err
 }
 
-// describeGroups retrieves the specified groups
-//
-// See http://kafka.apache.org/protocol.html#The_Messages_DescribeGroups
-func (c *Conn) describeGroups(request describeGroupsRequestV0) (describeGroupsResponseV0, error) {
-	var response describeGroupsResponseV0
-
-	err := c.readOperation(
-		func(deadline time.Time, id int32) error {
-			return c.writeRequest(describeGroups, v0, id, request)
-		},
-		func(deadline time.Time, size int) error {
-			return expectZeroSize(func() (remain int, err error) {
-				return (&response).readFrom(&c.rbuf, size)
-			}())
-		},
-	)
-	if err != nil {
-		return describeGroupsResponseV0{}, err
-	}
-	for _, group := range response.Groups {
-		if group.ErrorCode != 0 {
-			return describeGroupsResponseV0{}, Error(group.ErrorCode)
-		}
-	}
-
-	return response, nil
-}
-
 // findCoordinator finds the coordinator for the specified group or transaction
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
