@@ -131,12 +131,10 @@ func (c *Client) DescribeGroups(
 		}
 
 		for _, member := range apiGroup.Members {
-			fmt.Println("Decoding member metadata")
 			decodedMetadata, err := decodeMemberMetadata(member.MemberMetadata)
 			if err != nil {
 				return nil, err
 			}
-			fmt.Println("Decoding member assignments")
 			decodedAssignments, err := decodeMemberAssignments(member.MemberAssignment)
 			if err != nil {
 				return nil, err
