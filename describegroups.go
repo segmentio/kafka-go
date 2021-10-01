@@ -156,6 +156,22 @@ func (c *Client) DescribeGroups(
 	return resp, nil
 }
 
+func (t *DescribeGroupsResponseMemberMetadataOwnedPartition) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+	if remain, err = readString(r, size, &t.Topic); err != nil {
+		return
+	}
+	partitions := []int32{}
+
+	if remain, err = readInt32Array(r, remain, &partitions); err != nil {
+		return
+	}
+	for _, partition := range partitions {
+		t.Partitions = append(t.Partitions, int(partition))
+	}
+
+	return
+}
+
 // decodeMemberMetadata converts raw metadata bytes to a
 // DescribeGroupsResponseMemberMetadata struct.
 //
@@ -187,26 +203,33 @@ func decodeMemberMetadata(rawMetadata []byte) (DescribeGroupsResponseMemberMetad
 		return mm, err
 	}
 
-	/*
-		if mm.Version == 1 {
-			fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-				//item := DescribeGroupsResponseMemberMetadataOwnedPartition{}
-				//if fnRemain, fnErr = (&item).readFrom(r, size); fnErr != nil {
-				//	return
-				//}
-				//mm.OwnedPartitions = append(mm.OwnedPartitions, item)
+	if mm.Version == 1 && remain > 0 {
+		fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
+			op := DescribeGroupsResponseMemberMetadataOwnedPartition{}
+			if fnRemain, fnErr = readString(r, size, &op.Topic); fnErr != nil {
 				return
 			}
+			ps := []int32{}
 
-			if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
-				return mm, err
+			if fnRemain, fnErr = readInt32Array(r, remain, &ps); fnErr != nil {
+				return
 			}
-		}
-	*/
+			for _, p := range ps {
+				op.Partitions = append(op.Partitions, int(p))
+			}
 
-	//if remain != 0 {
-	//		return mm, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
-	//}
+			mm.OwnedPartitions = append(mm.OwnedPartitions, op)
+			return
+		}
+
+		if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
+			return mm, err
+		}
+	}
+
+	if remain != 0 {
+		return mm, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
+	}
 
 	return mm, nil
 }
