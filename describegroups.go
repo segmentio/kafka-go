@@ -187,20 +187,22 @@ func decodeMemberMetadata(rawMetadata []byte) (DescribeGroupsResponseMemberMetad
 		return mm, err
 	}
 
-	if mm.Version == 1 {
-		fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-			//item := DescribeGroupsResponseMemberMetadataOwnedPartition{}
-			//if fnRemain, fnErr = (&item).readFrom(r, size); fnErr != nil {
-			//	return
-			//}
-			//mm.OwnedPartitions = append(mm.OwnedPartitions, item)
-			return
-		}
+	/*
+		if mm.Version == 1 {
+			fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
+				//item := DescribeGroupsResponseMemberMetadataOwnedPartition{}
+				//if fnRemain, fnErr = (&item).readFrom(r, size); fnErr != nil {
+				//	return
+				//}
+				//mm.OwnedPartitions = append(mm.OwnedPartitions, item)
+				return
+			}
 
-		if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
-			return mm, err
+			if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
+				return mm, err
+			}
 		}
-	}
+	*/
 
 	//if remain != 0 {
 	//		return mm, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
