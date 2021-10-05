@@ -187,7 +187,13 @@ func (f v2MessageSetBuilder) bytes() []byte {
 							wb.Write(msg.Key)                                             // key bytes
 							wb.writeVarInt(int64(len(msg.Value)))                         // value len
 							wb.Write(msg.Value)                                           // value bytes
-							wb.writeVarInt(0)                                             // number of headers
+							wb.writeVarInt(int64(len(msg.Headers)))                       // number of headers
+							for _, header := range msg.Headers {
+								wb.writeVarInt(int64(len(header.Key)))
+								wb.Write([]byte(header.Key))
+								wb.writeVarInt(int64(len(header.Value)))
+								wb.Write(header.Value)
+							}
 						})
 						wb.writeVarInt(int64(len(bs)))
 						wb.Write(bs)

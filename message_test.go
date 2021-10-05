@@ -29,6 +29,12 @@ func TestMessageSetReader(t *testing.T) {
 			Offset: int64(i + startOffset),
 			Key:    []byte(fmt.Sprintf("key-%d", i)),
 			Value:  []byte(fmt.Sprintf("val-%d", i)),
+			Headers: []Header{
+				{
+					Key:   fmt.Sprintf("header-key-%d", i),
+					Value: []byte(fmt.Sprintf("header-value-%d", i)),
+				},
+			},
 		}
 	}
 	defaultHeader := fetchResponseHeader{
@@ -280,11 +286,23 @@ func TestMessageSetReader(t *testing.T) {
 			}
 			rh.offset = tc.builder.messages()[0].Offset
 			rh.debug = tc.debug
-			for _, expected := range tc.builder.messages() {
-				msg := rh.readMessage()
-				require.Equal(t, string(expected.Key), string(msg.Key))
-				require.Equal(t, string(expected.Value), string(msg.Value))
-				require.Equal(t, expected.Offset, msg.Offset)
+			for _, messageSet := range tc.builder.msgSets {
+				for _, expected := range messageSet.messages() {
+					msg := rh.readMessage()
+					require.Equal(t, string(expected.Key), string(msg.Key))
+					require.Equal(t, string(expected.Value), string(msg.Value))
+					switch messageSet.(type) {
+					case v0MessageSetBuilder, v1MessageSetBuilder:
+						// v0 and v1 message sets do not have headers
+						require.Len(t, msg.Headers, 0)
+					case v2MessageSetBuilder:
+						// v2 message sets can have headers
+						require.EqualValues(t, expected.Headers, msg.Headers)
+					default:
+						t.Fatalf("unknown builder: %T", messageSet)
+					}
+					require.Equal(t, expected.Offset, msg.Offset)
+				}
 			}
 			// verify the reader stack is empty
 			require.EqualValues(t, 0, rh.remain)
