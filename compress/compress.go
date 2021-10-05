@@ -63,7 +63,7 @@ func (c *Compression) UnmarshalText(b []byte) error {
 	}
 
 	s := &strings.Builder{}
-	s.WriteString("none")
+	s.WriteString("none, uncompressed")
 
 	for i, codec := range Codecs[None+1:] {
 		if i < (len(Codecs) - 1) {
