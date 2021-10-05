@@ -442,18 +442,18 @@ func TestMessageFixtures(t *testing.T) {
 
 			rh, err := newReaderHelper(t, buf.Bytes())
 			require.NoError(t, err)
-			messagesCount := 0
+			messageCount := 0
 			expectedMessageCount := len(tc.messages)
 			for _, expectedMessageId := range tc.messages {
 				expectedMessage := fixtureMessages[expectedMessageId]
 				msg := rh.readMessage()
-				messagesCount++
+				messageCount++
 				require.Equal(t, expectedMessage.key, string(msg.Key))
 				require.Equal(t, expectedMessage.value, string(msg.Value))
 				t.Logf("Message %d key & value are what we expected: %s -> %s\n",
-					messagesCount, string(msg.Key), string(msg.Value))
+					messageCount, string(msg.Key), string(msg.Value))
 			}
-			require.Equal(t, expectedMessageCount, messagesCount)
+			require.Equal(t, expectedMessageCount, messageCount)
 		})
 	}
 }
