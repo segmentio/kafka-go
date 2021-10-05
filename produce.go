@@ -3,9 +3,11 @@ package kafka
 import (
 	"bufio"
 	"context"
+	"encoding"
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -32,6 +34,34 @@ func (acks RequiredAcks) String() string {
 		return "unknown"
 	}
 }
+
+func (acks RequiredAcks) MarshalText() ([]byte, error) {
+	return []byte(acks.String()), nil
+}
+
+func (acks *RequiredAcks) UnmarshalText(b []byte) error {
+	switch string(b) {
+	case "none":
+		*acks = RequireNone
+	case "one":
+		*acks = RequireOne
+	case "all":
+		*acks = RequireAll
+	default:
+		x, err := strconv.ParseInt(string(b), 10, 64)
+		parsed := RequiredAcks(x)
+		if err != nil || (parsed != RequireNone && parsed != RequireOne && parsed != RequireAll) {
+			return fmt.Errorf("required acks must be one of none, one, or all, not %q", b)
+		}
+		*acks = parsed
+	}
+	return nil
+}
+
+var (
+	_ encoding.TextMarshaler   = RequiredAcks(0)
+	_ encoding.TextUnmarshaler = (*RequiredAcks)(nil)
+)
 
 // ProduceRequest represents a request sent to a kafka broker to produce records
 // to a topic partition.

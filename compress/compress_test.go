@@ -85,6 +85,31 @@ func testEncodeDecode(t *testing.T, m kafka.Message, codec pkg.Codec) {
 	var r1, r2 []byte
 	var err error
 
+	t.Run("text format of "+codec.Name(), func(t *testing.T) {
+		c := pkg.Compression(codec.Code())
+		a := strconv.Itoa(int(c))
+		x := pkg.Compression(-1)
+		y := pkg.Compression(-1)
+		b, err := c.MarshalText()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := x.UnmarshalText([]byte(a)); err != nil {
+			t.Fatal(err)
+		}
+		if err := y.UnmarshalText(b); err != nil {
+			t.Fatal(err)
+		}
+
+		if x != c {
+			t.Errorf("compression mismatch after marshal/unmarshal: want=%s got=%s", c, x)
+		}
+		if y != c {
+			t.Errorf("compression mismatch after marshal/unmarshal: want=%s got=%s", c, y)
+		}
+	})
+
 	t.Run("encode with "+codec.Name(), func(t *testing.T) {
 		r1, err = compress(codec, m.Value)
 		if err != nil {
