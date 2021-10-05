@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -47,7 +48,12 @@ func (acks *RequiredAcks) UnmarshalText(b []byte) error {
 	case "all":
 		*acks = RequireAll
 	default:
-		return fmt.Errorf("required acks must be one of none, one, or all, not %q", b)
+		x, err := strconv.ParseInt(string(b), 10, 64)
+		parsed := RequiredAcks(x)
+		if err != nil || (parsed != RequireNone && parsed != RequireOne && parsed != RequireAll) {
+			return fmt.Errorf("required acks must be one of none, one, or all, not %q", b)
+		}
+		*acks = parsed
 	}
 	return nil
 }

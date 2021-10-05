@@ -4,6 +4,7 @@ import (
 	"encoding"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/segmentio/kafka-go/compress/gzip"
@@ -53,6 +54,12 @@ func (c *Compression) UnmarshalText(b []byte) error {
 			*c = Compression(codec.Code())
 			return nil
 		}
+	}
+
+	i, err := strconv.ParseInt(string(b), 10, 64)
+	if err == nil && i >= 0 && i < int64(len(Codecs)) {
+		*c = Compression(i)
+		return nil
 	}
 
 	s := &strings.Builder{}

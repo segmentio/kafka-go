@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -15,18 +16,26 @@ func TestRequiredAcks(t *testing.T) {
 		RequireAll,
 	} {
 		t.Run(acks.String(), func(t *testing.T) {
+			a := strconv.Itoa(int(acks))
+			x := RequiredAcks(-2)
+			y := RequiredAcks(-2)
 			b, err := acks.MarshalText()
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			x := RequiredAcks(-1)
-			if err := x.UnmarshalText(b); err != nil {
+			if err := x.UnmarshalText([]byte(a)); err != nil {
+				t.Fatal(err)
+			}
+			if err := y.UnmarshalText(b); err != nil {
 				t.Fatal(err)
 			}
 
 			if x != acks {
-				t.Errorf("required acks mismatch after marshal/unmarshal: want=%s got=%s", acks, x)
+				t.Errorf("required acks mismatch after marshal/unmarshal text: want=%s got=%s", acks, x)
+			}
+			if y != acks {
+				t.Errorf("required acks mismatch after marshal/unmarshal value: want=%s got=%s", acks, y)
 			}
 		})
 	}
