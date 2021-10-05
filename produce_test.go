@@ -8,6 +8,30 @@ import (
 	"github.com/segmentio/kafka-go/compress"
 )
 
+func TestRequiredAcks(t *testing.T) {
+	for _, acks := range []RequiredAcks{
+		RequireNone,
+		RequireOne,
+		RequireAll,
+	} {
+		t.Run(acks.String(), func(t *testing.T) {
+			b, err := acks.MarshalText()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			x := RequiredAcks(-1)
+			if err := x.UnmarshalText(b); err != nil {
+				t.Fatal(err)
+			}
+
+			if x != acks {
+				t.Errorf("required acks mismatch after marshal/unmarshal: want=%s got=%s", acks, x)
+			}
+		})
+	}
+}
+
 func TestClientProduce(t *testing.T) {
 	client, topic, shutdown := newLocalClientAndTopic()
 	defer shutdown()

@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"context"
+	"encoding"
 	"errors"
 	"fmt"
 	"net"
@@ -32,6 +33,29 @@ func (acks RequiredAcks) String() string {
 		return "unknown"
 	}
 }
+
+func (acks RequiredAcks) MarshalText() ([]byte, error) {
+	return []byte(acks.String()), nil
+}
+
+func (acks *RequiredAcks) UnmarshalText(b []byte) error {
+	switch string(b) {
+	case "none":
+		*acks = RequireNone
+	case "one":
+		*acks = RequireOne
+	case "all":
+		*acks = RequireAll
+	default:
+		return fmt.Errorf("required acks must be one of none, one, or all, not %q", b)
+	}
+	return nil
+}
+
+var (
+	_ encoding.TextMarshaler   = RequiredAcks(0)
+	_ encoding.TextUnmarshaler = (*RequiredAcks)(nil)
+)
 
 // ProduceRequest represents a request sent to a kafka broker to produce records
 // to a topic partition.

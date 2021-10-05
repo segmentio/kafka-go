@@ -1,7 +1,10 @@
 package compress
 
 import (
+	"encoding"
+	"fmt"
 	"io"
+	"strings"
 
 	"github.com/segmentio/kafka-go/compress/gzip"
 	"github.com/segmentio/kafka-go/compress/lz4"
@@ -13,6 +16,7 @@ import (
 type Compression int8
 
 const (
+	None   Compression = 0
 	Gzip   Compression = 1
 	Snappy Compression = 2
 	Lz4    Compression = 3
@@ -32,6 +36,44 @@ func (c Compression) String() string {
 	}
 	return "uncompressed"
 }
+
+func (c Compression) MarshalText() ([]byte, error) {
+	return []byte(c.String()), nil
+}
+
+func (c *Compression) UnmarshalText(b []byte) error {
+	switch string(b) {
+	case "none", "uncompressed":
+		*c = None
+		return nil
+	}
+
+	for _, codec := range Codecs[None+1:] {
+		if codec.Name() == string(b) {
+			*c = Compression(codec.Code())
+			return nil
+		}
+	}
+
+	s := &strings.Builder{}
+	s.WriteString("none")
+
+	for i, codec := range Codecs[None+1:] {
+		if i < (len(Codecs) - 1) {
+			s.WriteString(", ")
+		} else {
+			s.WriteString(", or ")
+		}
+		s.WriteString(codec.Name())
+	}
+
+	return fmt.Errorf("compression format must be one of %s, not %q", s, b)
+}
+
+var (
+	_ encoding.TextMarshaler   = Compression(0)
+	_ encoding.TextUnmarshaler = (*Compression)(nil)
+)
 
 // Codec represents a compression codec to encode and decode the messages.
 // See : https://cwiki.apache.org/confluence/display/KAFKA/Compression
@@ -66,6 +108,7 @@ var (
 
 	// The global table of compression codecs supported by the kafka protocol.
 	Codecs = [...]Codec{
+		None:   nil,
 		Gzip:   &GzipCodec,
 		Snappy: &SnappyCodec,
 		Lz4:    &Lz4Codec,
