@@ -329,6 +329,117 @@ func TestMessageSetReaderEmpty(t *testing.T) {
 	}
 }
 
+func TestMessageFixtures(t *testing.T) {
+	type fixtureMessage struct {
+		key   string
+		value string
+	}
+	var fixtureMessages = map[string]fixtureMessage{
+		"a": {key: "alpha", value: `{"count":0,"filler":"aaaaaaaaaa"}`},
+		"b": {key: "beta", value: `{"count":0,"filler":"bbbbbbbbbb"}`},
+		"c": {key: "gamma", value: `{"count":0,"filler":"cccccccccc"}`},
+		"d": {key: "delta", value: `{"count":0,"filler":"dddddddddd"}`},
+		"e": {key: "epsilon", value: `{"count":0,"filler":"eeeeeeeeee"}`},
+		"f": {key: "zeta", value: `{"count":0,"filler":"ffffffffff"}`},
+		"g": {key: "eta", value: `{"count":0,"filler":"gggggggggg"}`},
+		"h": {key: "theta", value: `{"count":0,"filler":"hhhhhhhhhh"}`},
+	}
+
+	for _, tc := range []struct {
+		name     string
+		file     string
+		messages []string
+	}{
+		{
+			name:     "v2 followed by v1",
+			file:     "fixtures/v2b-v1.hex",
+			messages: []string{"a", "b", "a", "b"},
+		},
+		{
+			name:     "v2 compressed followed by v1 compressed",
+			file:     "fixtures/v2bc-v1c.hex",
+			messages: []string{"a", "b", "a", "b"},
+		},
+		{
+			name:     "v2 compressed followed by v1 uncompressed",
+			file:     "fixtures/v2bc-v1.hex",
+			messages: []string{"a", "b", "c", "d"},
+		},
+		{
+			name:     "v2 compressed followed by v1 uncompressed then v1 compressed",
+			file:     "fixtures/v2bc-v1-v1c.hex",
+			messages: []string{"a", "b", "c", "d", "e", "f"},
+		},
+		{
+			name:     "v2 compressed followed by v1 uncompressed then v1 compressed",
+			file:     "fixtures/v2bc-v1-v1c.hex",
+			messages: []string{"a", "b", "c", "d", "e", "f"},
+		},
+		{
+			name:     "v1 followed by v1",
+			file:     "fixtures/v1-v1.hex",
+			messages: []string{"a", "b", "c", "d"},
+		},
+		{
+			name:     "v1 compressed followed by v1 compressed",
+			file:     "fixtures/v1c-v1c.hex",
+			messages: []string{"a", "b", "c", "d"},
+		},
+		{
+			name:     "v1 compressed followed by v1 uncompressed then v1 compressed",
+			file:     "fixtures/v1c-v1-v1c.hex",
+			messages: []string{"a", "b", "c", "d", "e", "f"},
+		},
+		{
+			name:     "v2 followed by v2",
+			file:     "fixtures/v2-v2.hex",
+			messages: []string{"a", "b", "c", "d"},
+		},
+		{
+			name:     "v2 compressed followed by v2 compressed",
+			file:     "fixtures/v2c-v2c.hex",
+			messages: []string{"a", "b", "c", "d"},
+		},
+		{
+			name:     "v2 compressed followed by v2 uncompressed then v2 compressed",
+			file:     "fixtures/v2c-v2-v2c.hex",
+			messages: []string{"a", "b", "c", "d", "e", "f"},
+		},
+		{
+			name:     "v1 followed by v2 followed by v1 with mixture of compressed and uncompressed",
+			file:     "fixtures/v1-v1c-v2-v2c-v2b-v2b-v2b-v2bc-v1b-v1bc.hex",
+			messages: []string{"a", "b", "a", "b", "c", "d", "c", "d", "e", "f", "e", "f", "g", "h", "g", "h", "g", "h", "g", "h"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bs, err := os.ReadFile(tc.file)
+			require.NoError(t, err)
+			buf := new(bytes.Buffer)
+			_, err = io.Copy(buf, hex.NewDecoder(bytes.NewReader(bs)))
+			require.NoError(t, err)
+
+			// discard 4 byte len and 4 byte correlation id
+			bs = make([]byte, 8)
+			buf.Read(bs)
+
+			rh, err := newReaderHelper(t, buf.Bytes())
+			require.NoError(t, err)
+			messagesCount := 0
+			expectedMessageCount := len(tc.messages)
+			for _, expectedMessageId := range tc.messages {
+				expectedMessage := fixtureMessages[expectedMessageId]
+				msg := rh.readMessage()
+				messagesCount++
+				require.Equal(t, expectedMessage.key, string(msg.Key))
+				require.Equal(t, expectedMessage.value, string(msg.Value))
+				t.Logf("Message %d key & value are what we expected: %s -> %s\n",
+					messagesCount, string(msg.Key), string(msg.Value))
+			}
+			require.Equal(t, expectedMessageCount, messagesCount)
+		})
+	}
+}
+
 func TestMessageSize(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	for i := 0; i < 20; i++ {
