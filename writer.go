@@ -138,6 +138,13 @@ type Writer struct {
 	// Defaults to RequireNone.
 	RequiredAcks RequiredAcks
 
+	TransactionalID string
+
+	TransactionTimeout time.Duration
+
+	txMutex         sync.Mutex
+	producerSession *ProducerSession
+
 	// Setting this flag to true causes the WriteMessages method to never block.
 	// It also means that errors are ignored since the caller will not receive
 	// the returned value. Use this only if you don't care about guarantees of
@@ -645,6 +652,69 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 	}
 	return werr
+}
+
+func (w *Writer) InitTransactions(ctx context.Context) error {
+	if w.TransactionalID == "" {
+		return errors.New("kafka.(*Writer).InitTransaction: cannot initialize transactions with a TransactionalID")
+	}
+
+	w.txMutex.Lock()
+	defer w.txMutex.Unlock()
+
+	var producerID, producerEpoch int
+
+	if w.producerSession != nil {
+		producerID = w.producerSession.ProducerID
+		producerEpoch = w.producerSession.ProducerEpoch
+	}
+
+	resp, err := w.client(w.writeTimeout()).InitProducerID(ctx, &InitProducerIDRequest{
+		TransactionalID:      w.TransactionalID,
+		TransactionTimeoutMs: int(w.TransactionTimeout.Milliseconds()),
+		ProducerID:           producerID,
+		ProducerEpoch:        producerEpoch,
+	})
+	if err != nil {
+		return err
+	}
+
+	if resp.Error != nil {
+		return resp.Error
+	}
+
+	w.producerSession = resp.Producer
+
+	return nil
+}
+
+var ErrTxnNotInitialized = errors.New("transactions not initialized")
+
+func (w *Writer) BeginTxn() (*Transaction, error) {
+	// Need to enforce only having a single txn active at a time.
+	w.txMutex.Lock()
+	defer w.txMutex.Unlock()
+
+	if w.producerSession == nil {
+		return nil, ErrTxnNotInitialized
+	}
+
+	w.group.Add(1)
+
+	txn := &Transaction{
+		w:               w,
+		producerEpoch:   w.producerSession.ProducerEpoch,
+		producerID:      w.producerSession.ProducerID,
+		transactionalID: w.TransactionalID,
+		done:            make(chan struct{}),
+	}
+
+	go func() {
+		<-txn.done
+		w.group.Done()
+	}()
+
+	return txn, nil
 }
 
 func (w *Writer) batchMessages(messages []Message, assignments map[topicPartition][]int32) map[*writeBatch][]int32 {
