@@ -10,7 +10,8 @@ func main() {
 	groupID := "group-id"
 	writer := kafka.Writer{}
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		GroupID: groupID,
+		GroupID:        groupID,
+		IsolationLevel: kafka.ReadCommitted,
 	})
 
 	writer.InitTransactions(context.TODO())
