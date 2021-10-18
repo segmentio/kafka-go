@@ -18,6 +18,225 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// This regression test covers reading messages using offsets that
+// are at the beginning and in the middle of compressed and uncompressed
+// v1 message sets
+func TestV1BatchOffsets(t *testing.T) {
+	const highWatermark = 5000
+	const topic = "test-topic"
+	var (
+		msg0 = Message{
+			Offset: 0,
+			Key:    []byte("msg-0"),
+			Value:  []byte("key-0"),
+		}
+		msg1 = Message{
+			Offset: 1,
+			Key:    []byte("msg-1"),
+			Value:  []byte("key-1"),
+		}
+		msg2 = Message{
+			Offset: 2,
+			Key:    []byte("msg-2"),
+			Value:  []byte("key-2"),
+		}
+	)
+
+	for _, tc := range []struct {
+		name     string
+		builder  fetchResponseBuilder
+		offset   int64
+		expected []Message
+		debug    bool
+	}{
+		{
+			name:   "num=1 off=0",
+			offset: 0,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						msgs: []Message{msg0},
+					},
+				},
+			},
+			expected: []Message{msg0},
+		},
+		{
+			name:   "num=1 off=0 compressed",
+			offset: 0,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						codec: new(gzip.Codec),
+						msgs:  []Message{msg0},
+					},
+				},
+			},
+			expected: []Message{msg0},
+		},
+		{
+			name:   "num=1 off=1",
+			offset: 1,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						msgs: []Message{msg1},
+					},
+				},
+			},
+			expected: []Message{msg1},
+		},
+		{
+			name:   "num=1 off=1 compressed",
+			offset: 1,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						codec: new(gzip.Codec),
+						msgs:  []Message{msg1},
+					},
+				},
+			},
+			expected: []Message{msg1},
+		},
+		{
+			name:   "num=3 off=0",
+			offset: 0,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						msgs: []Message{msg0, msg1, msg2},
+					},
+				},
+			},
+			expected: []Message{msg0, msg1, msg2},
+		},
+		{
+			name:   "num=3 off=0 compressed",
+			offset: 0,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						codec: new(gzip.Codec),
+						msgs:  []Message{msg0, msg1, msg2},
+					},
+				},
+			},
+			expected: []Message{msg0, msg1, msg2},
+		},
+		{
+			name:   "num=3 off=1",
+			offset: 1,
+			debug:  true,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						msgs: []Message{msg0, msg1, msg2},
+					},
+				},
+			},
+			expected: []Message{msg1, msg2},
+		},
+		{
+			name:   "num=3 off=1 compressed",
+			offset: 1,
+			debug:  true,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						codec: new(gzip.Codec),
+						msgs:  []Message{msg0, msg1, msg2},
+					},
+				},
+			},
+			expected: []Message{msg1, msg2},
+		},
+		{
+			name:   "num=3 off=2 compressed",
+			offset: 2,
+			debug:  true,
+			builder: fetchResponseBuilder{
+				header: fetchResponseHeader{
+					highWatermarkOffset: highWatermark,
+					lastStableOffset:    highWatermark,
+					topic:               topic,
+				},
+				msgSets: []messageSetBuilder{
+					v1MessageSetBuilder{
+						codec: new(gzip.Codec),
+						msgs:  []Message{msg0, msg1, msg2},
+					},
+				},
+			},
+			expected: []Message{msg2},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bs := tc.builder.bytes()
+			r, err := newReaderHelper(t, bs)
+			require.NoError(t, err)
+			r.offset = tc.offset
+			r.debug = tc.debug
+			filter := func(msg Message) (res Message) {
+				res.Offset = msg.Offset
+				res.Key = msg.Key
+				res.Value = msg.Value
+				return res
+			}
+			for _, expected := range tc.expected {
+				t.Logf("Want [%d] %s:%s", expected.Offset, expected.Key, expected.Value)
+				msg := filter(r.readMessage())
+				t.Logf("Read [%d] %s:%s", msg.Offset, msg.Key, msg.Value)
+				require.EqualValues(t, expected, msg)
+			}
+			// finally, verify no more bytes remain
+			require.EqualValues(t, 0, r.remain)
+			_, err = r.readMessageErr()
+			require.EqualError(t, err, errShortRead.Error())
+		})
+	}
+}
+
 func TestMessageSetReader(t *testing.T) {
 	const startOffset = 1000
 	const highWatermark = 5000
@@ -61,7 +280,7 @@ func TestMessageSetReader(t *testing.T) {
 				header: defaultHeader,
 				msgSets: []messageSetBuilder{
 					v0MessageSetBuilder{
-						Message: msgs[0],
+						msgs: []Message{msgs[0]},
 					},
 				},
 			},
@@ -72,8 +291,8 @@ func TestMessageSetReader(t *testing.T) {
 				header: defaultHeader,
 				msgSets: []messageSetBuilder{
 					v0MessageSetBuilder{
-						codec:   new(gzip.Codec),
-						Message: msgs[0],
+						codec: new(gzip.Codec),
+						msgs:  []Message{msgs[0]},
 					},
 				},
 			},
@@ -84,7 +303,7 @@ func TestMessageSetReader(t *testing.T) {
 				header: defaultHeader,
 				msgSets: []messageSetBuilder{
 					v1MessageSetBuilder{
-						Message: msgs[0],
+						msgs: []Message{msgs[0]},
 					},
 				},
 			},
@@ -95,8 +314,8 @@ func TestMessageSetReader(t *testing.T) {
 				header: defaultHeader,
 				msgSets: []messageSetBuilder{
 					v1MessageSetBuilder{
-						codec:   new(gzip.Codec),
-						Message: msgs[0],
+						codec: new(gzip.Codec),
+						msgs:  []Message{msgs[0]},
 					},
 				},
 			},
@@ -175,25 +394,25 @@ func TestMessageSetReader(t *testing.T) {
 				header: defaultHeader,
 				msgSets: []messageSetBuilder{
 					v0MessageSetBuilder{
-						Message: msgs[0],
+						msgs: []Message{msgs[0]},
 					},
 					v2MessageSetBuilder{
 						msgs: []Message{msgs[1], msgs[2]},
 					},
 					v1MessageSetBuilder{
-						Message: msgs[3],
+						msgs: []Message{msgs[3]},
 					},
 					v2MessageSetBuilder{
 						msgs: []Message{msgs[4], msgs[5]},
 					},
 					v1MessageSetBuilder{
-						Message: msgs[6],
+						msgs: []Message{msgs[6]},
 					},
 					v1MessageSetBuilder{
-						Message: msgs[7],
+						msgs: []Message{msgs[7]},
 					},
 					v0MessageSetBuilder{
-						Message: msgs[8],
+						msgs: []Message{msgs[8]},
 					},
 					v2MessageSetBuilder{
 						msgs: []Message{msgs[9], msgs[10]},
@@ -207,32 +426,32 @@ func TestMessageSetReader(t *testing.T) {
 				header: defaultHeader,
 				msgSets: []messageSetBuilder{
 					v0MessageSetBuilder{
-						codec:   new(gzip.Codec),
-						Message: msgs[0],
+						codec: new(gzip.Codec),
+						msgs:  []Message{msgs[0]},
 					},
 					v2MessageSetBuilder{
 						codec: new(zstd.Codec),
 						msgs:  []Message{msgs[1], msgs[2]},
 					},
 					v1MessageSetBuilder{
-						codec:   new(snappy.Codec),
-						Message: msgs[3],
+						codec: new(snappy.Codec),
+						msgs:  []Message{msgs[3]},
 					},
 					v2MessageSetBuilder{
 						codec: new(lz4.Codec),
 						msgs:  []Message{msgs[4], msgs[5]},
 					},
 					v1MessageSetBuilder{
-						codec:   new(gzip.Codec),
-						Message: msgs[6],
+						codec: new(gzip.Codec),
+						msgs:  []Message{msgs[6]},
 					},
 					v1MessageSetBuilder{
-						codec:   new(zstd.Codec),
-						Message: msgs[7],
+						codec: new(zstd.Codec),
+						msgs:  []Message{msgs[7]},
 					},
 					v0MessageSetBuilder{
-						codec:   new(snappy.Codec),
-						Message: msgs[8],
+						codec: new(snappy.Codec),
+						msgs:  []Message{msgs[8]},
 					},
 					v2MessageSetBuilder{
 						codec: new(lz4.Codec),
@@ -247,28 +466,28 @@ func TestMessageSetReader(t *testing.T) {
 				header: defaultHeader,
 				msgSets: []messageSetBuilder{
 					v0MessageSetBuilder{
-						codec:   new(gzip.Codec),
-						Message: msgs[0],
+						codec: new(gzip.Codec),
+						msgs:  []Message{msgs[0]},
 					},
 					v2MessageSetBuilder{
 						msgs: []Message{msgs[1], msgs[2]},
 					},
 					v1MessageSetBuilder{
-						codec:   new(snappy.Codec),
-						Message: msgs[3],
+						codec: new(snappy.Codec),
+						msgs:  []Message{msgs[3]},
 					},
 					v2MessageSetBuilder{
 						msgs: []Message{msgs[4], msgs[5]},
 					},
 					v1MessageSetBuilder{
-						Message: msgs[6],
+						msgs: []Message{msgs[6]},
 					},
 					v1MessageSetBuilder{
-						codec:   new(zstd.Codec),
-						Message: msgs[7],
+						codec: new(zstd.Codec),
+						msgs:  []Message{msgs[7]},
 					},
 					v0MessageSetBuilder{
-						Message: msgs[8],
+						msgs: []Message{msgs[8]},
 					},
 					v2MessageSetBuilder{
 						codec: new(lz4.Codec),
@@ -284,11 +503,11 @@ func TestMessageSetReader(t *testing.T) {
 			if tc.err != nil {
 				return
 			}
-			rh.offset = tc.builder.messages()[0].Offset
 			rh.debug = tc.debug
 			for _, messageSet := range tc.builder.msgSets {
 				for _, expected := range messageSet.messages() {
 					msg := rh.readMessage()
+					require.Equal(t, expected.Offset, msg.Offset)
 					require.Equal(t, string(expected.Key), string(msg.Key))
 					require.Equal(t, string(expected.Value), string(msg.Value))
 					switch messageSet.(type) {
