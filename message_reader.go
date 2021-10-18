@@ -209,7 +209,7 @@ func (r *messageSetReader) readMessageV1(min int64, key readBytesFunc, val readB
 		//
 		// At this point, the message header has been read, so discarding
 		// the rest of the message means we have to discard the key, and then
-		// the value. Each of those are preceeded by a 4-byte length. Discarding
+		// the value. Each of those are preceded by a 4-byte length. Discarding
 		// them is then reading that length variable and then discarding that
 		// amount.
 		if offset < min {
