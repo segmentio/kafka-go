@@ -75,77 +75,85 @@ type messageSetBuilder interface {
 }
 
 type v0MessageSetBuilder struct {
-	Message
+	msgs  []Message
 	codec CompressionCodec
 }
 
 func (f v0MessageSetBuilder) messages() []Message {
-	return []Message{f.Message}
+	return f.msgs
 }
 
 func (f v0MessageSetBuilder) bytes() []byte {
-	bs := newWB().call(func(wb *kafkaWriteBuffer) {
-		wb.writeInt64(f.Offset) // offset
-		wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
-			wb.writeInt32(-1) // crc, unused
-			wb.writeInt8(0)   // magic
-			wb.writeInt8(0)   // attributes -- zero, no compression for the inner message
-			wb.writeBytes(f.Key)
-			wb.writeBytes(f.Value)
-		}))
+	return newWB().call(func(wb *kafkaWriteBuffer) {
+		for _, msg := range f.msgs {
+			bs := newWB().call(func(wb *kafkaWriteBuffer) {
+				wb.writeInt64(msg.Offset) // offset
+				wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
+					wb.writeInt32(-1) // crc, unused
+					wb.writeInt8(0)   // magic
+					wb.writeInt8(0)   // attributes -- zero, no compression for the inner message
+					wb.writeBytes(msg.Key)
+					wb.writeBytes(msg.Value)
+				}))
+			})
+			if f.codec != nil {
+				bs = newWB().call(func(wb *kafkaWriteBuffer) {
+					wb.writeInt64(msg.Offset) // offset
+					wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
+						compressed := mustCompress(bs, f.codec)
+						wb.writeInt32(-1)            // crc, unused
+						wb.writeInt8(0)              // magic
+						wb.writeInt8(f.codec.Code()) // attributes
+						wb.writeBytes(nil)           // key is always nil for compressed
+						wb.writeBytes(compressed)    // the value is the compressed message
+					}))
+				})
+			}
+			wb.Write(bs)
+		}
 	})
-	if f.codec != nil {
-		bs = newWB().call(func(wb *kafkaWriteBuffer) {
-			wb.writeInt64(f.Offset) // offset
-			wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
-				compressed := mustCompress(bs, f.codec)
-				wb.writeInt32(-1)            // crc, unused
-				wb.writeInt8(0)              // magic
-				wb.writeInt8(f.codec.Code()) // attributes
-				wb.writeBytes(nil)           // key is always nil for compressed
-				wb.writeBytes(compressed)    // the value is the compressed message
-			}))
-		})
-	}
-	return bs
 }
 
 type v1MessageSetBuilder struct {
-	Message
+	msgs  []Message
 	codec CompressionCodec
 }
 
 func (f v1MessageSetBuilder) messages() []Message {
-	return []Message{f.Message}
+	return f.msgs
 }
 
 func (f v1MessageSetBuilder) bytes() []byte {
-	bs := newWB().call(func(wb *kafkaWriteBuffer) {
-		wb.writeInt64(f.Offset) // offset
-		wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
-			wb.writeInt32(-1)                 // crc, unused
-			wb.writeInt8(1)                   // magic
-			wb.writeInt8(0)                   // attributes -- zero, no compression for the inner message
-			wb.writeInt64(f.Time.UnixMilli()) // timestamp
-			wb.writeBytes(f.Key)
-			wb.writeBytes(f.Value)
-		}))
+	return newWB().call(func(wb *kafkaWriteBuffer) {
+		for _, msg := range f.msgs {
+			bs := newWB().call(func(wb *kafkaWriteBuffer) {
+				wb.writeInt64(msg.Offset) // offset
+				wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
+					wb.writeInt32(-1)                   // crc, unused
+					wb.writeInt8(1)                     // magic
+					wb.writeInt8(0)                     // attributes -- zero, no compression for the inner message
+					wb.writeInt64(msg.Time.UnixMilli()) // timestamp
+					wb.writeBytes(msg.Key)
+					wb.writeBytes(msg.Value)
+				}))
+			})
+			if f.codec != nil {
+				bs = newWB().call(func(wb *kafkaWriteBuffer) {
+					wb.writeInt64(msg.Offset) // offset
+					wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
+						bs := mustCompress(bs, f.codec)
+						wb.writeInt32(-1)                   // crc, unused
+						wb.writeInt8(1)                     // magic
+						wb.writeInt8(f.codec.Code())        // attributes
+						wb.writeInt64(msg.Time.UnixMilli()) // timestamp
+						wb.writeBytes(nil)                  // key is always nil for compressed
+						wb.writeBytes(bs)                   // the value is the compressed message
+					}))
+				})
+			}
+			wb.Write(bs)
+		}
 	})
-	if f.codec != nil {
-		bs = newWB().call(func(wb *kafkaWriteBuffer) {
-			wb.writeInt64(f.Offset) // offset
-			wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
-				bs := mustCompress(bs, f.codec)
-				wb.writeInt32(-1)                 // crc, unused
-				wb.writeInt8(1)                   // magic
-				wb.writeInt8(f.codec.Code())      // attributes
-				wb.writeInt64(f.Time.UnixMilli()) // timestamp
-				wb.writeBytes(nil)                // key is always nil for compressed
-				wb.writeBytes(bs)                 // the value is the compressed message
-			}))
-		})
-	}
-	return bs
 }
 
 type v2MessageSetBuilder struct {
