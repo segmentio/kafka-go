@@ -224,9 +224,7 @@ func TestV1BatchOffsets(t *testing.T) {
 				return res
 			}
 			for _, expected := range tc.expected {
-				t.Logf("Want [%d] %s:%s", expected.Offset, expected.Key, expected.Value)
 				msg := filter(r.readMessage())
-				t.Logf("Read [%d] %s:%s", msg.Offset, msg.Key, msg.Value)
 				require.EqualValues(t, expected, msg)
 			}
 			// finally, verify no more bytes remain

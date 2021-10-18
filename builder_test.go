@@ -84,7 +84,7 @@ func (f v0MessageSetBuilder) messages() []Message {
 }
 
 func (f v0MessageSetBuilder) bytes() []byte {
-	return newWB().call(func(wb *kafkaWriteBuffer) {
+	bs := newWB().call(func(wb *kafkaWriteBuffer) {
 		for _, msg := range f.msgs {
 			bs := newWB().call(func(wb *kafkaWriteBuffer) {
 				wb.writeInt64(msg.Offset) // offset
@@ -96,22 +96,23 @@ func (f v0MessageSetBuilder) bytes() []byte {
 					wb.writeBytes(msg.Value)
 				}))
 			})
-			if f.codec != nil {
-				bs = newWB().call(func(wb *kafkaWriteBuffer) {
-					wb.writeInt64(msg.Offset) // offset
-					wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
-						compressed := mustCompress(bs, f.codec)
-						wb.writeInt32(-1)            // crc, unused
-						wb.writeInt8(0)              // magic
-						wb.writeInt8(f.codec.Code()) // attributes
-						wb.writeBytes(nil)           // key is always nil for compressed
-						wb.writeBytes(compressed)    // the value is the compressed message
-					}))
-				})
-			}
 			wb.Write(bs)
 		}
 	})
+	if f.codec != nil {
+		bs = newWB().call(func(wb *kafkaWriteBuffer) {
+			wb.writeInt64(f.msgs[0].Offset) // offset
+			wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
+				compressed := mustCompress(bs, f.codec)
+				wb.writeInt32(-1)            // crc, unused
+				wb.writeInt8(0)              // magic
+				wb.writeInt8(f.codec.Code()) // attributes
+				wb.writeBytes(nil)           // key is always nil for compressed
+				wb.writeBytes(compressed)    // the value is the compressed message
+			}))
+		})
+	}
+	return bs
 }
 
 type v1MessageSetBuilder struct {
@@ -124,10 +125,14 @@ func (f v1MessageSetBuilder) messages() []Message {
 }
 
 func (f v1MessageSetBuilder) bytes() []byte {
-	return newWB().call(func(wb *kafkaWriteBuffer) {
-		for _, msg := range f.msgs {
+	bs := newWB().call(func(wb *kafkaWriteBuffer) {
+		for i, msg := range f.msgs {
 			bs := newWB().call(func(wb *kafkaWriteBuffer) {
-				wb.writeInt64(msg.Offset) // offset
+				if f.codec != nil {
+					wb.writeInt64(int64(i)) // compressed inner message offsets are relative
+				} else {
+					wb.writeInt64(msg.Offset) // offset
+				}
 				wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
 					wb.writeInt32(-1)                   // crc, unused
 					wb.writeInt8(1)                     // magic
@@ -137,23 +142,24 @@ func (f v1MessageSetBuilder) bytes() []byte {
 					wb.writeBytes(msg.Value)
 				}))
 			})
-			if f.codec != nil {
-				bs = newWB().call(func(wb *kafkaWriteBuffer) {
-					wb.writeInt64(msg.Offset) // offset
-					wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
-						bs := mustCompress(bs, f.codec)
-						wb.writeInt32(-1)                   // crc, unused
-						wb.writeInt8(1)                     // magic
-						wb.writeInt8(f.codec.Code())        // attributes
-						wb.writeInt64(msg.Time.UnixMilli()) // timestamp
-						wb.writeBytes(nil)                  // key is always nil for compressed
-						wb.writeBytes(bs)                   // the value is the compressed message
-					}))
-				})
-			}
 			wb.Write(bs)
 		}
 	})
+	if f.codec != nil {
+		bs = newWB().call(func(wb *kafkaWriteBuffer) {
+			wb.writeInt64(f.msgs[len(f.msgs)-1].Offset) // offset of the wrapper message is the last offset of the inner messages
+			wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
+				bs := mustCompress(bs, f.codec)
+				wb.writeInt32(-1)                         // crc, unused
+				wb.writeInt8(1)                           // magic
+				wb.writeInt8(f.codec.Code())              // attributes
+				wb.writeInt64(f.msgs[0].Time.UnixMilli()) // timestamp
+				wb.writeBytes(nil)                        // key is always nil for compressed
+				wb.writeBytes(bs)                         // the value is the compressed message
+			}))
+		})
+	}
+	return bs
 }
 
 type v2MessageSetBuilder struct {
