@@ -32,14 +32,15 @@ var signUserAgent = fmt.Sprintf("kafka-go/sasl/aws_msk_iam/%s", runtime.Version(
 // Mechanism implements sasl.Mechanism for the AWS_MSK_IAM mechanism, based on the official java implementation:
 // https://github.com/aws/aws-msk-iam-auth
 type Mechanism struct {
+	// The sigv4.Signer to use when signing the request. Required.
 	Signer *sigv4.Signer
-	// The host of the kafka broker to connect to.
+	// The host of the kafka broker to connect to. Required.
 	Host string
-	// The region where the msk cluster is hosted.
+	// The region where the msk cluster is hosted, e.g. "us-east-1". Required.
 	Region string
-	// The time the request is planned for. Defaults to time.Now() at time of authentication.
+	// The time the request is planned for. Optional, defaults to time.Now() at time of authentication.
 	SignTime time.Time
-	// The duration for which the presigned-request is active. Defaults to 5 minutes.
+	// The duration for which the presigned request is active. Optional, defaults to 5 minutes.
 	Expiry time.Duration
 }
 
@@ -63,14 +64,15 @@ func (m *Mechanism) Name() string {
 // 	  "x-amz-signature" : "<AWS SigV4 signature computed by the client>"
 // 	}
 func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byte, err error) {
-	signUrl := url.URL{
-		Scheme: "kafka",
-		Host:   m.Host,
-		Path:   "/",
+	query := url.Values{
+		queryActionKey: {signAction},
 	}
-	query := signUrl.Query()
-	query.Set(queryActionKey, signAction)
-	signUrl.RawQuery = query.Encode()
+	signUrl := url.URL{
+		Scheme:   "kafka",
+		Host:     m.Host,
+		Path:     "/",
+		RawQuery: query.Encode(),
+	}
 
 	req, err := http.NewRequest("GET", signUrl.String(), nil)
 	if err != nil {

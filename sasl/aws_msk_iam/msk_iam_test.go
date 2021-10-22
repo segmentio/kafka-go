@@ -61,6 +61,7 @@ func TestAwsMskIamMechanism(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(authMap, expectedMap) {
+		// Compare map values-- the ordering of the fields (and thus, the resulting bytes) doesn't matter
 		t.Error("Unexpected authentication",
 			"expected", expectedMap,
 			"got", authMap,
