@@ -3,6 +3,7 @@ package aws_msk_iam
 import (
 	"context"
 	"encoding/json"
+	sigv4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"reflect"
 	"testing"
 	"time"
@@ -20,8 +21,12 @@ var signTime = time.Date(2021, 10, 14, 13, 5, 0, 0, time.UTC)
 
 func TestAwsMskIamMechanism(t *testing.T) {
 	creds := credentials.NewStaticCredentials(accessKeyId, secretAccessKey, "")
-	mskMechanism := NewMechanism("localhost", "us-east-1", creds)
-	mskMechanism.SignTime = signTime
+	mskMechanism := &Mechanism{
+		Signer:   sigv4.NewSigner(creds),
+		Host:     "localhost",
+		Region:   "us-east-1",
+		SignTime: signTime,
+	}
 
 	sess, auth, err := mskMechanism.Start(context.Background())
 	if err != nil {

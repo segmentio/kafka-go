@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	sigv4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/segmentio/kafka-go/sasl"
 )
@@ -25,8 +25,6 @@ const (
 	signUserAgentKey = "user-agent"
 	signActionKey    = "action"
 	queryActionKey   = "Action"
-
-	defaultSignExpiry = 5 * time.Minute
 )
 
 var signUserAgent = fmt.Sprintf("kafka-go/sasl/aws_msk_iam/%s", runtime.Version())
@@ -36,23 +34,13 @@ var signUserAgent = fmt.Sprintf("kafka-go/sasl/aws_msk_iam/%s", runtime.Version(
 type Mechanism struct {
 	Signer *sigv4.Signer
 	// The host of the kafka broker to connect to.
-	BrokerHost string
+	Host string
 	// The region where the msk cluster is hosted.
-	AwsRegion string
+	Region string
 	// The time the request is planned for. Defaults to time.Now() at time of authentication.
 	SignTime time.Time
-	// The duration for which the presigned-request is active. Defaults to 15 minutes.
+	// The duration for which the presigned-request is active. Defaults to 5 minutes.
 	Expiry time.Duration
-}
-
-// NewMechanism creates a sasl.Mechanism for AWS_MSK_IAM
-func NewMechanism(brokerHost, awsRegion string, creds *credentials.Credentials) *Mechanism {
-	return &Mechanism{
-		BrokerHost: brokerHost,
-		AwsRegion:  awsRegion,
-		Signer:     sigv4.NewSigner(creds),
-		Expiry:     defaultSignExpiry,
-	}
 }
 
 func (m *Mechanism) Name() string {
@@ -75,11 +63,16 @@ func (m *Mechanism) Name() string {
 // 	  "x-amz-signature" : "<AWS SigV4 signature computed by the client>"
 // 	}
 func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byte, err error) {
-	// The trailing slash and protocol are necessary here.
-	// The sigv4.Signer will take the host and the path from the url.
-	// The host will be the broker host, and the path will be "/".
-	url := fmt.Sprintf("kafka://%s/?%s=%s", m.BrokerHost, queryActionKey, signAction)
-	req, err := http.NewRequest("GET", url, nil)
+	signUrl := url.URL{
+		Scheme: "kafka",
+		Host:   m.Host,
+		Path:   "/",
+	}
+	query := signUrl.Query()
+	query.Set(queryActionKey, signAction)
+	signUrl.RawQuery = query.Encode()
+
+	req, err := http.NewRequest("GET", signUrl.String(), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -89,13 +82,18 @@ func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byt
 		signTime = time.Now()
 	}
 
-	header, err := m.Signer.Presign(req, nil, signService, m.AwsRegion, m.Expiry, signTime)
+	expiry := m.Expiry
+	if expiry == 0 {
+		expiry = 5 * time.Minute
+	}
+
+	header, err := m.Signer.Presign(req, nil, signService, m.Region, expiry, signTime)
 	if err != nil {
 		return nil, nil, err
 	}
 	signedMap := map[string]string{
 		signVersionKey:   signVersion,
-		signHostKey:      m.BrokerHost,
+		signHostKey:      m.Host,
 		signUserAgentKey: signUserAgent,
 		signActionKey:    signAction,
 	}
@@ -108,10 +106,7 @@ func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byt
 	}
 
 	signedJson, err := json.Marshal(signedMap)
-	if err != nil {
-		return nil, nil, err
-	}
-	return m, signedJson, nil
+	return m, signedJson, err
 }
 
 func (m *Mechanism) Next(ctx context.Context, challenge []byte) (bool, []byte, error) {

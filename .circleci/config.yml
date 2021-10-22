@@ -40,7 +40,7 @@ jobs:
         paths:
         - /go/pkg/mod
     - run: go test -race -cover ./...
-    - run: cd ./sasl/aws_msk_iam && go test -race -cover ./...
+    - run: find ./sasl -name go.mod -execdir go test -race -cover ./... \;
 
   # Starting at version 0.11, the kafka features and configuration remained
   # mostly stable, so we can use this CI job configuration as template for other
