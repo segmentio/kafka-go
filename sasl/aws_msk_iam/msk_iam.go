@@ -51,7 +51,7 @@ func (m *Mechanism) Name() string {
 // making use of the aws-sdk to produce the signed output.
 // 	{
 // 	  "version" : "2020_10_22",
-// 	  "host" : "<broker address>",
+// 	  "host" : "<broker host>",
 // 	  "user-agent": "<user agent string from the client>",
 // 	  "action": "kafka-cluster:Connect",
 // 	  "x-amz-algorithm" : "<algorithm>",
