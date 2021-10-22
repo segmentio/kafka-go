@@ -1,14 +1,14 @@
 package aws_msk_iam
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	sigv4 "github.com/aws/aws-sdk-go/aws/signer/v4"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	sigv4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 )
 
 const (
@@ -41,12 +41,6 @@ func TestAwsMskIamMechanism(t *testing.T) {
 		)
 	}
 
-	authMap := map[string]string{}
-	err = json.Unmarshal(auth, &authMap)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	expectedMap := map[string]string{
 		"version":             "2020_10_22",
 		"action":              "kafka-cluster:Connect",
@@ -59,12 +53,15 @@ func TestAwsMskIamMechanism(t *testing.T) {
 		"x-amz-signedheaders": "host",
 		"x-amz-signature":     "6b8d25f9b45b9c7db9da855a49112d80379224153a27fd279c305a5b7940d1a7",
 	}
+	expectedAuth, err := json.Marshal(expectedMap)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if !reflect.DeepEqual(authMap, expectedMap) {
-		// Compare map values-- the ordering of the fields (and thus, the resulting bytes) doesn't matter
+	if !bytes.Equal(expectedAuth, auth) {
 		t.Error("Unexpected authentication",
-			"expected", expectedMap,
-			"got", authMap,
+			"expected", expectedAuth,
+			"got", auth,
 		)
 	}
 }
