@@ -113,8 +113,27 @@ type Transport struct {
 	// If nil, context.Background() is used instead.
 	Context context.Context
 
+	// Options for cluster metadata discovery.
+	//
+	// If nil, DefaultDiscoverOptions are used.
+	DiscoverOptions *DiscoverOptions
+
 	mutex sync.RWMutex
 	pools map[networkAddress]*connPool
+}
+
+// DiscoverOptions specify Metadata request parameters used by connPool to discover cluster metadata.
+type DiscoverOptions struct {
+	IncludeClusterAuthorizedOperations bool
+	IncludeTopicAuthorizedOperations   bool
+	AllowAutoTopicCreation             bool
+}
+
+// DefaultDiscoverOptions are the default options for Metadata request parameters.
+var DefaultDiscoverOptions = &DiscoverOptions{
+	IncludeClusterAuthorizedOperations: true,
+	IncludeTopicAuthorizedOperations:   true,
+	AllowAutoTopicCreation:             false,
 }
 
 // DefaultTransport is the default transport used by kafka clients in this
@@ -248,6 +267,8 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		wake:   make(chan event),
 		conns:  make(map[int32]*connGroup),
 		cancel: cancel,
+
+		discoverOptions: t.discoverOptions(),
 	}
 
 	p.ctrl = p.newConnGroup(addr)
@@ -265,6 +286,13 @@ func (t *Transport) context() context.Context {
 		return t.Context
 	}
 	return context.Background()
+}
+
+func (t *Transport) discoverOptions() *DiscoverOptions {
+	if t.DiscoverOptions == nil {
+		return DefaultDiscoverOptions
+	}
+	return t.DiscoverOptions
 }
 
 type event chan struct{}
@@ -295,6 +323,8 @@ type connPool struct {
 	conns map[int32]*connGroup // data connections used for produce/fetch/etc...
 	ctrl  *connGroup           // control connections used for metadata requests
 	state atomic.Value         // cached cluster state
+	// Expose metadata request parameters. Used in discover()
+	discoverOptions *DiscoverOptions
 }
 
 type connPoolState struct {
@@ -560,8 +590,9 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 		} else {
 			res := make(async, 1)
 			req := &meta.Request{
-				IncludeClusterAuthorizedOperations: true,
-				IncludeTopicAuthorizedOperations:   true,
+				AllowAutoTopicCreation:             p.discoverOptions.AllowAutoTopicCreation,
+				IncludeClusterAuthorizedOperations: p.discoverOptions.IncludeClusterAuthorizedOperations,
+				IncludeTopicAuthorizedOperations:   p.discoverOptions.IncludeTopicAuthorizedOperations,
 			}
 			deadline, cancel := context.WithTimeout(ctx, p.metadataTTL)
 			c.reqs <- connRequest{
