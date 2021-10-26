@@ -259,6 +259,8 @@ func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn, config *tls.Conf
 	return
 }
 
+const ContextKeyBrokerAddr = "brokerAddr"
+
 // connect opens a socket connection to the broker, wraps it to create a
 // kafka connection, and performs SASL authentication if configured to do so.
 func (d *Dialer) connect(ctx context.Context, network, address string, connCfg ConnConfig) (*Conn, error) {

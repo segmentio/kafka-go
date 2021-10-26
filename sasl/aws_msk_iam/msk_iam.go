@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/segmentio/kafka-go"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -34,8 +35,6 @@ var signUserAgent = fmt.Sprintf("kafka-go/sasl/aws_msk_iam/%s", runtime.Version(
 type Mechanism struct {
 	// The sigv4.Signer to use when signing the request. Required.
 	Signer *sigv4.Signer
-	// The host of the kafka broker to connect to. Required.
-	Host string
 	// The region where the msk cluster is hosted, e.g. "us-east-1". Required.
 	Region string
 	// The time the request is planned for. Optional, defaults to time.Now() at time of authentication.
@@ -64,15 +63,18 @@ func (m *Mechanism) Name() string {
 // 	  "x-amz-signature" : "<AWS SigV4 signature computed by the client>"
 // 	}
 func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byte, err error) {
+	brokerAddr := ctx.Value(kafka.ContextKeyBrokerAddr).(string)
 	query := url.Values{
 		queryActionKey: {signAction},
 	}
 	signUrl := url.URL{
 		Scheme:   "kafka",
-		Host:     m.Host,
+		Host:     brokerAddr,
 		Path:     "/",
 		RawQuery: query.Encode(),
 	}
+	// ensure that the host does not contain a port
+	signUrl.Host = signUrl.Hostname()
 
 	req, err := http.NewRequest("GET", signUrl.String(), nil)
 	if err != nil {
@@ -95,7 +97,7 @@ func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byt
 	}
 	signedMap := map[string]string{
 		signVersionKey:   signVersion,
-		signHostKey:      m.Host,
+		signHostKey:      signUrl.Host,
 		signUserAgentKey: signUserAgent,
 		signActionKey:    signAction,
 	}
