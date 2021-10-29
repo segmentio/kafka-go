@@ -130,7 +130,7 @@ type DiscoverOptions struct {
 }
 
 // DefaultDiscoverOptions are the default options for Metadata request parameters.
-var DefaultDiscoverOptions = &DiscoverOptions{
+var DefaultDiscoverOptions = DiscoverOptions{
 	IncludeClusterAuthorizedOperations: true,
 	IncludeTopicAuthorizedOperations:   true,
 	AllowAutoTopicCreation:             false,
@@ -290,7 +290,7 @@ func (t *Transport) context() context.Context {
 
 func (t *Transport) discoverOptions() *DiscoverOptions {
 	if t.DiscoverOptions == nil {
-		return DefaultDiscoverOptions
+		return &DefaultDiscoverOptions
 	}
 	return t.DiscoverOptions
 }
