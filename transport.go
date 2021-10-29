@@ -288,11 +288,11 @@ func (t *Transport) context() context.Context {
 	return context.Background()
 }
 
-func (t *Transport) discoverOptions() *DiscoverOptions {
+func (t *Transport) discoverOptions() DiscoverOptions {
 	if t.DiscoverOptions == nil {
-		return &DefaultDiscoverOptions
+		return DefaultDiscoverOptions
 	}
-	return t.DiscoverOptions
+	return *t.DiscoverOptions
 }
 
 type event chan struct{}
@@ -324,7 +324,7 @@ type connPool struct {
 	ctrl  *connGroup           // control connections used for metadata requests
 	state atomic.Value         // cached cluster state
 	// Expose metadata request parameters. Used in discover()
-	discoverOptions *DiscoverOptions
+	discoverOptions DiscoverOptions
 }
 
 type connPoolState struct {
