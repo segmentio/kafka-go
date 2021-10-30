@@ -9,8 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	metadataAPI "github.com/segmentio/kafka-go/protocol/metadata"
 )
 
 // The Writer type provides the implementation of a producer of kafka messages
@@ -694,29 +692,16 @@ func (w *Writer) produce(key topicPartition, batch *writeBatch) (*ProduceRespons
 }
 
 func (w *Writer) partitions(ctx context.Context, topic string) (int, error) {
-	client := w.client(w.readTimeout())
-	// Here we use the transport directly as an optimization to avoid the
-	// construction of temporary request and response objects made by the
-	// (*Client).Metadata API.
-	//
-	// It is expected that the transport will optimize this request by
-	// caching recent results (the kafka.Transport types does).
-	r, err := client.transport().RoundTrip(ctx, client.Addr, &metadataAPI.Request{
-		TopicNames: []string{topic},
-	})
+	partitions, err := w.client(w.readTimeout()).GetTopicPartitions(ctx, topic)
 	if err != nil {
 		return 0, err
 	}
-	for _, t := range r.(*metadataAPI.Response).Topics {
-		if t.Name == topic {
-			// This should always hit, unless kafka has a bug.
-			if t.ErrorCode != 0 {
-				return 0, Error(t.ErrorCode)
-			}
-			return len(t.Partitions), nil
-		}
+
+	if _, ok := partitions[topic]; !ok {
+		return 0, UnknownTopicOrPartition
 	}
-	return 0, UnknownTopicOrPartition
+
+	return len(partitions[topic]), nil
 }
 
 func (w *Writer) markClosed() {
