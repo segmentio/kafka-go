@@ -358,9 +358,9 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		// It's true when we want to auto-create topics and we don't have the topic in our
 		// cache.
 		var requestNeeded bool
-		for _, topic := range cachedMeta.Topics {
-			if topic.ErrorCode == int16(UnknownTopicOrPartition) && m.AllowAutoTopicCreation {
-				requestNeeded = true
+		if m.AllowAutoTopicCreation {
+			for _, topic := range cachedMeta.Topics {
+				requestNeeded = topic.ErrorCode == int16(UnknownTopicOrPartition)
 			}
 		}
 
