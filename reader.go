@@ -509,7 +509,6 @@ type ReaderConfig struct {
 
 // Validate method validates ReaderConfig properties.
 func (config *ReaderConfig) Validate() error {
-
 	if len(config.Brokers) == 0 {
 		return errors.New("cannot create a new kafka reader with an empty list of broker addresses")
 	}
@@ -854,7 +853,7 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 	}
 
 	var errch <-chan error
-	var creq = commitRequest{
+	creq := commitRequest{
 		commits: makeCommits(msgs...),
 	}
 
@@ -1283,12 +1282,14 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			switch offset, err = r.read(ctx, offset, conn); err {
 			case nil:
 				errcount = 0
+				continue
 			case io.EOF:
 				// done with this batch of messages...carry on.  note that this
 				// block relies on the batch repackaging real io.EOF errors as
 				// io.UnexpectedEOF.  otherwise, we would end up swallowing real
 				// errors here.
 				errcount = 0
+				continue
 			case UnknownTopicOrPartition:
 				r.withErrorLogger(func(log Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d, topic or parition not found on this broker, %v", r.partition, r.topic, offset, r.brokers)
@@ -1323,7 +1324,6 @@ func (r *reader) run(ctx context.Context, offset int64) {
 
 			case OffsetOutOfRange:
 				first, last, err := r.readOffsets(conn)
-
 				if err != nil {
 					r.withErrorLogger(func(log Logger) {
 						log.Printf("the kafka reader got an error while attempting to determine whether it was reading before the first offset or after the last offset of partition %d of %s: %s", r.partition, r.topic, err)
@@ -1383,7 +1383,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 
 func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, start int64, err error) {
 	for i := 0; i != len(r.brokers) && conn == nil; i++ {
-		var broker = r.brokers[i]
+		broker := r.brokers[i]
 		var first, last int64
 
 		t0 := time.Now()
@@ -1532,7 +1532,7 @@ func (r *reader) withErrorLogger(do func(Logger)) {
 // extractTopics returns the unique list of topics represented by the set of
 // provided members
 func extractTopics(members []GroupMember) []string {
-	var visited = map[string]struct{}{}
+	visited := map[string]struct{}{}
 	var topics []string
 
 	for _, member := range members {
