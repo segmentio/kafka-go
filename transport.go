@@ -360,7 +360,9 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		var requestNeeded bool
 		if m.AllowAutoTopicCreation {
 			for _, topic := range cachedMeta.Topics {
-				requestNeeded = topic.ErrorCode == int16(UnknownTopicOrPartition)
+				if topic.ErrorCode == int16(UnknownTopicOrPartition) {
+					requestNeeded = true
+				}
 			}
 		}
 
