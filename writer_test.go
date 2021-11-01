@@ -704,9 +704,6 @@ func testWriterUnexpectedMessageTopic(t *testing.T) {
 }
 
 func testWriterAutoCreateTopic(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	topic := makeTopic()
 	// Assume it's going to get created.
 	defer deleteTopic(t, topic)
@@ -721,8 +718,10 @@ func testWriterAutoCreateTopic(t *testing.T) {
 
 	const retries = 5
 	for i := 0; i < retries; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		err := w.WriteMessages(ctx, msg)
-		if errors.Is(err, LeaderNotAvailable) {
+		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
 			time.Sleep(time.Millisecond * 250)
 			continue
 		}
