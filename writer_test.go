@@ -723,12 +723,12 @@ func testWriterAutoCreateTopic(t *testing.T) {
 	for i := 0; i < retries; i++ {
 		err := w.WriteMessages(ctx, msg)
 		if errors.Is(err, LeaderNotAvailable) {
-			time.Sleep(time.Millisecond * 100)
+			time.Sleep(time.Millisecond * 250)
 			continue
 		}
 
 		if err != nil {
-			t.Error("expected error")
+			t.Errorf("unexpected error %v", err)
 			return
 		}
 	}
