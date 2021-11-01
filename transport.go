@@ -362,6 +362,7 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 			for _, topic := range cachedMeta.Topics {
 				if topic.ErrorCode == int16(UnknownTopicOrPartition) {
 					requestNeeded = true
+					break
 				}
 			}
 		}
