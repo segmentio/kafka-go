@@ -716,11 +716,12 @@ func testWriterAutoCreateTopic(t *testing.T) {
 
 	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
 
+	var err error
 	const retries = 5
 	for i := 0; i < retries; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		err := w.WriteMessages(ctx, msg)
+		err = w.WriteMessages(ctx, msg)
 		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
 			time.Sleep(time.Millisecond * 250)
 			continue
@@ -730,6 +731,9 @@ func testWriterAutoCreateTopic(t *testing.T) {
 			t.Errorf("unexpected error %v", err)
 			return
 		}
+	}
+	if err != nil {
+		t.Errorf("unable to create topic %v", err)
 	}
 }
 
