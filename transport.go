@@ -344,14 +344,32 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 
 	switch m := req.(type) {
 	case *meta.Request:
-		// We serve metadata requests directly from the transport cache.
+		// We serve metadata requests directly from the transport cache unless
+		// we would like to auto create a topic that isn't in our cache.
 		//
 		// This reduces the number of round trips to kafka brokers while keeping
 		// the logic simple when applying partitioning strategies.
 		if state.err != nil {
 			return nil, state.err
 		}
-		return filterMetadataResponse(m, state.metadata), nil
+
+		cachedMeta := filterMetadataResponse(m, state.metadata)
+		// requestNeeded indicates if we need to send this metadata request to the server.
+		// It's true when we want to auto-create topics and we don't have the topic in our
+		// cache.
+		var requestNeeded bool
+		if m.AllowAutoTopicCreation {
+			for _, topic := range cachedMeta.Topics {
+				if topic.ErrorCode == int16(UnknownTopicOrPartition) {
+					requestNeeded = true
+					break
+				}
+			}
+		}
+
+		if !requestNeeded {
+			return cachedMeta, nil
+		}
 
 	case protocol.Splitter:
 		// Messages that implement the Splitter interface trigger the creation of
@@ -392,6 +410,14 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		}
 
 		p.refreshMetadata(ctx, topicsToRefresh)
+	case *meta.Response:
+		m := req.(*meta.Request)
+		// If we get here with allow auto topic creation then
+		// we didn't have that topic in our cache so we should update
+		// the cache.
+		if m.AllowAutoTopicCreation {
+			p.refreshMetadata(ctx, m.TopicNames)
+		}
 	}
 
 	return r, nil

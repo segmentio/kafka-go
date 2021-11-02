@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -154,6 +155,10 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "writing a message to an invalid partition",
 			function: testWriterInvalidPartition,
+		},
+		{
+			scenario: "writing a message to a non-existant topic creates the topic",
+			function: testWriterAutoCreateTopic,
 		},
 	}
 
@@ -695,6 +700,40 @@ func testWriterUnexpectedMessageTopic(t *testing.T) {
 	if err := w.WriteMessages(ctx, msg); err == nil {
 		t.Error("expected error")
 		return
+	}
+}
+
+func testWriterAutoCreateTopic(t *testing.T) {
+	topic := makeTopic()
+	// Assume it's going to get created.
+	defer deleteTopic(t, topic)
+
+	w := newTestWriter(WriterConfig{
+		Topic:    topic,
+		Balancer: &RoundRobin{},
+	})
+	defer w.Close()
+
+	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
+
+	var err error
+	const retries = 5
+	for i := 0; i < retries; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err = w.WriteMessages(ctx, msg)
+		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
+			time.Sleep(time.Millisecond * 250)
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+			return
+		}
+	}
+	if err != nil {
+		t.Errorf("unable to create topic %v", err)
 	}
 }
 
