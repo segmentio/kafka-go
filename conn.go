@@ -995,7 +995,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 			}
 
 			makeBrokers := func(ids ...int32) []Broker {
-				var b []Broker
+				b := make([]Broker, 0, len(ids))
 				for _, id := range ids {
 					if br, ok := brokers[id]; ok {
 						b = append(b, br)
