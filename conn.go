@@ -994,14 +994,6 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 				}
 			}
 
-			makeBrokers := func(ids ...int32) []Broker {
-				b := make([]Broker, len(ids))
-				for i, id := range ids {
-					b[i] = brokers[id]
-				}
-				return b
-			}
-
 			for _, t := range res.Topics {
 				if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
 					// We only report errors if they happened for the topic of
@@ -1013,8 +1005,8 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 					partitions = append(partitions, Partition{
 						Topic:    t.TopicName,
 						Leader:   brokers[p.Leader],
-						Replicas: makeBrokers(p.Replicas...),
-						Isr:      makeBrokers(p.Isr...),
+						Replicas: makeBrokers(brokers, p.Replicas...),
+						Isr:      makeBrokers(brokers, p.Isr...),
 						ID:       int(p.PartitionID),
 					})
 				}
@@ -1023,6 +1015,16 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 		},
 	)
 	return
+}
+
+func makeBrokers(brokers map[int32]Broker, ids ...int32) []Broker {
+	b := make([]Broker, 0, len(ids))
+	for _, id := range ids {
+		if br, ok := brokers[id]; ok {
+			b = append(b, br)
+		}
+	}
+	return b
 }
 
 // Write writes a message to the kafka broker that this connection was
