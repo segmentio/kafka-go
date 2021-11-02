@@ -1322,3 +1322,37 @@ func TestEmptyToNullableLeavesStringsIntact(t *testing.T) {
 		t.Error("Non empty string is not equal to the original string")
 	}
 }
+
+func TestMakeBrokersAllPresent(t *testing.T) {
+	brokers := make(map[int32]Broker)
+	brokers[1] = Broker{ID: 1, Host: "203.0.113.101", Port: 9092}
+	brokers[2] = Broker{ID: 1, Host: "203.0.113.102", Port: 9092}
+	brokers[3] = Broker{ID: 1, Host: "203.0.113.103", Port: 9092}
+
+	b := makeBrokers(brokers, 1, 2, 3)
+	if len(b) != 3 {
+		t.Errorf("Expected 3 brokers, got %d", len(b))
+	}
+	for _, i := range []int32{1, 2, 3} {
+		if b[i-1] != brokers[i] {
+			t.Errorf("Expected broker %d at index %d, got %d", i, i-1, b[i].ID)
+		}
+	}
+}
+
+func TestMakeBrokersOneMissing(t *testing.T) {
+	brokers := make(map[int32]Broker)
+	brokers[1] = Broker{ID: 1, Host: "203.0.113.101", Port: 9092}
+	brokers[3] = Broker{ID: 1, Host: "203.0.113.103", Port: 9092}
+
+	b := makeBrokers(brokers, 1, 2, 3)
+	if len(b) != 2 {
+		t.Errorf("Expected 2 brokers, got %d", len(b))
+	}
+	if b[0] != brokers[1] {
+		t.Errorf("Expected broker 1 at index 0, got %d", b[0].ID)
+	}
+	if b[1] != brokers[3] {
+		t.Errorf("Expected broker 3 at index 1, got %d", b[1].ID)
+	}
+}
