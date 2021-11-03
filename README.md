@@ -570,6 +570,46 @@ if err != nil {
 }
 ```
 
+#### [GSSAPI](https://godoc.org/github.com/segmentio/kafka-go/sasl/gssapi)
+
+The GSSAPI mechanism wraps a Kerberos client from version 8 of
+[`gokrb5`](https://github.com/jcmturner/gokrb5). You have to
+initialize and manage the client yourself. Typical usage might
+look something like this:
+```go
+// In your imports, include both of these:
+//     github.com/jcmturner/gokrb5/v8/client
+//     github.com/jcmturner/gokrb5/v8/config
+
+cfg, err := config.Load("/etc/krb5.conf")
+if err != nil {
+	panic(err)
+}
+
+const realm = "EXAMPLE.COM" // This will be specific to your Kerberos
+clnt := client.NewWithPassword(username, realm, password, cfg)
+
+err = clnt.Login()
+if err != nil {
+	panic(err)
+}
+
+const serviceName = "kafka" // Might be different in your Kerberos
+mechanism, err := gssapi.Gokrb5v8(clnt, serviceName)
+if err != nil {
+	panic(err)
+}
+
+// After connecting to the Kafka brokers you need, you may want to call
+// `clnt.Destroy()` if you are not reusing the client for other
+// Kerberos functionality, like automatic ticket renewal.
+```
+
+You can see more examples of how to initialize the Kerberos client,
+for example with a keytab instead of a password, in the gokrb5/v8
+[usage notes](https://github.com/jcmturner/gokrb5/blob/master/v8/USAGE.md).
+
+
 ### Connection
 
 ```go

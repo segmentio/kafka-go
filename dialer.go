@@ -281,7 +281,8 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 	conn := NewConnWith(c, connCfg)
 
 	if d.SASLMechanism != nil {
-		if err := d.authenticateSASL(ctx, conn); err != nil {
+		host, _ := splitHostPort(address)
+		if err := d.authenticateSASL(ctx, conn, host); err != nil {
 			_ = conn.Close()
 			return nil, err
 		}
@@ -296,12 +297,18 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 //
 // In case of error, this function *does not* close the connection.  That is the
 // responsibility of the caller.
-func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
-	if err := conn.saslHandshake(d.SASLMechanism.Name()); err != nil {
+func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn, host string) error {
+	mechanism := d.SASLMechanism
+
+	if err := conn.saslHandshake(mechanism.Name()); err != nil {
 		return err
 	}
 
-	sess, state, err := d.SASLMechanism.Start(ctx)
+	if m, ok := mechanism.(sasl.NeedsHost); ok {
+		mechanism = m.WithHost(host)
+	}
+
+	sess, state, err := mechanism.Start(ctx)
 	if err != nil {
 		return err
 	}
