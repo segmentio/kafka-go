@@ -280,7 +280,7 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 
 	if d.SASLMechanism != nil {
 		metadata := &sasl.Metadata{
-			BrokerAddress: address,
+			Host: address,
 		}
 		if err := d.authenticateSASL(sasl.WithMetadata(ctx, metadata), conn); err != nil {
 			_ = conn.Close()
