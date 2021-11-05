@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/segmentio/kafka-go"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -63,13 +62,13 @@ func (m *Mechanism) Name() string {
 // 	  "x-amz-signature" : "<AWS SigV4 signature computed by the client>"
 // 	}
 func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byte, err error) {
-	brokerAddr := ctx.Value(kafka.ContextKeyBrokerAddr).(string)
+	saslMeta := sasl.MetadataFromContext(ctx)
 	query := url.Values{
 		queryActionKey: {signAction},
 	}
 	signUrl := url.URL{
 		Scheme:   "kafka",
-		Host:     brokerAddr,
+		Host:     saslMeta.Host,
 		Path:     "/",
 		RawQuery: query.Encode(),
 	}
