@@ -49,7 +49,7 @@ type StateMachine interface {
 type Metadata struct {
 	// Host is the address of the broker the authentication will be
 	// performed on.
-	BrokerAddress string
+	Host string
 }
 
 // WithMetadata returns a copy of the context with associated Metadata.
