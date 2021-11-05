@@ -2,6 +2,8 @@ package sasl
 
 import "context"
 
+type ctxKey struct{}
+
 // Mechanism implements the SASL state machine for a particular mode of
 // authentication.  It is used by the kafka.Dialer to perform the SASL
 // handshake.
@@ -41,4 +43,22 @@ type StateMachine interface {
 	// the client has been successfully authenticated, then the done return
 	// value will be true.
 	Next(ctx context.Context, challenge []byte) (done bool, response []byte, err error)
+}
+
+// Metadata contains additional data for performing SASL authentication.
+type Metadata struct {
+	// Host is the address of the broker the authentication will be
+	// performed on.
+	Host string
+}
+
+// WithMetadata returns a copy of the context with associated Metadata.
+func WithMetadata(ctx context.Context, m *Metadata) context.Context {
+	return context.WithValue(ctx, ctxKey{}, m)
+}
+
+// MetadataFromContext retrieves the Metadata from the context.
+func MetadataFromContext(ctx context.Context) *Metadata {
+	m, _ := ctx.Value(ctxKey{}).(*Metadata)
+	return m
 }
