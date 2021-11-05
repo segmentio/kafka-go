@@ -50,6 +50,7 @@ type Metadata struct {
 	// Host is the address of the broker the authentication will be
 	// performed on.
 	Host string
+	Port int
 }
 
 // WithMetadata returns a copy of the context with associated Metadata.
