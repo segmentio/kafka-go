@@ -47,7 +47,7 @@ type StateMachine interface {
 
 // Metadata contains additional data for performing SASL authentication.
 type Metadata struct {
-	// BrokerAddress is the address of the broker the authentication will be
+	// Host is the address of the broker the authentication will be
 	// performed on.
 	BrokerAddress string
 }
