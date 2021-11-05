@@ -972,16 +972,12 @@ func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
 		broker := g.broker
 
 		if broker.ID < 0 {
-			host, port, err := net.SplitHostPort(addr.String())
+			host, port, err := splitHostPortNumber(addr.String())
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", addr, err)
-			}
-			portNumber, err := strconv.Atoi(port)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", addr, err)
+				return nil, err
 			}
 			broker.Host = host
-			broker.Port = portNumber
+			broker.Port = port
 		}
 
 		ipAddrs, err := rslv.LookupBrokerIPAddr(ctx, broker)
@@ -1167,7 +1163,7 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 
 	if tlsConfig := g.pool.tls; tlsConfig != nil {
 		if tlsConfig.ServerName == "" && !tlsConfig.InsecureSkipVerify {
-			host, _, _ := net.SplitHostPort(netAddr.String())
+			host, _ := splitHostPort(netAddr.String())
 			tlsConfig = tlsConfig.Clone()
 			tlsConfig.ServerName = host
 		}
@@ -1197,8 +1193,13 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	pc.SetDeadline(time.Time{})
 
 	if g.pool.sasl != nil {
+		host, port, err := splitHostPortNumber(netAddr.String())
+		if err != nil {
+			return nil, err
+		}
 		metadata := &sasl.Metadata{
-			Host: netAddr.String(),
+			Host: host,
+			Port: port,
 		}
 		if err := authenticateSASL(sasl.WithMetadata(ctx, metadata), pc, g.pool.sasl); err != nil {
 			return nil, err

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -241,11 +240,10 @@ func (c *Conn) loadVersions() (apiVersionMap, error) {
 // connection was established to.
 func (c *Conn) Broker() Broker {
 	addr := c.conn.RemoteAddr()
-	host, port, _ := net.SplitHostPort(addr.String())
-	portNumber, _ := strconv.Atoi(port)
+	host, port, _ := splitHostPortNumber(addr.String())
 	return Broker{
 		Host: host,
-		Port: portNumber,
+		Port: port,
 		ID:   int(c.broker),
 		Rack: c.rack,
 	}

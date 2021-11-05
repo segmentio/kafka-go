@@ -20,16 +20,9 @@ func makeNetAddr(network string, addresses []string) net.Addr {
 }
 
 func makeAddr(network, address string) net.Addr {
-	host, port, _ := net.SplitHostPort(address)
-	if port == "" {
-		port = "9092"
-	}
-	if host == "" {
-		host = address
-	}
 	return &networkAddress{
 		network: network,
-		address: net.JoinHostPort(host, port),
+		address: canonicalAddress(address),
 	}
 }
 
