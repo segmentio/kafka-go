@@ -1162,7 +1162,7 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 
 	if g.pool.sasl != nil {
 		metadata := &sasl.Metadata{
-			BrokerAddress: netAddr.String(),
+			Host: netAddr.String(),
 		}
 		if err := authenticateSASL(sasl.WithMetadata(ctx, metadata), pc, g.pool.sasl); err != nil {
 			return nil, err
