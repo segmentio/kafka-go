@@ -742,7 +742,7 @@ func (r *readerHelper) readMessageErr() (msg Message, err error) {
 		return
 	}
 	msg.Offset = r.offset
-	msg.Time = time.UnixMilli(timestamp)
+	msg.Time = time.Unix(timestamp / 1000, (timestamp % 1000) * 1000000)
 	msg.Headers = headers
 	return
 }
