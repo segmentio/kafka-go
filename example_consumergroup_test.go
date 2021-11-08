@@ -8,7 +8,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-func ExampleConsumerGroupParallelReaders() {
+func ExampleGeneration_Start_consumerGroupParallelReaders() {
 	group, err := kafka.NewConsumerGroup(kafka.ConsumerGroupConfig{
 		ID:      "my-group",
 		Brokers: []string{"kafka:9092"},
@@ -60,7 +60,7 @@ func ExampleConsumerGroupParallelReaders() {
 	}
 }
 
-func ExampleConsumerGroupOverwriteOffsets() {
+func ExampleGeneration_CommitOffsets_overwriteOffsets() {
 	group, err := kafka.NewConsumerGroup(kafka.ConsumerGroupConfig{
 		ID:      "my-group",
 		Brokers: []string{"kafka:9092"},
