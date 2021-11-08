@@ -134,10 +134,10 @@ func (f v1MessageSetBuilder) bytes() []byte {
 					wb.writeInt64(msg.Offset) // offset
 				}
 				wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
-					wb.writeInt32(-1)                   // crc, unused
-					wb.writeInt8(1)                     // magic
-					wb.writeInt8(0)                     // attributes -- zero, no compression for the inner message
-					wb.writeInt64(msg.Time.UnixMilli()) // timestamp
+					wb.writeInt32(-1)                     // crc, unused
+					wb.writeInt8(1)                       // magic
+					wb.writeInt8(0)                       // attributes -- zero, no compression for the inner message
+					wb.writeInt64(1000 * msg.Time.Unix()) // timestamp
 					wb.writeBytes(msg.Key)
 					wb.writeBytes(msg.Value)
 				}))
@@ -147,15 +147,15 @@ func (f v1MessageSetBuilder) bytes() []byte {
 	})
 	if f.codec != nil {
 		bs = newWB().call(func(wb *kafkaWriteBuffer) {
-			wb.writeInt64(f.msgs[len(f.msgs)-1].Offset) // offset of the wrapper message is the last offset of the inner messages
+			wb.writeInt64(f.msgs[len(f.msgs)-1].Offset)   // offset of the wrapper message is the last offset of the inner messages
 			wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
 				bs := mustCompress(bs, f.codec)
-				wb.writeInt32(-1)                         // crc, unused
-				wb.writeInt8(1)                           // magic
-				wb.writeInt8(f.codec.Code())              // attributes
-				wb.writeInt64(f.msgs[0].Time.UnixMilli()) // timestamp
-				wb.writeBytes(nil)                        // key is always nil for compressed
-				wb.writeBytes(bs)                         // the value is the compressed message
+				wb.writeInt32(-1)                           // crc, unused
+				wb.writeInt8(1)                             // magic
+				wb.writeInt8(f.codec.Code())                // attributes
+				wb.writeInt64(1000 * f.msgs[0].Time.Unix()) // timestamp
+				wb.writeBytes(nil)                          // key is always nil for compressed
+				wb.writeBytes(bs)                           // the value is the compressed message
 			}))
 		})
 	}
@@ -179,23 +179,23 @@ func (f v2MessageSetBuilder) bytes() []byte {
 	return newWB().call(func(wb *kafkaWriteBuffer) {
 		wb.writeInt64(f.msgs[0].Offset)
 		wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
-			wb.writeInt32(0)                          // leader epoch
-			wb.writeInt8(2)                           // magic = 2
-			wb.writeInt32(0)                          // crc, unused
-			wb.writeInt16(attributes)                 // record set attributes
-			wb.writeInt32(0)                          // record set last offset delta
-			wb.writeInt64(f.msgs[0].Time.UnixMilli()) // record set first timestamp
-			wb.writeInt64(f.msgs[0].Time.UnixMilli()) // record set last timestamp
-			wb.writeInt64(0)                          // record set producer id
-			wb.writeInt16(0)                          // record set producer epoch
-			wb.writeInt32(0)                          // record set base sequence
-			wb.writeInt32(int32(len(f.msgs)))         // record set count
+			wb.writeInt32(0)                            // leader epoch
+			wb.writeInt8(2)                             // magic = 2
+			wb.writeInt32(0)                            // crc, unused
+			wb.writeInt16(attributes)                   // record set attributes
+			wb.writeInt32(0)                            // record set last offset delta
+			wb.writeInt64(1000 * f.msgs[0].Time.Unix()) // record set first timestamp
+			wb.writeInt64(1000 * f.msgs[0].Time.Unix()) // record set last timestamp
+			wb.writeInt64(0)                            // record set producer id
+			wb.writeInt16(0)                            // record set producer epoch
+			wb.writeInt32(0)                            // record set base sequence
+			wb.writeInt32(int32(len(f.msgs)))           // record set count
 			bs := newWB().call(func(wb *kafkaWriteBuffer) {
 				for i, msg := range f.msgs {
 					wb.Write(newWB().call(func(wb *kafkaWriteBuffer) {
 						bs := newWB().call(func(wb *kafkaWriteBuffer) {
 							wb.writeInt8(0)                                               // record attributes, not used here
-							wb.writeVarInt(time.Now().UnixMilli() - msg.Time.UnixMilli()) // timestamp
+							wb.writeVarInt(1000 * (time.Now().Unix() - msg.Time.Unix()))  // timestamp
 							wb.writeVarInt(int64(i))                                      // offset delta
 							wb.writeVarInt(int64(len(msg.Key)))                           // key len
 							wb.Write(msg.Key)                                             // key bytes
