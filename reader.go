@@ -1451,15 +1451,15 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	var size int64
 	var bytes int64
 
-	const safetyTimeout = 300 * time.Second
-	deadline := time.Now().Add(safetyTimeout)
-	conn.SetReadDeadline(deadline)
+	//const safetyTimeout = 300 * time.Second
+	//deadline := time.Now().Add(safetyTimeout)
+	//conn.SetReadDeadline(deadline)
 
 	for {
-		if now := time.Now(); deadline.Sub(now) < (safetyTimeout / 2) {
-			deadline = now.Add(safetyTimeout)
-			conn.SetReadDeadline(deadline)
-		}
+		//if now := time.Now(); deadline.Sub(now) < (safetyTimeout / 2) {
+		//deadline = now.Add(safetyTimeout)
+		//conn.SetReadDeadline(deadline)
+		//}
 
 		if msg, err = batch.ReadMessage(); err != nil {
 			batch.Close()
