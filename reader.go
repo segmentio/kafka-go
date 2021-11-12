@@ -847,6 +847,15 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 // CommitMessages commits the list of messages passed as argument. The program
 // may pass a context to asynchronously cancel the commit operation when it was
 // configured to be blocking.
+//
+// Because kafka consumer groups track a single offset per partition, the
+// highest message offset passed to CommitMessages will cause all previous
+// messages to be committed. Applications need to account for these Kafka
+// limitations when committing messages, and maintain message ordering if they
+// need strong delivery guarantees. This property makes it valid to pass only
+// the last message seen to CommitMessages in order to move the offset of the
+// topic/partition it belonged to forward, effectively committing all previous
+// messages in the partition.
 func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 	if !r.useConsumerGroup() {
 		return errOnlyAvailableWithGroup
