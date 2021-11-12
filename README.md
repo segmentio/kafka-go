@@ -328,6 +328,13 @@ for {
 }
 ```
 
+When committing messages in consumer groups, the message with the highest offset
+for a given topic/partition determines the value of the committed offset for
+that partition. For example, if messages at offset 1, 2, and 3 of a single
+partition were retrieved by call to `FetchMessage`, calling `CommitMessages`
+with message offset 3 will also result in committing the messages at offsets 1
+and 2 for that partition.
+
 ### Managing Commits
 
 By default, CommitMessages will synchronously commit offsets to Kafka.  For
