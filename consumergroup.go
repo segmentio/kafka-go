@@ -358,17 +358,17 @@ func (g *Generation) Start(fn func(ctx context.Context)) {
 	case <-g.done:
 		return
 	default:
-		g.wg.Add(1)
-		go func() {
-			fn(genCtx{g})
-			// shut down the generation as soon as one function exits.  this is
-			// different from close() in that it doesn't wait on the wg.
-			g.once.Do(func() {
-				close(g.done)
-			})
-			g.wg.Done()
-		}()
 	}
+	g.wg.Add(1)
+	go func() {
+		fn(genCtx{g})
+		// shut down the generation as soon as one function exits.  this is
+		// different from close() in that it doesn't wait on the wg.
+		g.once.Do(func() {
+			close(g.done)
+		})
+		g.wg.Done()
+	}()
 }
 
 // CommitOffsets commits the provided topic+partition+offset combos to the
