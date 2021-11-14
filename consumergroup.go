@@ -325,8 +325,8 @@ type Generation struct {
 	once sync.Once
 	done chan struct{}
 
-	wgMutex sync.Mutex
-	wg      sync.WaitGroup
+	wgMu sync.Mutex
+	wg   sync.WaitGroup
 
 	retentionMillis int64
 	log             func(func(Logger))
@@ -340,9 +340,9 @@ func (g *Generation) close() {
 		close(g.done)
 	})
 
-	g.wgMutex.Lock()
+	g.wgMu.Lock()
 	g.wg.Wait()
-	g.wgMutex.Unlock()
+	g.wgMu.Unlock()
 }
 
 // Start launches the provided function in a go routine and adds accounting such
@@ -359,9 +359,14 @@ func (g *Generation) close() {
 // progress for this consumer and potentially cause consumer group membership
 // churn.
 func (g *Generation) Start(fn func(ctx context.Context)) {
-	g.wgMutex.Lock()
-	defer g.wgMutex.Unlock()
+	g.wgMu.Lock()
+	defer g.wgMu.Unlock()
 
+	select {
+	case <-g.done:
+		return
+	default:
+	}
 	g.wg.Add(1)
 	go func() {
 		fn(genCtx{g})
