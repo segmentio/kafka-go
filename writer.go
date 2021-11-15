@@ -867,8 +867,8 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 type batchQueue struct {
 	queue []*writeBatch
 
-	mutex sync.Mutex
-	cond  sync.Cond
+	mutex *sync.Mutex
+	cond  *sync.Cond
 
 	closed bool
 }
@@ -912,14 +912,16 @@ func (b *batchQueue) Close() {
 	b.closed = true
 }
 
-func newBatchQueue(initialSize int) *batchQueue {
+func newBatchQueue(initialSize int) batchQueue {
 	bq := batchQueue{
 		queue: make([]*writeBatch, 0, initialSize),
+		mutex: &sync.Mutex{},
+		cond: &sync.Cond{},
 	}
 
-	bq.cond.L = &bq.mutex
+	bq.cond.L = bq.mutex
 
-	return &bq
+	return bq
 }
 
 // partitionWriter is a writer for a topic-partion pair. It maintains messaging order
@@ -941,7 +943,7 @@ type partitionWriter struct {
 func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
 	writer := &partitionWriter{
 		meta:  key,
-		queue: *newBatchQueue(10),
+		queue: newBatchQueue(10),
 		w:     w,
 	}
 	go func() {
