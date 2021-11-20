@@ -600,15 +600,14 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			return err
 		}
 
-		numPartitions, err := w.partitions(ctx, topic)
-		if err != nil {
-			return err
-		}
-
 		var partition int
 		if msg.CustomPartition {
 			partition = msg.Partition
 		} else {
+			numPartitions, err := w.partitions(ctx, topic)
+			if err != nil {
+				return err
+			}
 			partition = balancer.Balance(msg, loadCachedPartitions(numPartitions)...)
 		}
 
