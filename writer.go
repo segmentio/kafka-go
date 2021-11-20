@@ -605,7 +605,12 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			return err
 		}
 
-		partition := balancer.Balance(msg, loadCachedPartitions(numPartitions)...)
+		var partition int
+		if msg.CustomPartition {
+			partition = msg.Partition
+		} else {
+			partition = balancer.Balance(msg, loadCachedPartitions(numPartitions)...)
+		}
 
 		key := topicPartition{
 			topic:     topic,

@@ -12,8 +12,10 @@ type Message struct {
 	// not already specified on the writer itself.
 	Topic string
 
-	// Partition is read-only and MUST NOT be set when writing messages
+	// When CustomPartition is true, Partition will be used.
+	CustomPartition bool
 	Partition     int
+
 	Offset        int64
 	HighWaterMark int64
 	Key           []byte
