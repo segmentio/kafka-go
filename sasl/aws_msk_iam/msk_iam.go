@@ -3,6 +3,7 @@ package aws_msk_iam
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -63,17 +64,20 @@ func (m *Mechanism) Name() string {
 // 	}
 func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byte, err error) {
 	saslMeta := sasl.MetadataFromContext(ctx)
+	if saslMeta == nil {
+		return nil, nil, errors.New("missing sasl metadata")
+	}
+
 	query := url.Values{
 		queryActionKey: {signAction},
 	}
+
 	signUrl := url.URL{
 		Scheme:   "kafka",
 		Host:     saslMeta.Host,
 		Path:     "/",
 		RawQuery: query.Encode(),
 	}
-	// ensure that the host does not contain a port
-	signUrl.Host = signUrl.Hostname()
 
 	req, err := http.NewRequest("GET", signUrl.String(), nil)
 	if err != nil {
