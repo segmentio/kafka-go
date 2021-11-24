@@ -34,12 +34,20 @@ jobs:
     - checkout
     - restore_cache:
         key: kafka-go-mod-{{ checksum "go.sum" }}-1
-    - run: go mod download
+    - run:
+        name: Download dependencies
+        command: go mod download
     - save_cache:
         key: kafka-go-mod-{{ checksum "go.sum" }}-1
         paths:
         - /go/pkg/mod
-    - run: go test -race -cover ./...
+    - run:
+        name: Test kafka-go
+        command: go test -race -cover ./...
+    - run:
+        name: Test kafka-go/sasl/aws_msk_iam
+        working_directory: ./sasl/aws_msk_iam
+        command: go test -race -cover ./...
 
   # Starting at version 0.11, the kafka features and configuration remained
   # mostly stable, so we can use this CI job configuration as template for other
@@ -219,7 +227,7 @@ jobs:
       - 9093:9093
       environment: *environment
     steps: *steps
-       
+
 workflows:
   version: 2
   run:
