@@ -480,11 +480,13 @@ func lookupHost(ctx context.Context, address string, resolver Resolver) (string,
 			// we'll always prefer the resolved host
 			host = resolvedHost
 
-			// in the case of port though, the provided address takes priority, and we
-			// only use the resolved address to set the port when not specified
-			if port == "" {
+			// resolved port only takes priority if explicitly provided
+			// Purpose: access the kafka-cluster behind a firewall via portforwarding on a jump host
+			// this should never be set at a regula host lookup
+			if resolvedPort != "" {
 				port = resolvedPort
 			}
+
 		}
 	}
 
