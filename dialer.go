@@ -485,7 +485,11 @@ func lookupHost(ctx context.Context, address string, resolver Resolver) (string,
 			// resolved port only takes priority if explicitly provided
 			// Purpose: access the kafka-cluster behind a firewall via portforwarding on a jump host
 			// this should never be set at a regula host lookup
-			if resolvedPort != "" {
+			if resolvedPort == "" && port == "" {
+				// unit-tests rely on the default port to be set within the resolver
+				// is this a good idea regarding separation of concern?
+				port = "9092"
+			} else if resolvedPort != "" {
 				port = resolvedPort
 			}
 
