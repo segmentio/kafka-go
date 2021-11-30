@@ -331,9 +331,9 @@ func TestDialerResolver(t *testing.T) {
 		},
 		{
 			scenario: "resolve domain with port to ip with different port",
-			address:  "example.com:9092",
+			address:  "example.com:9093",
 			resolver: map[string][]string{
-				"example.com": {"127.0.0.1:80"},
+				"example.com": {"127.0.0.1:9092"},
 			},
 		},
 		{
