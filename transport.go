@@ -317,7 +317,7 @@ func (p *connPool) ref() {
 }
 
 func (p *connPool) unref() {
-	if atomic.AddUintptr(&p.refc, ^uintptr(0)) == 0 {
+	if atomic.AddUintptr(&p.refc, ^uintptr(0)) != 0 {
 		p.mutex.Lock()
 		defer p.mutex.Unlock()
 
