@@ -374,6 +374,7 @@ func (g *Generation) close() {
 // churn.
 func (g *Generation) Start(fn func(ctx context.Context)) {
 	g.lock.Lock()
+	defer g.lock.Unlock()
 
 	// this is an edge case: if the generation has already closed, then it's
 	// possible that the close func has already waited on outstanding go
@@ -384,14 +385,12 @@ func (g *Generation) Start(fn func(ctx context.Context)) {
 	// such a case, fn should immediately exit because ctx.Err() will return
 	// ErrGenerationEnded.
 	if g.closed {
-		g.lock.Unlock()
 		go fn(genCtx{g})
 		return
 	}
 
 	// register that there is one more go routine that's part of this gen.
 	g.routines++
-	g.lock.Unlock()
 
 	go func() {
 		fn(genCtx{g})
