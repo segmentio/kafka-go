@@ -322,9 +322,17 @@ type Generation struct {
 
 	conn coordinator
 
-	once sync.Once
-	done chan struct{}
-	wg   sync.WaitGroup
+	// the following fields are used for process accounting to synchronize
+	// between Start and close.  lock protects all of them.  done is closed
+	// when the generation is ending in order to signal that the generation
+	// should start self-desructing.  closed protects against double-closing
+	// the done chan.  routines is a count of runing go routines that have been
+	// launched by Start.  joined will be closed by the last go routine to exit.
+	lock     sync.Mutex
+	done     chan struct{}
+	closed   bool
+	routines int
+	joined   chan struct{}
 
 	retentionMillis int64
 	log             func(func(Logger))
@@ -334,10 +342,21 @@ type Generation struct {
 // close stops the generation and waits for all functions launched via Start to
 // terminate.
 func (g *Generation) close() {
-	g.once.Do(func() {
+	g.lock.Lock()
+	if !g.closed {
 		close(g.done)
-	})
-	g.wg.Wait()
+		g.closed = true
+	}
+	// determine whether any go routines are running that we need to wait for.
+	// waiting needs to happen outside of the critical section.
+	r := g.routines
+	g.lock.Unlock()
+
+	// NOTE: r will be zero if no go routines were ever launched.  no need to
+	// wait in that case.
+	if r > 0 {
+		<-g.joined
+	}
 }
 
 // Start launches the provided function in a go routine and adds accounting such
@@ -354,15 +373,42 @@ func (g *Generation) close() {
 // progress for this consumer and potentially cause consumer group membership
 // churn.
 func (g *Generation) Start(fn func(ctx context.Context)) {
-	g.wg.Add(1)
+	g.lock.Lock()
+	defer g.lock.Unlock()
+
+	// this is an edge case: if the generation has already closed, then it's
+	// possible that the close func has already waited on outstanding go
+	// routines and exited.
+	//
+	// nonetheless, it's important to honor that the fn is invoked in case the
+	// calling function is waiting e.g. on a channel send or a WaitGroup.  in
+	// such a case, fn should immediately exit because ctx.Err() will return
+	// ErrGenerationEnded.
+	if g.closed {
+		go fn(genCtx{g})
+		return
+	}
+
+	// register that there is one more go routine that's part of this gen.
+	g.routines++
+
 	go func() {
 		fn(genCtx{g})
+		g.lock.Lock()
 		// shut down the generation as soon as one function exits.  this is
-		// different from close() in that it doesn't wait on the wg.
-		g.once.Do(func() {
+		// different from close() in that it doesn't wait for all go routines in
+		// the generation to exit.
+		if !g.closed {
 			close(g.done)
-		})
-		g.wg.Done()
+			g.closed = true
+		}
+		g.routines--
+		// if this was the last go routine in the generation, close the joined
+		// chan so that close() can exit if it's waiting.
+		if g.routines == 0 {
+			close(g.joined)
+		}
+		g.lock.Unlock()
 	}()
 }
 
@@ -781,6 +827,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		Assignments:     cg.makeAssignments(assignments, offsets),
 		conn:            conn,
 		done:            make(chan struct{}),
+		joined:          make(chan struct{}),
 		retentionMillis: int64(cg.config.RetentionTime / time.Millisecond),
 		log:             cg.withLogger,
 		logError:        cg.withErrorLogger,
