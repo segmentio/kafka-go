@@ -1472,6 +1472,8 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 		}
 
 		if msg, err = batch.ReadMessage(); err != nil {
+			// if there is no new messages at the and of correct batch -
+			// then we need to advance next batch offset manually.
 			if err == io.EOF && msgCount == 0 {
 				batch.offset++
 			}
