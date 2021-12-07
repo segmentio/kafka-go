@@ -867,6 +867,9 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 type batchQueue struct {
 	queue []*writeBatch
 
+	// Pointers are used here to make `go vet` happy, and avoid copying mutexes.
+	// It may be better to revert these to non-pointers and avoid the copies in
+	// a different way.
 	mutex *sync.Mutex
 	cond  *sync.Cond
 
