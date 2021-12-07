@@ -867,8 +867,11 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 type batchQueue struct {
 	queue []*writeBatch
 
-	mutex sync.Mutex
-	cond  sync.Cond
+	// Pointers are used here to make `go vet` happy, and avoid copying mutexes.
+	// It may be better to revert these to non-pointers and avoid the copies in
+	// a different way.
+	mutex *sync.Mutex
+	cond  *sync.Cond
 
 	closed bool
 }
@@ -915,9 +918,11 @@ func (b *batchQueue) Close() {
 func newBatchQueue(initialSize int) batchQueue {
 	bq := batchQueue{
 		queue: make([]*writeBatch, 0, initialSize),
+		mutex: &sync.Mutex{},
+		cond: &sync.Cond{},
 	}
 
-	bq.cond.L = &bq.mutex
+	bq.cond.L = bq.mutex
 
 	return bq
 }

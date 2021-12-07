@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-// ExampleAWSRackLocal shows how the RackAffinityGroupBalancer can be used to
-// pair up consumers with brokers in the same AWS availability zone.  This code
-// assumes that each brokers' rack is configured to be the name of the AZ in
-// which it is running.
-func ExampleAWSRackLocal() {
+// ExampleNewReader_rackAffinity shows how the RackAffinityGroupBalancer can be
+// used to pair up consumers with brokers in the same AWS availability zone.
+// This code assumes that each brokers' rack is configured to be the name of the
+// AZ in which it is running.
+func ExampleNewReader_rackAffinity() {
 	r := NewReader(ReaderConfig{
 		Brokers: []string{"kafka:9092"},
 		GroupID: "my-group",
