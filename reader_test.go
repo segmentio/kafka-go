@@ -1802,22 +1802,22 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 				Topic:             topic,
 				NumPartitions:     int32(partitions),
 				ReplicationFactor: 1,
-				ConfigEntries: []createTopicsRequestV0ConfigEntry{{
-					ConfigName:  "cleanup.policy",
-					ConfigValue: "compact",
-				}, {
-					ConfigName:  "delete.retention.ms",
-					ConfigValue: "10",
-				}, {
-					ConfigName:  "max.compaction.lag.ms",
-					ConfigValue: "10",
-				}, {
-					ConfigName:  "max.message.bytes",
-					ConfigValue: "130",
-				}, {
-					ConfigName:  "segment.bytes",
-					ConfigValue: "220",
-				}},
+				//ConfigEntries: []createTopicsRequestV0ConfigEntry{{
+				//	ConfigName:  "cleanup.policy",
+				//	ConfigValue: "compact",
+				//}, {
+				//	ConfigName:  "delete.retention.ms",
+				//	ConfigValue: "10",
+				//}, {
+				//	ConfigName:  "max.compaction.lag.ms",
+				//	ConfigValue: "10",
+				//}, {
+				//	ConfigName:  "max.message.bytes",
+				//	ConfigValue: "130",
+				//}, {
+				//	ConfigName:  "segment.bytes",
+				//	ConfigValue: "220",
+				//}},
 			},
 		},
 		Timeout: milliseconds(time.Second),
