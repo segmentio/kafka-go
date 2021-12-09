@@ -463,16 +463,19 @@ func TestReadTruncatedMessages(t *testing.T) {
 	//        include it in CI unit tests.
 	t.Skip()
 
+	topic := makeTopic()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	r := NewReader(ReaderConfig{
 		Brokers:  []string{"localhost:9092"},
-		Topic:    makeTopic(),
+		Topic:    topic,
 		MinBytes: 1,
 		MaxBytes: 100,
 		MaxWait:  100 * time.Millisecond,
 	})
 	defer r.Close()
+
 	n := 500
 	prepareReader(t, ctx, r, makeTestSequence(n)...)
 	for i := 0; i < n; i++ {
@@ -1715,4 +1718,172 @@ func TestErrorCannotConnectGroupSubscription(t *testing.T) {
 		t.Errorf("Reader.FetchMessage with a group subscription " +
 			"must fail when it cannot connect")
 	}
+}
+
+func TestReaderReadCompactedMessage(t *testing.T) {
+	topic := makeTopic()
+	createTopicWithCompaction(t, topic, 1)
+
+	// we need specific configuration to check compacted topic.
+	r := NewReader(ReaderConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    topic,
+		MinBytes: 1e1,
+		MaxBytes: 40e1,
+		//QueueCapacity: 2,
+		MaxWait: 1000 * time.Millisecond,
+	})
+
+	msgs := makeTestDuplicateSequence()
+
+	writeMessagesForCompationCheck(t, topic, msgs)
+
+	// need some time for compaction to start with guarantee
+	// practice shows that 10-20s is not enough
+	time.Sleep(time.Second * 30)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	for i := 0; i < countKeys(msgs); i++ {
+		_, err := r.FetchMessage(ctx)
+		if err != nil {
+			t.Errorf("cant get %s message from compacted log: %v", strconv.Itoa(i+1), err)
+			return
+		}
+	}
+}
+
+func writeMessagesForCompationCheck(t *testing.T, topic string, msgs []Message) {
+	t.Helper()
+
+	wr := NewWriter(WriterConfig{
+		Brokers:   []string{"localhost:9092"},
+		BatchSize: 2,
+		Async:     false,
+		Topic:     topic,
+		Balancer:  &LeastBytes{},
+	})
+	err := wr.WriteMessages(context.Background(), msgs...)
+	if err != nil {
+		t.Error(err)
+		t.Fatal(err)
+	}
+
+}
+
+// makeTestDuplicateSequence creates messages for compacted log testing
+func makeTestDuplicateSequence() []Message {
+	//base := time.Now()
+	var msgs []Message
+
+	for i := 0; i < 10; i++ {
+		msgs = append(msgs, dups(strconv.Itoa(i+1), strconv.Itoa(i), 1, 2)...)
+
+		msgs = append(msgs, Message{
+			Key: []byte("key-mid"),
+			//Time:  base.Add(time.Duration(i) * time.Millisecond).Truncate(time.Millisecond),
+			Value: []byte("key-mid"),
+		})
+	}
+	return msgs
+}
+
+// countKeys counts unique keys from given Message slice
+func countKeys(msgs []Message) int {
+	m := make(map[string]struct{})
+	for _, msg := range msgs {
+		m[string(msg.Key)] = struct{}{}
+	}
+	return len(m)
+}
+
+func dups(first, second string, firstCount, secondCount int) []Message {
+	//base := time.Now()
+	res := make([]Message, firstCount+secondCount)
+	for i := 0; i < firstCount; i++ {
+		res[i] = Message{
+			Key: []byte(first),
+			//Time:  base.Add(time.Duration(i) * time.Millisecond).Truncate(time.Millisecond),
+			Value: []byte(first + "_" + strconv.Itoa(i)),
+		}
+	}
+	for i := 0; i < secondCount; i++ {
+		res[firstCount+i] = Message{
+			Key: []byte(second),
+			//Time:  base.Add(time.Duration(i) * time.Millisecond).Truncate(time.Millisecond),
+			Value: []byte(second + "_" + strconv.Itoa(i)),
+		}
+	}
+	return res
+}
+
+func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
+	t.Helper()
+
+	t.Logf("createTopic(%s, %d)", topic, partitions)
+
+	conn, err := Dial("tcp", "localhost:9092")
+	if err != nil {
+		err = fmt.Errorf("createTopic, Dial: %w", err)
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	controller, err := conn.Controller()
+	if err != nil {
+		err = fmt.Errorf("createTopic, conn.Controller: %w", err)
+		t.Fatal(err)
+	}
+
+	conn, err = Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	_, err = conn.createTopics(createTopicsRequestV0{
+		Topics: []createTopicsRequestV0Topic{
+			{
+				Topic:             topic,
+				NumPartitions:     int32(partitions),
+				ReplicationFactor: 1,
+				ConfigEntries: []createTopicsRequestV0ConfigEntry{{
+					ConfigName:  "cleanup.policy",
+					ConfigValue: "compact",
+				}, {
+					ConfigName:  "delete.retention.ms",
+					ConfigValue: "0",
+				}, {
+					ConfigName:  "max.compaction.lag.ms",
+					ConfigValue: "1",
+				}, {
+					ConfigName:  "retention.bytes",
+					ConfigValue: "-1",
+				}, {
+					ConfigName:  "max.message.bytes",
+					ConfigValue: "130",
+				}, {
+					ConfigName:  "segment.bytes",
+					ConfigValue: "220",
+				}},
+			},
+		},
+		Timeout: milliseconds(time.Second),
+	})
+	switch err {
+	case nil:
+		// ok
+	case TopicAlreadyExists:
+		// ok
+	default:
+		err = fmt.Errorf("creaetTopic, conn.createtTopics: %w", err)
+		t.Error(err)
+		t.FailNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	waitForTopic(ctx, t, topic)
 }
