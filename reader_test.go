@@ -1810,14 +1810,6 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 				ConfigValue: "10",
 			},
 			{
-				ConfigName:  "max.compaction.lag.ms",
-				ConfigValue: "10",
-			},
-			//{
-			//	ConfigName:  "max.message.bytes",
-			//	ConfigValue: "130",
-			//},
-			{
 				ConfigName:  "segment.bytes",
 				ConfigValue: "220",
 			},
