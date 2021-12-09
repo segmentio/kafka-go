@@ -1854,13 +1854,10 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 					ConfigValue: "compact",
 				}, {
 					ConfigName:  "delete.retention.ms",
-					ConfigValue: "0",
+					ConfigValue: "10",
 				}, {
 					ConfigName:  "max.compaction.lag.ms",
-					ConfigValue: "1",
-				}, {
-					ConfigName:  "retention.bytes",
-					ConfigValue: "-1",
+					ConfigValue: "10",
 				}, {
 					ConfigName:  "max.message.bytes",
 					ConfigValue: "130",
