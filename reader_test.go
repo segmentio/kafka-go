@@ -1736,7 +1736,7 @@ func TestReaderReadCompactedMessage(t *testing.T) {
 
 	msgs := makeTestDuplicateSequence()
 
-	writeMessagesForCompationCheck(t, topic, msgs)
+	writeMessagesForCompactionCheck(t, topic, msgs)
 
 	// need some time for compaction to start with guarantee
 	// practice shows that 10-20s is not enough
@@ -1754,7 +1754,8 @@ func TestReaderReadCompactedMessage(t *testing.T) {
 	}
 }
 
-func writeMessagesForCompationCheck(t *testing.T, topic string, msgs []Message) {
+// writeMessagesForCompactionCheck writes messages with specific writer configuration
+func writeMessagesForCompactionCheck(t *testing.T, topic string, msgs []Message) {
 	t.Helper()
 
 	wr := NewWriter(WriterConfig{
@@ -1766,7 +1767,6 @@ func writeMessagesForCompationCheck(t *testing.T, topic string, msgs []Message) 
 	})
 	err := wr.WriteMessages(context.Background(), msgs...)
 	if err != nil {
-		t.Error(err)
 		t.Fatal(err)
 	}
 
@@ -1774,15 +1774,11 @@ func writeMessagesForCompationCheck(t *testing.T, topic string, msgs []Message) 
 
 // makeTestDuplicateSequence creates messages for compacted log testing
 func makeTestDuplicateSequence() []Message {
-	//base := time.Now()
 	var msgs []Message
-
 	for i := 0; i < 10; i++ {
 		msgs = append(msgs, dups(strconv.Itoa(i+1), strconv.Itoa(i), 1, 2)...)
-
 		msgs = append(msgs, Message{
-			Key: []byte("key-mid"),
-			//Time:  base.Add(time.Duration(i) * time.Millisecond).Truncate(time.Millisecond),
+			Key:   []byte("key-mid"),
 			Value: []byte("key-mid"),
 		})
 	}
@@ -1799,19 +1795,16 @@ func countKeys(msgs []Message) int {
 }
 
 func dups(first, second string, firstCount, secondCount int) []Message {
-	//base := time.Now()
 	res := make([]Message, firstCount+secondCount)
 	for i := 0; i < firstCount; i++ {
 		res[i] = Message{
-			Key: []byte(first),
-			//Time:  base.Add(time.Duration(i) * time.Millisecond).Truncate(time.Millisecond),
+			Key:   []byte(first),
 			Value: []byte(first + "_" + strconv.Itoa(i)),
 		}
 	}
 	for i := 0; i < secondCount; i++ {
 		res[firstCount+i] = Message{
-			Key: []byte(second),
-			//Time:  base.Add(time.Duration(i) * time.Millisecond).Truncate(time.Millisecond),
+			Key:   []byte(second),
 			Value: []byte(second + "_" + strconv.Itoa(i)),
 		}
 	}
