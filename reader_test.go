@@ -1813,10 +1813,10 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 				ConfigName:  "max.compaction.lag.ms",
 				ConfigValue: "10",
 			},
-			{
-				ConfigName:  "max.message.bytes",
-				ConfigValue: "130",
-			},
+			//{
+			//	ConfigName:  "max.message.bytes",
+			//	ConfigValue: "130",
+			//},
 			{
 				ConfigName:  "segment.bytes",
 				ConfigValue: "220",
@@ -1829,7 +1829,7 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 	case TopicAlreadyExists:
 		// ok
 	default:
-		err = fmt.Errorf("creaetTopic, conn.createtTopics: %w", err)
+		err = fmt.Errorf("createTopic, conn.createtTopics: %w", err)
 		t.Error(err)
 		t.FailNow()
 	}
