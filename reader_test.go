@@ -1843,31 +1843,32 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 
-	_, err = conn.createTopics(createTopicsRequestV0{
-		Topics: []createTopicsRequestV0Topic{
+	err = conn.CreateTopics(TopicConfig{
+		Topic:             topic,
+		NumPartitions:     partitions,
+		ReplicationFactor: 1,
+		ConfigEntries: []ConfigEntry{
 			{
-				Topic:             topic,
-				NumPartitions:     int32(partitions),
-				ReplicationFactor: 1,
-				//ConfigEntries: []createTopicsRequestV0ConfigEntry{{
-				//	ConfigName:  "cleanup.policy",
-				//	ConfigValue: "compact",
-				//}, {
-				//	ConfigName:  "delete.retention.ms",
-				//	ConfigValue: "10",
-				//}, {
-				//	ConfigName:  "max.compaction.lag.ms",
-				//	ConfigValue: "10",
-				//}, {
-				//	ConfigName:  "max.message.bytes",
-				//	ConfigValue: "130",
-				//}, {
-				//	ConfigName:  "segment.bytes",
-				//	ConfigValue: "220",
-				//}},
+				ConfigName:  "cleanup.policy",
+				ConfigValue: "compact",
+			},
+			{
+				ConfigName:  "delete.retention.ms",
+				ConfigValue: "10",
+			},
+			{
+				ConfigName:  "max.compaction.lag.ms",
+				ConfigValue: "10",
+			},
+			{
+				ConfigName:  "max.message.bytes",
+				ConfigValue: "130",
+			},
+			{
+				ConfigName:  "segment.bytes",
+				ConfigValue: "220",
 			},
 		},
-		Timeout: milliseconds(time.Second),
 	})
 	switch err {
 	case nil:
