@@ -32,7 +32,7 @@ software.
 
 #### Note:
 
-In order to better align with our newly adopted Code of Conduct, the kafka-go project has renamed our default branch to `main`.  
+In order to better align with our newly adopted Code of Conduct, the kafka-go project has renamed our default branch to `main`.
 For the full details of our Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
 
 ## Migrating to 0.4
@@ -637,6 +637,23 @@ w := kafka.NewWriter(kafka.WriterConfig{
 	Balancer: &kafka.Hash{},
 	Dialer:   dialer,
 })
+```
+
+### Client
+
+```go
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
+if err != nil {
+    panic(err)
+}
+
+client := &kafka.Client{
+    Addr:    kafka.TCP("localhost:9092"),
+    Timeout: 10 * time.Second,
+    Transport: &kafka.Transport{
+        SASLMechanism: mechanism,
+    },
+}
 ```
 
 #### Reading all messages within a time range
