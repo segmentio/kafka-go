@@ -32,7 +32,7 @@ software.
 
 #### Note:
 
-In order to better align with our newly adopted Code of Conduct, the kafka-go project has renamed our default branch to `main`.  
+In order to better align with our newly adopted Code of Conduct, the kafka-go project has renamed our default branch to `main`.
 For the full details of our Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
 
 ## Migrating to 0.4
@@ -625,18 +625,41 @@ if err != nil {
     panic(err)
 }
 
-dialer := &kafka.Dialer{
-    Timeout:       10 * time.Second,
-    DualStack:     true,
+// Transports are responsible for managing connection pools and other resources,
+// it's generally best to create a few of these and share them across your
+// application.
+sharedTransport := &kafka.Transport{
     SASLMechanism: mechanism,
 }
 
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9093"},
-	Topic:   "topic-A",
-	Balancer: &kafka.Hash{},
-	Dialer:   dialer,
-})
+w := kafka.Writer{
+	Addr:      kafka.TCP("localhost:9092"),
+	Topic:     "topic-A",
+	Balancer:  &kafka.Hash{},
+	Transport: sharedTransport,
+}
+```
+
+### Client
+
+```go
+mechanism, err := scram.Mechanism(scram.SHA512, "username", "password")
+if err != nil {
+    panic(err)
+}
+
+// Transports are responsible for managing connection pools and other resources,
+// it's generally best to create a few of these and share them across your
+// application.
+sharedTransport := &kafka.Transport{
+    SASLMechanism: mechanism,
+}
+
+client := &kafka.Client{
+    Addr:      kafka.TCP("localhost:9092"),
+    Timeout:   10 * time.Second,
+    Transport: sharedTransport,
+}
 ```
 
 #### Reading all messages within a time range
