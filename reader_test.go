@@ -463,19 +463,16 @@ func TestReadTruncatedMessages(t *testing.T) {
 	//        include it in CI unit tests.
 	t.Skip()
 
-	topic := makeTopic()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	r := NewReader(ReaderConfig{
 		Brokers:  []string{"localhost:9092"},
-		Topic:    topic,
+		Topic:    makeTopic(),
 		MinBytes: 1,
 		MaxBytes: 100,
 		MaxWait:  100 * time.Millisecond,
 	})
 	defer r.Close()
-
 	n := 500
 	prepareReader(t, ctx, r, makeTestSequence(n)...)
 	for i := 0; i < n; i++ {
