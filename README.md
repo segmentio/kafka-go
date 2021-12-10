@@ -625,18 +625,19 @@ if err != nil {
     panic(err)
 }
 
-dialer := &kafka.Dialer{
-    Timeout:       10 * time.Second,
-    DualStack:     true,
+// Transports are responsible for managing connection pools and other resources,
+// it's generally best to create a few of these and share them across your
+// application.
+sharedTransport := &kafka.Transport{
     SASLMechanism: mechanism,
 }
 
-w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9093"},
-	Topic:   "topic-A",
-	Balancer: &kafka.Hash{},
-	Dialer:   dialer,
-})
+w := kafka.Writer{
+	Addr:      kafka.TCP("localhost:9092"),
+	Topic:     "topic-A",
+	Balancer:  &kafka.Hash{},
+	Transport: sharedTransport,
+}
 ```
 
 ### Client
@@ -647,12 +648,17 @@ if err != nil {
     panic(err)
 }
 
+// Transports are responsible for managing connection pools and other resources,
+// it's generally best to create a few of these and share them across your
+// application.
+sharedTransport := &kafka.Transport{
+    SASLMechanism: mechanism,
+}
+
 client := &kafka.Client{
-    Addr:    kafka.TCP("localhost:9092"),
-    Timeout: 10 * time.Second,
-    Transport: &kafka.Transport{
-        SASLMechanism: mechanism,
-    },
+    Addr:      kafka.TCP("localhost:9092"),
+    Timeout:   10 * time.Second,
+    Transport: sharedTransport,
 }
 ```
 
