@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestReader(t *testing.T) {
@@ -463,19 +465,16 @@ func TestReadTruncatedMessages(t *testing.T) {
 	//        include it in CI unit tests.
 	t.Skip()
 
-	topic := makeTopic()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	r := NewReader(ReaderConfig{
 		Brokers:  []string{"localhost:9092"},
-		Topic:    topic,
+		Topic:    makeTopic(),
 		MinBytes: 1,
 		MaxBytes: 100,
 		MaxWait:  100 * time.Millisecond,
 	})
 	defer r.Close()
-
 	n := 500
 	prepareReader(t, ctx, r, makeTestSequence(n)...)
 	for i := 0; i < n; i++ {
@@ -1720,36 +1719,58 @@ func TestErrorCannotConnectGroupSubscription(t *testing.T) {
 	}
 }
 
+// Tests that the reader can read zero message batches from log compacted
+// topics.
+//
+// This test forces varying sized chunks of duplicated messages along with
+// configuring the topic with a minimal `segment.bytes` in order to
+// guarantee that at least 1 batch can be compacted down to 0 messages.
 func TestReaderReadCompactedMessage(t *testing.T) {
 	topic := makeTopic()
 	createTopicWithCompaction(t, topic, 1)
-
-	// we need specific configuration to check compacted topic.
-	r := NewReader(ReaderConfig{
-		Brokers:  []string{"localhost:9092"},
-		Topic:    topic,
-		MinBytes: 1e1,
-		MaxBytes: 40e1,
-		//QueueCapacity: 2,
-		MaxWait: 1000 * time.Millisecond,
-	})
+	defer deleteTopic(t, topic)
 
 	msgs := makeTestDuplicateSequence()
 
 	writeMessagesForCompactionCheck(t, topic, msgs)
 
-	// need some time for compaction to start with guarantee
-	// practice shows that 10-20s is not enough
-	time.Sleep(time.Second * 30)
+	expectedKeys := map[string]int{}
+	for _, msg := range msgs {
+		expectedKeys[string(msg.Key)] = 1
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
 	defer cancel()
+	for {
+		success := func() bool {
+			r := NewReader(ReaderConfig{
+				Brokers: []string{"localhost:9092"},
+				Topic:   topic,
+			})
+			defer r.Close()
 
-	for i := 0; i < countKeys(msgs); i++ {
-		_, err := r.FetchMessage(ctx)
-		if err != nil {
-			t.Errorf("cant get %s message from compacted log: %v", strconv.Itoa(i+1), err)
+			keys := map[string]int{}
+			for {
+				m, err := r.FetchMessage(ctx)
+				if err != nil {
+					t.Logf("can't get message from compacted log: %v", err)
+					return false
+				}
+				keys[string(m.Key)]++
+
+				if len(keys) == countKeys(msgs) {
+					t.Logf("got keys: %+v", keys)
+					return reflect.DeepEqual(keys, expectedKeys)
+				}
+			}
+		}()
+		if success {
 			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		default:
 		}
 	}
 }
@@ -1766,10 +1787,7 @@ func writeMessagesForCompactionCheck(t *testing.T, topic string, msgs []Message)
 		Balancer:  &LeastBytes{},
 	})
 	err := wr.WriteMessages(context.Background(), msgs...)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	require.NoError(t, err)
 }
 
 // makeTestDuplicateSequence creates messages for compacted log testing
@@ -1817,22 +1835,14 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 	t.Logf("createTopic(%s, %d)", topic, partitions)
 
 	conn, err := Dial("tcp", "localhost:9092")
-	if err != nil {
-		err = fmt.Errorf("createTopic, Dial: %w", err)
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer conn.Close()
 
 	controller, err := conn.Controller()
-	if err != nil {
-		err = fmt.Errorf("createTopic, conn.Controller: %w", err)
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	conn, err = Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 
@@ -1846,10 +1856,6 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 				ConfigValue: "compact",
 			},
 			{
-				ConfigName:  "delete.retention.ms",
-				ConfigValue: "10",
-			},
-			{
 				ConfigName:  "segment.bytes",
 				ConfigValue: "220",
 			},
@@ -1861,12 +1867,10 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 	case TopicAlreadyExists:
 		// ok
 	default:
-		err = fmt.Errorf("createTopic, conn.createtTopics: %w", err)
-		t.Error(err)
-		t.FailNow()
+		require.NoError(t, err)
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-
 	waitForTopic(ctx, t, topic)
 }
