@@ -245,11 +245,11 @@ func (batch *Batch) readMessage(
 			// consumed or a batch whose connection is in an error state.
 			batch.err = dontExpectEOF(err)
 		case batch.msgs.remaining() == 0:
-			// Log compaction can create batches with 0 messages.
+			// Log compaction can create batches with 0 unread messages.
 			//
 			// If the "next offset" reaches the "originally requested offset"
-			// and we have 0 messages remaining, then there were 0 messages in
-			// the batch.
+			// and we have 0 messages remaining, then there were 0 unread
+			// messages in the batch.
 			//
 			// We normally set the batch offset to the "next" batch offset upon
 			// reading a message but since there were no messages to read we

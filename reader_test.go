@@ -1724,7 +1724,8 @@ func TestErrorCannotConnectGroupSubscription(t *testing.T) {
 //
 // This test forces varying sized chunks of duplicated messages along with
 // configuring the topic with a minimal `segment.bytes` in order to
-// guarantee that at least 1 batch can be compacted down to 0 messages.
+// guarantee that at least 1 batch can be compacted down to 0 "unread" messages
+// with at least 1 "old" message otherwise the batch is skipped entirely.
 func TestReaderReadCompactedMessage(t *testing.T) {
 	topic := makeTopic()
 	createTopicWithCompaction(t, topic, 1)
