@@ -148,7 +148,6 @@ If `auto.create.topics.enable='false'` then you will need to create topics expli
 ```go
 // to create topics when auto.create.topics.enable='false'
 topic := "my-topic"
-partition := 0
 
 conn, err := kafka.Dial("tcp", "localhost:9092")
 if err != nil {
