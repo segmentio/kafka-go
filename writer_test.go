@@ -15,7 +15,7 @@ import (
 func TestBatchQueue(t *testing.T) {
 	tests := []struct {
 		scenario string
-		function func(*testing.T)
+		function func(bq batchQueueCommon) func(*testing.T)
 	}{
 		{
 			scenario: "the remaining items in a queue can be gotten after closing",
@@ -32,64 +32,72 @@ func TestBatchQueue(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		testFunc := test.function
-		t.Run(test.scenario, func(t *testing.T) {
-			t.Parallel()
-			testFunc(t)
-		})
-	}
-}
-
-func testBatchQueuePutWakesSleepingGetter(t *testing.T) {
-	bq := newBatchQueue(10)
-	var wg sync.WaitGroup
-	ready := make(chan struct{})
-	var batch *writeBatch
-	go func() {
-		wg.Add(1)
-		defer wg.Done()
-		close(ready)
-		batch = bq.Get()
-	}()
-	<-ready
-	bq.Put(newWriteBatch(time.Now(), time.Hour*100))
-	wg.Wait()
-	if batch == nil {
-		t.Fatal("got nil batch")
-	}
-}
-
-func testBatchQueuePutAfterCloseFails(t *testing.T) {
-	bq := newBatchQueue(10)
-	bq.Close()
-	if put := bq.Put(newWriteBatch(time.Now(), time.Hour*100)); put {
-		t.Fatal("put batch into closed queue")
-	}
-}
-
-func testBatchQueueGetWorksAfterClose(t *testing.T) {
-	bq := newBatchQueue(10)
-	enqueueBatches := []*writeBatch{
-		newWriteBatch(time.Now(), time.Hour*100),
-		newWriteBatch(time.Now(), time.Hour*100),
-	}
-
-	for _, batch := range enqueueBatches {
-		put := bq.Put(batch)
-		if !put {
-			t.Fatal("failed to put batch into queue")
+		for _, bq := range []batchQueueCommon{
+			newBatchQueue(10),
+			newBatchQueueLimited(10),
+		} {
+			testFunc := test.function(bq)
+			t.Run(test.scenario, func(t *testing.T) {
+				t.Parallel()
+				testFunc(t)
+			})
 		}
 	}
+}
 
-	bq.Close()
-
-	batchesGotten := 0
-	for batchesGotten != 2 {
-		dequeueBatch := bq.Get()
-		if dequeueBatch == nil {
-			t.Fatalf("no batch returned from get")
+func testBatchQueuePutWakesSleepingGetter(bq batchQueueCommon) func(t *testing.T) {
+	return func(t *testing.T) {
+		var wg sync.WaitGroup
+		ready := make(chan struct{})
+		var batch *writeBatch
+		go func() {
+			wg.Add(1)
+			defer wg.Done()
+			close(ready)
+			batch = bq.Get()
+		}()
+		<-ready
+		bq.Put(newWriteBatch(time.Now(), time.Hour*100))
+		wg.Wait()
+		if batch == nil {
+			t.Fatal("got nil batch")
 		}
-		batchesGotten++
+	}
+}
+
+func testBatchQueuePutAfterCloseFails(bq batchQueueCommon) func(t *testing.T) {
+	return func(t *testing.T) {
+		bq.Close()
+		if put := bq.Put(newWriteBatch(time.Now(), time.Hour*100)); put {
+			t.Fatal("put batch into closed queue")
+		}
+	}
+}
+
+func testBatchQueueGetWorksAfterClose(bq batchQueueCommon) func(t *testing.T) {
+	return func(t *testing.T) {
+		enqueueBatches := []*writeBatch{
+			newWriteBatch(time.Now(), time.Hour*100),
+			newWriteBatch(time.Now(), time.Hour*100),
+		}
+
+		for _, batch := range enqueueBatches {
+			put := bq.Put(batch)
+			if !put {
+				t.Fatal("failed to put batch into queue")
+			}
+		}
+
+		bq.Close()
+
+		batchesGotten := 0
+		for batchesGotten != 2 {
+			dequeueBatch := bq.Get()
+			if dequeueBatch == nil {
+				t.Fatalf("no batch returned from get")
+			}
+			batchesGotten++
+		}
 	}
 }
 

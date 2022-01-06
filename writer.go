@@ -100,6 +100,11 @@ type Writer struct {
 	// The default is to try at most 10 times.
 	MaxAttempts int
 
+	// Limit on how many batches will be buffered in a partitionWriter.
+	//
+	// Defaults to 0, means unlimited queue size.
+	BatchQueueSize int
+
 	// Limit on how many messages will be buffered before being sent to a
 	// partition.
 	//
@@ -797,6 +802,13 @@ func (w *Writer) batchTimeout() time.Duration {
 	return 1 * time.Second
 }
 
+func (w *Writer) batchQueueSize() int {
+	if w.BatchQueueSize > 0 {
+		return w.BatchQueueSize
+	}
+	return 0
+}
+
 func (w *Writer) readTimeout() time.Duration {
 	if w.ReadTimeout > 0 {
 		return w.ReadTimeout
@@ -886,6 +898,55 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 	return w.Topic, nil
 }
 
+type batchQueueCommon interface {
+	Put(item *writeBatch) bool
+	Get() *writeBatch
+	Close()
+}
+
+type batchQueueLimited struct {
+	queue chan *writeBatch
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func (b *batchQueueLimited) Put(item *writeBatch) bool {
+	select {
+	case <-b.ctx.Done():
+		return false
+	default:
+		b.queue <- item
+		return true
+	}
+}
+
+func (b *batchQueueLimited) Get() *writeBatch {
+	item, ok := <-b.queue
+	if !ok {
+		return nil
+	}
+	return item
+}
+
+func (b *batchQueueLimited) Close() {
+	b.cancel()
+	b.once.Do(func() {
+		close(b.queue)
+	})
+}
+
+func newBatchQueueLimited(fixedSize int) *batchQueueLimited {
+	ctx, cancel := context.WithCancel(context.Background())
+	bq := &batchQueueLimited{
+		queue:  make(chan *writeBatch, fixedSize),
+		ctx:    ctx,
+		cancel: cancel,
+	}
+	return bq
+}
+
 type batchQueue struct {
 	queue []*writeBatch
 
@@ -937,11 +998,11 @@ func (b *batchQueue) Close() {
 	b.closed = true
 }
 
-func newBatchQueue(initialSize int) batchQueue {
-	bq := batchQueue{
+func newBatchQueue(initialSize int) *batchQueue {
+	bq := &batchQueue{
 		queue: make([]*writeBatch, 0, initialSize),
 		mutex: &sync.Mutex{},
-		cond: &sync.Cond{},
+		cond:  &sync.Cond{},
 	}
 
 	bq.cond.L = bq.mutex
@@ -953,7 +1014,7 @@ func newBatchQueue(initialSize int) batchQueue {
 // across batches of messages.
 type partitionWriter struct {
 	meta  topicPartition
-	queue batchQueue
+	queue batchQueueCommon
 
 	mutex     sync.Mutex
 	currBatch *writeBatch
@@ -965,9 +1026,13 @@ type partitionWriter struct {
 
 func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
 	writer := &partitionWriter{
-		meta:  key,
-		queue: newBatchQueue(10),
-		w:     w,
+		meta: key,
+		w:    w,
+	}
+	if size := w.batchQueueSize(); size > 0 {
+		writer.queue = newBatchQueueLimited(size)
+	} else {
+		writer.queue = newBatchQueue(10)
 	}
 	w.spawn(writer.writeBatches)
 	return writer
