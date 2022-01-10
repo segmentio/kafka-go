@@ -585,10 +585,7 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 			p.update(ctx, nil, err)
 		} else {
 			res := make(async, 1)
-			req := &meta.Request{
-				IncludeClusterAuthorizedOperations: true,
-				IncludeTopicAuthorizedOperations:   true,
-			}
+			req := &meta.Request{}
 			deadline, cancel := context.WithTimeout(ctx, p.metadataTTL)
 			c.reqs <- connRequest{
 				ctx: deadline,
