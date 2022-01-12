@@ -857,7 +857,11 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 
 	var msgs *messageSetReader
 	if err == nil {
-		msgs, err = newMessageSetReader(&c.rbuf, remain)
+		if highWaterMark < offset {
+			msgs = &messageSetReader{empty: true}
+		} else {
+			msgs, err = newMessageSetReader(&c.rbuf, remain)
+		}
 	}
 	if err == errShortRead {
 		err = checkTimeoutErr(adjustedDeadline)
