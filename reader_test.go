@@ -1781,8 +1781,10 @@ func writeMessagesForCompactionCheck(t *testing.T, topic string, msgs []Message)
 	t.Helper()
 
 	wr := NewWriter(WriterConfig{
-		Brokers:   []string{"localhost:9092"},
-		BatchSize: 2,
+		Brokers: []string{"localhost:9092"},
+		// Batch size must be large enough to have multiple compacted records
+		// for testing more edge cases.
+		BatchSize: 3,
 		Async:     false,
 		Topic:     topic,
 		Balancer:  &LeastBytes{},
