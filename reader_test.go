@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -1719,8 +1720,85 @@ func TestErrorCannotConnectGroupSubscription(t *testing.T) {
 	}
 }
 
-// Tests that the reader can read zero message batches from log compacted
-// topics.
+// Tests that the reader can handle messages where the response is truncated
+// due to reaching MaxBytes.
+//
+// If MaxBytes is too small to fit 1 record then it will never truncate, so
+// we start from a small message size and increase it until we are sure
+// truncation has happened at some point.
+func TestReaderTruncatedResponse(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	readerMaxBytes := 100
+	batchSize := 4
+	maxMsgPadding := 5
+	readContextTimeout := 10 * time.Second
+
+	var msgs []Message
+	// The key of each message
+	n := 0
+	// `i` is the amount of padding per message
+	for i := 0; i < maxMsgPadding; i++ {
+		bb := bytes.Buffer{}
+		for x := 0; x < i; x++ {
+			_, err := bb.WriteRune('0')
+			require.NoError(t, err)
+		}
+		padding := bb.Bytes()
+		// `j` is the number of times the message repeats
+		for j := 0; j < batchSize*4; j++ {
+			msgs = append(msgs, Message{
+				Key:   []byte(fmt.Sprintf("%05d", n)),
+				Value: padding,
+			})
+			n++
+		}
+	}
+
+	wr := NewWriter(WriterConfig{
+		Brokers:   []string{"localhost:9092"},
+		BatchSize: batchSize,
+		Async:     false,
+		Topic:     topic,
+		Balancer:  &LeastBytes{},
+	})
+	err := wr.WriteMessages(context.Background(), msgs...)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), readContextTimeout)
+	defer cancel()
+	r := NewReader(ReaderConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    topic,
+		MinBytes: 1,
+		MaxBytes: readerMaxBytes,
+		// Speed up testing
+		MaxWait: 100 * time.Millisecond,
+	})
+	defer r.Close()
+
+	expectedKeys := map[string]struct{}{}
+	for _, k := range msgs {
+		expectedKeys[string(k.Key)] = struct{}{}
+	}
+	keys := map[string]struct{}{}
+	for {
+		m, err := r.FetchMessage(ctx)
+		require.NoError(t, err)
+		keys[string(m.Key)] = struct{}{}
+
+		t.Logf("got key %s have %d keys expect %d\n", string(m.Key), len(keys), len(expectedKeys))
+		if len(keys) == len(expectedKeys) {
+			require.Equal(t, expectedKeys, keys)
+			return
+		}
+	}
+}
+
+// Tests that the reader can read record batches from log compacted topics
+// where the batch ends with compacted records.
 //
 // This test forces varying sized chunks of duplicated messages along with
 // configuring the topic with a minimal `segment.bytes` in order to
@@ -1745,8 +1823,12 @@ func TestReaderReadCompactedMessage(t *testing.T) {
 	for {
 		success := func() bool {
 			r := NewReader(ReaderConfig{
-				Brokers: []string{"localhost:9092"},
-				Topic:   topic,
+				Brokers:  []string{"localhost:9092"},
+				Topic:    topic,
+				MinBytes: 200,
+				MaxBytes: 200,
+				// Speed up testing
+				MaxWait: 100 * time.Millisecond,
 			})
 			defer r.Close()
 

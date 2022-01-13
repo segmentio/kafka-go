@@ -541,7 +541,7 @@ func TestMessageSetReaderEmpty(t *testing.T) {
 		return 0, nil
 	}
 
-	offset, timestamp, headers, err := m.readMessage(0, noop, noop)
+	offset, _, timestamp, headers, err := m.readMessage(0, noop, noop)
 	if offset != 0 {
 		t.Errorf("expected offset of 0, get %d", offset)
 	}
@@ -737,12 +737,12 @@ func (r *readerHelper) readMessageErr() (msg Message, err error) {
 	}
 	var timestamp int64
 	var headers []Header
-	r.offset, timestamp, headers, err = r.messageSetReader.readMessage(r.offset, keyFunc, valueFunc)
+	r.offset, _, timestamp, headers, err = r.messageSetReader.readMessage(r.offset, keyFunc, valueFunc)
 	if err != nil {
 		return
 	}
 	msg.Offset = r.offset
-	msg.Time = time.Unix(timestamp / 1000, (timestamp % 1000) * 1000000)
+	msg.Time = time.Unix(timestamp/1000, (timestamp%1000)*1000000)
 	msg.Headers = headers
 	return
 }

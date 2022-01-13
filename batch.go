@@ -28,6 +28,15 @@ type Batch struct {
 	offset        int64
 	highWaterMark int64
 	err           error
+	// The last offset in the batch.
+	//
+	// We use lastOffset to skip offsets that have been compacted away.
+	//
+	// We store lastOffset because we get lastOffset when we read a new message
+	// but only try to handle compaction when we receive an EOF. However, when
+	// we get an EOF we do not get the lastOffset. So there is a mismatch
+	// between when we receive it and need to use it.
+	lastOffset int64
 }
 
 // Throttle gives the throttling duration applied by the kafka server on the
@@ -227,10 +236,12 @@ func (batch *Batch) readMessage(
 		return
 	}
 
-	offset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
+	var lastOffset int64
+	offset, lastOffset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
 	switch err {
 	case nil:
 		batch.offset = offset + 1
+		batch.lastOffset = lastOffset
 	case errShortRead:
 		// As an "optimization" kafka truncates the returned response after
 		// producing MaxBytes, which could then cause the code to return
@@ -245,19 +256,6 @@ func (batch *Batch) readMessage(
 			// consumed or a batch whose connection is in an error state.
 			batch.err = dontExpectEOF(err)
 		case batch.msgs.remaining() == 0:
-			// Log compaction can create batches with 0 unread messages.
-			//
-			// If the "next offset" reaches the "originally requested offset"
-			// and we have 0 messages remaining, then there were 0 unread
-			// messages in the batch.
-			//
-			// We normally set the batch offset to the "next" batch offset upon
-			// reading a message but since there were no messages to read we
-			// update it now instead.
-			if batch.offset == batch.conn.offset {
-				batch.offset++
-			}
-
 			// Because we use the adjusted deadline we could end up returning
 			// before the actual deadline occurred. This is necessary otherwise
 			// timing out the connection for real could end up leaving it in an
@@ -267,6 +265,20 @@ func (batch *Batch) readMessage(
 			// read deadline management.
 			err = checkTimeoutErr(batch.deadline)
 			batch.err = err
+
+			// Checks:
+			// - `batch.err` for a "success" from the previous check
+			// - `batch.msgs.lengthRemain` to ensure that this EOF is not due
+			//   to MaxBytes truncation
+			// - `batch.lastOffset` to ensure that the message format allows
+			//   compaction
+			if batch.err == io.EOF && batch.msgs.lengthRemain == 0 && batch.lastOffset != -1 {
+				// Log compaction can create batches with 0 unread records.
+				//
+				// In order to reliably reach the next non-compacted offset we
+				// jump to the saved lastOffset.
+				batch.offset = batch.lastOffset + 1
+			}
 		}
 	default:
 		// Since io.EOF is used by the batch to indicate that there is are
