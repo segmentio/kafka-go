@@ -342,7 +342,13 @@ func TestConn(t *testing.T) {
 			if t1Writer, err = dialer.DialLeader(ctx, tcp, kafka, topic1, 0); err != nil {
 				return
 			}
+			if err = t1Writer.SetRequiredAcks(int(RequireAll)); err != nil {
+				return
+			}
 			if t2Writer, err = dialer.DialLeader(ctx, tcp, kafka, topic2, 0); err != nil {
+				return
+			}
+			if err = t2Writer.SetRequiredAcks(int(RequireAll)); err != nil {
 				return
 			}
 
