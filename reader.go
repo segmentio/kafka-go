@@ -783,6 +783,32 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	return m, nil
 }
 
+// TryReadMessage tries to read and return the next message from the r if exists. Not like ReadMessage, the method call
+// does not blocks. The program may also specify a context to asynchronously cancel the blocking operation.
+//
+// The method returns io.EOF to indicate that the reader has been closed.
+//
+// If consumer groups are used, ReadMessage will automatically commit the
+// offset when called. Note that this could result in an offset being committed
+// before the message is fully processed.
+//
+// If more fine grained control of when offsets are  committed is required, it
+// is recommended to use FetchMessage with CommitMessages instead.
+func (r *Reader) TryReadMessage(ctx context.Context) (Message, error) {
+	m, err := r.TryFetchMessage(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+
+	if r.useConsumerGroup() {
+		if err := r.CommitMessages(ctx, m); err != nil {
+			return Message{}, err
+		}
+	}
+
+	return m, nil
+}
+
 // FetchMessage reads and return the next message from the r. The method call
 // blocks until a message becomes available, or an error occurs. The program
 // may also specify a context to asynchronously cancel the blocking operation.
@@ -842,6 +868,68 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 			}
 		}
 	}
+}
+
+// TryFetchMessage tries to read a message, return the next message from the r if exists.
+// Not like FetchMessage, this method call does not block. The program
+// may also specify a context to asynchronously cancel the blocking operation.
+//
+// The method returns io.EOF to indicate that the reader has been closed.
+//
+// TryFetchMessage does not commit offsets automatically when using consumer groups.
+// Use CommitMessages to commit the offset.
+func (r *Reader) TryFetchMessage(ctx context.Context) (Message, error) {
+	r.activateReadLag()
+
+	r.mutex.Lock()
+
+	if !r.closed && r.version == 0 {
+		r.start(r.getTopicPartitionOffset())
+	}
+
+	version := r.version
+	r.mutex.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return Message{}, ctx.Err()
+
+	case err := <-r.runError:
+		return Message{}, err
+
+	case m, ok := <-r.msgs:
+		if !ok {
+			return Message{}, io.EOF
+		}
+
+		if m.version >= version {
+			r.mutex.Lock()
+
+			switch {
+			case m.error != nil:
+			case version == r.version:
+				r.offset = m.message.Offset + 1
+				r.lag = m.watermark - r.offset
+			}
+
+			r.mutex.Unlock()
+
+			switch m.error {
+			case nil:
+			case io.EOF:
+				// io.EOF is used as a marker to indicate that the stream
+				// has been closed, in case it was received from the inner
+				// reader we don't want to confuse the program and replace
+				// the error with io.ErrUnexpectedEOF.
+				m.error = io.ErrUnexpectedEOF
+			}
+
+			return m.message, m.error
+		}
+	default:
+	}
+
+	return Message{}, ErrNoAvailableMessage
 }
 
 // CommitMessages commits the list of messages passed as argument. The program
