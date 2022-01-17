@@ -34,6 +34,9 @@ const (
 var (
 	errOnlyAvailableWithGroup = errors.New("unavailable when GroupID is not set")
 	errNotAvailableWithGroup  = errors.New("unavailable when GroupID is set")
+
+	// ErrNoAvailableMessage no available message for read/fetch
+	ErrNoAvailableMessage = errors.New("no available message")
 )
 
 const (
