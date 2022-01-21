@@ -326,7 +326,7 @@ type Generation struct {
 	// between Start and close.  lock protects all of them.  done is closed
 	// when the generation is ending in order to signal that the generation
 	// should start self-desructing.  closed protects against double-closing
-	// the done chan.  routines is a count of runing go routines that have been
+	// the done chan.  routines is a count of running go routines that have been
 	// launched by Start.  joined will be closed by the last go routine to exit.
 	lock     sync.Mutex
 	done     chan struct{}

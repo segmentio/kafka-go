@@ -1552,7 +1552,7 @@ func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	var msgs []Message
+	msgs := make([]Message, 0, len(conf.GroupTopics))
 	for _, topic := range conf.GroupTopics {
 		msgs = append(msgs, Message{Topic: topic})
 	}
