@@ -495,7 +495,7 @@ func makeTestSequence(n int) []Message {
 }
 
 func prepareReader(t *testing.T, ctx context.Context, r *Reader, msgs ...Message) {
-	var config = r.Config()
+	config := r.Config()
 	var conn *Conn
 	var err error
 
@@ -710,7 +710,6 @@ func TestReaderPartitionWhenConsumerGroupsEnabled(t *testing.T) {
 	if !invoke() {
 		t.Fatalf("expected panic; but NewReader worked?!")
 	}
-
 }
 
 func TestExtractTopics(t *testing.T) {
@@ -1278,6 +1277,53 @@ func TestValidateReader(t *testing.T) {
 		if !test.errorOccured && err != nil {
 			t.Fail()
 		}
+	}
+}
+
+func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
+	t.Parallel()
+	var committedOffset int64
+	var commitCount int
+	gen := &Generation{
+		conn: mockCoordinator{
+			offsetCommitFunc: func(r offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+				commitCount++
+				committedOffset = r.Topics[0].Partitions[0].Offset
+				return offsetCommitResponseV2{}, nil
+			},
+		},
+		done:     make(chan struct{}),
+		log:      func(func(Logger)) {},
+		logError: func(func(Logger)) {},
+	}
+
+	// initialize commits so that the commitLoopImmediate select statement blocks
+	r := &Reader{stctx: context.Background(), commits: make(chan commitRequest, 100)}
+
+	for i := 0; i < 100; i++ {
+		cr := commitRequest{
+			commits: []commit{{
+				topic:     "topic",
+				partition: 0,
+				offset:    int64(i) + 1,
+			}},
+			errch: make(chan<- error, 1),
+		}
+		r.commits <- cr
+	}
+
+	gen.Start(func(ctx context.Context) {
+		r.commitLoopImmediate(ctx, gen)
+	})
+
+	gen.close()
+
+	if committedOffset != 100 {
+		t.Fatalf("expected commited offset to be 100 but got %d", committedOffset)
+	}
+
+	if commitCount >= 100 {
+		t.Fatalf("expected a single final commit on generation end got %d", commitCount)
 	}
 }
 
