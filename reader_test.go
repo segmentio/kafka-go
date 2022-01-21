@@ -1295,6 +1295,7 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 		done:     make(chan struct{}),
 		log:      func(func(Logger)) {},
 		logError: func(func(Logger)) {},
+		joined:   make(chan struct{}),
 	}
 
 	// initialize commits so that the commitLoopImmediate select statement blocks
