@@ -168,7 +168,7 @@ defer controllerConn.Close()
 
 
 topicConfigs := []kafka.TopicConfig{
-    kafka.TopicConfig{
+    {
         Topic:             topic,
         NumPartitions:     1,
         ReplicationFactor: 1,
