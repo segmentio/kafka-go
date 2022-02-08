@@ -1805,6 +1805,12 @@ func TestReaderTruncatedResponse(t *testing.T) {
 // guarantee that at least 1 batch can be compacted down to 0 "unread" messages
 // with at least 1 "old" message otherwise the batch is skipped entirely.
 func TestReaderReadCompactedMessage(t *testing.T) {
+	if os.Getenv("KAFKA_VERSION") == "2.0.1" {
+		// There is something odd with this kafka version that causes some
+		// duplicate messages to not be compacted away.
+		t.Skip("Skipping test because kafka version is 2.0.1")
+	}
+
 	topic := makeTopic()
 	createTopicWithCompaction(t, topic, 1)
 	defer deleteTopic(t, topic)
