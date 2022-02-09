@@ -266,17 +266,20 @@ func (batch *Batch) readMessage(
 			err = checkTimeoutErr(batch.deadline)
 			batch.err = err
 
-			// Checks:
-			// - `batch.err` for a "success" from the previous check
+			// Checks the following:
+			// - `batch.err` for a "success" from the previous timeout check
 			// - `batch.msgs.lengthRemain` to ensure that this EOF is not due
 			//   to MaxBytes truncation
-			// - `batch.lastOffset` to ensure that the message format allows
-			//   compaction
+			// - `batch.lastOffset` to ensure that the message format contains
+			//   `lastOffset`
 			if batch.err == io.EOF && batch.msgs.lengthRemain == 0 && batch.lastOffset != -1 {
-				// Log compaction can create batches with 0 unread records.
+				// Log compaction can create batches that end with compacted
+				// records so the normal strategy that increments the "next"
+				// offset as records are read doesn't work as the compacted
+				// records are "missing" and never get "read".
 				//
 				// In order to reliably reach the next non-compacted offset we
-				// jump to the saved lastOffset.
+				// jump past the saved lastOffset.
 				batch.offset = batch.lastOffset + 1
 			}
 		}
