@@ -1,6 +1,6 @@
 module github.com/segmentio/kafka-go/example/consumer-mongo-db
 
-go 1.16
+go 1.15
 
 require (
 	github.com/go-stack/stack v1.8.0 // indirect
