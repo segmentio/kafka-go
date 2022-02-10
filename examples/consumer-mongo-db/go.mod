@@ -1,4 +1,4 @@
-module github.com/tarekbadrshalaan/GoKafka/kafka-go
+module github.com/segmentio/kafka-go/example/consumer-mongo-db
 
 go 1.16
 
