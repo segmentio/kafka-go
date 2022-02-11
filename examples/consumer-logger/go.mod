@@ -1,8 +1,8 @@
-module github.com/tarekbadrshalaan/GoKafka/kafka-go
+module github.com/segmentio/kafka-go/example/consumer-logger
 
-go 1.16
+go 1.15
 
 require (
 	github.com/klauspost/compress v1.12.2 // indirect
-	github.com/segmentio/kafka-go v0.4.15
+	github.com/segmentio/kafka-go v0.4.28
 )
