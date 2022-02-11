@@ -8,7 +8,7 @@ import (
 type Message struct {
 	// Topic indicates which topic this message was consumed from via Reader.
 	//
-	// When being used with Writer, this can be used to configured the topic if
+	// When being used with Writer, this can be used to configure the topic if
 	// not already specified on the writer itself.
 	Topic string
 
