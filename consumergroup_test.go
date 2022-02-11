@@ -630,6 +630,7 @@ func TestGenerationExitsOnPartitionChange(t *testing.T) {
 	gen := Generation{
 		conn:     conn,
 		done:     make(chan struct{}),
+		joined:   make(chan struct{}),
 		log:      func(func(Logger)) {},
 		logError: func(func(Logger)) {},
 	}
@@ -646,6 +647,33 @@ func TestGenerationExitsOnPartitionChange(t *testing.T) {
 	case <-done:
 		if time.Now().Sub(now).Seconds() > watchTime.Seconds()*4 {
 			t.Error("partitionWatcher didn't see update")
+		}
+	}
+}
+
+func TestGenerationStartsFunctionAfterClosed(t *testing.T) {
+	gen := Generation{
+		conn:     &mockCoordinator{},
+		done:     make(chan struct{}),
+		joined:   make(chan struct{}),
+		log:      func(func(Logger)) {},
+		logError: func(func(Logger)) {},
+	}
+
+	gen.close()
+
+	ch := make(chan error)
+	gen.Start(func(ctx context.Context) {
+		<-ctx.Done()
+		ch <- ctx.Err()
+	})
+
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for func to run")
+	case err := <-ch:
+		if err != ErrGenerationEnded {
+			t.Fatalf("expected %v but got %v", ErrGenerationEnded, err)
 		}
 	}
 }

@@ -212,6 +212,25 @@ func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 	for {
 		select {
 		case <-ctx.Done():
+			// drain the commit channel and prepare a single, final commit.
+			// the commit will combine any outstanding requests and the result
+			// will be sent back to all the callers of CommitMessages so that
+			// they can return.
+			var errchs []chan<- error
+			for hasCommits := true; hasCommits; {
+				select {
+				case req := <-r.commits:
+					offsets.merge(req.commits)
+					errchs = append(errchs, req.errch)
+				default:
+					hasCommits = false
+				}
+			}
+			err := r.commitOffsetsWithRetry(gen, offsets, defaultCommitRetries)
+			for _, errch := range errchs {
+				// NOTE : this will be a buffered channel and will not block.
+				errch <- err
+			}
 			return
 
 		case req := <-r.commits:

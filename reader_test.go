@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestReader(t *testing.T) {
@@ -495,7 +498,7 @@ func makeTestSequence(n int) []Message {
 }
 
 func prepareReader(t *testing.T, ctx context.Context, r *Reader, msgs ...Message) {
-	var config = r.Config()
+	config := r.Config()
 	var conn *Conn
 	var err error
 
@@ -710,7 +713,6 @@ func TestReaderPartitionWhenConsumerGroupsEnabled(t *testing.T) {
 	if !invoke() {
 		t.Fatalf("expected panic; but NewReader worked?!")
 	}
-
 }
 
 func TestExtractTopics(t *testing.T) {
@@ -1281,6 +1283,54 @@ func TestValidateReader(t *testing.T) {
 	}
 }
 
+func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
+	t.Parallel()
+	var committedOffset int64
+	var commitCount int
+	gen := &Generation{
+		conn: mockCoordinator{
+			offsetCommitFunc: func(r offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+				commitCount++
+				committedOffset = r.Topics[0].Partitions[0].Offset
+				return offsetCommitResponseV2{}, nil
+			},
+		},
+		done:     make(chan struct{}),
+		log:      func(func(Logger)) {},
+		logError: func(func(Logger)) {},
+		joined:   make(chan struct{}),
+	}
+
+	// initialize commits so that the commitLoopImmediate select statement blocks
+	r := &Reader{stctx: context.Background(), commits: make(chan commitRequest, 100)}
+
+	for i := 0; i < 100; i++ {
+		cr := commitRequest{
+			commits: []commit{{
+				topic:     "topic",
+				partition: 0,
+				offset:    int64(i) + 1,
+			}},
+			errch: make(chan<- error, 1),
+		}
+		r.commits <- cr
+	}
+
+	gen.Start(func(ctx context.Context) {
+		r.commitLoopImmediate(ctx, gen)
+	})
+
+	gen.close()
+
+	if committedOffset != 100 {
+		t.Fatalf("expected commited offset to be 100 but got %d", committedOffset)
+	}
+
+	if commitCount >= 100 {
+		t.Fatalf("expected a single final commit on generation end got %d", commitCount)
+	}
+}
+
 func TestCommitOffsetsWithRetry(t *testing.T) {
 	offsets := offsetStash{"topic": {0: 0}}
 
@@ -1552,7 +1602,7 @@ func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	var msgs []Message
+	msgs := make([]Message, 0, len(conf.GroupTopics))
 	for _, topic := range conf.GroupTopics {
 		msgs = append(msgs, Message{Topic: topic})
 	}
@@ -1668,4 +1718,257 @@ func TestErrorCannotConnectGroupSubscription(t *testing.T) {
 		t.Errorf("Reader.FetchMessage with a group subscription " +
 			"must fail when it cannot connect")
 	}
+}
+
+// Tests that the reader can handle messages where the response is truncated
+// due to reaching MaxBytes.
+//
+// If MaxBytes is too small to fit 1 record then it will never truncate, so
+// we start from a small message size and increase it until we are sure
+// truncation has happened at some point.
+func TestReaderTruncatedResponse(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	readerMaxBytes := 100
+	batchSize := 4
+	maxMsgPadding := 5
+	readContextTimeout := 10 * time.Second
+
+	var msgs []Message
+	// The key of each message
+	n := 0
+	// `i` is the amount of padding per message
+	for i := 0; i < maxMsgPadding; i++ {
+		bb := bytes.Buffer{}
+		for x := 0; x < i; x++ {
+			_, err := bb.WriteRune('0')
+			require.NoError(t, err)
+		}
+		padding := bb.Bytes()
+		// `j` is the number of times the message repeats
+		for j := 0; j < batchSize*4; j++ {
+			msgs = append(msgs, Message{
+				Key:   []byte(fmt.Sprintf("%05d", n)),
+				Value: padding,
+			})
+			n++
+		}
+	}
+
+	wr := NewWriter(WriterConfig{
+		Brokers:   []string{"localhost:9092"},
+		BatchSize: batchSize,
+		Async:     false,
+		Topic:     topic,
+		Balancer:  &LeastBytes{},
+	})
+	err := wr.WriteMessages(context.Background(), msgs...)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), readContextTimeout)
+	defer cancel()
+	r := NewReader(ReaderConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    topic,
+		MinBytes: 1,
+		MaxBytes: readerMaxBytes,
+		// Speed up testing
+		MaxWait: 100 * time.Millisecond,
+	})
+	defer r.Close()
+
+	expectedKeys := map[string]struct{}{}
+	for _, k := range msgs {
+		expectedKeys[string(k.Key)] = struct{}{}
+	}
+	keys := map[string]struct{}{}
+	for {
+		m, err := r.FetchMessage(ctx)
+		require.NoError(t, err)
+		keys[string(m.Key)] = struct{}{}
+
+		t.Logf("got key %s have %d keys expect %d\n", string(m.Key), len(keys), len(expectedKeys))
+		if len(keys) == len(expectedKeys) {
+			require.Equal(t, expectedKeys, keys)
+			return
+		}
+	}
+}
+
+// Tests that the reader can read record batches from log compacted topics
+// where the batch ends with compacted records.
+//
+// This test forces varying sized chunks of duplicated messages along with
+// configuring the topic with a minimal `segment.bytes` in order to
+// guarantee that at least 1 batch can be compacted down to 0 "unread" messages
+// with at least 1 "old" message otherwise the batch is skipped entirely.
+func TestReaderReadCompactedMessage(t *testing.T) {
+	topic := makeTopic()
+	createTopicWithCompaction(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	msgs := makeTestDuplicateSequence()
+
+	writeMessagesForCompactionCheck(t, topic, msgs)
+
+	expectedKeys := map[string]int{}
+	for _, msg := range msgs {
+		expectedKeys[string(msg.Key)] = 1
+	}
+
+	// kafka 2.0.1 is extra slow
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	defer cancel()
+	for {
+		success := func() bool {
+			r := NewReader(ReaderConfig{
+				Brokers:  []string{"localhost:9092"},
+				Topic:    topic,
+				MinBytes: 200,
+				MaxBytes: 200,
+				// Speed up testing
+				MaxWait: 100 * time.Millisecond,
+			})
+			defer r.Close()
+
+			keys := map[string]int{}
+			for {
+				m, err := r.FetchMessage(ctx)
+				if err != nil {
+					t.Logf("can't get message from compacted log: %v", err)
+					return false
+				}
+				keys[string(m.Key)]++
+
+				if len(keys) == countKeys(msgs) {
+					t.Logf("got keys: %+v", keys)
+					return reflect.DeepEqual(keys, expectedKeys)
+				}
+			}
+		}()
+		if success {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		default:
+		}
+	}
+}
+
+// writeMessagesForCompactionCheck writes messages with specific writer configuration
+func writeMessagesForCompactionCheck(t *testing.T, topic string, msgs []Message) {
+	t.Helper()
+
+	wr := NewWriter(WriterConfig{
+		Brokers: []string{"localhost:9092"},
+		// Batch size must be large enough to have multiple compacted records
+		// for testing more edge cases.
+		BatchSize: 3,
+		Async:     false,
+		Topic:     topic,
+		Balancer:  &LeastBytes{},
+	})
+	err := wr.WriteMessages(context.Background(), msgs...)
+	require.NoError(t, err)
+}
+
+// makeTestDuplicateSequence creates messages for compacted log testing
+//
+// All keys and values are 4 characters long to tightly control how many
+// messages are per log segment.
+func makeTestDuplicateSequence() []Message {
+	var msgs []Message
+	// `n` is an increasing counter so it is never compacted.
+	n := 0
+	// `i` determines how many compacted records to create
+	for i := 0; i < 5; i++ {
+		// `j` is how many times the current pattern repeats. We repeat because
+		// as long as we have a pattern that is slightly larger/smaller than
+		// the log segment size then if we repeat enough it will eventually
+		// try all configurations.
+		for j := 0; j < 30; j++ {
+			msgs = append(msgs, Message{
+				Key:   []byte(fmt.Sprintf("%04d", n)),
+				Value: []byte(fmt.Sprintf("%04d", n)),
+			})
+			n++
+
+			// This produces the duplicated messages to compact.
+			for k := 0; k < i; k++ {
+				msgs = append(msgs, Message{
+					Key:   []byte("dup_"),
+					Value: []byte("dup_"),
+				})
+			}
+		}
+	}
+
+	// "end markers" to force duplicate message outside of the last segment of
+	// the log so that they can all be compacted.
+	for i := 0; i < 10; i++ {
+		msgs = append(msgs, Message{
+			Key:   []byte(fmt.Sprintf("e-%02d", i)),
+			Value: []byte(fmt.Sprintf("e-%02d", i)),
+		})
+	}
+	return msgs
+}
+
+// countKeys counts unique keys from given Message slice
+func countKeys(msgs []Message) int {
+	m := make(map[string]struct{})
+	for _, msg := range msgs {
+		m[string(msg.Key)] = struct{}{}
+	}
+	return len(m)
+}
+
+func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
+	t.Helper()
+
+	t.Logf("createTopic(%s, %d)", topic, partitions)
+
+	conn, err := Dial("tcp", "localhost:9092")
+	require.NoError(t, err)
+	defer conn.Close()
+
+	controller, err := conn.Controller()
+	require.NoError(t, err)
+
+	conn, err = Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	require.NoError(t, err)
+
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	err = conn.CreateTopics(TopicConfig{
+		Topic:             topic,
+		NumPartitions:     partitions,
+		ReplicationFactor: 1,
+		ConfigEntries: []ConfigEntry{
+			{
+				ConfigName:  "cleanup.policy",
+				ConfigValue: "compact",
+			},
+			{
+				ConfigName:  "segment.bytes",
+				ConfigValue: "200",
+			},
+		},
+	})
+	switch err {
+	case nil:
+		// ok
+	case TopicAlreadyExists:
+		// ok
+	default:
+		require.NoError(t, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	waitForTopic(ctx, t, topic)
 }
