@@ -475,19 +475,18 @@ func lookupHost(ctx context.Context, address string, resolver Resolver) (string,
 		// if the resolver doesn't return anything, we'll fall back on the provided
 		// address instead
 		if len(resolved) > 0 {
-			resolvedHost, resolvedPort := splitHostPort(resolved[0])
+			resolvedHost, resolvedPort, _ := net.SplitHostPort(resolved[0])
 
 			// we'll always prefer the resolved host
-			host = resolvedHost
+			if len(resolvedHost) == 0 && len(resolvedPort) == 0 {
+				host = resolved[0]
+			} else {
+				host = resolvedHost
+			}
 
 			// only override the port if it's not set or if the resolver explicitly provides a port
-			if port == "" {
+			if resolvedPort != "" {
 				port = resolvedPort
-			} else if resolvedPort != port {
-				_, explicitSetPort, _ := net.SplitHostPort(resolved[0])
-				if explicitSetPort != "" {
-					port = explicitSetPort
-				}
 			}
 		}
 	}
