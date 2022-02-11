@@ -416,7 +416,18 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		// we didn't have that topic in our cache so we should update
 		// the cache.
 		if m.AllowAutoTopicCreation {
-			p.refreshMetadata(ctx, m.TopicNames)
+			topicsToRefresh := make([]string, 0, len(resp.Topics))
+			for _, topic := range resp.Topics {
+				// fixes issue 806: don't refresh topics that failed to create,
+				// it may means kafka doesn't enable auto topic creation.
+				// This causes the library to hang indefinitely, same as createtopics process.
+				if topic.ErrorCode != 0 {
+					continue
+				}
+
+				topicsToRefresh = append(topicsToRefresh, topic.Name)
+			}
+			p.refreshMetadata(ctx, topicsToRefresh)
 		}
 	}
 
@@ -585,10 +596,7 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 			p.update(ctx, nil, err)
 		} else {
 			res := make(async, 1)
-			req := &meta.Request{
-				IncludeClusterAuthorizedOperations: true,
-				IncludeTopicAuthorizedOperations:   true,
-			}
+			req := &meta.Request{}
 			deadline, cancel := context.WithTimeout(ctx, p.metadataTTL)
 			c.reqs <- connRequest{
 				ctx: deadline,

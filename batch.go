@@ -28,6 +28,15 @@ type Batch struct {
 	offset        int64
 	highWaterMark int64
 	err           error
+	// The last offset in the batch.
+	//
+	// We use lastOffset to skip offsets that have been compacted away.
+	//
+	// We store lastOffset because we get lastOffset when we read a new message
+	// but only try to handle compaction when we receive an EOF. However, when
+	// we get an EOF we do not get the lastOffset. So there is a mismatch
+	// between when we receive it and need to use it.
+	lastOffset int64
 }
 
 // Throttle gives the throttling duration applied by the kafka server on the
@@ -190,6 +199,8 @@ func (batch *Batch) ReadMessage() (Message, error) {
 			return
 		},
 	)
+	// A batch may start before the requested offset so skip messages
+	// until the requested offset is reached.
 	for batch.conn != nil && offset < batch.conn.offset {
 		if err != nil {
 			break
@@ -225,10 +236,12 @@ func (batch *Batch) readMessage(
 		return
 	}
 
-	offset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
+	var lastOffset int64
+	offset, lastOffset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
 	switch err {
 	case nil:
 		batch.offset = offset + 1
+		batch.lastOffset = lastOffset
 	case errShortRead:
 		// As an "optimization" kafka truncates the returned response after
 		// producing MaxBytes, which could then cause the code to return
@@ -252,6 +265,23 @@ func (batch *Batch) readMessage(
 			// read deadline management.
 			err = checkTimeoutErr(batch.deadline)
 			batch.err = err
+
+			// Checks the following:
+			// - `batch.err` for a "success" from the previous timeout check
+			// - `batch.msgs.lengthRemain` to ensure that this EOF is not due
+			//   to MaxBytes truncation
+			// - `batch.lastOffset` to ensure that the message format contains
+			//   `lastOffset`
+			if batch.err == io.EOF && batch.msgs.lengthRemain == 0 && batch.lastOffset != -1 {
+				// Log compaction can create batches that end with compacted
+				// records so the normal strategy that increments the "next"
+				// offset as records are read doesn't work as the compacted
+				// records are "missing" and never get "read".
+				//
+				// In order to reliably reach the next non-compacted offset we
+				// jump past the saved lastOffset.
+				batch.offset = batch.lastOffset + 1
+			}
 		}
 	default:
 		// Since io.EOF is used by the batch to indicate that there is are
