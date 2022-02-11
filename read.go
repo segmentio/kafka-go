@@ -79,7 +79,7 @@ func readVarInt(r *bufio.Reader, sz int, v *int64) (remain int, err error) {
 		// Fill the buffer: ask for one more byte, but in practice the reader
 		// will load way more from the underlying stream.
 		if _, err := r.Peek(1); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = errShortRead
 			}
 			return sz, err

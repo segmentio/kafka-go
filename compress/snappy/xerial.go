@@ -3,6 +3,7 @@ package snappy
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 
 	"github.com/klauspost/compress/snappy"
@@ -64,7 +65,7 @@ func (x *xerialReader) WriteTo(w io.Writer) (int64, error) {
 		}
 
 		if _, err := x.readChunk(nil); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = nil
 			}
 			return wn, err
@@ -128,7 +129,7 @@ func (x *xerialReader) readChunk(dst []byte) (int, error) {
 			n, err := x.read(x.input[len(x.input):cap(x.input)])
 			x.input = x.input[:len(x.input)+n]
 			if err != nil {
-				if err == io.EOF && len(x.input) > 0 {
+				if errors.Is(err, io.EOF) && len(x.input) > 0 {
 					break
 				}
 				return 0, err
@@ -212,7 +213,7 @@ func (x *xerialWriter) ReadFrom(r io.Reader) (int64, error) {
 		}
 
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = nil
 			}
 			return wn, err
