@@ -478,7 +478,7 @@ func lookupHost(ctx context.Context, address string, resolver Resolver) (string,
 			resolvedHost, resolvedPort, _ := net.SplitHostPort(resolved[0])
 
 			// we'll always prefer the resolved host
-			if lresolvedHost != "" && resolvedPort != "" {
+			if resolvedHost != "" && resolvedPort != "" {
 				host = resolved[0]
 			} else {
 				host = resolvedHost
