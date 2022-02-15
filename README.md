@@ -42,10 +42,9 @@ Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
 While it should also be compatible with later versions, newer features available
 in the Kafka API may not yet be implemented in the client.
 
-## Golang version
+## Go versions
 
-`kafka-go` is currently compatible with golang version from 1.15+. To use with
-older versions of golang use release [v0.2.5](https://github.com/segmentio/kafka-go/releases/tag/v0.2.5).
+`kafka-go` requires Go version 1.15 or later.
 
 ## Connection [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Conn)
 
