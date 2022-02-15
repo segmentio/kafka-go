@@ -4,7 +4,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 )
 
 // Framing is an enumeration type used to enable or disable xerial framing of
