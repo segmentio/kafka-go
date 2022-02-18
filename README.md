@@ -670,12 +670,12 @@ if err := r.Close(); err != nil {
 ```
 
 
-### Logging
+## Logging
 
 For visiblity into the operations of the Reader/Writer types, configure a logger on creation.
 
 
-#### Reader
+### Reader
 
 ```go
 func logf(msg string, a ...interface{}) {
@@ -691,7 +691,7 @@ r := kafka.NewReader(kafka.ReaderConfig{
 })
 ```
 
-#### Writer
+### Writer
 
 ```go
 func logf(msg string, a ...interface{}) {
