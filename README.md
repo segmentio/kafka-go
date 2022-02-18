@@ -32,46 +32,19 @@ software.
 
 #### Note:
 
-In order to better align with our newly adopted Code of Conduct, the kafka-go project has renamed our default branch to `main`.
-For the full details of our Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
-
-## Migrating to 0.4
-
-Version 0.4 introduces a few breaking changes to the repository structure which
-should have minimal impact on programs and should only manifest at compile time
-(the runtime behavior should remain unchanged).
-
-* Programs do not need to import compression packages anymore in order to read
-compressed messages from kafka. All compression codecs are supported by default.
-
-* Programs that used the compression codecs directly must be adapted.
-Compression codecs are now exposed in the `compress` sub-package.
-
-* The experimental `kafka.Client` API has been updated and slightly modified:
-the `kafka.NewClient` function and `kafka.ClientConfig` type were removed.
-Programs now configure the client values directly through exported fields.
-
-* The `kafka.(*Client).ConsumerOffsets` method is now deprecated (along with the
-`kafka.TopicAndGroup` type, and will be removed when we release version 1.0.
-Programs should use the `kafka.(*Client).OffsetFetch` API instead.
-
-With 0.4, we know that we are starting to introduce a bit more complexity in the
-code, but the plan is to eventually converge towards a simpler and more effective
-API, allowing us to keep up with Kafka's ever growing feature set, and bringing
-a more efficient implementation to programs depending on kafka-go.
-
-We truly appreciate everyone's input and contributions, which have made this
-project way more than what it was when we started it, and we're looking forward
-to receive more feedback on where we should take it.
+In order to better align with our newly adopted Code of Conduct, the kafka-go
+project has renamed our default branch to `main`. For the full details of our
+Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
 
 ## Kafka versions
 
-`kafka-go` is currently compatible with Kafka versions from 0.10.1.0 to 2.1.0. While latest versions will be working,
-some features available from the Kafka API may not be implemented yet.
+`kafka-go` is currently tested with Kafka versions 0.10.1.0 to 2.7.1.
+While it should also be compatible with later versions, newer features available
+in the Kafka API may not yet be implemented in the client.
 
-## Golang version
+## Go versions
 
-`kafka-go` is currently compatible with golang version from 1.15+. To use with older versions of golang use release [v0.2.5](https://github.com/segmentio/kafka-go/releases/tag/v0.2.5).
+`kafka-go` requires Go version 1.15 or later.
 
 ## Connection [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Conn)
 
