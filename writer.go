@@ -79,7 +79,7 @@ type Writer struct {
 	// Address of the kafka cluster that this writer is configured to send
 	// messages to.
 	//
-	// This feild is required, attempting to write messages to a writer with a
+	// This field is required, attempting to write messages to a writer with a
 	// nil address will error.
 	Addr net.Addr
 
