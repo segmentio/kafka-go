@@ -73,15 +73,9 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 			},
 		}
 	} else {
-		// Can we have a non-nil key when reading a compressed message?
-		if key != nil {
-			key.Close()
-		}
 		if value == nil {
 			records = emptyRecordReader{}
 		} else {
-			defer value.Close()
-
 			codec := compression.Codec()
 			if codec == nil {
 				return Errorf("unsupported compression codec: %d", compression)
@@ -106,10 +100,6 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 				if err != nil {
 					if errors.Is(err, io.ErrUnexpectedEOF) {
 						break
-					}
-					for _, rec := range r.records {
-						closeBytes(rec.Key)
-						closeBytes(rec.Value)
 					}
 					return err
 				}
@@ -232,6 +222,11 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 type message struct {
 	Record Record
 	read   bool
+}
+
+func (m *message) Close() error {
+	m.read = true
+	return nil
 }
 
 func (m *message) ReadRecord() (*Record, error) {

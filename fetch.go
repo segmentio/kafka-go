@@ -85,6 +85,9 @@ type FetchResponse struct {
 //
 // If the broker returned an invalid response with no partitions, an error
 // wrapping ErrNoPartitions is returned.
+//
+// The program is responsible for closing the records reader carried by the
+// response.
 func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
 	timeout := c.timeout(ctx, math.MaxInt64)
 	maxWait := req.maxWait()

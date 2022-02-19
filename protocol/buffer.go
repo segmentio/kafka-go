@@ -15,13 +15,10 @@ import (
 // Bytes values are used to abstract the location where record keys and
 // values are read from (e.g. in-memory buffers, network sockets, files).
 //
-// The Close method should be called to release resources held by the object
-// when the program is done with it.
-//
 // Bytes values are generally not safe to use concurrently from multiple
 // goroutines.
 type Bytes interface {
-	io.ReadCloser
+	io.Reader
 	// Returns the number of bytes remaining to be read from the payload.
 	Len() int
 }
@@ -37,7 +34,7 @@ func NewBytes(b []byte) Bytes {
 	if b == nil {
 		return nil
 	}
-	r := new(bytesReader)
+	r := new(bytes.Reader)
 	r.Reset(b)
 	return r
 }
@@ -54,10 +51,6 @@ func ReadAll(b Bytes) ([]byte, error) {
 	_, err := io.ReadFull(b, s)
 	return s, err
 }
-
-type bytesReader struct{ bytes.Reader }
-
-func (*bytesReader) Close() error { return nil }
 
 type refCount uintptr
 
@@ -503,8 +496,6 @@ func (ref *pageRef) Len() int { return int(ref.Size() - ref.cursor) }
 
 func (ref *pageRef) Size() int64 { return int64(ref.length) }
 
-func (ref *pageRef) Close() error { ref.unref(); return nil }
-
 func (ref *pageRef) String() string {
 	return fmt.Sprintf("[offset=%d cursor=%d length=%d]", ref.offset, ref.cursor, ref.length)
 }
@@ -583,7 +574,6 @@ func (ref *pageRef) scan(off int64, f func([]byte) bool) {
 }
 
 var (
-	_ io.Closer   = (*pageRef)(nil)
 	_ io.Seeker   = (*pageRef)(nil)
 	_ io.Reader   = (*pageRef)(nil)
 	_ io.ReaderAt = (*pageRef)(nil)
@@ -630,16 +620,4 @@ func seek(cursor, limit, offset int64, whence int) (int64, error) {
 		offset = limit
 	}
 	return offset, nil
-}
-
-func closeBytes(b Bytes) {
-	if b != nil {
-		b.Close()
-	}
-}
-
-func resetBytes(b Bytes) {
-	if r, _ := b.(interface{ Reset() }); r != nil {
-		r.Reset()
-	}
 }

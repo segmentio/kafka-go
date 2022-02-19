@@ -141,6 +141,15 @@ func TestControlRecord(t *testing.T) {
 func assertRecords(t *testing.T, r1, r2 RecordReader) {
 	t.Helper()
 
+	defer func() {
+		if err := r1.Close(); err != nil {
+			t.Errorf("closing first record reader: %v", err)
+		}
+		if err := r2.Close(); err != nil {
+			t.Errorf("closing second record reader: %v", err)
+		}
+	}()
+
 	for {
 		rec1, err1 := r1.ReadRecord()
 		rec2, err2 := r2.ReadRecord()
@@ -189,9 +198,6 @@ func equalRecords(r1, r2 *Record) bool {
 }
 
 func readAll(bytes Bytes) []byte {
-	if bytes != nil {
-		defer bytes.Close()
-	}
 	b, err := ReadAll(bytes)
 	if err != nil {
 		panic(err)

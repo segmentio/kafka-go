@@ -10,14 +10,18 @@ import (
 // are used in both produce and fetch requests to represent the sequence of
 // records that are sent to or receive from kafka brokers.
 //
+// When the program is done reading the records, it must call the Close method
+// to release the resources held by the reader.
+//
 // RecordSet values are not safe to use concurrently from multiple goroutines.
 type RecordReader interface {
+	io.Closer
 	// Returns the next record in the set, or io.EOF if the end of the sequence
 	// has been reached.
 	//
 	// The returned Record is guaranteed to be valid until the next call to
-	// ReadRecord. If the program needs to retain the Record value it must make
-	// a copy.
+	// ReadRecord or Close. If the program needs to retain the Record value it
+	// must make a copy of it, including copying the record key and value.
 	ReadRecord() (*Record, error)
 }
 
@@ -48,6 +52,8 @@ func MultiRecordReader(batches ...RecordReader) RecordReader {
 }
 
 func forEachRecord(r RecordReader, f func(int, *Record) error) error {
+	defer r.Close()
+
 	for i := 0; ; i++ {
 		rec, err := r.ReadRecord()
 
@@ -58,25 +64,22 @@ func forEachRecord(r RecordReader, f func(int, *Record) error) error {
 			return err
 		}
 
-		if err := handleRecord(i, rec, f); err != nil {
+		if err := f(i, rec); err != nil {
 			return err
 		}
 	}
-}
 
-func handleRecord(i int, r *Record, f func(int, *Record) error) error {
-	if r.Key != nil {
-		defer r.Key.Close()
-	}
-	if r.Value != nil {
-		defer r.Value.Close()
-	}
-	return f(i, r)
+	return r.Close()
 }
 
 type recordReader struct {
 	records []Record
 	index   int
+}
+
+func (r *recordReader) Close() error {
+	r.records, r.index = nil, 0
+	return nil
 }
 
 func (r *recordReader) ReadRecord() (*Record, error) {
@@ -90,6 +93,14 @@ func (r *recordReader) ReadRecord() (*Record, error) {
 type multiRecordReader struct {
 	batches []RecordReader
 	index   int
+}
+
+func (m *multiRecordReader) Close() error {
+	for _, r := range m.batches {
+		r.Close() // TODO: should we report errors here?
+	}
+	m.batches, m.index = nil, 0
+	return nil
 }
 
 func (m *multiRecordReader) ReadRecord() (*Record, error) {
@@ -128,6 +139,17 @@ type optimizedRecordReader struct {
 	headers [][]Header
 }
 
+func (r *optimizedRecordReader) Close() error {
+	for i := range r.records {
+		r.records[i].unref()
+	}
+	r.records = nil
+	r.index = 0
+	r.buffer = Record{}
+	r.headers = nil
+	return nil
+}
+
 func (r *optimizedRecordReader) ReadRecord() (*Record, error) {
 	if i := r.index; i >= 0 && i < len(r.records) {
 		rec := &r.records[i]
@@ -153,6 +175,17 @@ type optimizedRecord struct {
 	valueRef  *pageRef
 }
 
+func (r *optimizedRecord) unref() {
+	if r.keyRef != nil {
+		r.keyRef.unref()
+		r.keyRef = nil
+	}
+	if r.valueRef != nil {
+		r.valueRef.unref()
+		r.valueRef = nil
+	}
+}
+
 func (r *optimizedRecord) time() time.Time {
 	return makeTime(r.timestamp)
 }
@@ -174,6 +207,8 @@ func makeBytes(ref *pageRef) Bytes {
 
 type emptyRecordReader struct{}
 
+func (emptyRecordReader) Close() error { return nil }
+
 func (emptyRecordReader) ReadRecord() (*Record, error) { return nil, io.EOF }
 
 // ControlRecord represents a record read from a control batch.
@@ -187,13 +222,6 @@ type ControlRecord struct {
 }
 
 func ReadControlRecord(r *Record) (*ControlRecord, error) {
-	if r.Key != nil {
-		defer r.Key.Close()
-	}
-	if r.Value != nil {
-		defer r.Value.Close()
-	}
-
 	k, err := ReadAll(r.Key)
 	if err != nil {
 		return nil, err
@@ -259,6 +287,10 @@ func NewControlBatch(records ...ControlRecord) *ControlBatch {
 	}
 }
 
+func (c *ControlBatch) Close() error {
+	return c.Records.Close()
+}
+
 func (c *ControlBatch) ReadRecord() (*Record, error) {
 	return c.Records.ReadRecord()
 }
@@ -268,17 +300,7 @@ func (c *ControlBatch) ReadControlRecord() (*ControlRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.Key != nil {
-		defer r.Key.Close()
-	}
-	if r.Value != nil {
-		defer r.Value.Close()
-	}
 	return ReadControlRecord(r)
-}
-
-func (c *ControlBatch) Offset() int64 {
-	return c.BaseOffset
 }
 
 func (c *ControlBatch) Version() int {
@@ -300,12 +322,12 @@ type RecordBatch struct {
 	Records              RecordReader
 }
 
-func (r *RecordBatch) ReadRecord() (*Record, error) {
-	return r.Records.ReadRecord()
+func (r *RecordBatch) Close() error {
+	return r.Records.Close()
 }
 
-func (r *RecordBatch) Offset() int64 {
-	return r.BaseOffset
+func (r *RecordBatch) ReadRecord() (*Record, error) {
+	return r.Records.ReadRecord()
 }
 
 func (r *RecordBatch) Version() int {
@@ -320,12 +342,12 @@ type MessageSet struct {
 	Records    RecordReader
 }
 
-func (m *MessageSet) ReadRecord() (*Record, error) {
-	return m.Records.ReadRecord()
+func (m *MessageSet) Close() error {
+	return m.Records.Close()
 }
 
-func (m *MessageSet) Offset() int64 {
-	return m.BaseOffset
+func (m *MessageSet) ReadRecord() (*Record, error) {
+	return m.Records.ReadRecord()
 }
 
 func (m *MessageSet) Version() int {
@@ -338,6 +360,14 @@ func (m *MessageSet) Version() int {
 type RecordStream struct {
 	Records []RecordReader
 	index   int
+}
+
+func (s *RecordStream) Close() error {
+	for _, r := range s.Records {
+		r.Close()
+	}
+	s.index = len(s.Records)
+	return nil
 }
 
 func (s *RecordStream) ReadRecord() (*Record, error) {
@@ -384,6 +414,15 @@ func (r *compressedRecordReader) readRecords() (err error) {
 	return err
 }
 
+func (r *compressedRecordReader) Close() (err error) {
+	r.release()
+	if r.records != nil {
+		err = r.records.Close()
+		r.records = nil
+	}
+	return err
+}
+
 func (r *compressedRecordReader) ReadRecord() (*Record, error) {
 	if r.buffer != nil {
 		defer r.release()
@@ -425,7 +464,10 @@ func (r *compressedRecordReader) WriteTo(w io.Writer) (int64, error) {
 var (
 	errCompressedRecordReaderUsage = errors.New("compressed record reader cannot be both used a kafka.RecordReader and an io.WriterTo")
 
-	_ RecordReader = (*compressedRecordReader)(nil)
-	_ io.Reader    = (*compressedRecordReader)(nil)
-	_ io.WriterTo  = (*compressedRecordReader)(nil)
+	_ io.Reader   = (*compressedRecordReader)(nil)
+	_ io.WriterTo = (*compressedRecordReader)(nil)
+
+	_ RecordReader = (*MessageSet)(nil)
+	_ RecordReader = (*RecordBatch)(nil)
+	_ RecordReader = (*ControlBatch)(nil)
 )

@@ -941,7 +941,7 @@ func newBatchQueue(initialSize int) batchQueue {
 	bq := batchQueue{
 		queue: make([]*writeBatch, 0, initialSize),
 		mutex: &sync.Mutex{},
-		cond: &sync.Cond{},
+		cond:  &sync.Cond{},
 	}
 
 	bq.cond.L = bq.mutex
@@ -1215,8 +1215,13 @@ type writerRecords struct {
 	msgs   []Message
 	index  int
 	record Record
-	key    bytesReadCloser
-	value  bytesReadCloser
+	key    bytes.Reader
+	value  bytes.Reader
+}
+
+func (r *writerRecords) Close() error {
+	r.index = len(r.msgs)
+	return nil
 }
 
 func (r *writerRecords) ReadRecord() (*Record, error) {
@@ -1239,10 +1244,6 @@ func (r *writerRecords) ReadRecord() (*Record, error) {
 	}
 	return nil, io.EOF
 }
-
-type bytesReadCloser struct{ bytes.Reader }
-
-func (*bytesReadCloser) Close() error { return nil }
 
 // A cache of []int values passed to balancers of writers, used to amortize the
 // heap allocation of the partition index lists.
