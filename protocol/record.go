@@ -293,7 +293,7 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 }
 
 func makeTime(t int64) time.Time {
-	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond))
+	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond)).UTC()
 }
 
 func timestamp(t time.Time) int64 {

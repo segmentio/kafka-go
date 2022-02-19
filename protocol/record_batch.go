@@ -245,15 +245,7 @@ func (cr *ControlRecord) Record() Record {
 
 // ControlBatch is an implementation of the RecordReader interface representing
 // control batches returned by kafka brokers.
-type ControlBatch struct {
-	Attributes           Attributes
-	PartitionLeaderEpoch int32
-	BaseOffset           int64
-	ProducerID           int64
-	ProducerEpoch        int16
-	BaseSequence         int32
-	Records              RecordReader
-}
+type ControlBatch RecordBatch
 
 // NewControlBatch constructs a control batch from the list of records passed as
 // arguments.
@@ -299,6 +291,9 @@ type RecordBatch struct {
 	Attributes           Attributes
 	PartitionLeaderEpoch int32
 	BaseOffset           int64
+	LastOffsetDelta      int32
+	FirstTimestamp       time.Time
+	MaxTimestamp         time.Time
 	ProducerID           int64
 	ProducerEpoch        int16
 	BaseSequence         int32
@@ -367,3 +362,70 @@ func (s *RecordStream) ReadRecord() (*Record, error) {
 		return r, err
 	}
 }
+
+type compressedRecordReader struct {
+	records        *optimizedRecordReader
+	buffer         *pageBuffer
+	decoder        *decoder
+	attributes     Attributes
+	baseOffset     int64
+	firstTimestamp int64
+	numRecords     int32
+}
+
+func (r *compressedRecordReader) release() {
+	r.buffer.unref()
+	r.buffer = nil
+	r.decoder.Reset(nil, 0)
+}
+
+func (r *compressedRecordReader) readRecords() (err error) {
+	r.records, err = readRecords(r.buffer, r.decoder, r.attributes, r.baseOffset, r.firstTimestamp, r.numRecords)
+	return err
+}
+
+func (r *compressedRecordReader) ReadRecord() (*Record, error) {
+	if r.buffer != nil {
+		defer r.release()
+		if err := r.readRecords(); err != nil {
+			return nil, err
+		}
+	}
+	if r.records == nil {
+		return nil, io.EOF
+	}
+	return r.records.ReadRecord()
+}
+
+func (r *compressedRecordReader) Read(b []byte) (int, error) {
+	if r.records != nil {
+		return 0, errCompressedRecordReaderUsage
+	}
+	if r.buffer == nil {
+		return 0, io.EOF
+	}
+	n, err := r.buffer.Read(b)
+	if err != nil {
+		r.release()
+	}
+	return n, err
+}
+
+func (r *compressedRecordReader) WriteTo(w io.Writer) (int64, error) {
+	if r.records != nil {
+		return 0, errCompressedRecordReaderUsage
+	}
+	if r.buffer == nil {
+		return 0, nil
+	}
+	defer r.release()
+	return r.buffer.WriteTo(w)
+}
+
+var (
+	errCompressedRecordReaderUsage = errors.New("compressed record reader cannot be both used a kafka.RecordReader and an io.WriterTo")
+
+	_ RecordReader = (*compressedRecordReader)(nil)
+	_ io.Reader    = (*compressedRecordReader)(nil)
+	_ io.WriterTo  = (*compressedRecordReader)(nil)
+)

@@ -16,55 +16,101 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 		return nil
 	}
 
-	dec := &decoder{
+	decoder := &decoder{
 		reader: d,
 		remain: int(batchLength),
 	}
 
-	partitionLeaderEpoch := dec.readInt32()
-	magicByte := dec.readInt8()
-	crc := dec.readInt32()
+	partitionLeaderEpoch := decoder.readInt32()
+	magicByte := decoder.readInt8()
+	crc := decoder.readInt32()
+	decoder.setCRC(crc32.MakeTable(crc32.Castagnoli))
 
-	dec.setCRC(crc32.MakeTable(crc32.Castagnoli))
-
-	attributes := dec.readInt16()
-	lastOffsetDelta := dec.readInt32()
-	firstTimestamp := dec.readInt64()
-	maxTimestamp := dec.readInt64()
-	producerID := dec.readInt64()
-	producerEpoch := dec.readInt16()
-	baseSequence := dec.readInt32()
-	numRecords := dec.readInt32()
-	reader := io.Reader(dec)
-
-	// unused
-	_ = lastOffsetDelta
-	_ = maxTimestamp
-
-	if compression := Attributes(attributes).Compression(); compression != 0 {
-		codec := compression.Codec()
-		if codec == nil {
-			return fmt.Errorf("unsupported compression codec (%d)", compression)
-		}
-		decompressor := codec.NewReader(reader)
-		defer decompressor.Close()
-		reader = decompressor
-	}
+	attributes := Attributes(decoder.readInt16())
+	lastOffsetDelta := decoder.readInt32()
+	firstTimestamp := decoder.readInt64()
+	maxTimestamp := decoder.readInt64()
+	producerID := decoder.readInt64()
+	producerEpoch := decoder.readInt16()
+	baseSequence := decoder.readInt32()
+	numRecords := decoder.readInt32()
 
 	buffer := newPageBuffer()
-	defer buffer.unref()
+	defer func() {
+		if buffer != nil {
+			buffer.unref()
+		}
+	}()
 
-	_, err := buffer.ReadFrom(reader)
+	_, err := buffer.ReadFrom(decoder)
 	if err != nil {
 		return err
 	}
-	if dec.crc32 != uint32(crc) {
-		return fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", dec.crc32, uint32(crc))
+	if decoder.crc32 != uint32(crc) {
+		return fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", decoder.crc32, uint32(crc))
+	}
+	decoder.Reset(nil, 0)
+
+	*rs = RecordSet{
+		Version:    magicByte,
+		Attributes: attributes,
+	}
+
+	recordBatch := &RecordBatch{
+		Attributes:           attributes,
+		PartitionLeaderEpoch: partitionLeaderEpoch,
+		BaseOffset:           baseOffset,
+		LastOffsetDelta:      lastOffsetDelta,
+		FirstTimestamp:       makeTime(firstTimestamp),
+		MaxTimestamp:         makeTime(maxTimestamp),
+		ProducerID:           producerID,
+		ProducerEpoch:        producerEpoch,
+		BaseSequence:         baseSequence,
+	}
+
+	if attributes.Control() {
+		recordBatch.Records, err = readRecords(buffer, decoder, attributes, baseOffset, firstTimestamp, numRecords)
+		if err != nil {
+			return err
+		}
+		rs.Records = (*ControlBatch)(recordBatch)
+	} else {
+		rs.Records = recordBatch
+		recordBatch.Records = &compressedRecordReader{
+			buffer:         buffer,
+			decoder:        decoder,
+			attributes:     attributes,
+			baseOffset:     baseOffset,
+			firstTimestamp: firstTimestamp,
+			numRecords:     numRecords,
+		}
+		buffer = nil
+	}
+
+	return nil
+}
+
+func readRecords(buffer *pageBuffer, decoder *decoder, attributes Attributes, baseOffset, firstTimestamp int64, numRecords int32) (*optimizedRecordReader, error) {
+	if compression := attributes.Compression(); compression != 0 {
+		reader := io.Reader(buffer)
+		buffer = newPageBuffer()
+		defer buffer.unref()
+
+		codec := compression.Codec()
+		if codec == nil {
+			return nil, fmt.Errorf("unsupported compression codec (%d)", compression)
+		}
+
+		decompressor := codec.NewReader(reader)
+		_, err := buffer.ReadFrom(decompressor)
+		decompressor.Close()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	recordsLength := buffer.Len()
-	dec.reader = buffer
-	dec.remain = recordsLength
+	decoder.Reset(buffer, recordsLength)
 
 	records := make([]optimizedRecord, numRecords)
 	// These are two lazy allocators that will be used to optimize allocation of
@@ -94,27 +140,27 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 
 	for i := range records {
 		r := &records[i]
-		_ = dec.readVarInt() // record length (unused)
-		_ = dec.readInt8()   // record attributes (unused)
-		timestampDelta := dec.readVarInt()
-		offsetDelta := dec.readVarInt()
+		_ = decoder.readVarInt() // record length (unused)
+		_ = decoder.readInt8()   // record attributes (unused)
+		timestampDelta := decoder.readVarInt()
+		offsetDelta := decoder.readVarInt()
 
 		r.offset = baseOffset + offsetDelta
 		r.timestamp = firstTimestamp + timestampDelta
 
-		keyLength := dec.readVarInt()
-		keyOffset := int64(recordsLength - dec.remain)
+		keyLength := decoder.readVarInt()
+		keyOffset := int64(recordsLength - decoder.remain)
 		if keyLength > 0 {
-			dec.discard(int(keyLength))
+			decoder.discard(int(keyLength))
 		}
 
-		valueLength := dec.readVarInt()
-		valueOffset := int64(recordsLength - dec.remain)
+		valueLength := decoder.readVarInt()
+		valueOffset := int64(recordsLength - decoder.remain)
 		if valueLength > 0 {
-			dec.discard(int(valueLength))
+			decoder.discard(int(valueLength))
 		}
 
-		if numHeaders := dec.readVarInt(); numHeaders > 0 {
+		if numHeaders := decoder.readVarInt(); numHeaders > 0 {
 			if headers == nil {
 				headers = make([][]Header, numRecords)
 			}
@@ -123,15 +169,15 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 
 			for i := range h {
 				h[i] = Header{
-					Key:   dec.readVarString(),
-					Value: dec.readVarBytes(),
+					Key:   decoder.readVarString(),
+					Value: decoder.readVarBytes(),
 				}
 			}
 
 			headers[i] = h
 		}
 
-		if dec.err != nil {
+		if decoder.err != nil {
 			records = records[:i]
 			break
 		}
@@ -150,42 +196,11 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 	// Note: it's unclear whether kafka 0.11+ still truncates the responses,
 	// all attempts I made at constructing a test to trigger a truncation have
 	// failed. I kept this code here as a safeguard but it may never execute.
-	if dec.err != nil && len(records) == 0 {
-		return dec.err
+	if decoder.err != nil && len(records) == 0 {
+		return nil, decoder.err
 	}
 
-	*rs = RecordSet{
-		Version:    magicByte,
-		Attributes: Attributes(attributes),
-		Records: &optimizedRecordReader{
-			records: records,
-			headers: headers,
-		},
-	}
-
-	if rs.Attributes.Control() {
-		rs.Records = &ControlBatch{
-			Attributes:           rs.Attributes,
-			PartitionLeaderEpoch: partitionLeaderEpoch,
-			BaseOffset:           baseOffset,
-			ProducerID:           producerID,
-			ProducerEpoch:        producerEpoch,
-			BaseSequence:         baseSequence,
-			Records:              rs.Records,
-		}
-	} else {
-		rs.Records = &RecordBatch{
-			Attributes:           rs.Attributes,
-			PartitionLeaderEpoch: partitionLeaderEpoch,
-			BaseOffset:           baseOffset,
-			ProducerID:           producerID,
-			ProducerEpoch:        producerEpoch,
-			BaseSequence:         baseSequence,
-			Records:              rs.Records,
-		}
-	}
-
-	return nil
+	return &optimizedRecordReader{records: records, headers: headers}, nil
 }
 
 func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) error {
