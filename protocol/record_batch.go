@@ -2,7 +2,9 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"time"
 )
 
@@ -187,7 +189,7 @@ func (r *optimizedRecord) unref() {
 }
 
 func (r *optimizedRecord) time() time.Time {
-	return makeTime(r.timestamp)
+	return MakeTime(r.timestamp)
 }
 
 func (r *optimizedRecord) key() Bytes {
@@ -319,6 +321,7 @@ type RecordBatch struct {
 	ProducerID           int64
 	ProducerEpoch        int16
 	BaseSequence         int32
+	NumRecords           int32
 	Records              RecordReader
 }
 
@@ -332,6 +335,38 @@ func (r *RecordBatch) ReadRecord() (*Record, error) {
 
 func (r *RecordBatch) Version() int {
 	return 2
+}
+
+func (r *RecordBatch) ReadFrom(in io.Reader) (int64, error) {
+	dec := &decoder{reader: in, remain: math.MaxInt32}
+	tmp := RecordSet{Version: 2}
+	n, err := tmp.readFromVersion2(dec)
+	if err != nil {
+		return 0, err
+	}
+	// TODO: we can remove the temporary allocation of records into the
+	// protocol.RecordSet.Records value by revisiting the internal code
+	// structure (e.g. making readFromVersion2 invoke RecordBatch.ReadFrom?).
+	switch records := tmp.Records.(type) {
+	case *ControlBatch:
+		*r = *(*RecordBatch)(records)
+	case *RecordBatch:
+		*r = *records
+	default:
+		return n, fmt.Errorf("protocol.ReadRecordBatch: got unsupported record batch of type %T", r)
+	}
+	return n, nil
+}
+
+func (r *RecordBatch) WriteTo(out io.Writer) (int64, error) {
+	buf := newPageBuffer()
+	defer buf.unref()
+	tmp := RecordSet{Version: 2, Records: r, Attributes: r.Attributes}
+	err := tmp.writeToVersion2(buf, 0)
+	if err != nil {
+		return 0, err
+	}
+	return buf.WriteTo(out)
 }
 
 // MessageSet is an implementation of the RecordReader interface representing
@@ -404,8 +439,10 @@ type compressedRecordReader struct {
 }
 
 func (r *compressedRecordReader) release() {
-	r.buffer.unref()
-	r.buffer = nil
+	if r.buffer != nil {
+		r.buffer.unref()
+		r.buffer = nil
+	}
 	r.decoder.Reset(nil, 0)
 }
 

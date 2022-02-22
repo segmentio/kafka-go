@@ -66,13 +66,13 @@ type Record struct {
 	// Returns a byte sequence containing the key of this record. The returned
 	// sequence may be nil to indicate that the record has no key. If the record
 	// is part of a RecordSet, the content of the key must remain valid at least
-	// until the record set is closed (or until the key is closed).
+	// until the parent record reader is closed.
 	Key Bytes
 
 	// Returns a byte sequence containing the value of this record. The returned
 	// sequence may be nil to indicate that the record has no value. If the
 	// record is part of a RecordSet, the content of the value must remain valid
-	// at least until the record set is closed (or until the value is closed).
+	// at least until the parent record reader is closed.
 	Value Bytes
 
 	// Returns the list of headers associated with this record. The returned
@@ -201,9 +201,9 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		var tmp RecordSet
 		switch version {
 		case 0, 1:
-			err = tmp.readFromVersion1(d)
+			_, err = tmp.readFromVersion1(d)
 		case 2:
-			err = tmp.readFromVersion2(d)
+			_, err = tmp.readFromVersion2(d)
 		default:
 			err = fmt.Errorf("unsupported message version %d for message of size %d", version, size)
 		}
@@ -292,11 +292,11 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	return n, nil
 }
 
-func makeTime(t int64) time.Time {
+func MakeTime(t int64) time.Time {
 	return time.Unix(t/1000, (t%1000)*int64(time.Millisecond)).UTC()
 }
 
-func timestamp(t time.Time) int64 {
+func Timestamp(t time.Time) int64 {
 	if t.IsZero() {
 		return 0
 	}

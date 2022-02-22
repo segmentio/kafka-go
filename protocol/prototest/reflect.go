@@ -9,26 +9,10 @@ import (
 	"github.com/segmentio/kafka-go/protocol"
 )
 
-var (
-	recordReader = reflect.TypeOf((*protocol.RecordReader)(nil)).Elem()
-)
-
 func closeMessage(m protocol.Message) {
 	forEachField(reflect.ValueOf(m), func(v reflect.Value) {
-		if v.Type().Implements(recordReader) {
-			rr := v.Interface().(protocol.RecordReader)
-			for {
-				r, err := rr.ReadRecord()
-				if err != nil {
-					break
-				}
-				if r.Key != nil {
-					r.Key.Close()
-				}
-				if r.Value != nil {
-					r.Value.Close()
-				}
-			}
+		if rr, ok := v.Interface().(protocol.RecordReader); ok {
+			rr.Close()
 		}
 	})
 }
@@ -123,20 +107,9 @@ func loadRecords(r protocol.RecordReader) []memoryRecord {
 		records = append(records, memoryRecord{
 			offset:  rec.Offset,
 			time:    rec.Time,
-			key:     readAll(rec.Key),
-			value:   readAll(rec.Value),
+			key:     ReadAll(rec.Key),
+			value:   ReadAll(rec.Value),
 			headers: rec.Headers,
 		})
 	}
-}
-
-func readAll(bytes protocol.Bytes) []byte {
-	if bytes != nil {
-		defer bytes.Close()
-	}
-	b, err := protocol.ReadAll(bytes)
-	if err != nil {
-		panic(err)
-	}
-	return b
 }

@@ -1,11 +1,15 @@
-package protocol
+package protocol_test
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol"
+	"github.com/segmentio/kafka-go/protocol/prototest"
 )
 
 type memoryRecord struct {
@@ -13,21 +17,25 @@ type memoryRecord struct {
 	time    time.Time
 	key     []byte
 	value   []byte
-	headers []Header
+	headers []protocol.Header
 }
 
-func (m *memoryRecord) Record() Record {
-	return Record{
+func (m *memoryRecord) Record() protocol.Record {
+	return protocol.Record{
 		Offset:  m.offset,
 		Time:    m.time,
-		Key:     NewBytes(m.key),
-		Value:   NewBytes(m.value),
+		Key:     protocol.NewBytes(m.key),
+		Value:   protocol.NewBytes(m.value),
 		Headers: m.headers,
 	}
 }
 
-func makeRecords(memoryRecords []memoryRecord) []Record {
-	records := make([]Record, len(memoryRecords))
+func now() time.Time {
+	return protocol.MakeTime(protocol.Timestamp(time.Now()))
+}
+
+func makeRecords(memoryRecords []memoryRecord) []protocol.Record {
+	records := make([]protocol.Record, len(memoryRecords))
 	for i, m := range memoryRecords {
 		records[i] = m.Record()
 	}
@@ -35,7 +43,7 @@ func makeRecords(memoryRecords []memoryRecord) []Record {
 }
 
 func TestRecordReader(t *testing.T) {
-	now := time.Now()
+	now := now()
 
 	records := []memoryRecord{
 		{
@@ -53,19 +61,19 @@ func TestRecordReader(t *testing.T) {
 			time:   now.Add(time.Second),
 			key:    []byte("key-3"),
 			value:  []byte("value-3"),
-			headers: []Header{
+			headers: []protocol.Header{
 				{Key: "answer", Value: []byte("42")},
 			},
 		},
 	}
 
-	r1 := NewRecordReader(makeRecords(records)...)
-	r2 := NewRecordReader(makeRecords(records)...)
-	assertRecords(t, r1, r2)
+	r1 := protocol.NewRecordReader(makeRecords(records)...)
+	r2 := protocol.NewRecordReader(makeRecords(records)...)
+	prototest.AssertRecords(t, r1, r2)
 }
 
 func TestMultiRecordReader(t *testing.T) {
-	now := time.Now()
+	now := now()
 
 	records := []memoryRecord{
 		{
@@ -83,24 +91,24 @@ func TestMultiRecordReader(t *testing.T) {
 			time:   now.Add(time.Second),
 			key:    []byte("key-3"),
 			value:  []byte("value-3"),
-			headers: []Header{
+			headers: []protocol.Header{
 				{Key: "answer", Value: []byte("42")},
 			},
 		},
 	}
 
-	r1 := NewRecordReader(makeRecords(records)...)
-	r2 := MultiRecordReader(
-		NewRecordReader(makeRecords(records[:1])...),
-		NewRecordReader(makeRecords(records[1:])...),
+	r1 := protocol.NewRecordReader(makeRecords(records)...)
+	r2 := protocol.MultiRecordReader(
+		protocol.NewRecordReader(makeRecords(records[:1])...),
+		protocol.NewRecordReader(makeRecords(records[1:])...),
 	)
-	assertRecords(t, r1, r2)
+	prototest.AssertRecords(t, r1, r2)
 }
 
 func TestControlRecord(t *testing.T) {
-	now := time.Now()
+	now := now()
 
-	records := []ControlRecord{
+	records := []protocol.ControlRecord{
 		{
 			Offset:  1,
 			Time:    now,
@@ -113,14 +121,14 @@ func TestControlRecord(t *testing.T) {
 			Version: 4,
 			Type:    5,
 			Data:    []byte("Hello World!"),
-			Headers: []Header{
+			Headers: []protocol.Header{
 				{Key: "answer", Value: []byte("42")},
 			},
 		},
 	}
 
-	batch := NewControlBatch(records...)
-	found := make([]ControlRecord, 0, len(records))
+	batch := protocol.NewControlBatch(records...)
+	found := make([]protocol.ControlRecord, 0, len(records))
 
 	for {
 		r, err := batch.ReadControlRecord()
@@ -138,69 +146,62 @@ func TestControlRecord(t *testing.T) {
 	}
 }
 
-func assertRecords(t *testing.T, r1, r2 RecordReader) {
-	t.Helper()
+func TestRecordBatchWriteToReadFrom(t *testing.T) {
+	now := now()
 
-	defer func() {
-		if err := r1.Close(); err != nil {
-			t.Errorf("closing first record reader: %v", err)
-		}
-		if err := r2.Close(); err != nil {
-			t.Errorf("closing second record reader: %v", err)
-		}
-	}()
-
-	for {
-		rec1, err1 := r1.ReadRecord()
-		rec2, err2 := r2.ReadRecord()
-
-		if err1 != nil || err2 != nil {
-			if err1 != err2 {
-				t.Error("errors mismatch:")
-				t.Log("expected:", err2)
-				t.Log("found:   ", err1)
-			}
-			return
-		}
-
-		if !equalRecords(rec1, rec2) {
-			t.Error("records mismatch:")
-			t.Logf("expected: %+v", rec2)
-			t.Logf("found:    %+v", rec1)
-		}
-	}
-}
-
-func equalRecords(r1, r2 *Record) bool {
-	if r1.Offset != r2.Offset {
-		return false
+	records := []memoryRecord{
+		{
+			offset: 1,
+			time:   now,
+			key:    []byte("key-1"),
+		},
+		{
+			offset: 2,
+			time:   now.Add(time.Millisecond),
+			value:  []byte("value-1"),
+		},
+		{
+			offset: 3,
+			time:   now.Add(time.Second),
+			key:    []byte("key-3"),
+			value:  []byte("value-3"),
+			headers: []protocol.Header{
+				{Key: "answer", Value: []byte("42")},
+			},
+		},
 	}
 
-	if !r1.Time.Equal(r2.Time) {
-		return false
+	original := &protocol.RecordBatch{
+		Attributes:           protocol.Snappy,
+		PartitionLeaderEpoch: -1,
+		BaseOffset:           records[0].offset,
+		LastOffsetDelta:      int32(records[2].offset - records[0].offset),
+		FirstTimestamp:       records[0].time,
+		MaxTimestamp:         records[2].time,
+		ProducerID:           -1,
+		ProducerEpoch:        -1,
+		BaseSequence:         -1,
+		NumRecords:           3,
+		Records:              protocol.NewRecordReader(makeRecords(records)...),
 	}
 
-	k1 := readAll(r1.Key)
-	k2 := readAll(r2.Key)
-
-	if !reflect.DeepEqual(k1, k2) {
-		return false
+	buffer := new(bytes.Buffer)
+	if _, err := original.WriteTo(buffer); err != nil {
+		t.Fatal("writing record batch:", err)
 	}
 
-	v1 := readAll(r1.Value)
-	v2 := readAll(r2.Value)
-
-	if !reflect.DeepEqual(v1, v2) {
-		return false
+	reloaded := new(protocol.RecordBatch)
+	if _, err := reloaded.ReadFrom(buffer); err != nil {
+		t.Fatal("reading record batch:", err)
 	}
 
-	return reflect.DeepEqual(r1.Headers, r2.Headers)
-}
+	prototest.AssertRecords(t, reloaded,
+		protocol.NewRecordReader(makeRecords(records)...),
+	)
+	original.Records = nil
+	reloaded.Records = nil
 
-func readAll(bytes Bytes) []byte {
-	b, err := ReadAll(bytes)
-	if err != nil {
-		panic(err)
+	if !reflect.DeepEqual(reloaded, original) {
+		t.Errorf("record batches mismatch:\nwant = %+v\ngot  = %+v", original, reloaded)
 	}
-	return b
 }

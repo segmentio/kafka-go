@@ -7,13 +7,14 @@ import (
 	"time"
 )
 
-func (rs *RecordSet) readFromVersion2(d *decoder) error {
+func (rs *RecordSet) readFromVersion2(d *decoder) (int64, error) {
 	baseOffset := d.readInt64()
 	batchLength := d.readInt32()
 
 	if int(batchLength) > d.remain || d.err != nil {
+		n := int64(d.remain)
 		d.discardAll()
-		return nil
+		return n, nil
 	}
 
 	decoder := &decoder{
@@ -42,12 +43,12 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 		}
 	}()
 
-	_, err := buffer.ReadFrom(decoder)
+	n, err := buffer.ReadFrom(decoder)
 	if err != nil {
-		return err
+		return n, err
 	}
 	if decoder.crc32 != uint32(crc) {
-		return fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", decoder.crc32, uint32(crc))
+		return n, fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", decoder.crc32, uint32(crc))
 	}
 	decoder.Reset(nil, 0)
 
@@ -61,33 +62,30 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 		PartitionLeaderEpoch: partitionLeaderEpoch,
 		BaseOffset:           baseOffset,
 		LastOffsetDelta:      lastOffsetDelta,
-		FirstTimestamp:       makeTime(firstTimestamp),
-		MaxTimestamp:         makeTime(maxTimestamp),
+		FirstTimestamp:       MakeTime(firstTimestamp),
+		MaxTimestamp:         MakeTime(maxTimestamp),
 		ProducerID:           producerID,
 		ProducerEpoch:        producerEpoch,
 		BaseSequence:         baseSequence,
-	}
-
-	if attributes.Control() {
-		recordBatch.Records, err = readRecords(buffer, decoder, attributes, baseOffset, firstTimestamp, numRecords)
-		if err != nil {
-			return err
-		}
-		rs.Records = (*ControlBatch)(recordBatch)
-	} else {
-		rs.Records = recordBatch
-		recordBatch.Records = &compressedRecordReader{
+		NumRecords:           numRecords,
+		Records: &compressedRecordReader{
 			buffer:         buffer,
 			decoder:        decoder,
 			attributes:     attributes,
 			baseOffset:     baseOffset,
 			firstTimestamp: firstTimestamp,
 			numRecords:     numRecords,
-		}
-		buffer = nil
+		},
 	}
 
-	return nil
+	if attributes.Control() {
+		rs.Records = (*ControlBatch)(recordBatch)
+	} else {
+		rs.Records = recordBatch
+	}
+
+	buffer = nil
+	return n, nil
 }
 
 func readRecords(buffer *pageBuffer, decoder *decoder, attributes Attributes, baseOffset, firstTimestamp int64, numRecords int32) (*optimizedRecordReader, error) {
@@ -204,96 +202,127 @@ func readRecords(buffer *pageBuffer, decoder *decoder, attributes Attributes, ba
 }
 
 func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) error {
+	attributes := rs.Attributes
 	records := rs.Records
-	numRecords := int32(0)
-
-	e := &encoder{writer: buffer}
-	e.writeInt64(0)                    // base offset                         |  0 +8
-	e.writeInt32(0)                    // placeholder for record batch length |  8 +4
-	e.writeInt32(-1)                   // partition leader epoch              | 12 +3
-	e.writeInt8(2)                     // magic byte                          | 16 +1
-	e.writeInt32(0)                    // placeholder for crc32 checksum      | 17 +4
-	e.writeInt16(int16(rs.Attributes)) // attributes                          | 21 +2
-	e.writeInt32(0)                    // placeholder for lastOffsetDelta     | 23 +4
-	e.writeInt64(0)                    // placeholder for firstTimestamp      | 27 +8
-	e.writeInt64(0)                    // placeholder for maxTimestamp        | 35 +8
-	e.writeInt64(-1)                   // producer id                         | 43 +8
-	e.writeInt16(-1)                   // producer epoch                      | 51 +2
-	e.writeInt32(-1)                   // base sequence                       | 53 +4
-	e.writeInt32(0)                    // placeholder for numRecords          | 57 +4
-
-	var compressor io.WriteCloser
-	if compression := rs.Attributes.Compression(); compression != 0 {
-		if codec := compression.Codec(); codec != nil {
-			compressor = codec.NewWriter(buffer)
-			e.writer = compressor
-		}
-	}
-
-	currentTimestamp := timestamp(time.Now())
+	baseOffset := int64(0)
 	lastOffsetDelta := int32(0)
 	firstTimestamp := int64(0)
 	maxTimestamp := int64(0)
+	numRecords := int32(0)
 
-	err := forEachRecord(records, func(i int, r *Record) error {
-		t := timestamp(r.Time)
-		if t == 0 {
-			t = currentTimestamp
+	batch, _ := records.(*RecordBatch)
+	if batch != nil {
+		baseOffset = batch.BaseOffset
+		if batch.Attributes != attributes {
+			// The application requested a different set of attributes,
+			// we can't optimize writing the batch because we may have
+			// to change the compression codec or other properties.
+			batch = nil
 		}
-		if i == 0 {
-			firstTimestamp = t
+	}
+
+	e := &encoder{writer: buffer}
+	e.writeInt64(baseOffset)        // base offset                         |  0 +8
+	e.writeInt32(0)                 // placeholder for record batch length |  8 +4
+	e.writeInt32(-1)                // partition leader epoch              | 12 +3
+	e.writeInt8(2)                  // magic byte                          | 16 +1
+	e.writeInt32(0)                 // placeholder for crc32 checksum      | 17 +4
+	e.writeInt16(int16(attributes)) // attributes                          | 21 +2
+	e.writeInt32(0)                 // placeholder for lastOffsetDelta     | 23 +4
+	e.writeInt64(0)                 // placeholder for firstTimestamp      | 27 +8
+	e.writeInt64(0)                 // placeholder for maxTimestamp        | 35 +8
+	e.writeInt64(-1)                // producer id                         | 43 +8
+	e.writeInt16(-1)                // producer epoch                      | 51 +2
+	e.writeInt32(-1)                // base sequence                       | 53 +4
+	e.writeInt32(0)                 // placeholder for numRecords          | 57 +4
+
+	var err error
+	if batch != nil {
+		// If the record batch contains pre-encoded records, we avoid decoding
+		// them and just write the bytes directly to the output buffer.
+		if r, ok := batch.Records.(io.Reader); ok {
+			lastOffsetDelta = batch.LastOffsetDelta
+			firstTimestamp = Timestamp(batch.FirstTimestamp)
+			maxTimestamp = Timestamp(batch.MaxTimestamp)
+			numRecords = batch.NumRecords
+			records = nil
+			_, err = io.Copy(e, r)
 		}
-		if t > maxTimestamp {
-			maxTimestamp = t
+	}
+
+	if records != nil {
+		// No optimizations could be applied, we have to read each record and
+		// write them to the output buffer while generating the metadata.
+		var currentTimestamp = Timestamp(time.Now())
+		var compressor io.WriteCloser
+
+		if compression := rs.Attributes.Compression(); compression != 0 {
+			if codec := compression.Codec(); codec != nil {
+				compressor = codec.NewWriter(buffer)
+				e.writer = compressor
+			}
 		}
 
-		timestampDelta := t - firstTimestamp
-		offsetDelta := int64(i)
-		lastOffsetDelta = int32(offsetDelta)
+		err = forEachRecord(records, func(i int, r *Record) error {
+			t := Timestamp(r.Time)
+			if t == 0 {
+				t = currentTimestamp
+			}
+			if i == 0 {
+				firstTimestamp = t
+			}
+			if t > maxTimestamp {
+				maxTimestamp = t
+			}
 
-		length := 1 + // attributes
-			sizeOfVarInt(timestampDelta) +
-			sizeOfVarInt(offsetDelta) +
-			sizeOfVarNullBytesIface(r.Key) +
-			sizeOfVarNullBytesIface(r.Value) +
-			sizeOfVarInt(int64(len(r.Headers)))
+			timestampDelta := t - firstTimestamp
+			offsetDelta := int64(i)
+			lastOffsetDelta = int32(offsetDelta)
 
-		for _, h := range r.Headers {
-			length += sizeOfVarString(h.Key) + sizeOfVarNullBytes(h.Value)
+			length := 1 + // attributes
+				sizeOfVarInt(timestampDelta) +
+				sizeOfVarInt(offsetDelta) +
+				sizeOfVarNullBytesIface(r.Key) +
+				sizeOfVarNullBytesIface(r.Value) +
+				sizeOfVarInt(int64(len(r.Headers)))
+
+			for _, h := range r.Headers {
+				length += sizeOfVarString(h.Key) + sizeOfVarNullBytes(h.Value)
+			}
+
+			e.writeVarInt(int64(length))
+			e.writeInt8(0) // record attributes (unused)
+			e.writeVarInt(timestampDelta)
+			e.writeVarInt(offsetDelta)
+
+			if err := e.writeVarNullBytesFrom(r.Key); err != nil {
+				return err
+			}
+
+			if err := e.writeVarNullBytesFrom(r.Value); err != nil {
+				return err
+			}
+
+			e.writeVarInt(int64(len(r.Headers)))
+
+			for _, h := range r.Headers {
+				e.writeVarString(h.Key)
+				e.writeVarNullBytes(h.Value)
+			}
+
+			numRecords++
+			return nil
+		})
+
+		if compressor != nil {
+			if err := compressor.Close(); err != nil {
+				return err
+			}
 		}
-
-		e.writeVarInt(int64(length))
-		e.writeInt8(0) // record attributes (unused)
-		e.writeVarInt(timestampDelta)
-		e.writeVarInt(offsetDelta)
-
-		if err := e.writeVarNullBytesFrom(r.Key); err != nil {
-			return err
-		}
-
-		if err := e.writeVarNullBytesFrom(r.Value); err != nil {
-			return err
-		}
-
-		e.writeVarInt(int64(len(r.Headers)))
-
-		for _, h := range r.Headers {
-			e.writeVarString(h.Key)
-			e.writeVarNullBytes(h.Value)
-		}
-
-		numRecords++
-		return nil
-	})
+	}
 
 	if err != nil {
 		return err
-	}
-
-	if compressor != nil {
-		if err := compressor.Close(); err != nil {
-			return err
-		}
 	}
 
 	if numRecords == 0 {
