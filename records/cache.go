@@ -6,10 +6,10 @@ import (
 	"net"
 	"sync"
 
-	"github.com/petar/GoLLRB/llrb"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/fetch"
+	"github.com/segmentio/kafka-go/records/cache"
 )
 
 // Cache is an implementation of the kafka.RoundTripper interface which applies
@@ -52,9 +52,7 @@ type Cache struct {
 
 	once  once
 	mutex sync.Mutex
-	queue list.List
-	index llrb.LLRB
-	size  int64
+	lru   cache.LRU
 
 	stats     sync.Mutex
 	bytes     int64
@@ -63,6 +61,11 @@ type Cache struct {
 	hits      int64
 	evictions int64
 	errors    int64
+}
+
+type cacheEntry struct {
+	hook *list.Element
+	size int64
 }
 
 // CacheStats contains statistics about cache utilization.
@@ -176,14 +179,12 @@ func (c *Cache) init(ctx context.Context) error {
 
 func (c *Cache) reset() {
 	c.mutex.Lock()
-	c.index = llrb.LLRB{}
-	c.queue = list.List{}
-	c.size = 0
+	c.lru.Reset()
 	c.mutex.Unlock()
 }
 
 func (c *Cache) load(ctx context.Context, addr string, req *fetch.Request) (*fetch.Response, int, error) {
-	key := &cacheKey{Key: Key{Addr: addr}}
+	key := Key{Addr: addr}
 	res := &fetch.Response{Topics: make([]fetch.ResponseTopic, len(req.Topics))}
 	missing := 0
 	lookups := 0
@@ -200,6 +201,7 @@ func (c *Cache) load(ctx context.Context, addr string, req *fetch.Request) (*fet
 	for i, t := range req.Topics {
 		key.Topic = t.Topic
 		resTopic := &res.Topics[i]
+		resTopic.Topic = t.Topic
 		resTopic.Partitions = make([]fetch.ResponsePartition, len(t.Partitions))
 
 		for j, p := range t.Partitions {
@@ -221,13 +223,13 @@ func (c *Cache) load(ctx context.Context, addr string, req *fetch.Request) (*fet
 			key.BaseOffset = p.FetchOffset
 			lookups++
 
-			e := c.lookup(key)
-			if e == nil {
+			k, ok := c.lookup(key)
+			if !ok {
 				missing++
 				continue
 			}
 
-			v, err := c.Storage.Load(ctx, e.Key)
+			v, err := c.Storage.Load(ctx, k)
 			if err != nil {
 				if err == ErrNotFound {
 					missing++
@@ -333,16 +335,10 @@ func (c *Cache) storeRecordBatch(ctx context.Context, addr, topic string, partit
 	return evictions, sizeDelta, err
 }
 
-func (c *Cache) lookup(k *cacheKey) *cacheEntry {
+func (c *Cache) lookup(key Key) (Key, bool) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-
-	e, _ := c.index.Get(k).(*cacheEntry)
-	if e != nil {
-		c.queue.MoveToFront(e.hook)
-	}
-
-	return e
+	return c.lru.Lookup(key)
 }
 
 func (c *Cache) add(ctx context.Context, key Key, size int64) (evictions int, sizeDelta int64, err error) {
@@ -361,22 +357,15 @@ func (c *Cache) add(ctx context.Context, key Key, size int64) (evictions int, si
 }
 
 func (c *Cache) insert(key Key, size int64) (evicted []Key, sizeDrop int64) {
-	e := &cacheEntry{Key: key, size: size}
-
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	c.index.InsertNoReplace(e)
-	e.hook = c.queue.PushFront(e)
-	c.size += e.size
+	c.lru.Insert(key, size)
 
-	for c.queue.Len() > 1 && c.size > c.SizeLimit {
-		x := c.queue.Back().Value.(*cacheEntry)
-		c.index.Delete(x)
-		c.queue.Remove(x.hook)
-		c.size -= x.size
-		sizeDrop += x.size
-		evicted = append(evicted, x.Key)
+	for c.lru.Len() > 1 && c.lru.Size() > c.SizeLimit {
+		key, size, _ := c.lru.Evict()
+		evicted = append(evicted, key)
+		sizeDrop += size
 	}
 
 	return evicted, sizeDrop
@@ -421,28 +410,5 @@ func closeRecords(r *fetch.Response) {
 		for _, p := range t.Partitions {
 			p.RecordSet.Records.Close()
 		}
-	}
-}
-
-type cacheKey struct{ Key }
-
-func (k *cacheKey) Less(item llrb.Item) bool {
-	return k.Key.Less(&item.(*cacheEntry).Key)
-}
-
-type cacheEntry struct {
-	Key
-	hook *list.Element
-	size int64
-}
-
-func (e *cacheEntry) Less(item llrb.Item) bool {
-	switch x := item.(type) {
-	case *cacheKey:
-		return e.Key.Less(&x.Key)
-	case *cacheEntry:
-		return e.Key.Less(&x.Key)
-	default:
-		panic("BUG: cannot compare cache entry with item that is neither a *cacheEntry nor a *fetchRequestKey")
 	}
 }

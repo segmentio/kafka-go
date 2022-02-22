@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/segmentio/kafka-go/records/cache"
 )
 
 var (
@@ -23,25 +25,7 @@ var (
 
 // Key is a comparable type representing the identifiers that record batches
 // can be indexed by in a storage instance.
-type Key struct {
-	Addr       string
-	Topic      string
-	Partition  int
-	BaseOffset int64
-}
-
-func (k1 *Key) Less(k2 *Key) bool {
-	if k1.Addr != k2.Addr {
-		return k1.Addr < k2.Addr
-	}
-	if k1.Topic != k2.Topic {
-		return k1.Topic < k2.Topic
-	}
-	if k1.Partition != k2.Partition {
-		return k1.Partition < k2.Partition
-	}
-	return k1.BaseOffset < k2.BaseOffset
-}
+type Key = cache.Key
 
 // The Iter interface abstracts the underlying implementation of iterators
 // returned by calling List on a storage instance.

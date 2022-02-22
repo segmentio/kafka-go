@@ -3,8 +3,11 @@ package records_test
 import (
 	"context"
 	"fmt"
+	"io"
+	"math/rand"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/protocol"
@@ -12,6 +15,78 @@ import (
 	"github.com/segmentio/kafka-go/protocol/prototest"
 	"github.com/segmentio/kafka-go/records"
 )
+
+type Range struct {
+	Min int
+	Max int
+}
+
+func (r *Range) Generate(prng *rand.Rand) int {
+	return r.Min + prng.Intn(r.Max)
+}
+
+type ServerGenerator struct {
+	NumTopics                 int
+	TopicNameSize             Range
+	PartitionsPerTopic        Range
+	RecordBatchesPerPartition Range
+	RecordsPerRecordBatch     Range
+	RecordKeySize             Range
+	RecordValueSize           Range
+}
+
+func (g *ServerGenerator) Generate(prng *rand.Rand) Server {
+	server := make(Server, g.NumTopics)
+	now := protocol.MakeTime(1645552808)
+
+	for i := 0; i < g.NumTopics; i++ {
+		numPartitions := g.PartitionsPerTopic.Generate(prng)
+		topic := make(Topic, numPartitions)
+
+		for j := 0; j < numPartitions; j++ {
+			numRecordBatches := g.RecordBatchesPerPartition.Generate(prng)
+			partition := make(Partition, numRecordBatches)
+
+			for k := 0; k < numRecordBatches; k++ {
+				numRecords := g.RecordsPerRecordBatch.Generate(prng)
+				records := make(RecordBatch, numRecords)
+
+				for n := range records {
+					records[n] = Record{
+						Time:  now,
+						Key:   GenerateRandomBytes(prng, g.RecordKeySize.Generate(prng)),
+						Value: GenerateRandomBytes(prng, g.RecordValueSize.Generate(prng)),
+					}
+					now = now.Add(time.Millisecond)
+				}
+
+				partition[k] = records
+			}
+
+			topic[j] = partition
+		}
+
+		topicName := GenerateRandomString(prng, g.TopicNameSize.Generate(prng))
+		server[topicName] = topic
+	}
+
+	return server
+}
+
+func GenerateRandomString(prng *rand.Rand, n int) string {
+	const characters = "0123456789abcdefghijklmnopqrstuvwxyz"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = characters[prng.Intn(len(characters))]
+	}
+	return string(b)
+}
+
+func GenerateRandomBytes(prng *rand.Rand, n int) []byte {
+	b := make([]byte, n)
+	io.ReadFull(prng, b)
+	return b
+}
 
 type Server map[string]Topic
 
@@ -108,6 +183,7 @@ func (p Partition) Lookup(offset int64) *protocol.RecordBatch {
 type RecordBatch []Record
 
 type Record struct {
+	Time    time.Time
 	Key     []byte
 	Value   []byte
 	Headers []kafka.Header
@@ -119,6 +195,7 @@ func newRecordReader(baseOffset int64, records []Record) kafka.RecordReader {
 	for i, r := range records {
 		kafkaRecords[i] = kafka.Record{
 			Offset:  baseOffset + int64(i),
+			Time:    r.Time,
 			Key:     kafka.NewBytes(r.Key),
 			Value:   kafka.NewBytes(r.Value),
 			Headers: r.Headers,
@@ -129,26 +206,36 @@ func newRecordReader(baseOffset int64, records []Record) kafka.RecordReader {
 }
 
 func TestRecordsRandomAccess(t *testing.T) {
-	server := Server{
-		"topic-A": {
-			0: Partition{
-				{{Value: []byte("A.0")}},
-				{{Value: []byte("A.1")}, {Value: []byte("A.2")}},
-				{{Value: []byte("A.3")}},
-				{{Value: []byte("A.4")}},
-			},
+	generator := ServerGenerator{
+		NumTopics: 10,
+		TopicNameSize: Range{
+			Min: 1,
+			Max: 1,
 		},
-		"topic-B": {
-			0: Partition{
-				{{Value: []byte("B.0")}, {Value: []byte("B.1")}, {Value: []byte("B.2")}},
-			},
+		PartitionsPerTopic: Range{
+			Min: 1,
+			Max: 3,
 		},
-		"topic-C": {
-			0: Partition{
-				{{Value: []byte("C.9")}},
-			},
+		RecordBatchesPerPartition: Range{
+			Min: 1,
+			Max: 3,
+		},
+		RecordsPerRecordBatch: Range{
+			Min: 1,
+			Max: 4,
+		},
+		RecordKeySize: Range{
+			Min: 1,
+			Max: 10,
+		},
+		RecordValueSize: Range{
+			Min: 1,
+			Max: 10,
 		},
 	}
+
+	prng := rand.New(rand.NewSource(0))
+	server := generator.Generate(prng)
 
 	t.Run("direct", func(t *testing.T) {
 		testRecordsRandomAccess(t, server, &kafka.Client{
@@ -187,27 +274,33 @@ func testRecordsRandomAccess(t *testing.T, server Server, client *kafka.Client) 
 						MaxBytes:  1,
 					})
 					if err != nil {
-						t.Errorf("fetching record batch containing offset %d from partition %d of the %q topic: %v", offset, partition, topic, err)
-						continue
+						t.Fatalf("fetching record batch containing offset %d from partition %d of the %q topic: %v", offset, partition, topic, err)
 					}
 
 					if r.Topic != topic {
-						t.Errorf("topic of fetch response does not match the topic of the request: want=%q got=%q", topic, r.Topic)
+						t.Fatalf("topic of fetch response does not match the topic of the request: want=%q got=%q", topic, r.Topic)
 					}
 
 					if r.Partition != partition {
-						t.Errorf("partition of fetch response does not match the partition of the request: want=%d got=%d", partition, r.Partition)
+						t.Fatalf("partition of fetch response does not match the partition of the request: want=%d got=%d", partition, r.Partition)
 					}
 
 					if r.Error != nil {
-						t.Errorf("unexpected error in fetch response: %v", r.Error)
+						t.Fatalf("unexpected error in fetch response: %v", r.Error)
 					}
 
-					prototest.AssertRecords(t,
+					fmt.Println("===")
+					fmt.Printf("%#v\n", r.Records)
+					fmt.Printf("%#v\n", recordBatch)
+
+					ok := prototest.AssertRecords(t,
 						r.Records,
 						newRecordReader(baseOffset, recordBatch),
 					)
 					r.Records.Close()
+					if !ok {
+						return
+					}
 					offset++
 				}
 				baseOffset = offset

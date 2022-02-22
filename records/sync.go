@@ -13,7 +13,7 @@ type once struct {
 }
 
 func (once *once) do(f func() error) error {
-	if atomic.LoadInt32(&once.done) != 0 {
+	if atomic.LoadInt32(&once.done) == 0 {
 		return once.syncAndDo(f)
 	}
 	return nil
@@ -24,7 +24,7 @@ func (once *once) syncAndDo(f func() error) error {
 	once.mutex.Lock()
 	defer once.mutex.Unlock()
 
-	if atomic.LoadInt32(&once.done) != 0 {
+	if atomic.LoadInt32(&once.done) == 0 {
 		if err := f(); err != nil {
 			return err
 		}

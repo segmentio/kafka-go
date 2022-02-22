@@ -1,43 +1,62 @@
 package prototest
 
 import (
+	"io"
 	"reflect"
 	"testing"
 
 	"github.com/segmentio/kafka-go/protocol"
 )
 
-func AssertRecords(t *testing.T, r1, r2 protocol.RecordReader) {
+func AssertRecords(t *testing.T, r1, r2 protocol.RecordReader) (ok bool) {
 	t.Helper()
+	ok = true
 
 	defer func() {
 		if err := r1.Close(); err != nil {
 			t.Errorf("closing first record reader: %v", err)
+			ok = false
 		}
 		if err := r2.Close(); err != nil {
 			t.Errorf("closing second record reader: %v", err)
+			ok = false
 		}
 	}()
 
+	i := 0
 	for {
 		rec1, err1 := r1.ReadRecord()
 		rec2, err2 := r2.ReadRecord()
 
 		if err1 != nil || err2 != nil {
 			if err1 != err2 {
-				t.Error("errors mismatch:")
+				t.Errorf("errors mismatch at index %d:", i)
 				t.Log("expected:", err2)
 				t.Log("found:   ", err1)
+				ok = false
 			}
-			return
+			return ok
 		}
 
 		if !EqualRecords(rec1, rec2) {
-			t.Error("records mismatch:")
+			t.Error("records mismatch at indedx %d:", i)
 			t.Logf("expected: %+v", rec2)
 			t.Logf("found:    %+v", rec1)
+			ok = false
+			return ok
 		}
+
+		i++
 	}
+
+	_, err1 := r1.ReadRecord()
+	_, err2 := r2.ReadRecord()
+	if err1 != io.EOF || err2 != io.EOF {
+		t.Errorf("unexpected error found after reading all records: %v/%v", err1, err2)
+		ok = false
+	}
+
+	return ok
 }
 
 func EqualRecords(r1, r2 *protocol.Record) bool {
