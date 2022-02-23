@@ -6,6 +6,8 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -46,6 +48,7 @@ func (g *ServerGenerator) Generate(prng *rand.Rand) Server {
 		for j := 0; j < numPartitions; j++ {
 			numRecordBatches := g.RecordBatchesPerPartition.Generate(prng)
 			partition := make(Partition, numRecordBatches)
+			offset := int64(0)
 
 			for k := 0; k < numRecordBatches; k++ {
 				numRecords := g.RecordsPerRecordBatch.Generate(prng)
@@ -53,10 +56,12 @@ func (g *ServerGenerator) Generate(prng *rand.Rand) Server {
 
 				for n := range records {
 					records[n] = Record{
-						Time:  now,
-						Key:   GenerateRandomBytes(prng, g.RecordKeySize.Generate(prng)),
-						Value: GenerateRandomBytes(prng, g.RecordValueSize.Generate(prng)),
+						Offset: offset,
+						Time:   now,
+						Key:    GenerateRandomBytes(prng, g.RecordKeySize.Generate(prng)),
+						Value:  GenerateRandomBytes(prng, g.RecordValueSize.Generate(prng)),
 					}
+					offset++
 					now = now.Add(time.Millisecond)
 				}
 
@@ -89,6 +94,15 @@ func GenerateRandomBytes(prng *rand.Rand, n int) []byte {
 }
 
 type Server map[string]Topic
+
+func (s Server) Topics() []string {
+	topics := make([]string, 0, len(s))
+	for topic := range s {
+		topics = append(topics, topic)
+	}
+	sort.Strings(topics)
+	return topics
+}
 
 func (s Server) RoundTrip(ctx context.Context, addr net.Addr, req kafka.Request) (kafka.Response, error) {
 	fetchReq, _ := req.(*fetch.Request)
@@ -164,45 +178,68 @@ func (p Partition) HighWatermark() int64 {
 }
 
 func (p Partition) Lookup(offset int64) *protocol.RecordBatch {
-	baseOffset := int64(0)
-
 	for _, records := range p {
-		if (baseOffset + int64(len(records))) > offset {
+		if records.Contains(offset) {
 			return &protocol.RecordBatch{
 				Attributes:           0,
 				PartitionLeaderEpoch: -1,
-				BaseOffset:           baseOffset,
-				LastOffsetDelta:      int32(len(records)),
+				BaseOffset:           records.BaseOffset(),
+				LastOffsetDelta:      records.LastOffsetDelta(),
 				FirstTimestamp:       time.Time{},
 				MaxTimestamp:         time.Time{},
 				ProducerID:           -1,
 				ProducerEpoch:        -1,
 				BaseSequence:         -1,
-				NumRecords:           int32(len(records)),
-				Records:              newRecordReader(baseOffset, records),
+				NumRecords:           records.NumRecords(),
+				Records:              newRecordReader(records),
 			}
 		}
-		baseOffset += int64(len(records))
 	}
-
 	return nil
 }
 
 type RecordBatch []Record
 
+func (r RecordBatch) Contains(offset int64) bool {
+	return offset >= r.BaseOffset() && offset < r.LastOffset()
+}
+
+func (r RecordBatch) BaseOffset() int64 {
+	if len(r) > 0 {
+		return r[0].Offset
+	}
+	return -1
+}
+
+func (r RecordBatch) LastOffset() int64 {
+	if len(r) > 0 {
+		return r[len(r)-1].Offset + 1
+	}
+	return -1
+}
+
+func (r RecordBatch) LastOffsetDelta() int32 {
+	return int32(r.LastOffset() - r.BaseOffset())
+}
+
+func (r RecordBatch) NumRecords() int32 {
+	return int32(len(r))
+}
+
 type Record struct {
+	Offset  int64
 	Time    time.Time
 	Key     []byte
 	Value   []byte
 	Headers []kafka.Header
 }
 
-func newRecordReader(baseOffset int64, records []Record) kafka.RecordReader {
+func newRecordReader(records []Record) kafka.RecordReader {
 	kafkaRecords := make([]kafka.Record, len(records))
 
 	for i, r := range records {
 		kafkaRecords[i] = kafka.Record{
-			Offset:  baseOffset + int64(i),
+			Offset:  r.Offset,
 			Time:    r.Time,
 			Key:     kafka.NewBytes(r.Key),
 			Value:   kafka.NewBytes(r.Value),
@@ -275,9 +312,9 @@ func testRecordsRandomAccess(t *testing.T, server Server, client *kafka.Client) 
 
 	for topic, partitions := range server {
 		for partition, recordBatches := range partitions {
-			baseOffset, offset := int64(0), int64(0)
 			for _, recordBatch := range recordBatches {
-				for range recordBatch {
+				for i := range recordBatch {
+					offset := recordBatch.BaseOffset() + int64(i)
 					r, err := client.Fetch(ctx, &kafka.FetchRequest{
 						Topic:     topic,
 						Partition: partition,
@@ -303,7 +340,7 @@ func testRecordsRandomAccess(t *testing.T, server Server, client *kafka.Client) 
 
 					ok := prototest.AssertRecords(t,
 						r.Records,
-						newRecordReader(baseOffset, recordBatch),
+						newRecordReader(recordBatch),
 					)
 					r.Records.Close()
 					if !ok {
@@ -311,8 +348,97 @@ func testRecordsRandomAccess(t *testing.T, server Server, client *kafka.Client) 
 					}
 					offset++
 				}
-				baseOffset = offset
 			}
 		}
 	}
+}
+
+func BenchmarkRecordsRandomAccess(b *testing.B) {
+	generator := ServerGenerator{
+		NumTopics: 10,
+		TopicNameSize: Range{
+			Min: 10,
+			Max: 20,
+		},
+		PartitionsPerTopic: Range{
+			Min: 1,
+			Max: 3,
+		},
+		RecordBatchesPerPartition: Range{
+			Min: 1,
+			Max: 10,
+		},
+		RecordsPerRecordBatch: Range{
+			Min: 1,
+			Max: 10,
+		},
+		RecordKeySize: Range{
+			Min: 0,
+			Max: 256,
+		},
+		RecordValueSize: Range{
+			Min: 0,
+			Max: 4096,
+		},
+	}
+
+	tmp, err := os.MkdirTemp("", "kafka-go.records.*")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.RemoveAll(tmp)
+
+	storage, err := records.Mount(tmp)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	server := generator.Generate(rand.New(rand.NewSource(0)))
+	cache := &records.Cache{
+		SizeLimit: 8 * 1024 * 1024,
+		Storage:   storage,
+		Transport: server,
+	}
+
+	topics := server.Topics()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		prng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+		ctx := context.Background()
+		req := &kafka.FetchRequest{
+			MinBytes: 1,
+			MaxBytes: 1,
+		}
+
+		client := &kafka.Client{
+			Addr:      kafka.TCP("whatever"),
+			Transport: cache,
+		}
+
+		for pb.Next() {
+			topicName := topics[prng.Intn(len(topics))]
+			topic := server[topicName]
+
+			partitionID := prng.Intn(len(topic))
+			partition := topic[partitionID]
+
+			recordBatch := partition[prng.Intn(len(partition))]
+			fetchOffset := recordBatch.BaseOffset() + prng.Int63n(int64(len(recordBatch)))
+
+			req.Topic = topicName
+			req.Partition = partitionID
+			req.Offset = fetchOffset
+
+			r, err := client.Fetch(ctx, req)
+			if err != nil {
+				b.Fatal(err)
+			}
+			r.Records.Close()
+		}
+	})
+
+	stats := cache.Stats()
+	b.Logf("hits: %d/%d (%.2f%%)", stats.Hits, stats.Lookups, 100*float64(stats.Hits)/float64(stats.Lookups))
 }

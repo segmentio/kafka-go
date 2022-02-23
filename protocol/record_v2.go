@@ -99,6 +99,7 @@ func readRecords(buffer *pageBuffer, decoder *decoder, attributes Attributes, ba
 	if compression := attributes.Compression(); compression != 0 {
 		reader := io.Reader(buffer)
 		buffer = newPageBuffer()
+		bufferOffset = 0
 		defer buffer.unref()
 
 		codec := compression.Codec()

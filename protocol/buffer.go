@@ -6,6 +6,7 @@ import (
 	"hash/crc32"
 	"io"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -54,6 +55,8 @@ func ReadAll(b Bytes) ([]byte, error) {
 }
 
 type refCount uintptr
+
+func (rc *refCount) load() uintptr { return atomic.LoadUintptr((*uintptr)(rc)) }
 
 func (rc *refCount) ref() { atomic.AddUintptr((*uintptr)(rc), 1) }
 
@@ -119,6 +122,10 @@ func (p *page) slice(begin, end int64) []byte {
 	}
 
 	return nil
+}
+
+func (p *page) String() string {
+	return fmt.Sprintf("{refc:%d offset:%d length:%d}", p.refc.load(), p.offset, p.length)
 }
 
 func (p *page) Cap() int { return pageSize }
@@ -226,6 +233,10 @@ func (pb *pageBuffer) unref() {
 
 func (pb *pageBuffer) newPage() *page {
 	return newPage(int64(pb.length))
+}
+
+func (pb *pageBuffer) String() string {
+	return fmt.Sprintf("{refc:%d cursor:%d length:%d pages:%v}", pb.refc.load(), pb.cursor, pb.length, pb.pages)
 }
 
 func (pb *pageBuffer) Close() error {
@@ -438,6 +449,19 @@ func (pages contiguousPages) clear() {
 	}
 }
 
+func (pages contiguousPages) String() string {
+	s := new(strings.Builder)
+	s.WriteByte('[')
+	for i, p := range pages {
+		if i != 0 {
+			s.WriteString(", ")
+		}
+		s.WriteString(p.String())
+	}
+	s.WriteByte(']')
+	return s.String()
+}
+
 func (pages contiguousPages) ReadAt(b []byte, off int64) (int, error) {
 	rn := 0
 
@@ -518,7 +542,7 @@ func (ref *pageRef) Len() int { return int(ref.Size() - ref.cursor) }
 func (ref *pageRef) Size() int64 { return int64(ref.length) }
 
 func (ref *pageRef) String() string {
-	return fmt.Sprintf("[offset=%d cursor=%d length=%d]", ref.offset, ref.cursor, ref.length)
+	return fmt.Sprintf("{offset:%d cursor:%d length:%d pages:%v}", ref.offset, ref.cursor, ref.length, ref.pages)
 }
 
 func (ref *pageRef) Bytes() []byte {
@@ -556,31 +580,21 @@ func (ref *pageRef) ReadByte() (byte, error) {
 }
 
 func (ref *pageRef) Read(b []byte) (int, error) {
-	if ref.cursor >= int64(ref.length) {
-		return 0, io.EOF
-	}
 	n, err := ref.ReadAt(b, ref.cursor)
 	ref.cursor += int64(n)
 	return n, err
 }
 
 func (ref *pageRef) ReadAt(b []byte, off int64) (int, error) {
-	limit := ref.offset + int64(ref.length)
-	off += ref.offset
-
-	if off >= limit {
+	offset := int64(ref.offset)
+	length := int64(ref.length)
+	if off >= length {
 		return 0, io.EOF
 	}
-
-	if off+int64(len(b)) > limit {
-		b = b[:limit-off]
+	if off+int64(len(b)) > length {
+		b = b[:length-off]
 	}
-
-	if len(b) == 0 {
-		return 0, nil
-	}
-
-	n, err := ref.pages.ReadAt(b, off)
+	n, err := ref.pages.ReadAt(b, offset+off)
 	if n == 0 && err == nil {
 		err = io.EOF
 	}
