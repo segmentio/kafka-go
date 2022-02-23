@@ -830,6 +830,7 @@ func (c *fileCache) lookup(key Key) *fileRef {
 	file := c.files[key]
 	if file != nil {
 		file.ref()
+		c.queue.MoveToFront(file.elem)
 	}
 	c.mutex.Unlock()
 	return file

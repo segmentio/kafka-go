@@ -386,6 +386,10 @@ func (c *Cache) storeRecordBatch(ctx context.Context, addr, topic string, partit
 		BaseOffset:      batch.BaseOffset,
 	}
 
+	// protocol.RecordBatch implements the io.WriterTo interface, which makes it
+	// possible to store the batch directly into the store. If the underlying
+	// type of the batch's Record field allows it, records data will be copied
+	// unchanged to the store without being re-encoded.
 	n, err := c.Storage.Store(ctx, key, batch)
 	if err != nil {
 		return false, evictions, sizeDelta, err
