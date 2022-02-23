@@ -270,33 +270,28 @@ func TestClientPipeline(t *testing.T) {
 			t.Fatal(res.Error)
 		}
 
-		for {
-			r, err := res.Records.ReadRecord()
-			if err != nil {
-				if err == io.EOF {
-					break
+		(func() {
+			defer res.Records.Close()
+			for {
+				r, err := res.Records.ReadRecord()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					t.Fatal(err)
 				}
-				t.Fatal(err)
-			}
 
-			if r.Key != nil {
-				r.Key.Close()
-			}
+				if r.Offset != offset {
+					t.Errorf("record at index %d has mismatching offset, want %d but got %d", i, offset, r.Offset)
+				}
 
-			if r.Value != nil {
-				r.Value.Close()
-			}
+				if r.Time.IsZero() || r.Time.Equal(unixEpoch) {
+					t.Errorf("record at index %d with offset %d has not timestamp", i, r.Offset)
+				}
 
-			if r.Offset != offset {
-				t.Errorf("record at index %d has mismatching offset, want %d but got %d", i, offset, r.Offset)
+				offset = r.Offset + 1
+				i++
 			}
-
-			if r.Time.IsZero() || r.Time.Equal(unixEpoch) {
-				t.Errorf("record at index %d with offset %d has not timestamp", i, r.Offset)
-			}
-
-			offset = r.Offset + 1
-			i++
-		}
+		})()
 	}
 }

@@ -259,42 +259,43 @@ func TestClientProduceAndConsume(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		for {
-			r, err := res.Records.ReadRecord()
-			if err != nil {
-				if err != io.EOF {
-					t.Fatal(err)
+		(func() {
+			defer res.Records.Close()
+			for {
+				r, err := res.Records.ReadRecord()
+				if err != nil {
+					if err != io.EOF {
+						t.Fatal(err)
+					}
+					break
 				}
-				break
+
+				if r.Key != nil {
+					t.Error("unexpected non-null key on record at offset", r.Offset)
+				}
+
+				n := prng.Intn(999) + 1
+				a := make([]byte, n)
+				b := make([]byte, n)
+				io.ReadFull(prng, a)
+
+				_, err = io.ReadFull(r.Value, b)
+				if err != nil {
+					t.Fatalf("reading record at offset %d: %v", r.Offset, err)
+				}
+
+				if !bytes.Equal(a, b) {
+					t.Fatalf("value of record at offset %d mismatches", r.Offset)
+				}
+
+				if r.Offset != offset {
+					t.Fatalf("record at offset %d was expected to have offset %d", r.Offset, offset)
+				}
+
+				offset = r.Offset + 1
+				numRecords++
 			}
-
-			if r.Key != nil {
-				r.Key.Close()
-				t.Error("unexpected non-null key on record at offset", r.Offset)
-			}
-
-			n := prng.Intn(999) + 1
-			a := make([]byte, n)
-			b := make([]byte, n)
-			io.ReadFull(prng, a)
-
-			_, err = io.ReadFull(r.Value, b)
-			r.Value.Close()
-			if err != nil {
-				t.Fatalf("reading record at offset %d: %v", r.Offset, err)
-			}
-
-			if !bytes.Equal(a, b) {
-				t.Fatalf("value of record at offset %d mismatches", r.Offset)
-			}
-
-			if r.Offset != offset {
-				t.Fatalf("record at offset %d was expected to have offset %d", r.Offset, offset)
-			}
-
-			offset = r.Offset + 1
-			numRecords++
-		}
+		})()
 
 		numFetches++
 	}
