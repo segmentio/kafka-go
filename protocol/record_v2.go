@@ -13,15 +13,19 @@ func (rs *RecordSet) readFromVersion2(decoder *decoder) (int64, error) {
 	batchLength := decoder.readInt32()
 
 	if int(batchLength) > decoder.remain || decoder.err != nil {
+		err := decoder.err
+		if err == nil {
+			err = io.ErrUnexpectedEOF
+		}
 		n := int64(decoder.remain)
 		decoder.discardAll()
-		return baseLength + n, nil
+		return baseLength + n, err
 	}
 
-	leftover := decoder.remain - int(batchLength)
+	restore := *decoder
 	buffer := newPageBuffer()
 	defer func() {
-		decoder.remain = leftover
+		*decoder = restore
 		if buffer != nil {
 			buffer.unref()
 		}
@@ -29,6 +33,7 @@ func (rs *RecordSet) readFromVersion2(decoder *decoder) (int64, error) {
 
 	decoder.remain = int(batchLength)
 	n, err := buffer.ReadFrom(decoder)
+	restore.remain -= int(n)
 	if err != nil {
 		return baseLength + n, err
 	}

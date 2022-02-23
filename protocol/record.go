@@ -148,7 +148,7 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 	size := d.readInt32()
 
 	if d.err != nil {
-		return int64(limit - d.remain), d.err
+		return int64(limit - d.remain), fmt.Errorf("reading size of record set: %w", d.err)
 	}
 
 	if size <= 0 {
@@ -177,7 +177,7 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 			b, err := r.Peek(magicByteOffset + 1)
 			if err != nil {
 				n, _ := r.Discard(len(b))
-				return 4 + int64(n), dontExpectEOF(err)
+				return 4 + int64(n), fmt.Errorf("reading record set version: %w", dontExpectEOF(err))
 			}
 			version = b[magicByteOffset]
 		case bytesBuffer:
@@ -185,7 +185,7 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 		default:
 			b := make([]byte, magicByteOffset+1)
 			if n, err := io.ReadFull(d.reader, b); err != nil {
-				return 4 + int64(n), dontExpectEOF(err)
+				return 4 + int64(n), fmt.Errorf("reading record set version: %w", dontExpectEOF(err))
 			}
 			version = b[magicByteOffset]
 			// Reconstruct the prefix that we had to read to determine the version
@@ -206,6 +206,10 @@ func (rs *RecordSet) ReadFrom(r io.Reader) (int64, error) {
 			_, err = tmp.readFromVersion2(d)
 		default:
 			err = fmt.Errorf("unsupported message version %d for message of size %d", version, size)
+		}
+
+		if err != nil {
+			err = fmt.Errorf("reading record set of messages v%d: %w", version, err)
 		}
 
 		if tmp.Version > rs.Version {

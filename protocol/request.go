@@ -10,7 +10,7 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	size := d.readInt32()
 
 	if err = d.err; err != nil {
-		err = dontExpectEOF(err)
+		err = fmt.Errorf("reading request size: %w", dontExpectEOF(err))
 		return
 	}
 
@@ -26,7 +26,7 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	}
 
 	if err = d.err; err != nil {
-		err = dontExpectEOF(err)
+		err = fmt.Errorf("reading request header: %w", dontExpectEOF(err))
 		return
 	}
 
@@ -63,9 +63,8 @@ func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID s
 	d.discardAll()
 
 	if err = d.err; err != nil {
-		err = dontExpectEOF(err)
+		err = fmt.Errorf("reading %s request v%d: %w", apiKey, apiVersion, dontExpectEOF(err))
 	}
-
 	return
 }
 

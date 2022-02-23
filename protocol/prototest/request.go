@@ -14,11 +14,13 @@ import (
 func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 	reset := load(msg)
 
+	t.Helper()
 	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+		t.Helper()
 		b := &bytes.Buffer{}
 
 		if err := protocol.WriteRequest(b, version, 1234, "me", msg); err != nil {
-			t.Fatal(err)
+			t.Fatal("writing request:", err)
 		}
 
 		reset()
@@ -27,7 +29,7 @@ func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 
 		apiVersion, correlationID, clientID, req, err := protocol.ReadRequest(b)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatal("reading request:", err)
 		}
 		if apiVersion != version {
 			t.Errorf("api version mismatch: %d != %d", apiVersion, version)
@@ -49,15 +51,18 @@ func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
 	reset := load(msg)
 
+	b.Helper()
 	b.Run(fmt.Sprintf("v%d", version), func(b *testing.B) {
 		buffer := &bytes.Buffer{}
 		buffer.Grow(1024)
 
+		b.Helper()
 		b.Run("read", func(b *testing.B) {
+			b.Helper()
 			w := io.Writer(buffer)
 
 			if err := protocol.WriteRequest(w, version, 1234, "client", msg); err != nil {
-				b.Fatal(err)
+				b.Fatal("writing request:", err)
 			}
 
 			reset()
@@ -81,12 +86,13 @@ func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
 		})
 
 		b.Run("write", func(b *testing.B) {
+			b.Helper()
 			w := io.Writer(buffer)
 			n := int64(0)
 
 			for i := 0; i < b.N; i++ {
 				if err := protocol.WriteRequest(w, version, 1234, "client", msg); err != nil {
-					b.Fatal(err)
+					b.Fatal("writing request:", err)
 				}
 				reset()
 				n = int64(buffer.Len())

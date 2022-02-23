@@ -14,11 +14,13 @@ import (
 func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 	reset := load(msg)
 
+	t.Helper()
 	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+		t.Helper()
 		b := &bytes.Buffer{}
 
 		if err := protocol.WriteResponse(b, version, 1234, msg); err != nil {
-			t.Fatal(err)
+			t.Fatal("writing response:", err)
 		}
 
 		reset()
@@ -27,7 +29,7 @@ func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 
 		correlationID, res, err := protocol.ReadResponse(b, msg.ApiKey(), version)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatal("reading response:", err)
 		}
 		if correlationID != 1234 {
 			t.Errorf("correlation id mismatch: %d != %d", correlationID, 1234)
@@ -44,16 +46,19 @@ func TestResponse(t *testing.T, version int16, msg protocol.Message) {
 func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 	reset := load(msg)
 
+	b.Helper()
 	b.Run(fmt.Sprintf("v%d", version), func(b *testing.B) {
 		apiKey := msg.ApiKey()
 		buffer := &bytes.Buffer{}
 		buffer.Grow(1024)
 
+		b.Helper()
 		b.Run("read", func(b *testing.B) {
+			b.Helper()
 			w := io.Writer(buffer)
 
 			if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
-				b.Fatal(err)
+				b.Fatal("writing response:", err)
 			}
 
 			reset()
@@ -65,7 +70,7 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 			for i := 0; i < b.N; i++ {
 				_, res, err := protocol.ReadResponse(r, apiKey, version)
 				if err != nil {
-					b.Fatal(err)
+					b.Fatal("reading response:", err)
 				}
 				closeMessage(res)
 				x.Reset(p)
@@ -76,13 +81,15 @@ func BenchmarkResponse(b *testing.B, version int16, msg protocol.Message) {
 			buffer.Reset()
 		})
 
+		b.Helper()
 		b.Run("write", func(b *testing.B) {
+			b.Helper()
 			w := io.Writer(buffer)
 			n := int64(0)
 
 			for i := 0; i < b.N; i++ {
 				if err := protocol.WriteResponse(w, version, 1234, msg); err != nil {
-					b.Fatal(err)
+					b.Fatal("writing response", err)
 				}
 				reset()
 				n = int64(buffer.Len())

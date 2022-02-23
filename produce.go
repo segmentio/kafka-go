@@ -145,7 +145,9 @@ type ProduceResponse struct {
 //
 // The method always closes the records reader carried by the request.
 func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResponse, error) {
-	defer req.Records.Close()
+	if req.Records != nil {
+		defer req.Records.Close()
+	}
 	attributes := protocol.Attributes(req.Compression) & 0x7
 
 	m, err := c.roundTrip(ctx, req.Addr, &produceAPI.Request{

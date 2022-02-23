@@ -29,7 +29,7 @@ would use an in-memory cache to retain records fetched from Kafka:
 ```go
 client := &kafka.Client{
     Transport: &records.Cache{
-        SizeLimit: 256 * 1024 * 1024, // 256 MiB
+        SizeLimit: 256 * 1024 * 1024, // 256MiB
         Storage:   records.NewStorage(),
     },
 }
@@ -77,5 +77,5 @@ Kafka's end-to-end compression capabilities), it also helps with planning for
 storage capacity of the caching layer since the size on disk is directly derived
 from the size of the Kafka partitions being cached.
 
-For a partition of size P with a replication factor R, the size C of a cache
-that would hold the entire partition is _C = P / R_.
+For a partition of size _P_ with a replication factor _R_, the size _C_ of a
+cache that would hold the entire partition is _C = P / R_.
