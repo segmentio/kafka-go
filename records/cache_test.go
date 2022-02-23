@@ -6,7 +6,6 @@ import (
 	"io"
 	"math/rand"
 	"net"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -384,12 +383,13 @@ func BenchmarkRecordsRandomAccess(b *testing.B) {
 		},
 	}
 
-	tmp, err := os.MkdirTemp("", "kafka-go.records.*")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer os.RemoveAll(tmp)
-	storage := records.MountPoint(tmp)
+	// tmp, err := os.MkdirTemp("", "kafka-go.records.*")
+	// if err != nil {
+	// 	b.Fatal(err)
+	// }
+	// defer os.RemoveAll(tmp)
+	// storage := records.MountPoint(tmp)
+	storage := records.NewStorage()
 
 	server := generator.Generate(rand.New(rand.NewSource(0)))
 	cache := &records.Cache{
@@ -435,7 +435,7 @@ func BenchmarkRecordsRandomAccess(b *testing.B) {
 		partition := topic[partitionID]
 
 		recordBatch := partition[prng.Intn(len(partition))]
-		fetchOffset := recordBatch.BaseOffset() //+ prng.Int63n(int64(len(recordBatch)))
+		fetchOffset := recordBatch.BaseOffset() + prng.Int63n(int64(len(recordBatch)))
 
 		req.Topic = topicName
 		req.Partition = partitionID
@@ -448,7 +448,12 @@ func BenchmarkRecordsRandomAccess(b *testing.B) {
 		r.Records.Close()
 	}
 
-	logCacheStats(b, cache.Stats())
+	stats := cache.Stats()
+	logCacheStats(b, stats)
+
+	if stats.Inserts > int64(numRecordBatches) {
+		b.Fatalf("too many entries were inserted in the cache: %d > %d", stats.Inserts, numRecordBatches)
+	}
 }
 
 func logCacheStats(t testing.TB, stats records.CacheStats) {

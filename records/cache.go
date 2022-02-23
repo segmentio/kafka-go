@@ -1,15 +1,65 @@
 package records
 
 import (
+	"container/list"
 	"context"
+	"fmt"
 	"net"
+	"strings"
 	"sync"
 
+	"github.com/emirpasic/gods/trees/redblacktree"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/fetch"
-	"github.com/segmentio/kafka-go/records/cache"
 )
+
+// Key is a comparable type representing the identifiers that record batches
+// can be indexed by in a storage instance.
+type Key struct {
+	Addr            string
+	Topic           string
+	Partition       int32
+	LastOffsetDelta int32
+	BaseOffset      int64
+}
+
+// String returns a human-readable representation of k.
+func (k Key) String() string {
+	if k == (Key{}) {
+		return "(no key)"
+	}
+	return fmt.Sprintf("%s/%s.%d[%d:%d]", k.Addr, k.Topic, k.Partition, k.BaseOffset, k.endOffset())
+}
+
+func (k1 *Key) compare(k2 *Key) int {
+	if cmp := strings.Compare(k1.Addr, k2.Addr); cmp != 0 {
+		return cmp
+	}
+	if cmp := strings.Compare(k1.Topic, k2.Topic); cmp != 0 {
+		return cmp
+	}
+	if cmp := k1.Partition - k2.Partition; cmp != 0 {
+		return int(cmp)
+	}
+	return int(k1.BaseOffset - k2.BaseOffset)
+}
+
+func (k1 *Key) match(k2 *Key) bool {
+	return k1.Addr == k2.Addr && k1.Topic == k2.Topic && k1.Partition == k2.Partition
+}
+
+func (k1 *Key) contains(k2 *Key) bool {
+	return k1.match(k2) && k1.containsOffset(k2.BaseOffset)
+}
+
+func (k *Key) containsOffset(offset int64) bool {
+	return (k.BaseOffset == offset || (k.BaseOffset < offset && offset < k.endOffset()))
+}
+
+func (k *Key) endOffset() int64 {
+	return k.BaseOffset + int64(k.LastOffsetDelta)
+}
 
 // Cache is an implementation of the kafka.RoundTripper interface which applies
 // a caching layer to fetch requests in order to optimize random access to kafka
@@ -51,7 +101,9 @@ type Cache struct {
 
 	once  once
 	mutex sync.Mutex
-	lru   cache.LRU
+	index *redblacktree.Tree
+	queue list.List
+	bytes int64
 
 	stats     sync.Mutex
 	size      int64
@@ -62,6 +114,12 @@ type Cache struct {
 	hits      int64
 	evictions int64
 	errors    int64
+}
+
+type cacheEntry struct {
+	key  Key
+	size int64
+	elem *list.Element
 }
 
 // CacheStats contains statistics about cache utilization.
@@ -163,7 +221,7 @@ func (c *Cache) init(ctx context.Context) error {
 	defer it.Close()
 
 	for it.Next() {
-		evictCount, sizeDelta, err := c.add(ctx, it.Key(), it.Size())
+		_, evictCount, sizeDelta, err := c.add(ctx, it.Key(), it.Size())
 		evictions += evictCount
 		size += sizeDelta
 		if err != nil {
@@ -179,12 +237,16 @@ func (c *Cache) init(ctx context.Context) error {
 
 func (c *Cache) reset() {
 	c.mutex.Lock()
-	c.lru.Reset()
+	if c.index != nil {
+		c.index.Clear()
+	}
+	c.queue = list.List{}
+	c.bytes = 0
 	c.mutex.Unlock()
 }
 
 func (c *Cache) load(ctx context.Context, addr string, req *fetch.Request) (*fetch.Response, int, error) {
-	key := Key{Addr: addr}
+	key := &Key{Addr: addr}
 	res := &fetch.Response{Topics: make([]fetch.ResponseTopic, len(req.Topics))}
 	missing := 0
 	lookups := 0
@@ -287,18 +349,23 @@ func (c *Cache) store(ctx context.Context, addr string, res *fetch.Response) err
 }
 
 func (c *Cache) storeTopicPartitionRecords(ctx context.Context, addr, topic string, partition *fetch.ResponsePartition) (inserts, evictions int, sizeDelta int64, err error) {
+	var inserted bool
 	// TODO: should we cache control batches?
 	switch r := partition.RecordSet.Records.(type) {
 	case *protocol.RecordBatch:
-		inserts = 1
-		evictions, sizeDelta, err = c.storeRecordBatch(ctx, addr, topic, partition, r)
+		inserted, evictions, sizeDelta, err = c.storeRecordBatch(ctx, addr, topic, partition, r)
+		if inserted {
+			inserts = 1
+		}
 	case *protocol.RecordStream:
 		for _, records := range r.Records {
 			if recordBatch, _ := records.(*protocol.RecordBatch); recordBatch != nil {
-				inserts++
-				evictCount, sizeDiff, err := c.storeRecordBatch(ctx, addr, topic, partition, recordBatch)
+				inserted, evictCount, sizeDiff, err := c.storeRecordBatch(ctx, addr, topic, partition, recordBatch)
 				evictions += evictCount
 				sizeDelta += sizeDiff
+				if inserted {
+					inserts++
+				}
 				if err != nil {
 					return inserts, evictions, sizeDelta, err
 				}
@@ -308,7 +375,7 @@ func (c *Cache) storeTopicPartitionRecords(ctx context.Context, addr, topic stri
 	return inserts, evictions, sizeDelta, nil
 }
 
-func (c *Cache) storeRecordBatch(ctx context.Context, addr, topic string, partition *fetch.ResponsePartition, batch *protocol.RecordBatch) (evictions int, sizeDelta int64, err error) {
+func (c *Cache) storeRecordBatch(ctx context.Context, addr, topic string, partition *fetch.ResponsePartition, batch *protocol.RecordBatch) (inserted bool, evictions int, sizeDelta int64, err error) {
 	defer batch.Records.Close()
 
 	key := Key{
@@ -321,14 +388,14 @@ func (c *Cache) storeRecordBatch(ctx context.Context, addr, topic string, partit
 
 	n, err := c.Storage.Store(ctx, key, batch)
 	if err != nil {
-		return evictions, sizeDelta, err
+		return false, evictions, sizeDelta, err
 	}
 
-	evictCount, sizeDiff, err := c.add(ctx, key, n)
+	inserted, evictCount, sizeDiff, err := c.add(ctx, key, n)
 	evictions += evictCount
 	sizeDelta += sizeDiff
 	if err != nil {
-		return evictions, sizeDelta, err
+		return inserted, evictions, sizeDelta, err
 	}
 
 	// TODO: we should improve the cache synchronization strategy here to handle
@@ -336,47 +403,75 @@ func (c *Cache) storeRecordBatch(ctx context.Context, addr, topic string, partit
 	// would fail due to concurrent evictions.
 	r, err := c.Storage.Load(ctx, key)
 	if err != nil {
-		return evictions, sizeDelta, err
+		return inserted, evictions, sizeDelta, err
 	}
 	defer r.Close()
 	_, err = batch.ReadFrom(r)
-	return evictions, sizeDelta, err
+	return inserted, evictions, sizeDelta, err
 }
 
-func (c *Cache) lookup(key Key) (Key, bool) {
+func (c *Cache) lookup(key *Key) (Key, bool) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	return c.lru.Lookup(key)
+
+	if c.index != nil {
+		if n, _ := c.index.Floor(key); n != nil {
+			if k := n.Key.(*Key); k.contains(key) {
+				v := n.Value.(*cacheEntry)
+				c.queue.MoveToFront(v.elem)
+				return *k, true
+			}
+		}
+	}
+
+	return Key{}, false
 }
 
-func (c *Cache) add(ctx context.Context, key Key, size int64) (evictions int, sizeDelta int64, err error) {
+func (c *Cache) add(ctx context.Context, key Key, size int64) (inserted bool, evictions int, sizeDelta int64, err error) {
 	sizeDelta += size
 
-	if evicted, sizeDrop := c.insert(key, size); len(evicted) != 0 {
+	inserted, evicted, sizeDrop := c.insert(key, size)
+	if len(evicted) != 0 {
 		evictions += len(evicted)
 		sizeDelta -= sizeDrop
 
 		if err := c.Storage.Delete(ctx, evicted); err != nil {
-			return evictions, sizeDelta, err
+			return inserted, evictions, sizeDelta, err
 		}
 	}
 
-	return evictions, sizeDelta, nil
+	return inserted, evictions, sizeDelta, nil
 }
 
-func (c *Cache) insert(key Key, size int64) (evicted []Key, sizeDrop int64) {
+func (c *Cache) insert(key Key, size int64) (inserted bool, evicted []Key, sizeDrop int64) {
+	entry := &cacheEntry{key: key, size: size}
+
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	c.lru.Insert(key, size)
-
-	for c.lru.Len() > 1 && c.lru.Size() > c.SizeLimit {
-		key, size, _ := c.lru.Evict()
-		evicted = append(evicted, key)
-		sizeDrop += size
+	if c.index == nil {
+		c.index = redblacktree.NewWith(func(a, b interface{}) int {
+			k1, k2 := a.(*Key), b.(*Key)
+			return k1.compare(k2)
+		})
 	}
 
-	return evicted, sizeDrop
+	if _, exists := c.index.Get(&entry.key); exists {
+		return false, nil, 0
+	}
+
+	c.index.Put(&entry.key, entry)
+	c.bytes += size
+	entry.elem = c.queue.PushFront(entry)
+
+	for c.queue.Len() > 1 && c.bytes > c.SizeLimit {
+		evict := c.queue.Back().Value.(*cacheEntry)
+		evicted = append(evicted, evict.key)
+		sizeDrop += evict.size
+		c.bytes -= evict.size
+	}
+
+	return true, evicted, sizeDrop
 }
 
 type topicPartitionIndex struct {

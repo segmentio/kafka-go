@@ -13,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/segmentio/kafka-go/records/cache"
 )
 
 var (
@@ -22,10 +20,6 @@ var (
 	// a cache did not find the requested offset.
 	ErrNotFound = errors.New("not found")
 )
-
-// Key is a comparable type representing the identifiers that record batches
-// can be indexed by in a storage instance.
-type Key = cache.Key
 
 // The Iter interface abstracts the underlying implementation of iterators
 // returned by calling List on a storage instance.

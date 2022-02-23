@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/emirpasic/gods v1.12.0
 	github.com/xdg/stringprep v1.0.0 // indirect
 	golang.org/x/crypto v0.0.0-20190506204251-e1dfcc566284 // indirect
 )
