@@ -8,24 +8,44 @@ import (
 )
 
 func (rs *RecordSet) readFromVersion2(d *decoder) (int64, error) {
+	const baseLength = 12
 	baseOffset := d.readInt64()
 	batchLength := d.readInt32()
 
 	if int(batchLength) > d.remain || d.err != nil {
 		n := int64(d.remain)
 		d.discardAll()
-		return n, nil
+		return baseLength + n, nil
+	}
+
+	leftover := d.remain - int(batchLength)
+	buffer := newPageBuffer()
+	defer func() {
+		if buffer != nil {
+			buffer.unref()
+		}
+	}()
+
+	d.remain = int(batchLength)
+	n, err := buffer.ReadFrom(d)
+	d.remain += leftover
+	if err != nil {
+		return baseLength + n, err
 	}
 
 	decoder := &decoder{
-		reader: d,
-		remain: int(batchLength),
+		reader: buffer,
+		remain: int(n),
 	}
 
 	partitionLeaderEpoch := decoder.readInt32()
 	magicByte := decoder.readInt8()
 	crc := decoder.readInt32()
-	decoder.setCRC(crc32.MakeTable(crc32.Castagnoli))
+	checksum := buffer.crc32()
+
+	if checksum != uint32(crc) {
+		return baseLength + n, fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", checksum, uint32(crc))
+	}
 
 	attributes := Attributes(decoder.readInt16())
 	lastOffsetDelta := decoder.readInt32()
@@ -35,21 +55,6 @@ func (rs *RecordSet) readFromVersion2(d *decoder) (int64, error) {
 	producerEpoch := decoder.readInt16()
 	baseSequence := decoder.readInt32()
 	numRecords := decoder.readInt32()
-
-	buffer := newPageBuffer()
-	defer func() {
-		if buffer != nil {
-			buffer.unref()
-		}
-	}()
-
-	n, err := buffer.ReadFrom(decoder)
-	if err != nil {
-		return n, err
-	}
-	if decoder.crc32 != uint32(crc) {
-		return n, fmt.Errorf("crc32 checksum mismatch (computed=%d found=%d)", decoder.crc32, uint32(crc))
-	}
 	decoder.Reset(nil, 0)
 
 	*rs = RecordSet{
@@ -85,10 +90,12 @@ func (rs *RecordSet) readFromVersion2(d *decoder) (int64, error) {
 	}
 
 	buffer = nil
-	return n, nil
+	return baseLength + n, nil
 }
 
 func readRecords(buffer *pageBuffer, decoder *decoder, attributes Attributes, baseOffset, firstTimestamp int64, numRecords int32) (*optimizedRecordReader, error) {
+	bufferOffset := int64(buffer.cursor)
+
 	if compression := attributes.Compression(); compression != 0 {
 		reader := io.Reader(buffer)
 		buffer = newPageBuffer()
@@ -147,13 +154,13 @@ func readRecords(buffer *pageBuffer, decoder *decoder, attributes Attributes, ba
 		r.timestamp = firstTimestamp + timestampDelta
 
 		keyLength := decoder.readVarInt()
-		keyOffset := int64(recordsLength - decoder.remain)
+		keyOffset := bufferOffset + int64(recordsLength-decoder.remain)
 		if keyLength > 0 {
 			decoder.discard(int(keyLength))
 		}
 
 		valueLength := decoder.readVarInt()
-		valueOffset := int64(recordsLength - decoder.remain)
+		valueOffset := bufferOffset + int64(recordsLength-decoder.remain)
 		if valueLength > 0 {
 			decoder.discard(int(valueLength))
 		}

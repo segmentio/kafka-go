@@ -1,7 +1,6 @@
 package records
 
 import (
-	"container/list"
 	"context"
 	"net"
 	"sync"
@@ -55,7 +54,9 @@ type Cache struct {
 	lru   cache.LRU
 
 	stats     sync.Mutex
-	bytes     int64
+	size      int64
+	keys      int64
+	records   int64
 	inserts   int64
 	lookups   int64
 	hits      int64
@@ -63,15 +64,12 @@ type Cache struct {
 	errors    int64
 }
 
-type cacheEntry struct {
-	hook *list.Element
-	size int64
-}
-
 // CacheStats contains statistics about cache utilization.
 type CacheStats struct {
 	SizeLimit int64
 	Size      int64
+	Keys      int64
+	Records   int64
 	Inserts   int64
 	Lookups   int64
 	Hits      int64
@@ -83,7 +81,9 @@ type CacheStats struct {
 func (c *Cache) Stats() (stats CacheStats) {
 	stats.SizeLimit = c.SizeLimit
 	c.stats.Lock()
-	stats.Size = c.bytes
+	stats.Size = c.size
+	stats.Keys = c.keys
+	stats.Records = c.records
 	stats.Inserts = c.inserts
 	stats.Lookups = c.lookups
 	stats.Hits = c.hits
@@ -153,7 +153,7 @@ func (c *Cache) init(ctx context.Context) error {
 	evictions, errors, size := 0, 0, int64(0)
 	defer func() {
 		c.stats.Lock()
-		c.bytes = size
+		c.size = size
 		c.evictions += int64(evictions)
 		c.errors += int64(errors)
 		c.stats.Unlock()
@@ -219,7 +219,7 @@ func (c *Cache) load(ctx context.Context, addr string, req *fetch.Request) (*fet
 		}
 
 		for j, p := range t.Partitions {
-			key.Partition = int(p.Partition)
+			key.Partition = p.Partition
 			key.BaseOffset = p.FetchOffset
 			lookups++
 
@@ -240,13 +240,19 @@ func (c *Cache) load(ctx context.Context, addr string, req *fetch.Request) (*fet
 				return nil, 0, err
 			}
 
-			_, err = resTopic.Partitions[j].RecordSet.ReadFrom(v)
+			recordBatch := new(protocol.RecordBatch)
+			_, err = recordBatch.ReadFrom(v)
 			v.Close()
 			if err != nil {
 				errors++
 				closeRecords(res)
 				return nil, 0, err
 			}
+
+			recordSet := &resTopic.Partitions[j].RecordSet
+			recordSet.Version = 2
+			recordSet.Attributes = recordBatch.Attributes
+			recordSet.Records = recordBatch
 		}
 	}
 
@@ -257,7 +263,7 @@ func (c *Cache) store(ctx context.Context, addr string, res *fetch.Response) err
 	inserts, evictions, errors, sizeDelta := 0, 0, 0, int64(0)
 	defer func() {
 		c.stats.Lock()
-		c.bytes += sizeDelta
+		c.size += sizeDelta
 		c.inserts += int64(inserts)
 		c.evictions += int64(evictions)
 		c.errors += int64(errors)
@@ -304,11 +310,13 @@ func (c *Cache) storeTopicPartitionRecords(ctx context.Context, addr, topic stri
 
 func (c *Cache) storeRecordBatch(ctx context.Context, addr, topic string, partition *fetch.ResponsePartition, batch *protocol.RecordBatch) (evictions int, sizeDelta int64, err error) {
 	defer batch.Records.Close()
+
 	key := Key{
-		Addr:       addr,
-		Topic:      topic,
-		Partition:  int(partition.Partition),
-		BaseOffset: batch.BaseOffset,
+		Addr:            addr,
+		Topic:           topic,
+		Partition:       partition.Partition,
+		LastOffsetDelta: batch.LastOffsetDelta,
+		BaseOffset:      batch.BaseOffset,
 	}
 
 	n, err := c.Storage.Store(ctx, key, batch)
@@ -353,7 +361,7 @@ func (c *Cache) add(ctx context.Context, key Key, size int64) (evictions int, si
 		}
 	}
 
-	return 0, 0, nil
+	return 0, sizeDelta, nil
 }
 
 func (c *Cache) insert(key Key, size int64) (evicted []Key, sizeDrop int64) {

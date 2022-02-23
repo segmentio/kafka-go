@@ -4,18 +4,29 @@
 // records cache.
 package cache
 
-import "container/list"
+import (
+	"container/list"
+	"fmt"
+)
 
 // Key represents the keys by which records are indexed in the cache.
 type Key struct {
-	Addr       string
-	Topic      string
-	Partition  int
-	BaseOffset int64
+	Addr            string
+	Topic           string
+	Partition       int32
+	LastOffsetDelta int32
+	BaseOffset      int64
+}
+
+func (k Key) String() string {
+	if k == (Key{}) {
+		return "(none)"
+	}
+	return fmt.Sprintf("%s/%s:%d:%d@%d", k.Addr, k.Topic, k.Partition, k.LastOffsetDelta, k.BaseOffset)
 }
 
 // Less compares two keys and returns true if k1 < k2.
-func (k1 *Key) Less(k2 *Key) bool {
+func (k1 Key) Less(k2 Key) bool {
 	if k1.Addr != k2.Addr {
 		return k1.Addr < k2.Addr
 	}
@@ -28,8 +39,28 @@ func (k1 *Key) Less(k2 *Key) bool {
 	return k1.BaseOffset < k2.BaseOffset
 }
 
+func (k1 Key) match(k2 Key) bool {
+	return k1.Addr == k2.Addr && k1.Topic == k2.Topic && k1.Partition == k2.Partition
+}
+
+func (k1 Key) contains(k2 Key) bool {
+	return k1.match(k2) && k1.containsOffset(k2.BaseOffset)
+}
+
+func (k Key) containsOffset(offset int64) bool {
+	return (k.BaseOffset == offset || (k.BaseOffset < offset && offset < k.endOffset()))
+}
+
+func (k Key) endOffset() int64 {
+	return k.BaseOffset + int64(k.LastOffsetDelta)
+}
+
 // LRU is the implementation of an index associating keys to the size of their
 // value, and allowing eviction of least recently used keys.
+//
+// The purpose of this data structure is not to be a general purpose LRU cache,
+// the implementation makes assumptions about the use case of indexing batches
+// of kafka records.
 type LRU struct {
 	index *index
 	queue list.List
@@ -55,7 +86,7 @@ func (lru *LRU) Reset() {
 func (lru *LRU) Insert(key Key, size int64) {
 	if lru.index == nil {
 		lru.index = newIndex(func(e1, e2 *entry) bool {
-			return e1.key.Less(&e2.key)
+			return e1.key.Less(e2.key)
 		})
 	}
 	e := &entry{key: key, size: size}
@@ -64,16 +95,30 @@ func (lru *LRU) Insert(key Key, size int64) {
 	e.elem = lru.queue.PushFront(e)
 }
 
-// Lookup looks for the given key in the index, returning the first key that was
-// greater or equal.
+// Lookup looks for the given key in the index, returning the first key with
+// offset key
 func (lru *LRU) Lookup(key Key) (Key, bool) {
 	if lru.index != nil {
 		// TODO: can we prevent the entry value from escaping?
 		it := lru.index.LowerBound(&entry{key: key})
 		if it.Valid() {
 			e := it.Key()
-			lru.queue.MoveToFront(e.elem)
-			return e.key, true
+			if !e.key.contains(key) {
+				e = nil
+				// Note: tkae some flexibility with abstraction boundaries her
+				// because calling Prev on the first node panics, we have no
+				// other way to determine whether it is safe to move backward.
+				if prev := predecessorIndex(it.node); prev != nil {
+					it.node = prev
+					if e = it.Key(); !e.key.contains(key) {
+						e = nil
+					}
+				}
+			}
+			if e != nil {
+				lru.queue.MoveToFront(e.elem)
+				return e.key, true
+			}
 		}
 	}
 	return Key{}, false

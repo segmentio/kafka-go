@@ -186,22 +186,32 @@ func TestRecordBatchWriteToReadFrom(t *testing.T) {
 	}
 
 	buffer := new(bytes.Buffer)
-	if _, err := original.WriteTo(buffer); err != nil {
+	wn, err := original.WriteTo(buffer)
+	if err != nil {
 		t.Fatal("writing record batch:", err)
 	}
 
 	reloaded := new(protocol.RecordBatch)
-	if _, err := reloaded.ReadFrom(buffer); err != nil {
+	rn, err := reloaded.ReadFrom(buffer)
+	if err != nil {
 		t.Fatal("reading record batch:", err)
 	}
 
 	prototest.AssertRecords(t, reloaded,
 		protocol.NewRecordReader(makeRecords(records)...),
 	)
+
+	if err := reloaded.Close(); err != nil {
+		t.Error("closing record batch:", err)
+	}
+
 	original.Records = nil
 	reloaded.Records = nil
 
 	if !reflect.DeepEqual(reloaded, original) {
 		t.Errorf("record batches mismatch:\nwant = %+v\ngot  = %+v", original, reloaded)
+	}
+	if rn != wn {
+		t.Errorf("bytes read and written mismatch: read=%d written=%d", rn, wn)
 	}
 }

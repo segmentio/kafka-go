@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"math"
 	"sync"
@@ -375,7 +376,7 @@ func (pb *pageBuffer) WriteAt(b []byte, off int64) (int, error) {
 func (pb *pageBuffer) WriteTo(w io.Writer) (int64, error) {
 	var wn int
 	var err error
-	pb.pages.scan(int64(pb.cursor), int64(pb.length), func(b []byte) bool {
+	pb.scan(func(b []byte) bool {
 		var n int
 		n, err = w.Write(b)
 		wn += n
@@ -383,6 +384,26 @@ func (pb *pageBuffer) WriteTo(w io.Writer) (int64, error) {
 	})
 	pb.cursor += wn
 	return int64(wn), err
+}
+
+func (pb *pageBuffer) Bytes() []byte {
+	buf := bytes.Buffer{}
+	buf.Grow(pb.Len())
+	pb.scan(func(b []byte) bool { buf.Write(b); return true })
+	return buf.Bytes()
+}
+
+func (pb *pageBuffer) crc32() (checksum uint32) {
+	table := crc32.MakeTable(crc32.Castagnoli)
+	pb.scan(func(b []byte) bool {
+		checksum = crc32.Update(checksum, table, b)
+		return true
+	})
+	return checksum
+}
+
+func (pb *pageBuffer) scan(f func([]byte) bool) {
+	pb.pages.scan(int64(pb.cursor), int64(pb.length), f)
 }
 
 var (
@@ -498,6 +519,16 @@ func (ref *pageRef) Size() int64 { return int64(ref.length) }
 
 func (ref *pageRef) String() string {
 	return fmt.Sprintf("[offset=%d cursor=%d length=%d]", ref.offset, ref.cursor, ref.length)
+}
+
+func (ref *pageRef) Bytes() []byte {
+	if ref == nil {
+		return nil
+	}
+	buf := bytes.Buffer{}
+	buf.Grow(ref.Len())
+	ref.scan(ref.cursor, func(b []byte) bool { buf.Write(b); return true })
+	return buf.Bytes()
 }
 
 func (ref *pageRef) Seek(offset int64, whence int) (int64, error) {

@@ -70,12 +70,13 @@ func TestRecordsStorage(t *testing.T) {
 }
 
 func testRecordStorage(t *testing.T, makeStorage func() (records.Storage, func(), error)) {
-	makeKey := func(addr, topic string, partition int, baseOffset int64) records.Key {
+	makeKey := func(addr, topic string, partition, lastOffsetDelta int32, baseOffset int64) records.Key {
 		return records.Key{
-			Addr:       addr,
-			Topic:      topic,
-			Partition:  partition,
-			BaseOffset: baseOffset,
+			Addr:            addr,
+			Topic:           topic,
+			Partition:       partition,
+			LastOffsetDelta: lastOffsetDelta,
+			BaseOffset:      baseOffset,
 		}
 	}
 
@@ -92,22 +93,22 @@ func testRecordStorage(t *testing.T, makeStorage func() (records.Storage, func()
 			scenario: "values inserted in a store are found when loading the associated keys",
 			operations: []storageOperation{
 				insertOperation{
-					key:   makeKey("localhost:9092", "topic-0", 0, 0),
+					key:   makeKey("localhost:9092", "topic-0", 0, 10, 0),
 					value: []byte("hello"),
 				},
 				insertOperation{
-					key:   makeKey("localhost:9092", "topic-0", 0, 1),
+					key:   makeKey("localhost:9092", "topic-0", 0, 11, 1),
 					value: []byte("world"),
 				},
 				insertOperation{
-					key:   makeKey("localhost:9092", "topic-1", 1, 42),
+					key:   makeKey("localhost:9092", "topic-1", 1, 12, 42),
 					value: []byte("answer"),
 				},
 			},
 			expected: map[records.Key][]byte{
-				makeKey("localhost:9092", "topic-0", 0, 0):  []byte("hello"),
-				makeKey("localhost:9092", "topic-0", 0, 1):  []byte("world"),
-				makeKey("localhost:9092", "topic-1", 1, 42): []byte("answer"),
+				makeKey("localhost:9092", "topic-0", 0, 10, 0):  []byte("hello"),
+				makeKey("localhost:9092", "topic-0", 0, 11, 1):  []byte("world"),
+				makeKey("localhost:9092", "topic-1", 1, 12, 42): []byte("answer"),
 			},
 		},
 
@@ -115,26 +116,26 @@ func testRecordStorage(t *testing.T, makeStorage func() (records.Storage, func()
 			scenario: "keys deleted from the store are not visible anymore when loaded",
 			operations: []storageOperation{
 				insertOperation{
-					key:   makeKey("localhost:9092", "topic-0", 0, 0),
+					key:   makeKey("localhost:9092", "topic-0", 0, 10, 0),
 					value: []byte("hello"),
 				},
 				insertOperation{
-					key:   makeKey("localhost:9092", "topic-0", 0, 1),
+					key:   makeKey("localhost:9092", "topic-0", 0, 11, 1),
 					value: []byte("world"),
 				},
 				insertOperation{
-					key:   makeKey("localhost:9092", "topic-1", 1, 42),
+					key:   makeKey("localhost:9092", "topic-1", 1, 12, 42),
 					value: []byte("answer"),
 				},
 				deleteOperation{
 					keys: []records.Key{
-						makeKey("localhost:9092", "topic-0", 0, 0),
-						makeKey("localhost:9092", "topic-0", 0, 1),
+						makeKey("localhost:9092", "topic-0", 0, 10, 0),
+						makeKey("localhost:9092", "topic-0", 0, 11, 1),
 					},
 				},
 			},
 			expected: map[records.Key][]byte{
-				makeKey("localhost:9092", "topic-1", 1, 42): []byte("answer"),
+				makeKey("localhost:9092", "topic-1", 1, 12, 42): []byte("answer"),
 			},
 		},
 
@@ -142,16 +143,16 @@ func testRecordStorage(t *testing.T, makeStorage func() (records.Storage, func()
 			scenario: "keys inserted multiple times are deduplicated an the last value is retained",
 			operations: []storageOperation{
 				insertOperation{
-					key:   makeKey("localhost:9092", "topic-0", 0, 1),
+					key:   makeKey("localhost:9092", "topic-0", 0, 1, 1),
 					value: []byte("hello"),
 				},
 				insertOperation{
-					key:   makeKey("localhost:9092", "topic-0", 0, 1),
+					key:   makeKey("localhost:9092", "topic-0", 0, 1, 1),
 					value: []byte("world"),
 				},
 			},
 			expected: map[records.Key][]byte{
-				makeKey("localhost:9092", "topic-0", 0, 1): []byte("world"),
+				makeKey("localhost:9092", "topic-0", 0, 1, 1): []byte("world"),
 			},
 		},
 	}
@@ -173,7 +174,7 @@ func testRecordStorage(t *testing.T, makeStorage func() (records.Storage, func()
 				}
 			}
 
-			if _, err := storage.Load(ctx, makeKey("whatever", "any", 0, 0)); !errors.Is(err, records.ErrNotFound) {
+			if _, err := storage.Load(ctx, makeKey("whatever", "any", 0, 0, 0)); !errors.Is(err, records.ErrNotFound) {
 				t.Errorf("looking up a key which does not exist in the store did not return records.ErrNotFound: %v", err)
 			}
 

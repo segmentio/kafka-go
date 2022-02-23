@@ -200,7 +200,7 @@ func (it *storageIter) Size() int64 {
 //	└── topic
 //	    └── partition
 //	        └── bucket
-//	            └── offset
+//	            └── records
 //
 // Directories at the partition level are named after the partition number that
 // they are storing records for (e.g. 0, 1, 2, etc...).
@@ -216,7 +216,7 @@ func (it *storageIter) Size() int64 {
 // New entries are recorded in temporary files using the following naming
 // scheme:
 //
-//		{baseOffset}.{uid}~
+//		{baseOffset}.{numRecords}.{uid}~
 //
 // The use of the "~" suffix allows the MountPoint implementation to detect and
 // skip temporary files when scanning the directory contents. The use of unique
@@ -333,12 +333,16 @@ func (path MountPoint) makePath(subpath string) error {
 func (path MountPoint) parseKey(s string) (key Key, err error) {
 	basePath := s
 
-	if !strings.HasPrefix(basePath, string(path)) {
-		return Key{}, &os.PathError{
+	errorf := func(msg string, args ...interface{}) error {
+		return &os.PathError{
 			Op:   "open",
 			Path: basePath,
-			Err:  fmt.Errorf("not in path: %s", path),
+			Err:  fmt.Errorf(msg, args...),
 		}
+	}
+
+	if !strings.HasPrefix(basePath, string(path)) {
+		return Key{}, errorf("not in path: %s", path)
 	}
 
 	sep := string([]byte{os.PathSeparator})
@@ -349,29 +353,36 @@ func (path MountPoint) parseKey(s string) (key Key, err error) {
 	key.Topic, s = splitNextPathPart(s)
 	partition, s := splitNextPathPart(s)
 	_, s = splitNextPathPart(s) // bucket
-	baseOffset, _ := splitNextPathPart(s)
+	fileName, _ := splitNextPathPart(s)
 
-	if key.Partition, err = strconv.Atoi(partition); err != nil {
-		return key, &os.PathError{
-			Op:   "open",
-			Path: basePath,
-			Err:  fmt.Errorf("malformed partition number: %w", err),
-		}
+	partitionID, err := strconv.ParseInt(partition, 10, 32)
+	if err != nil {
+		return key, errorf("malformed partition number: %w", err)
 	}
 
-	if key.BaseOffset, err = strconv.ParseInt(baseOffset, 10, 64); err != nil {
-		return key, &os.PathError{
-			Op:   "open",
-			Path: basePath,
-			Err:  fmt.Errorf("malformed base offset: %w", err),
-		}
+	fileNameBaseOffset, fileNameLastOffsetDelta := split(fileName, '.')
+	lastOffsetDelta, err := strconv.ParseInt(fileNameLastOffsetDelta, 10, 32)
+	if err != nil {
+		return key, errorf("malformed number of records: %w", err)
 	}
 
+	baseOffset, err := strconv.ParseInt(fileNameBaseOffset, 10, 64)
+	if err != nil {
+		return key, errorf("malformed base offset: %w", err)
+	}
+
+	key.Partition = int32(partitionID)
+	key.LastOffsetDelta = int32(lastOffsetDelta)
+	key.BaseOffset = baseOffset
 	return key, nil
 }
 
 func splitNextPathPart(s string) (part, next string) {
-	if i := strings.IndexByte(s, os.PathSeparator); i < 0 {
+	return split(s, os.PathSeparator)
+}
+
+func split(s string, c byte) (prefix, suffix string) {
+	if i := strings.IndexByte(s, c); i < 0 {
 		return s, ""
 	} else {
 		return s[:i], s[i+1:]
@@ -423,6 +434,8 @@ func writeStorageKey(s *strings.Builder, k Key) {
 	}
 
 	s.Write(b)
+	s.WriteByte('.')
+	s.Write(strconv.AppendUint(b[:0], uint64(k.LastOffsetDelta), 10))
 }
 
 func appendUint64(b []byte, u uint64) []byte {

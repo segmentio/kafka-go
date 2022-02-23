@@ -169,9 +169,17 @@ func (p Partition) Lookup(offset int64) *protocol.RecordBatch {
 	for _, records := range p {
 		if (baseOffset + int64(len(records))) > offset {
 			return &protocol.RecordBatch{
-				BaseOffset: baseOffset,
-				NumRecords: int32(len(records)),
-				Records:    newRecordReader(baseOffset, records),
+				Attributes:           0,
+				PartitionLeaderEpoch: -1,
+				BaseOffset:           baseOffset,
+				LastOffsetDelta:      int32(len(records)),
+				FirstTimestamp:       time.Time{},
+				MaxTimestamp:         time.Time{},
+				ProducerID:           -1,
+				ProducerEpoch:        -1,
+				BaseSequence:         -1,
+				NumRecords:           int32(len(records)),
+				Records:              newRecordReader(baseOffset, records),
 			}
 		}
 		baseOffset += int64(len(records))
@@ -209,28 +217,28 @@ func TestRecordsRandomAccess(t *testing.T) {
 	generator := ServerGenerator{
 		NumTopics: 10,
 		TopicNameSize: Range{
-			Min: 1,
-			Max: 1,
+			Min: 4,
+			Max: 4,
 		},
 		PartitionsPerTopic: Range{
 			Min: 1,
 			Max: 3,
 		},
 		RecordBatchesPerPartition: Range{
-			Min: 1,
+			Min: 0,
 			Max: 3,
 		},
 		RecordsPerRecordBatch: Range{
-			Min: 1,
+			Min: 0,
 			Max: 4,
 		},
 		RecordKeySize: Range{
-			Min: 1,
-			Max: 10,
+			Min: 0,
+			Max: 2,
 		},
 		RecordValueSize: Range{
-			Min: 1,
-			Max: 10,
+			Min: 0,
+			Max: 2,
 		},
 	}
 
@@ -245,14 +253,20 @@ func TestRecordsRandomAccess(t *testing.T) {
 	})
 
 	t.Run("cache", func(t *testing.T) {
+		cache := &records.Cache{
+			SizeLimit: 1024 * 1024,
+			Storage:   records.NewStorage(),
+			Transport: server,
+		}
+
 		testRecordsRandomAccess(t, server, &kafka.Client{
-			Addr: kafka.TCP("whatever"),
-			Transport: &records.Cache{
-				SizeLimit: 4096,
-				Storage:   records.NewStorage(),
-				Transport: server,
-			},
+			Addr:      kafka.TCP("whatever"),
+			Transport: cache,
 		})
+
+		if stats := cache.Stats(); stats.Hits == 0 {
+			t.Errorf("no cache hits: %+v\n", stats)
+		}
 	})
 }
 
@@ -261,9 +275,7 @@ func testRecordsRandomAccess(t *testing.T, server Server, client *kafka.Client) 
 
 	for topic, partitions := range server {
 		for partition, recordBatches := range partitions {
-			baseOffset := int64(0)
-			offset := int64(0)
-
+			baseOffset, offset := int64(0), int64(0)
 			for _, recordBatch := range recordBatches {
 				for range recordBatch {
 					r, err := client.Fetch(ctx, &kafka.FetchRequest{
@@ -288,10 +300,6 @@ func testRecordsRandomAccess(t *testing.T, server Server, client *kafka.Client) 
 					if r.Error != nil {
 						t.Fatalf("unexpected error in fetch response: %v", r.Error)
 					}
-
-					fmt.Println("===")
-					fmt.Printf("%#v\n", r.Records)
-					fmt.Printf("%#v\n", recordBatch)
 
 					ok := prototest.AssertRecords(t,
 						r.Records,

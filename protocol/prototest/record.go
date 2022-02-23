@@ -38,8 +38,8 @@ func AssertRecords(t *testing.T, r1, r2 protocol.RecordReader) (ok bool) {
 			return ok
 		}
 
-		if !EqualRecords(rec1, rec2) {
-			t.Error("records mismatch at indedx %d:", i)
+		if eq := EqualRecords(rec1, rec2); eq != EqualRecordsOK {
+			t.Errorf("records mismatch at index %d: %s", i, eq)
 			t.Logf("expected: %+v", rec2)
 			t.Logf("found:    %+v", rec1)
 			ok = false
@@ -59,30 +59,62 @@ func AssertRecords(t *testing.T, r1, r2 protocol.RecordReader) (ok bool) {
 	return ok
 }
 
-func EqualRecords(r1, r2 *protocol.Record) bool {
+type EqualRecordsResult int
+
+const (
+	EqualRecordsOK EqualRecordsResult = iota
+	EqualRecordsMismatchOffset
+	EqualRecordsMismatchTime
+	EqualRecordsMismatchKey
+	EqualRecordsMismatchValue
+	EqualRecordsMismatchHeaders
+)
+
+func (eq EqualRecordsResult) String() string {
+	switch eq {
+	case EqualRecordsMismatchOffset:
+		return "offset mismatch"
+	case EqualRecordsMismatchTime:
+		return "time mismatch"
+	case EqualRecordsMismatchKey:
+		return "key mismatch"
+	case EqualRecordsMismatchValue:
+		return "value mismatch"
+	case EqualRecordsMismatchHeaders:
+		return "headers mismatch"
+	default:
+		return "OK"
+	}
+}
+
+func EqualRecords(r1, r2 *protocol.Record) EqualRecordsResult {
 	if r1.Offset != r2.Offset {
-		return false
+		return EqualRecordsMismatchOffset
 	}
 
 	if !r1.Time.Equal(r2.Time) {
-		return false
+		return EqualRecordsMismatchTime
 	}
 
 	k1 := ReadAll(r1.Key)
 	k2 := ReadAll(r2.Key)
 
 	if !reflect.DeepEqual(k1, k2) {
-		return false
+		return EqualRecordsMismatchKey
 	}
 
 	v1 := ReadAll(r1.Value)
 	v2 := ReadAll(r2.Value)
 
 	if !reflect.DeepEqual(v1, v2) {
-		return false
+		return EqualRecordsMismatchValue
 	}
 
-	return reflect.DeepEqual(r1.Headers, r2.Headers)
+	if !reflect.DeepEqual(r1.Headers, r2.Headers) {
+		return EqualRecordsMismatchHeaders
+	}
+
+	return EqualRecordsOK
 }
 
 func ReadAll(bytes protocol.Bytes) []byte {
