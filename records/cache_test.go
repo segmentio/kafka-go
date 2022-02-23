@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"os"
 	"sort"
 	"testing"
 	"time"
@@ -383,20 +384,7 @@ func BenchmarkRecordsRandomAccess(b *testing.B) {
 		},
 	}
 
-	// tmp, err := os.MkdirTemp("", "kafka-go.records.*")
-	// if err != nil {
-	// 	b.Fatal(err)
-	// }
-	// defer os.RemoveAll(tmp)
-	// storage := records.MountPoint(tmp)
-	storage := records.NewStorage()
-
 	server := generator.Generate(rand.New(rand.NewSource(0)))
-	cache := &records.Cache{
-		SizeLimit: 8 * 1024 * 1024,
-		Storage:   storage,
-		Transport: server,
-	}
 
 	topics := server.Topics()
 	numPartitions := 0
@@ -410,6 +398,23 @@ func BenchmarkRecordsRandomAccess(b *testing.B) {
 				numRecords += len(recordBatch)
 			}
 		}
+	}
+
+	tmp, err := os.MkdirTemp("", "kafka-go.records.*")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer os.RemoveAll(tmp)
+	storage, err := records.Mount(tmp, records.FileCacheSize(numRecordBatches))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer storage.Close()
+
+	cache := &records.Cache{
+		SizeLimit: 8 * 1024 * 1024,
+		Storage:   storage,
+		Transport: server,
 	}
 
 	prng := rand.New(rand.NewSource(time.Now().UnixNano()))

@@ -2,6 +2,7 @@ package records
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -13,9 +14,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 var (
+	// ErrClosed is returned when using a storage instance that has already
+	// been closed.
+	ErrClosed = errors.New("closed")
 	// ErrNotFound is returned when an attempt to load a record batch from
 	// a cache did not find the requested offset.
 	ErrNotFound = errors.New("not found")
@@ -81,8 +86,8 @@ func NewStorage() Storage { return new(storage) }
 
 type storage struct {
 	mutex sync.RWMutex
-	state map[Key]*bytes.Buffer
 	pool  sync.Pool
+	state map[Key]*bytes.Buffer
 }
 
 func (s *storage) List(ctx context.Context) Iter {
@@ -230,41 +235,124 @@ func (it *storageIter) Size() int64 {
 // applications would be encouraged to avoid using this implementation and
 // instead invest in providing a custom implementation of the Storage interface
 // which better fits their needs.
-type MountPoint string
-
-func Mount(path string) (MountPoint, error) {
-	root, err := filepath.Abs(path)
-	return MountPoint(root), err
+type MountPoint struct {
+	// mutable mount point state, synchronized on mutex
+	mutex  sync.RWMutex
+	closed bool
+	files  fileCache
+	// immutable mount point configuration
+	path          string
+	fileCacheSize int
 }
 
-func (path MountPoint) List(ctx context.Context) Iter {
-	return &mountPointIter{
-		mountPoint: path,
-		addrs:      readdir(string(path)),
-	}
+// MountOption is an interface used to apply configuration options when creating
+// a mount point.
+type MountOption interface {
+	ConfigureMountPoint(*MountPoint)
 }
 
-func (path MountPoint) Load(ctx context.Context, key Key) (io.ReadCloser, error) {
-	f, err := os.Open(path.pathTo(key))
+type mountOption func(*MountPoint)
+
+func (opt mountOption) ConfigureMountPoint(mp *MountPoint) { opt(mp) }
+
+// FileCacheSize is a mount point configuration option setting the limit of
+// cached open files.
+//
+// Defaults to zeor, which means no caching is applied.
+func FileCacheSize(numFiles int) MountOption {
+	return mountOption(func(mp *MountPoint) { mp.fileCacheSize = numFiles })
+}
+
+// Mount creates a MountPoint instance from the given file system path.
+//
+// The path must exist, otherwise the function will error.
+//
+// The returned mount point must be closed to release system resources when the
+// application does not need it anymore.
+func Mount(path string, options ...MountOption) (*MountPoint, error) {
+	path, err := filepath.Abs(path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			err = ErrNotFound
-		}
-		return nil, err
+		return nil, fmt.Errorf("mounting kafka records storage: %w", err)
 	}
-	return f, nil
+	mp := &MountPoint{path: path}
+	for _, opt := range options {
+		opt.ConfigureMountPoint(mp)
+	}
+	return mp, nil
 }
 
-func (path MountPoint) Store(ctx context.Context, key Key, value io.WriterTo) (int64, error) {
-	dst := path.pathTo(key)
+// Close release the resources held by the mount point. It must be closed when
+// the application does not need the mount point anymore.
+func (mp *MountPoint) Close() error {
+	mp.mutex.Lock()
+	mp.closed = true
+	mp.mutex.Unlock()
+	mp.files.reset()
+	return nil
+}
 
-	f, err := path.createTemp(dst)
+// Path returns the path that the mount point was mounted at.
+func (mp *MountPoint) Path() string {
+	return mp.path
+}
+
+// List satisfies the Storage interface.
+func (mp *MountPoint) List(ctx context.Context) Iter {
+	return &mountPointIter{
+		mountPoint: mp,
+		addrs:      readdir(mp.path),
+	}
+}
+
+// Load satisfies the Storage interface.
+func (mp *MountPoint) Load(ctx context.Context, key Key) (io.ReadCloser, error) {
+	mp.mutex.RLock()
+	defer mp.mutex.RUnlock()
+
+	if mp.closed {
+		return nil, ErrClosed
+	}
+
+	ref := mp.files.lookup(key)
+	if ref == nil {
+		f, err := os.Open(mp.pathTo(key))
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				err = ErrNotFound
+			}
+			return nil, err
+		}
+		if mp.fileCacheSize > 0 {
+			ref = mp.files.insert(key, f, mp.fileCacheSize)
+		} else {
+			return f, nil
+		}
+	}
+	return &fileReadCloser{ref: ref}, nil
+}
+
+// Store satisfies the Storage interface.
+func (mp *MountPoint) Store(ctx context.Context, key Key, value io.WriterTo) (int64, error) {
+	mp.mutex.RLock()
+	defer mp.mutex.RUnlock()
+
+	if mp.closed {
+		return 0, ErrClosed
+	}
+
+	dst := mp.pathTo(key)
+
+	f, err := mp.createTemp(dst)
 	if err != nil {
 		return 0, err
 	}
 	tmp := f.Name()
-	defer f.Close()
-	defer os.Remove(tmp)
+	defer func() {
+		if f != nil {
+			f.Close()
+			os.Remove(tmp)
+		}
+	}()
 
 	n, err := value.WriteTo(f)
 	if err != nil {
@@ -273,19 +361,32 @@ func (path MountPoint) Store(ctx context.Context, key Key, value io.WriterTo) (i
 	if err := f.Sync(); err != nil {
 		return n, err
 	}
-	if err := f.Close(); err != nil {
+	if err := os.Rename(tmp, dst); err != nil {
 		return n, err
 	}
 
-	return n, os.Rename(tmp, dst)
+	if mp.fileCacheSize > 0 {
+		mp.files.insert(key, f, mp.fileCacheSize).unref()
+		f = nil
+	}
+	return n, nil
 }
 
-func (path MountPoint) Delete(ctx context.Context, keys []Key) error {
+// Delete satisfies the Storage interface.
+func (mp *MountPoint) Delete(ctx context.Context, keys []Key) error {
+	mp.mutex.RLock()
+	defer mp.mutex.RUnlock()
+
+	if mp.closed {
+		return ErrClosed
+	}
+
 	dst := new(strings.Builder)
 
 	for _, key := range keys {
 		dst.Reset()
-		path.writePathTo(dst, key)
+		mp.writePathTo(dst, key)
+		mp.files.delete(key)
 
 		if err := os.Remove(dst.String()); err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
@@ -297,13 +398,13 @@ func (path MountPoint) Delete(ctx context.Context, keys []Key) error {
 	return nil
 }
 
-func (path MountPoint) createTemp(filePath string) (*os.File, error) {
+func (mp *MountPoint) createTemp(filePath string) (*os.File, error) {
 	dir, base := filepath.Dir(filePath), filepath.Base(filePath)+".*~"
 
 	f, err := os.CreateTemp(dir, base)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			if err := path.makePath(dir); err != nil {
+			if err := mp.makePath(dir); err != nil {
 				return nil, err
 			}
 			return os.CreateTemp(dir, base)
@@ -313,11 +414,11 @@ func (path MountPoint) createTemp(filePath string) (*os.File, error) {
 	return f, err
 }
 
-func (path MountPoint) makePath(subpath string) error {
-	if string(path) == subpath {
+func (mp *MountPoint) makePath(subpath string) error {
+	if mp.path == subpath {
 		return nil // root
 	}
-	if err := path.makePath(filepath.Dir(subpath)); err != nil {
+	if err := mp.makePath(filepath.Dir(subpath)); err != nil {
 		return err
 	}
 	err := os.Mkdir(subpath, 0755)
@@ -329,7 +430,7 @@ func (path MountPoint) makePath(subpath string) error {
 	return err
 }
 
-func (path MountPoint) parseKey(s string) (key Key, err error) {
+func (mp *MountPoint) parseKey(s string) (key Key, err error) {
 	basePath := s
 
 	errorf := func(msg string, args ...interface{}) error {
@@ -340,12 +441,12 @@ func (path MountPoint) parseKey(s string) (key Key, err error) {
 		}
 	}
 
-	if !strings.HasPrefix(basePath, string(path)) {
-		return Key{}, errorf("not in path: %s", path)
+	if !strings.HasPrefix(basePath, mp.path) {
+		return Key{}, errorf("not in path: %s", mp.path)
 	}
 
 	sep := string([]byte{os.PathSeparator})
-	s = strings.TrimPrefix(s, string(path))
+	s = strings.TrimPrefix(s, mp.path)
 	s = strings.TrimPrefix(s, sep)
 
 	key.Addr, s = splitNextPathPart(s)
@@ -388,14 +489,14 @@ func split(s string, c byte) (prefix, suffix string) {
 	}
 }
 
-func (path MountPoint) pathTo(k Key) string {
+func (mp *MountPoint) pathTo(k Key) string {
 	s := new(strings.Builder)
-	path.writePathTo(s, k)
+	mp.writePathTo(s, k)
 	return s.String()
 }
 
-func (path MountPoint) writePathTo(s *strings.Builder, k Key) {
-	writeDirString(s, string(path))
+func (mp *MountPoint) writePathTo(s *strings.Builder, k Key) {
+	writeDirString(s, mp.path)
 	writeStorageKey(s, k)
 }
 
@@ -452,7 +553,7 @@ func hexByte(b byte) (hex [2]byte) {
 }
 
 type mountPointIter struct {
-	mountPoint MountPoint
+	mountPoint *MountPoint
 	addrs      dir
 	topics     dir
 	partitions dir
@@ -627,4 +728,126 @@ func readdir(path string) dir {
 		}
 	}
 	return dir{path: path, file: f, err: err}
+}
+
+type fileReadCloser struct {
+	ref *fileRef
+	off int64
+}
+
+func (r *fileReadCloser) Close() error {
+	if r.ref != nil {
+		r.ref.unref()
+		r.ref = nil
+	}
+	return nil
+}
+
+func (r *fileReadCloser) Read(b []byte) (int, error) {
+	if r.ref != nil {
+		n, err := r.ref.file.ReadAt(b, r.off)
+		r.off += int64(n)
+		return n, err
+	}
+	return 0, io.EOF
+}
+
+type fileRef struct {
+	refc uintptr
+	key  Key
+	file *os.File
+	elem *list.Element
+}
+
+func (f *fileRef) ref() {
+	atomic.AddUintptr(&f.refc, 1)
+}
+
+func (f *fileRef) unref() {
+	if atomic.AddUintptr(&f.refc, ^uintptr(0)) == 0 {
+		f.file.Close()
+		f.file = nil
+	}
+}
+
+type fileCache struct {
+	mutex sync.Mutex
+	queue list.List
+	files map[Key]*fileRef
+}
+
+func (c *fileCache) reset() {
+	c.mutex.Lock()
+	files := c.files
+	c.files = nil
+	c.queue = list.List{}
+	c.mutex.Unlock()
+
+	for _, file := range files {
+		file.unref()
+	}
+}
+
+func (c *fileCache) insert(key Key, file *os.File, limit int) *fileRef {
+	newRef := &fileRef{refc: 2, key: key, file: file}
+	oldRef := (*fileRef)(nil)
+	evictRef := (*fileRef)(nil)
+
+	defer func() {
+		if oldRef != nil {
+			oldRef.unref()
+		}
+		if evictRef != nil {
+			evictRef.unref()
+		}
+	}()
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if c.files == nil {
+		c.files = make(map[Key]*fileRef)
+	} else {
+		if oldRef = c.files[key]; oldRef != nil {
+			c.queue.Remove(oldRef.elem)
+		}
+	}
+
+	c.files[key] = newRef
+	newRef.elem = c.queue.PushFront(newRef)
+
+	if c.queue.Len() > limit {
+		evictRef = c.queue.Back().Value.(*fileRef)
+		c.queue.Remove(evictRef.elem)
+		delete(c.files, evictRef.key)
+	}
+
+	return newRef
+}
+
+func (c *fileCache) lookup(key Key) *fileRef {
+	c.mutex.Lock()
+	file := c.files[key]
+	if file != nil {
+		file.ref()
+	}
+	c.mutex.Unlock()
+	return file
+}
+
+func (c *fileCache) delete(key Key) {
+	var file *fileRef
+
+	defer func() {
+		if file != nil {
+			file.unref()
+		}
+	}()
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if file = c.files[key]; file != nil {
+		c.queue.Remove(file.elem)
+	}
 }

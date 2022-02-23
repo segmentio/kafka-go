@@ -34,6 +34,19 @@ func (op deleteOperation) apply(ctx context.Context, store records.Storage) erro
 }
 
 func TestRecordsStorage(t *testing.T) {
+	makeMountPoint := func(options ...records.MountOption) (records.Storage, func(), error) {
+		p, err := os.MkdirTemp("", "kafka-go.records.*")
+		if err != nil {
+			return nil, nil, err
+		}
+		m, err := records.Mount(p, options...)
+		if err != nil {
+			os.Remove(p)
+			return nil, nil, err
+		}
+		return m, func() { m.Close(); os.Remove(p) }, nil
+	}
+
 	tests := []struct {
 		scenario string
 		function func() (records.Storage, func(), error)
@@ -46,18 +59,16 @@ func TestRecordsStorage(t *testing.T) {
 		},
 
 		{
-			scenario: "file-system",
+			scenario: "file system",
 			function: func() (records.Storage, func(), error) {
-				p, err := os.MkdirTemp("", "kafka-go_records_*")
-				if err != nil {
-					return nil, nil, err
-				}
-				f, err := records.Mount(p)
-				if err != nil {
-					os.Remove(p)
-					return nil, nil, err
-				}
-				return f, func() { os.Remove(p) }, nil
+				return makeMountPoint()
+			},
+		},
+
+		{
+			scenario: "file system with file cache",
+			function: func() (records.Storage, func(), error) {
+				return makeMountPoint(records.FileCacheSize(10))
 			},
 		},
 	}
