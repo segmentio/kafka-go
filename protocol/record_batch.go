@@ -338,9 +338,9 @@ func (r *RecordBatch) Version() int {
 }
 
 func (r *RecordBatch) ReadFrom(in io.Reader) (int64, error) {
-	dec := &decoder{reader: in, remain: math.MaxInt32}
+	dec := decoder{reader: in, remain: math.MaxInt32}
 	tmp := RecordSet{Version: 2}
-	n, err := tmp.readFromVersion2(dec)
+	n, err := tmp.readFromVersion2(&dec)
 	if err != nil {
 		return 0, err
 	}
@@ -431,7 +431,7 @@ func (s *RecordStream) ReadRecord() (*Record, error) {
 type compressedRecordReader struct {
 	records        *optimizedRecordReader
 	buffer         *pageBuffer
-	decoder        *decoder
+	decoder        decoder
 	attributes     Attributes
 	baseOffset     int64
 	firstTimestamp int64
@@ -443,12 +443,6 @@ func (r *compressedRecordReader) release() {
 		r.buffer.unref()
 		r.buffer = nil
 	}
-	r.decoder.Reset(nil, 0)
-}
-
-func (r *compressedRecordReader) readRecords() (err error) {
-	r.records, err = readRecords(r.buffer, r.decoder, r.attributes, r.baseOffset, r.firstTimestamp, r.numRecords)
-	return err
 }
 
 func (r *compressedRecordReader) Close() (err error) {
@@ -463,7 +457,9 @@ func (r *compressedRecordReader) Close() (err error) {
 func (r *compressedRecordReader) ReadRecord() (*Record, error) {
 	if r.buffer != nil {
 		defer r.release()
-		if err := r.readRecords(); err != nil {
+		var err error
+		r.records, err = readRecords(r.buffer, &r.decoder, r.attributes, r.baseOffset, r.firstTimestamp, r.numRecords)
+		if err != nil {
 			return nil, err
 		}
 	}

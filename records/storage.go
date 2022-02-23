@@ -54,6 +54,8 @@ type Iter interface {
 //
 // The package provides two implementations of this interface, one for in-memory
 // storage and the other to record entries on the file system.
+//
+// Storage instances must be safe to use concurrently from multiple goroutines.
 type Storage interface {
 	// Lists the keys of all record batches currently present in the store.
 	List(ctx context.Context) Iter
@@ -85,7 +87,8 @@ func NewStorage() Storage { return new(storage) }
 
 type storage struct {
 	mutex sync.RWMutex
-	state map[Key][]byte
+	state map[Key]*bytes.Buffer
+	pool  sync.Pool
 }
 
 func (s *storage) List(ctx context.Context) Iter {
@@ -100,7 +103,7 @@ func (s *storage) entries() (entries []storageEntry) {
 	for key, value := range s.state {
 		entries = append(entries, storageEntry{
 			key:  key,
-			size: int64(len(value)),
+			size: int64(value.Len()),
 		})
 	}
 	return entries
@@ -114,12 +117,14 @@ func (s *storage) Load(ctx context.Context, key Key) (io.ReadCloser, error) {
 		return nil, ErrNotFound
 	}
 	reader := new(storageValue)
-	reader.Reset(value)
+	reader.Reset(value.Bytes())
 	return reader, nil
 }
 
 func (s *storage) Store(ctx context.Context, key Key, value io.WriterTo) (int64, error) {
 	buffer := new(bytes.Buffer)
+	buffer.Grow(256 * 1024)
+
 	n, err := value.WriteTo(buffer)
 	if err != nil {
 		return 0, err
@@ -129,10 +134,10 @@ func (s *storage) Store(ctx context.Context, key Key, value io.WriterTo) (int64,
 	defer s.mutex.Unlock()
 
 	if s.state == nil {
-		s.state = make(map[Key][]byte)
+		s.state = make(map[Key]*bytes.Buffer)
 	}
 
-	s.state[key] = buffer.Bytes()
+	s.state[key] = buffer
 	return n, nil
 }
 

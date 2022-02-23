@@ -301,9 +301,11 @@ func TestRecordsRandomAccess(t *testing.T) {
 			Transport: cache,
 		})
 
-		if stats := cache.Stats(); stats.Hits == 0 {
+		stats := cache.Stats()
+		if stats.Hits == 0 {
 			t.Errorf("no cache hits: %+v\n", stats)
 		}
+		logCacheStats(t, stats)
 	})
 }
 
@@ -387,11 +389,7 @@ func BenchmarkRecordsRandomAccess(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer os.RemoveAll(tmp)
-
-	storage, err := records.Mount(tmp)
-	if err != nil {
-		b.Fatal(err)
-	}
+	storage := records.MountPoint(tmp)
 
 	server := generator.Generate(rand.New(rand.NewSource(0)))
 	cache := &records.Cache{
@@ -401,44 +399,64 @@ func BenchmarkRecordsRandomAccess(b *testing.B) {
 	}
 
 	topics := server.Topics()
-
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		prng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-		ctx := context.Background()
-		req := &kafka.FetchRequest{
-			MinBytes: 1,
-			MaxBytes: 1,
-		}
-
-		client := &kafka.Client{
-			Addr:      kafka.TCP("whatever"),
-			Transport: cache,
-		}
-
-		for pb.Next() {
-			topicName := topics[prng.Intn(len(topics))]
-			topic := server[topicName]
-
-			partitionID := prng.Intn(len(topic))
-			partition := topic[partitionID]
-
-			recordBatch := partition[prng.Intn(len(partition))]
-			fetchOffset := recordBatch.BaseOffset() + prng.Int63n(int64(len(recordBatch)))
-
-			req.Topic = topicName
-			req.Partition = partitionID
-			req.Offset = fetchOffset
-
-			r, err := client.Fetch(ctx, req)
-			if err != nil {
-				b.Fatal(err)
+	numPartitions := 0
+	numRecordBatches := 0
+	numRecords := 0
+	for _, topic := range server {
+		numPartitions += len(topic)
+		for _, partition := range topic {
+			numRecordBatches += len(partition)
+			for _, recordBatch := range partition {
+				numRecords += len(recordBatch)
 			}
-			r.Records.Close()
 		}
-	})
+	}
 
-	stats := cache.Stats()
-	b.Logf("hits: %d/%d (%.2f%%)", stats.Hits, stats.Lookups, 100*float64(stats.Hits)/float64(stats.Lookups))
+	prng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ctx := context.Background()
+	req := &kafka.FetchRequest{
+		MinBytes: 1,
+		MaxBytes: 1,
+	}
+
+	client := &kafka.Client{
+		Addr:      kafka.TCP("whatever"),
+		Transport: cache,
+	}
+
+	b.Logf("topics:%d partitions:%d batches:%d records:%d", len(topics), numPartitions, numRecordBatches, numRecords)
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		topicName := topics[prng.Intn(len(topics))]
+		topic := server[topicName]
+
+		partitionID := prng.Intn(len(topic))
+		partition := topic[partitionID]
+
+		recordBatch := partition[prng.Intn(len(partition))]
+		fetchOffset := recordBatch.BaseOffset() //+ prng.Int63n(int64(len(recordBatch)))
+
+		req.Topic = topicName
+		req.Partition = partitionID
+		req.Offset = fetchOffset
+
+		r, err := client.Fetch(ctx, req)
+		if err != nil {
+			b.Fatal(err)
+		}
+		r.Records.Close()
+	}
+
+	logCacheStats(b, cache.Stats())
+}
+
+func logCacheStats(t testing.TB, stats records.CacheStats) {
+	t.Logf("size:%dB inserts:%d evictions:%d hits:%d/%d (%.2f%%)",
+		stats.Size,
+		stats.Inserts,
+		stats.Evictions,
+		stats.Hits,
+		stats.Lookups,
+		100*float64(stats.Hits)/float64(stats.Lookups))
 }

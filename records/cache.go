@@ -361,7 +361,7 @@ func (c *Cache) add(ctx context.Context, key Key, size int64) (evictions int, si
 		}
 	}
 
-	return 0, sizeDelta, nil
+	return evictions, sizeDelta, nil
 }
 
 func (c *Cache) insert(key Key, size int64) (evicted []Key, sizeDrop int64) {

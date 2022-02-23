@@ -7,37 +7,33 @@ import (
 	"time"
 )
 
-func (rs *RecordSet) readFromVersion2(d *decoder) (int64, error) {
+func (rs *RecordSet) readFromVersion2(decoder *decoder) (int64, error) {
 	const baseLength = 12
-	baseOffset := d.readInt64()
-	batchLength := d.readInt32()
+	baseOffset := decoder.readInt64()
+	batchLength := decoder.readInt32()
 
-	if int(batchLength) > d.remain || d.err != nil {
-		n := int64(d.remain)
-		d.discardAll()
+	if int(batchLength) > decoder.remain || decoder.err != nil {
+		n := int64(decoder.remain)
+		decoder.discardAll()
 		return baseLength + n, nil
 	}
 
-	leftover := d.remain - int(batchLength)
+	leftover := decoder.remain - int(batchLength)
 	buffer := newPageBuffer()
 	defer func() {
+		decoder.remain = leftover
 		if buffer != nil {
 			buffer.unref()
 		}
 	}()
 
-	d.remain = int(batchLength)
-	n, err := buffer.ReadFrom(d)
-	d.remain += leftover
+	decoder.remain = int(batchLength)
+	n, err := buffer.ReadFrom(decoder)
 	if err != nil {
 		return baseLength + n, err
 	}
 
-	decoder := &decoder{
-		reader: buffer,
-		remain: int(n),
-	}
-
+	decoder.Reset(buffer, int(n))
 	partitionLeaderEpoch := decoder.readInt32()
 	magicByte := decoder.readInt8()
 	crc := decoder.readInt32()
@@ -55,7 +51,6 @@ func (rs *RecordSet) readFromVersion2(d *decoder) (int64, error) {
 	producerEpoch := decoder.readInt16()
 	baseSequence := decoder.readInt32()
 	numRecords := decoder.readInt32()
-	decoder.Reset(nil, 0)
 
 	*rs = RecordSet{
 		Version:    magicByte,
@@ -75,7 +70,6 @@ func (rs *RecordSet) readFromVersion2(d *decoder) (int64, error) {
 		NumRecords:           numRecords,
 		Records: &compressedRecordReader{
 			buffer:         buffer,
-			decoder:        decoder,
 			attributes:     attributes,
 			baseOffset:     baseOffset,
 			firstTimestamp: firstTimestamp,

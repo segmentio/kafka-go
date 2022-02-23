@@ -22,7 +22,7 @@ func (k Key) String() string {
 	if k == (Key{}) {
 		return "(none)"
 	}
-	return fmt.Sprintf("%s/%s:%d:%d@%d", k.Addr, k.Topic, k.Partition, k.LastOffsetDelta, k.BaseOffset)
+	return fmt.Sprintf("%s/%s.%d[%d:%d]", k.Addr, k.Topic, k.Partition, k.BaseOffset, k.endOffset())
 }
 
 // Less compares two keys and returns true if k1 < k2.
@@ -73,6 +73,10 @@ type entry struct {
 	elem *list.Element
 }
 
+func (e1 *entry) less(e2 *entry) bool {
+	return e1.key.Less(e2.key)
+}
+
 // Reset clears the content of the data structure.
 func (lru *LRU) Reset() {
 	if lru.index != nil {
@@ -85,9 +89,7 @@ func (lru *LRU) Reset() {
 // Insert adds a key to the data structure.
 func (lru *LRU) Insert(key Key, size int64) {
 	if lru.index == nil {
-		lru.index = newIndex(func(e1, e2 *entry) bool {
-			return e1.key.Less(e2.key)
-		})
+		lru.index = newIndex()
 	}
 	e := &entry{key: key, size: size}
 	lru.size += size
@@ -99,7 +101,6 @@ func (lru *LRU) Insert(key Key, size int64) {
 // offset key
 func (lru *LRU) Lookup(key Key) (Key, bool) {
 	if lru.index != nil {
-		// TODO: can we prevent the entry value from escaping?
 		it := lru.index.LowerBound(&entry{key: key})
 		if it.Valid() {
 			e := it.Key()
