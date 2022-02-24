@@ -669,6 +669,45 @@ if err := r.Close(); err != nil {
 }
 ```
 
+
+## Logging
+
+For visiblity into the operations of the Reader/Writer types, configure a logger on creation.
+
+
+### Reader
+
+```go
+func logf(msg string, a ...interface{}) {
+	fmt.Println(msg, a...)
+}
+
+r := kafka.NewReader(kafka.ReaderConfig{
+	Brokers:     []string{"localhost:9092"},
+	Topic:       "my-topic1",
+	Partition:   0,
+	Logger:      kafka.LoggerFunc(logf),
+	ErrorLogger: kafka.LoggerFunc(logf),
+})
+```
+
+### Writer
+
+```go
+func logf(msg string, a ...interface{}) {
+	fmt.Println(msg, a...)
+}
+
+w := &kafka.Writer{
+	Addr:        kafka.TCP("localhost:9092"),
+	Topic:       "topic",
+	Logger:      kafka.LoggerFunc(logf),
+	ErrorLogger: kafka.LoggerFunc(logf),
+}
+```
+
+
+
 ## Testing
 
 Subtle behavior changes in later Kafka versions have caused some historical tests to break, if you are running against Kafka 2.3.1 or later, exporting the `KAFKA_SKIP_NETTEST=1` environment variables will skip those tests.
