@@ -129,7 +129,10 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-      environment: *environment
+      environment:
+        <<: *environment
+        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
     steps: *steps
 
   kafka-211:
@@ -145,7 +148,10 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-      environment: *environment
+      environment:
+        <<: *environment
+        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
     steps: *steps
 
   kafka-222:
@@ -161,7 +167,10 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-      environment: *environment
+      environment:
+        <<: *environment
+        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
     steps: *steps
 
   kafka-231:
@@ -177,7 +186,10 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-      environment: *environment
+      environment:
+        <<: *environment
+        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
     steps: *steps
 
   kafka-241:
@@ -204,7 +216,10 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-      environment: *environment
+      environment:
+        <<: *environment
+        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.authorizer.AclAuthorizer'
+        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
     steps: *steps
 
   kafka-260:
@@ -231,7 +246,10 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-      environment: *environment
+      environment:
+        <<: *environment
+        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.authorizer.AclAuthorizer'
+        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
     steps: *steps
 
   kafka-271:
@@ -258,7 +276,10 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-      environment: *environment
+      environment:
+        <<: *environment
+        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.authorizer.AclAuthorizer'
+        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
     steps: *steps
 
 workflows:

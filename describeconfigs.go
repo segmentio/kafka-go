@@ -24,15 +24,6 @@ type DescribeConfigsRequest struct {
 	IncludeDocumentation bool
 }
 
-type ResourceType int8
-
-const (
-	// See https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/config/ConfigResource.java#L36
-	ResourceTypeUnknown ResourceType = 0
-	ResourceTypeTopic   ResourceType = 2
-	ResourceTypeBroker  ResourceType = 4
-)
-
 type DescribeConfigRequestResource struct {
 	// Resource Type
 	ResourceType ResourceType
@@ -122,7 +113,6 @@ func (c *Client) DescribeConfigs(ctx context.Context, req *DescribeConfigsReques
 		IncludeSynonyms:      req.IncludeSynonyms,
 		IncludeDocumentation: req.IncludeDocumentation,
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).DescribeConfigs: %w", err)
 	}
