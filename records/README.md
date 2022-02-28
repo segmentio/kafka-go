@@ -19,7 +19,7 @@ Kafka brokers.
 
 For high throughput systems, those constraints result in impractical performance
 degradations. The use of a local cache is an effective solution to reduce the
-Kafka borker access frequency.
+Kafka broker access frequency.
 
 The `records.Cache` type is the implementation of a `kafka.RoundTripper` which
 caches responses to fetch requests in order to optimize random access patterns
