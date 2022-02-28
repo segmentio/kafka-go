@@ -14,8 +14,6 @@ import (
 //
 // When the program is done reading the records, it must call the Close method
 // to release the resources held by the reader.
-//
-// RecordSet values are not safe to use concurrently from multiple goroutines.
 type RecordReader interface {
 	io.Closer
 	// Returns the next record in the set, or io.EOF if the end of the sequence
