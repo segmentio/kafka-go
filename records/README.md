@@ -72,7 +72,7 @@ cache := &records.Cache{
 ```
 
 Record batches are stored as they were returned by Kafka in response to the
-fetch requests. Besides being compute, space an bandwidth efficient (leveraging
+fetch requests. Besides being compute, space and bandwidth efficient (leveraging
 Kafka's end-to-end compression capabilities), it also helps with planning for
 storage capacity of the caching layer since the size on disk is directly derived
 from the size of the Kafka partitions being cached.
