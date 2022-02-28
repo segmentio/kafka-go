@@ -11,7 +11,7 @@ clients might be designed to leverage Kafka as more than a pub/sub system, using
 the ability to reference records by offset as a general purpose storage solution.
 
 In such cases, random access patterns are common and the cost of retrieving
-offsets form arbitrary positions within Kafka partitions can be high: fetching
+offsets from arbitrary positions within Kafka partitions can be high: fetching
 records over the network introduces latency and read amplification (due to Kafka
 always returning batches of compressed records), and the requested partition
 ranges are likley to have been paged out which increases I/O pressure on the
