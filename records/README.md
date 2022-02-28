@@ -14,7 +14,7 @@ In such cases, random access patterns are common and the cost of retrieving
 offsets from arbitrary positions within Kafka partitions can be high: fetching
 records over the network introduces latency and read amplification (due to Kafka
 always returning batches of compressed records), and the requested partition
-ranges are likley to have been paged out which increases I/O pressure on the
+ranges are likely to have been paged out which increases I/O pressure on the
 Kafka brokers.
 
 For high throughput systems, those constraints result in impractical performance
