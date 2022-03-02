@@ -1026,7 +1026,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	// assignments for the topic.  this matches the behavior of the official
 	// clients: java, python, and librdkafka.
 	// a topic watcher can trigger a rebalance when the topic comes into being.
-	if err != nil && err != UnknownTopicOrPartition {
+	if err != nil && !errors.Is(err, UnknownTopicOrPartition) {
 		return nil, err
 	}
 

@@ -86,7 +86,7 @@ func (c *Client) AlterConfigs(ctx context.Context, req *AlterConfigsRequest) (*A
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("kafka.(*Client).AlterConfigs: %w", err)
+		return nil, fmt.Errorf("failed to alter configs: %w", err)
 	}
 
 	res := m.(*alterconfigs.Response)

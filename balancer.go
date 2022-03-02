@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"fmt"
 	"hash"
 	"hash/crc32"
 	"hash/fnv"
@@ -153,7 +154,7 @@ func (h *Hash) Balance(msg Message, partitions ...int) int {
 
 	hasher.Reset()
 	if _, err := hasher.Write(msg.Key); err != nil {
-		panic(err)
+		panic(fmt.Errorf("HashBalancer failed to write to hasher: %w", err))
 	}
 
 	// uses same algorithm that Sarama's hashPartitioner uses

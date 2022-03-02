@@ -206,7 +206,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 func (c *Conn) negotiateVersion(key apiKey, sortedSupportedVersions ...apiVersion) (apiVersion, error) {
 	v, err := c.loadVersions()
 	if err != nil {
-		return -1, err
+		return -1, fmt.Errorf("failed to determine available versions: %w", err)
 	}
 	a := v.negotiate(key, sortedSupportedVersions...)
 	if a < 0 {
@@ -331,10 +331,10 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV0) (findCoordinato
 		},
 	)
 	if err != nil {
-		return findCoordinatorResponseV0{}, err
+		return findCoordinatorResponseV0{}, fmt.Errorf("failed to find coordinator: %w", err)
 	}
 	if response.ErrorCode != 0 {
-		return findCoordinatorResponseV0{}, Error(response.ErrorCode)
+		return findCoordinatorResponseV0{}, makeError(response.ErrorCode, "failed to find coordinator")
 	}
 
 	return response, nil
@@ -357,10 +357,10 @@ func (c *Conn) heartbeat(request heartbeatRequestV0) (heartbeatResponseV0, error
 		},
 	)
 	if err != nil {
-		return heartbeatResponseV0{}, err
+		return heartbeatResponseV0{}, fmt.Errorf("failed to send heartbeat: %w", err)
 	}
 	if response.ErrorCode != 0 {
-		return heartbeatResponseV0{}, Error(response.ErrorCode)
+		return heartbeatResponseV0{}, makeError(response.ErrorCode, "failed to send heartbeat")
 	}
 
 	return response, nil
@@ -383,10 +383,10 @@ func (c *Conn) joinGroup(request joinGroupRequestV1) (joinGroupResponseV1, error
 		},
 	)
 	if err != nil {
-		return joinGroupResponseV1{}, err
+		return joinGroupResponseV1{}, fmt.Errorf("failed to join consumer group: %w", err)
 	}
 	if response.ErrorCode != 0 {
-		return joinGroupResponseV1{}, Error(response.ErrorCode)
+		return joinGroupResponseV1{}, makeError(response.ErrorCode, "failed to join consumer group")
 	}
 
 	return response, nil
@@ -409,10 +409,10 @@ func (c *Conn) leaveGroup(request leaveGroupRequestV0) (leaveGroupResponseV0, er
 		},
 	)
 	if err != nil {
-		return leaveGroupResponseV0{}, err
+		return leaveGroupResponseV0{}, fmt.Errorf("failed to leave consumer group: %w", err)
 	}
 	if response.ErrorCode != 0 {
-		return leaveGroupResponseV0{}, Error(response.ErrorCode)
+		return leaveGroupResponseV0{}, makeError(response.ErrorCode, "failed to leave consumer group")
 	}
 
 	return response, nil
@@ -435,10 +435,10 @@ func (c *Conn) listGroups(request listGroupsRequestV1) (listGroupsResponseV1, er
 		},
 	)
 	if err != nil {
-		return listGroupsResponseV1{}, err
+		return listGroupsResponseV1{}, fmt.Errorf("failed to list consumer groups: %w", err)
 	}
 	if response.ErrorCode != 0 {
-		return listGroupsResponseV1{}, Error(response.ErrorCode)
+		return listGroupsResponseV1{}, makeError(response.ErrorCode, "failed to list consumer groups")
 	}
 
 	return response, nil
@@ -461,12 +461,12 @@ func (c *Conn) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponse
 		},
 	)
 	if err != nil {
-		return offsetCommitResponseV2{}, err
+		return offsetCommitResponseV2{}, fmt.Errorf("failed to commit offsets: %w", err)
 	}
 	for _, r := range response.Responses {
 		for _, pr := range r.PartitionResponses {
 			if pr.ErrorCode != 0 {
-				return offsetCommitResponseV2{}, Error(pr.ErrorCode)
+				return offsetCommitResponseV2{}, makeError(pr.ErrorCode, "failed to commit offsets")
 			}
 		}
 	}
@@ -492,12 +492,12 @@ func (c *Conn) offsetFetch(request offsetFetchRequestV1) (offsetFetchResponseV1,
 		},
 	)
 	if err != nil {
-		return offsetFetchResponseV1{}, err
+		return offsetFetchResponseV1{}, fmt.Errorf("failed to fetch offsets: %w", err)
 	}
 	for _, r := range response.Responses {
 		for _, pr := range r.PartitionResponses {
 			if pr.ErrorCode != 0 {
-				return offsetFetchResponseV1{}, Error(pr.ErrorCode)
+				return offsetFetchResponseV1{}, makeError(pr.ErrorCode, "failed to fetch offsets")
 			}
 		}
 	}
@@ -522,10 +522,10 @@ func (c *Conn) syncGroup(request syncGroupRequestV0) (syncGroupResponseV0, error
 		},
 	)
 	if err != nil {
-		return syncGroupResponseV0{}, err
+		return syncGroupResponseV0{}, fmt.Errorf("failed to finish joining consumer group: %w", err)
 	}
 	if response.ErrorCode != 0 {
-		return syncGroupResponseV0{}, Error(response.ErrorCode)
+		return syncGroupResponseV0{}, makeError(response.ErrorCode, "failed to finish joining consumer group")
 	}
 
 	return response, nil
@@ -666,7 +666,7 @@ func (c *Conn) Seek(offset int64, whence int) (int64, error) {
 
 	first, last, err := c.ReadOffsets()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to read offsets: %w", err)
 	}
 
 	switch whence {
@@ -757,20 +757,20 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var maxFetch = int(c.fetchMaxBytes)
 
 	if cfg.MinBytes < 0 || cfg.MinBytes > maxFetch {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes of %d out of [1,%d] bounds", cfg.MinBytes, maxFetch)}
+		return &Batch{err: fmt.Errorf("minBytes of %d out of [1,%d] bounds", cfg.MinBytes, maxFetch)}
 	}
 	if cfg.MaxBytes < 0 || cfg.MaxBytes > maxFetch {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: maxBytes of %d out of [1,%d] bounds", cfg.MaxBytes, maxFetch)}
+		return &Batch{err: fmt.Errorf("maxBytes of %d out of [1,%d] bounds", cfg.MaxBytes, maxFetch)}
 	}
 	if cfg.MinBytes > cfg.MaxBytes {
-		return &Batch{err: fmt.Errorf("kafka.(*Conn).ReadBatch: minBytes (%d) > maxBytes (%d)", cfg.MinBytes, cfg.MaxBytes)}
+		return &Batch{err: fmt.Errorf("minBytes (%d) > maxBytes (%d)", cfg.MinBytes, cfg.MaxBytes)}
 	}
 
 	offset, whence := c.Offset()
 
 	offset, err := c.Seek(offset, whence|SeekDontCheck)
 	if err != nil {
-		return &Batch{err: dontExpectEOF(err)}
+		return &Batch{err: fmt.Errorf("failed to seek to offset %d (whence %d): %w", offset, whence, dontExpectEOF(err))}
 	}
 
 	fetchVersion, err := c.negotiateVersion(fetch, v2, v5, v10)
@@ -833,12 +833,12 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		}
 	})
 	if err != nil {
-		return &Batch{err: dontExpectEOF(err)}
+		return &Batch{err: fmt.Errorf("failed to write fetch request (version %d): %w", fetchVersion, dontExpectEOF(err))}
 	}
 
 	_, size, lock, err := c.waitResponse(&c.rdeadline, id)
 	if err != nil {
-		return &Batch{err: dontExpectEOF(err)}
+		return &Batch{err: fmt.Errorf("request %d failed to give response: %w", id, dontExpectEOF(err))}
 	}
 
 	var throttle int32
@@ -854,7 +854,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		throttle, highWaterMark, remain, err = readFetchResponseHeaderV2(&c.rbuf, size)
 	}
 	if errors.Is(err, errShortRead) {
-		err = checkTimeoutErr(adjustedDeadline)
+		err = fmt.Errorf("failed to fetch response header (version %d): %w", fetchVersion, checkTimeoutErr(adjustedDeadline))
 	}
 
 	var msgs *messageSetReader
@@ -863,10 +863,10 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 			msgs = &messageSetReader{empty: true}
 		} else {
 			msgs, err = newMessageSetReader(&c.rbuf, remain)
+			if errors.Is(err, errShortRead) {
+				err = fmt.Errorf("failed to initialize a reader for set of %d messages: %w", remain, checkTimeoutErr(adjustedDeadline))
+			}
 		}
-	}
-	if errors.Is(err, errShortRead) {
-		err = checkTimeoutErr(adjustedDeadline)
 	}
 	return &Batch{
 		conn:          c,

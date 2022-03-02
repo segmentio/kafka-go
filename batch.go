@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -70,7 +71,10 @@ func (batch *Batch) Close() error {
 	batch.mutex.Lock()
 	err := batch.close()
 	batch.mutex.Unlock()
-	return err
+	if err != nil {
+		fmt.Errorf("failed to close batch: %w", err)
+	}
+	return nil
 }
 
 func (batch *Batch) close() (err error) {
@@ -94,7 +98,8 @@ func (batch *Batch) close() (err error) {
 		conn.mutex.Unlock()
 
 		if err != nil {
-			if _, ok := err.(Error); !ok && err != io.ErrShortBuffer {
+			var kafkaError Error
+			if !errors.As(err, &kafkaError) && !errors.Is(err, io.ErrShortBuffer) {
 				conn.Close()
 			}
 		}
@@ -239,11 +244,11 @@ func (batch *Batch) readMessage(
 
 	var lastOffset int64
 	offset, lastOffset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		batch.offset = offset + 1
 		batch.lastOffset = lastOffset
-	case errShortRead:
+	case errors.Is(err, errShortRead):
 		// As an "optimization" kafka truncates the returned response after
 		// producing MaxBytes, which could then cause the code to return
 		// errShortRead.

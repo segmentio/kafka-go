@@ -524,7 +524,7 @@ func silentEOF(err error) error {
 
 func dontExpectEOF(err error) error {
 	if errors.Is(err, io.EOF) {
-		err = io.ErrUnexpectedEOF
+		return io.ErrUnexpectedEOF
 	}
 	return err
 }

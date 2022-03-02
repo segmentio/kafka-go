@@ -285,7 +285,7 @@ func TestConsumerGroup(t *testing.T) {
 				if gen != nil {
 					t.Errorf("expected generation to be nil")
 				}
-				if err != context.Canceled {
+				if !errors.Is(err, context.Canceled) {
 					t.Errorf("expected context.Canceled, but got %+v", err)
 				}
 			},
@@ -301,7 +301,7 @@ func TestConsumerGroup(t *testing.T) {
 				if gen != nil {
 					t.Errorf("expected generation to be nil")
 				}
-				if err != ErrGroupClosed {
+				if !errors.Is(err, ErrGroupClosed) {
 					t.Errorf("expected ErrGroupClosed, but got %+v", err)
 				}
 			},
@@ -398,7 +398,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 				gen, err := group.Next(ctx)
 				if err == nil {
 					t.Errorf("expected an error")
-				} else if err != NotCoordinatorForGroup {
+				} else if !errors.Is(err, NotCoordinatorForGroup) {
 					t.Errorf("got wrong error: %+v", err)
 				}
 				if gen != nil {
@@ -460,7 +460,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 				gen, err := group.Next(ctx)
 				if err == nil {
 					t.Errorf("expected an error")
-				} else if err != InvalidTopic {
+				} else if !errors.Is(err, InvalidTopic) {
 					t.Errorf("got wrong error: %+v", err)
 				}
 				if gen != nil {
@@ -540,7 +540,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 				gen, err := group.Next(ctx)
 				if err == nil {
 					t.Errorf("expected an error")
-				} else if err != InvalidTopic {
+				} else if !errors.Is(err, InvalidTopic) {
 					t.Errorf("got wrong error: %+v", err)
 				}
 				if gen != nil {
@@ -672,7 +672,7 @@ func TestGenerationStartsFunctionAfterClosed(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for func to run")
 	case err := <-ch:
-		if err != ErrGenerationEnded {
+		if !errors.Is(err, ErrGenerationEnded) {
 			t.Fatalf("expected %v but got %v", ErrGenerationEnded, err)
 		}
 	}
