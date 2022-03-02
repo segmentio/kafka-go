@@ -2,7 +2,6 @@ package records
 
 import (
 	"bytes"
-	"container/list"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -15,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/segmentio/datastructures/v2/cache"
+	"github.com/segmentio/datastructures/v2/container/list"
 )
 
 var (
@@ -772,20 +774,19 @@ func (f *fileRef) unref() {
 
 type fileCache struct {
 	mutex sync.Mutex
-	queue list.List
-	files map[Key]*fileRef
+	files cache.LRU[Key, *fileRef]
 }
 
 func (c *fileCache) reset() {
 	c.mutex.Lock()
 	files := c.files
-	c.files = nil
-	c.queue = list.List{}
+	c.files = cache.LRU[Key, *fileRef]{}
 	c.mutex.Unlock()
 
-	for _, file := range files {
+	files.Range(func(_ Key, file *fileRef) bool {
 		file.unref()
-	}
+		return true
+	})
 }
 
 func (c *fileCache) insert(key Key, file *os.File, limit int) *fileRef {
