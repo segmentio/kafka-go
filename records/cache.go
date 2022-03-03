@@ -1,14 +1,14 @@
 package records
 
 import (
-	"container/list"
 	"context"
 	"fmt"
 	"net"
 	"strings"
 	"sync"
 
-	"github.com/emirpasic/gods/trees/redblacktree"
+	"github.com/segmentio/datastructures/v2/container/list"
+	"github.com/segmentio/datastructures/v2/container/tree"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/fetch"
@@ -32,7 +32,7 @@ func (k Key) String() string {
 	return fmt.Sprintf("%s/%s.%d[%d:%d]", k.Addr, k.Topic, k.Partition, k.BaseOffset, k.endOffset())
 }
 
-func (k1 *Key) compare(k2 *Key) int {
+func (k1 Key) compare(k2 Key) int {
 	if cmp := strings.Compare(k1.Addr, k2.Addr); cmp != 0 {
 		return cmp
 	}
@@ -101,8 +101,8 @@ type Cache struct {
 
 	once  once
 	mutex sync.Mutex
-	index *redblacktree.Tree
-	queue list.List
+	index tree.Map[Key, *list.Element[cacheEntry]]
+	queue list.List[cacheEntry]
 	bytes int64
 
 	stats     sync.Mutex
@@ -119,7 +119,6 @@ type Cache struct {
 type cacheEntry struct {
 	key  Key
 	size int64
-	elem *list.Element
 }
 
 // CacheStats contains statistics about cache utilization.
@@ -208,6 +207,8 @@ func (c *Cache) transport() kafka.RoundTripper {
 }
 
 func (c *Cache) init(ctx context.Context) error {
+	c.index.Init(Key.compare)
+
 	evictions, errors, size := 0, 0, int64(0)
 	defer func() {
 		c.stats.Lock()
@@ -237,16 +238,14 @@ func (c *Cache) init(ctx context.Context) error {
 
 func (c *Cache) reset() {
 	c.mutex.Lock()
-	if c.index != nil {
-		c.index.Clear()
-	}
-	c.queue = list.List{}
+	c.index.Init(Key.compare)
+	c.queue = list.List[cacheEntry]{}
 	c.bytes = 0
 	c.mutex.Unlock()
 }
 
 func (c *Cache) load(ctx context.Context, addr string, req *fetch.Request) (*fetch.Response, int, error) {
-	key := &Key{Addr: addr}
+	key := Key{Addr: addr}
 	res := &fetch.Response{Topics: make([]fetch.ResponseTopic, len(req.Topics))}
 	missing := 0
 	lookups := 0
@@ -414,18 +413,14 @@ func (c *Cache) storeRecordBatch(ctx context.Context, addr, topic string, partit
 	return inserted, evictions, sizeDelta, err
 }
 
-func (c *Cache) lookup(key *Key) (Key, bool) {
+func (c *Cache) lookup(key Key) (Key, bool) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if c.index != nil {
-		if n, _ := c.index.Floor(key); n != nil {
-			if k := n.Key.(*Key); k.contains(key) {
-				v := n.Value.(*cacheEntry)
-				c.queue.MoveToFront(v.elem)
-				return *k, true
-			}
-		}
+	k, e, ok := c.index.Search(key)
+	if ok && k.contains(&key) {
+		c.queue.MoveToFront(e)
+		return k, true
 	}
 
 	return Key{}, false
@@ -448,31 +443,25 @@ func (c *Cache) add(ctx context.Context, key Key, size int64) (inserted bool, ev
 }
 
 func (c *Cache) insert(key Key, size int64) (inserted bool, evicted []Key, sizeDrop int64) {
-	entry := &cacheEntry{key: key, size: size}
-
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if c.index == nil {
-		c.index = redblacktree.NewWith(func(a, b interface{}) int {
-			k1, k2 := a.(*Key), b.(*Key)
-			return k1.compare(k2)
-		})
-	}
-
-	if _, exists := c.index.Get(&entry.key); exists {
+	if _, exists := c.index.Lookup(key); exists {
 		return false, nil, 0
 	}
 
-	c.index.Put(&entry.key, entry)
+	c.index.Insert(key, c.queue.PushFront(cacheEntry{
+		key:  key,
+		size: size,
+	}))
 	c.bytes += size
-	entry.elem = c.queue.PushFront(entry)
 
 	for c.queue.Len() > 1 && c.bytes > c.SizeLimit {
-		evict := c.queue.Back().Value.(*cacheEntry)
-		evicted = append(evicted, evict.key)
-		sizeDrop += evict.size
-		c.bytes -= evict.size
+		e := c.queue.Back()
+		c.queue.Remove(e)
+		evicted = append(evicted, e.Value.key)
+		sizeDrop += e.Value.size
+		c.bytes -= e.Value.size
 	}
 
 	return true, evicted, sizeDrop

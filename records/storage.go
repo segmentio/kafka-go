@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 
 	"github.com/segmentio/datastructures/v2/cache"
-	"github.com/segmentio/datastructures/v2/container/list"
 )
 
 var (
@@ -756,9 +755,7 @@ func (r *fileReadCloser) Read(b []byte) (int, error) {
 
 type fileRef struct {
 	refc uintptr
-	key  Key
 	file *os.File
-	elem *list.Element
 }
 
 func (f *fileRef) ref() {
@@ -790,66 +787,41 @@ func (c *fileCache) reset() {
 }
 
 func (c *fileCache) insert(key Key, file *os.File, limit int) *fileRef {
-	newRef := &fileRef{refc: 2, key: key, file: file}
+	newRef := &fileRef{refc: 2, file: file}
 	oldRef := (*fileRef)(nil)
 	evictRef := (*fileRef)(nil)
 
-	defer func() {
-		if oldRef != nil {
-			oldRef.unref()
-		}
-		if evictRef != nil {
-			evictRef.unref()
-		}
-	}()
-
 	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	if c.files == nil {
-		c.files = make(map[Key]*fileRef)
-	} else {
-		if oldRef = c.files[key]; oldRef != nil {
-			c.queue.Remove(oldRef.elem)
-		}
+	oldRef, _ = c.files.Insert(key, newRef)
+	if c.files.Len() > limit {
+		_, evictRef, _ = c.files.Evict()
 	}
+	c.mutex.Unlock()
 
-	c.files[key] = newRef
-	newRef.elem = c.queue.PushFront(newRef)
-
-	if c.queue.Len() > limit {
-		evictRef = c.queue.Back().Value.(*fileRef)
-		c.queue.Remove(evictRef.elem)
-		delete(c.files, evictRef.key)
+	if oldRef != nil {
+		oldRef.unref()
 	}
-
+	if evictRef != nil {
+		evictRef.unref()
+	}
 	return newRef
 }
 
 func (c *fileCache) lookup(key Key) *fileRef {
 	c.mutex.Lock()
-	file := c.files[key]
+	file, _ := c.files.Lookup(key)
 	if file != nil {
 		file.ref()
-		c.queue.MoveToFront(file.elem)
 	}
 	c.mutex.Unlock()
 	return file
 }
 
 func (c *fileCache) delete(key Key) {
-	var file *fileRef
-
-	defer func() {
-		if file != nil {
-			file.unref()
-		}
-	}()
-
 	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	if file = c.files[key]; file != nil {
-		c.queue.Remove(file.elem)
+	file, _ := c.files.Delete(key)
+	c.mutex.Unlock()
+	if file != nil {
+		file.unref()
 	}
 }
