@@ -3,7 +3,7 @@ module github.com/segmentio/kafka-go/records
 go 1.18
 
 require (
-	github.com/segmentio/datastructures/v2 v2.3.0
+	github.com/segmentio/datastructures/v2 v2.6.0
 	github.com/segmentio/kafka-go v0.4.29
 )
 
