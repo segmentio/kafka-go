@@ -147,9 +147,5 @@ func looksLikeUnexpectedTLS(size int32) bool {
 		return false
 	}
 	version := int(sizeBytes[1])<<8 | int(sizeBytes[2])
-
-	if version <= tls.VersionTLS13 && version >= tls.VersionTLS10 {
-		return true
-	}
-	return false
+	return version <= tls.VersionTLS13 && version >= tls.VersionTLS10
 }
