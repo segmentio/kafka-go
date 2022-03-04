@@ -8,10 +8,8 @@ import (
 )
 
 func TestIndex(t *testing.T) {
-	t.Run("memory", func(t *testing.T) {
-		testIndex(t, func() (records.Index, func(), error) {
-			return records.NewIndex(), func() {}, nil
-		})
+	testIndex(t, func() (records.Index, func(), error) {
+		return records.NewIndex(), func() {}, nil
 	})
 }
 
@@ -63,11 +61,6 @@ func testIndex(t *testing.T, newIndex func() (records.Index, func(), error)) {
 		{
 			scenario: "not comitting updates does not mutate the index",
 			function: testIndexUpdateNoCommit,
-		},
-
-		{
-			scenario: "updates are visible in the order in which they are committed",
-			function: testIndexUpdateOrder,
 		},
 
 		{
@@ -169,28 +162,11 @@ func testIndexInsertAndDropOffsetsInUpdate(t *testing.T, index records.Index) {
 
 func testIndexUpdateNoCommit(t *testing.T, index records.Index) {
 	u := openTx(t, index)
-	defer u.Close()
 	u.Insert([]byte("A"), 1)
 	u.Insert([]byte("B"), 2)
 	u.Insert([]byte("C"), 3)
+	u.Close()
 	assertIndexState(t, index, nil)
-}
-
-func testIndexUpdateOrder(t *testing.T, index records.Index) {
-	u1 := openTx(t, index)
-	defer u1.Close()
-	u1.Insert([]byte("A"), 1)
-	u1.Insert([]byte("B"), 2)
-
-	u2 := openTx(t, index)
-	defer u2.Close()
-	u2.Insert([]byte("C"), 3)
-
-	u2.Commit()
-	assertIndexState(t, index, indexState{{"C", 3}})
-
-	u1.Commit()
-	assertIndexState(t, index, indexState{{"A", 1}, {"B", 2}, {"C", 3}})
 }
 
 func testIndexSelectPrefix(t *testing.T, index records.Index) {
@@ -321,7 +297,7 @@ func assertIndexState(t *testing.T, index records.Index, state indexState) {
 	}
 
 	if err := selection.Close(); err != nil {
-		t.Errorf("closing selection: %v", err)
+		t.Errorf("closing selection: %#v", err)
 	}
 
 	if i < len(state) {
