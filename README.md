@@ -480,6 +480,8 @@ longer the case and import of the compression packages are now no-ops._
 ## TLS Support
 
 For a bare bones Conn type or in the Reader/Writer configs you can specify a dialer option for TLS support. If the TLS field is nil, it will not connect with TLS.
+*Note:* Connecting to a Kafka cluster with TLS enabled without configuring TLS on the Conn/Reader/Writer can manifest in opaque io.ErrUnexpectedEOF errors.
+
 
 ### Connection
 
@@ -512,6 +514,8 @@ r := kafka.NewReader(kafka.ReaderConfig{
 
 ### Writer
 
+Using `kafka.NewWriter`
+
 ```go
 dialer := &kafka.Dialer{
     Timeout:   10 * time.Second,
@@ -525,6 +529,20 @@ w := kafka.NewWriter(kafka.WriterConfig{
 	Balancer: &kafka.Hash{},
 	Dialer:   dialer,
 })
+```
+
+Direct Writer creation
+
+```go
+w := kafka.Writer{
+        Addr: kafka.TCP("localhost:9093"),
+	    Topic:   "topic-A",
+	    Balancer: &kafka.Hash{},
+        Transport: &kafka.Transport{
+            TLS: &tls.Config{},
+        },
+    }
+
 ```
 
 ## SASL Support

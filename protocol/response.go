@@ -1,6 +1,9 @@
 package protocol
 
 import (
+	"crypto/tls"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -35,6 +38,25 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 
 	d.remain = int(size)
 	correlationID = d.readInt32()
+	if err = d.err; err != nil {
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			// If a Writer/Reader is configured without TLS and connects
+			// to a broker expecting TLS the only message we return to the
+			// caller is io.ErrUnexpetedEOF which is opaque. This section
+			// tries to determine if that's what has happened.
+			// We first deconstruct the initial 4 bytes of the message
+			// from the size which was read earlier.
+			// Next, we examine those bytes to see if they looks like a TLS
+			// error message. If they do we wrap the io.ErrUnexpectedEOF
+			// with some context.
+			if looksLikeUnexpectedTLS(size) {
+				err = fmt.Errorf("%w: broker appears to be expecting TLS", io.ErrUnexpectedEOF)
+			}
+			return
+		}
+		err = dontExpectEOF(err)
+		return
+	}
 
 	res := &t.responses[apiVersion-minVersion]
 
@@ -108,4 +130,22 @@ func WriteResponse(w io.Writer, apiVersion int16, correlationID int32, msg Messa
 	}
 
 	return err
+}
+
+const (
+	tlsAlertByte byte = 0x15
+)
+
+// looksLikeUnexpectedTLS returns true if the size passed in resemble
+// the TLS alert message that is returned to a client which sends
+// an invalid ClientHello message.
+func looksLikeUnexpectedTLS(size int32) bool {
+	var sizeBytes [4]byte
+	binary.BigEndian.PutUint32(sizeBytes[:], uint32(size))
+
+	if sizeBytes[0] != tlsAlertByte {
+		return false
+	}
+	version := int(sizeBytes[1])<<8 | int(sizeBytes[2])
+	return version <= tls.VersionTLS13 && version >= tls.VersionTLS10
 }
