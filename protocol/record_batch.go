@@ -16,6 +16,8 @@ import (
 // to release the resources held by the reader.
 type RecordReader interface {
 	io.Closer
+	// Returns the number of records remaining to be read from the sequence.
+	Len() int
 	// Returns the next record in the set, or io.EOF if the end of the sequence
 	// has been reached.
 	//
@@ -82,6 +84,10 @@ func (r *recordReader) Close() error {
 	return nil
 }
 
+func (r *recordReader) Len() int {
+	return len(r.records) - r.index
+}
+
 func (r *recordReader) ReadRecord() (*Record, error) {
 	if i := r.index; i >= 0 && i < len(r.records) {
 		r.index++
@@ -101,6 +107,13 @@ func (m *multiRecordReader) Close() error {
 	}
 	m.batches, m.index = nil, 0
 	return nil
+}
+
+func (m *multiRecordReader) Len() (n int) {
+	for _, r := range m.batches {
+		n += r.Len()
+	}
+	return n
 }
 
 func (m *multiRecordReader) ReadRecord() (*Record, error) {
@@ -148,6 +161,10 @@ func (r *optimizedRecordReader) Close() error {
 	r.buffer = Record{}
 	r.headers = nil
 	return nil
+}
+
+func (r *optimizedRecordReader) Len() int {
+	return len(r.records) - r.index
 }
 
 func (r *optimizedRecordReader) ReadRecord() (*Record, error) {
@@ -207,8 +224,8 @@ func makeBytes(ref *pageRef) Bytes {
 
 type emptyRecordReader struct{}
 
-func (emptyRecordReader) Close() error { return nil }
-
+func (emptyRecordReader) Close() error                 { return nil }
+func (emptyRecordReader) Len() int                     { return 0 }
 func (emptyRecordReader) ReadRecord() (*Record, error) { return nil, io.EOF }
 
 // ControlRecord represents a record read from a control batch.
@@ -291,6 +308,10 @@ func (c *ControlBatch) Close() error {
 	return c.Records.Close()
 }
 
+func (c *ControlBatch) Len() int {
+	return c.Records.Len()
+}
+
 func (c *ControlBatch) ReadRecord() (*Record, error) {
 	return c.Records.ReadRecord()
 }
@@ -325,6 +346,10 @@ type RecordBatch struct {
 
 func (r *RecordBatch) Close() error {
 	return r.Records.Close()
+}
+
+func (r *RecordBatch) Len() int {
+	return r.Records.Len()
 }
 
 func (r *RecordBatch) ReadRecord() (*Record, error) {
@@ -379,6 +404,10 @@ func (m *MessageSet) Close() error {
 	return m.Records.Close()
 }
 
+func (m *MessageSet) Len() int {
+	return m.Records.Len()
+}
+
 func (m *MessageSet) ReadRecord() (*Record, error) {
 	return m.Records.ReadRecord()
 }
@@ -401,6 +430,14 @@ func (s *RecordStream) Close() error {
 	}
 	s.index = len(s.Records)
 	return nil
+}
+
+func (s *RecordStream) Len() int {
+	n := 0
+	for _, r := range s.Records[s.index:] {
+		n += r.Len()
+	}
+	return n
 }
 
 func (s *RecordStream) ReadRecord() (*Record, error) {
@@ -434,6 +471,7 @@ type compressedRecordReader struct {
 	baseOffset     int64
 	firstTimestamp int64
 	numRecords     int32
+	numRecordsRead int32
 }
 
 func (r *compressedRecordReader) release() {
@@ -449,7 +487,12 @@ func (r *compressedRecordReader) Close() (err error) {
 		err = r.records.Close()
 		r.records = nil
 	}
+	r.numRecordsRead = r.numRecords
 	return err
+}
+
+func (r *compressedRecordReader) Len() int {
+	return int(r.numRecords - r.numRecordsRead)
 }
 
 func (r *compressedRecordReader) ReadRecord() (*Record, error) {
@@ -464,7 +507,11 @@ func (r *compressedRecordReader) ReadRecord() (*Record, error) {
 	if r.records == nil {
 		return nil, io.EOF
 	}
-	return r.records.ReadRecord()
+	rec, err := r.records.ReadRecord()
+	if err == nil {
+		r.numRecordsRead++
+	}
+	return rec, err
 }
 
 func (r *compressedRecordReader) Read(b []byte) (int, error) {
@@ -477,6 +524,7 @@ func (r *compressedRecordReader) Read(b []byte) (int, error) {
 	n, err := r.buffer.Read(b)
 	if err != nil {
 		r.release()
+		r.numRecordsRead = r.numRecords
 	}
 	return n, err
 }
@@ -488,7 +536,10 @@ func (r *compressedRecordReader) WriteTo(w io.Writer) (int64, error) {
 	if r.buffer == nil {
 		return 0, nil
 	}
-	defer r.release()
+	defer func() {
+		r.release()
+		r.numRecordsRead = r.numRecords
+	}()
 	return r.buffer.WriteTo(w)
 }
 

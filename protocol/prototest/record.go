@@ -12,6 +12,12 @@ func AssertRecords(t *testing.T, r1, r2 protocol.RecordReader) (ok bool) {
 	t.Helper()
 	ok = true
 
+	n1 := r1.Len()
+	n2 := r2.Len()
+	if n1 != n2 {
+		t.Errorf("number of records mismatch: r1=%d r2=%d", n1, n2)
+	}
+
 	defer func() {
 		if err := r1.Close(); err != nil {
 			t.Errorf("closing first record reader: %v", err)
@@ -54,6 +60,13 @@ func AssertRecords(t *testing.T, r1, r2 protocol.RecordReader) (ok bool) {
 	if err1 != io.EOF || err2 != io.EOF {
 		t.Errorf("unexpected error found after reading all records: %v/%v", err1, err2)
 		ok = false
+	}
+
+	if n := r1.Len(); n != 0 {
+		t.Errorf("wrong number of records remaining after reading all records: r1=%d", n)
+	}
+	if n := r2.Len(); n != 0 {
+		t.Errorf("wrong number of records remaining after reading all records: r2=%d", n)
 	}
 
 	return ok

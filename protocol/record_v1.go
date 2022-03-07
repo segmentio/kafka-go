@@ -229,6 +229,13 @@ func (m *message) Close() error {
 	return nil
 }
 
+func (m *message) Len() int {
+	if m.read {
+		return 0
+	}
+	return 1
+}
+
 func (m *message) ReadRecord() (*Record, error) {
 	if m.read {
 		return nil, io.EOF
