@@ -1170,7 +1170,7 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	}()
 
 	if tlsConfig := g.pool.tls; tlsConfig != nil {
-		if tlsConfig.ServerName == "" && !tlsConfig.InsecureSkipVerify {
+		if tlsConfig.ServerName == "" {
 			host, _ := splitHostPort(netAddr.String())
 			tlsConfig = tlsConfig.Clone()
 			tlsConfig.ServerName = host
