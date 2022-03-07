@@ -168,7 +168,6 @@ type ConsumerGroupConfig struct {
 // Validate method validates ConsumerGroupConfig properties and sets relevant
 // defaults.
 func (config *ConsumerGroupConfig) Validate() error {
-
 	if len(config.Brokers) == 0 {
 		return errors.New("cannot create a consumer group with an empty list of broker addresses")
 	}
@@ -560,6 +559,249 @@ type coordinator interface {
 	offsetFetch(offsetFetchRequestV1) (offsetFetchResponseV1, error)
 	offsetCommit(offsetCommitRequestV2) (offsetCommitResponseV2, error)
 	readPartitions(...string) ([]Partition, error)
+}
+
+var _ coordinator = &clientCoordinator{}
+
+type clientCoordinator struct {
+	client           *Client
+	timeout          time.Duration
+	sessionTimeout   time.Duration
+	rebalanceTimeout time.Duration
+}
+
+func (cc *clientCoordinator) ctx(add time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), cc.timeout+add)
+}
+
+func (cc *clientCoordinator) Close() error {
+	transport := cc.client.transport()
+	if transport != DefaultTransport {
+		transport.(*Transport).CloseIdleConnections()
+	}
+
+	return nil
+}
+
+func (cc *clientCoordinator) findCoordinator(req findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
+	ctx, cancel := cc.ctx(0)
+	defer cancel()
+	resp, err := cc.client.FindCoordinator(ctx, &FindCoordinatorRequest{
+		Key:     req.CoordinatorKey,
+		KeyType: CoordinatorKeyTypeConsumer,
+	})
+	if err != nil {
+		return findCoordinatorResponseV0{}, err
+	}
+
+	var errorCode int16
+
+	var kerr Error
+	if errors.As(resp.Error, &kerr) {
+		errorCode = int16(kerr)
+	}
+
+	v0Resp := findCoordinatorResponseV0{
+		ErrorCode: errorCode,
+	}
+
+	if resp.Coordinator != nil {
+		v0Resp.Coordinator.NodeID = int32(resp.Coordinator.NodeID)
+		v0Resp.Coordinator.Host = resp.Coordinator.Host
+		v0Resp.Coordinator.Port = int32(resp.Coordinator.Port)
+	}
+
+	return v0Resp, nil
+}
+
+func (cc *clientCoordinator) heartbeat(req heartbeatRequestV0) (heartbeatResponseV0, error) {
+	ctx, cancel := cc.ctx(0)
+	defer cancel()
+	resp, err := cc.client.Heartbeat(ctx, &HeartbeatRequest{
+		GroupID:      req.GroupID,
+		GenerationID: req.GenerationID,
+		MemberID:     req.MemberID,
+	})
+	if err != nil {
+		return heartbeatResponseV0{}, err
+	}
+
+	var errorCode int16
+
+	var kerr Error
+	if errors.As(resp.Error, &kerr) {
+		errorCode = int16(kerr)
+	}
+
+	v0Resp := heartbeatResponseV0{
+		ErrorCode: errorCode,
+	}
+
+	return v0Resp, nil
+}
+
+// joinGroup implements coordinator
+func (*clientCoordinator) joinGroup(joinGroupRequestV1) (joinGroupResponseV1, error) {
+	panic("unimplemented")
+}
+
+func (cc *clientCoordinator) leaveGroup(leaveGroupRequestV0) (leaveGroupResponseV0, error) {
+	panic("unimplemented")
+}
+
+func (cc *clientCoordinator) offsetCommit(req offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+	ctx, cancel := cc.ctx(0)
+	defer cancel()
+
+	topics := make(map[string][]OffsetCommit, len(req.Topics))
+
+	for _, topic := range req.Topics {
+		commits := make([]OffsetCommit, 0, len(topic.Partitions))
+		for _, parition := range topic.Partitions {
+			commits = append(commits, OffsetCommit{
+				Partition: int(parition.Partition),
+				Offset:    parition.Offset,
+				Metadata:  parition.Metadata,
+			})
+		}
+		topics[topic.Topic] = commits
+	}
+
+	resp, err := cc.client.OffsetCommit(ctx, &OffsetCommitRequest{
+		GroupID:      req.GroupID,
+		GenerationID: int(req.GenerationID),
+		MemberID:     req.MemberID,
+		Topics:       topics,
+	})
+	if err != nil {
+		return offsetCommitResponseV2{}, err
+	}
+
+	var v2Resp offsetCommitResponseV2
+	v2Resp.Responses = make([]offsetCommitResponseV2Response, 0, len(resp.Topics))
+
+	for topic, responses := range resp.Topics {
+		resp := offsetCommitResponseV2Response{
+			Topic:              topic,
+			PartitionResponses: make([]offsetCommitResponseV2PartitionResponse, 0, len(responses)),
+		}
+		for _, response := range responses {
+			var errorCode int16
+
+			var kerr Error
+			if errors.As(response.Error, &kerr) {
+				errorCode = int16(kerr)
+			}
+			resp.PartitionResponses = append(resp.PartitionResponses, offsetCommitResponseV2PartitionResponse{
+				Partition: int32(response.Partition),
+				ErrorCode: errorCode,
+			})
+		}
+	}
+
+	return v2Resp, nil
+}
+
+func (cc *clientCoordinator) offsetFetch(req offsetFetchRequestV1) (offsetFetchResponseV1, error) {
+	ctx, cancel := cc.ctx(0)
+	defer cancel()
+
+	topics := make(map[string][]int, len(req.Topics))
+	for _, topic := range req.Topics {
+		partitions := make([]int, 0, len(topic.Partitions))
+		for _, partition := range topic.Partitions {
+			partitions = append(partitions, int(partition))
+		}
+		topics[topic.Topic] = partitions
+	}
+
+	resp, err := cc.client.OffsetFetch(ctx, &OffsetFetchRequest{
+		GroupID: req.GroupID,
+		Topics:  topics,
+	})
+	if err != nil {
+		return offsetFetchResponseV1{}, err
+	}
+
+	if resp.Error != nil {
+		return offsetFetchResponseV1{}, resp.Error
+	}
+
+	v1Resp := offsetFetchResponseV1{
+		Responses: make([]offsetFetchResponseV1Response, 0, len(resp.Topics)),
+	}
+
+	for topic, responses := range resp.Topics {
+		partitionResponses := make([]offsetFetchResponseV1PartitionResponse, 0, len(responses))
+		for _, response := range responses {
+			var errorCode int16
+
+			var kerr Error
+			if errors.As(response.Error, &kerr) {
+				errorCode = int16(kerr)
+			}
+			partitionResponses = append(partitionResponses, offsetFetchResponseV1PartitionResponse{
+				Partition: int32(response.Partition),
+				Offset:    response.CommittedOffset,
+				Metadata:  response.Metadata,
+				ErrorCode: errorCode,
+			})
+		}
+		v1Resp.Responses = append(v1Resp.Responses, offsetFetchResponseV1Response{
+			Topic:              topic,
+			PartitionResponses: partitionResponses,
+		})
+	}
+
+	return v1Resp, nil
+}
+
+func (cc *clientCoordinator) readPartitions(topics ...string) ([]Partition, error) {
+	ctx, cancel := cc.ctx(0)
+	defer cancel()
+	resp, err := cc.client.Metadata(ctx, &MetadataRequest{
+		Topics: topics,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	brokers := make(map[int]Broker, len(resp.Brokers))
+	for _, broker := range resp.Brokers {
+		brokers[broker.ID] = Broker{
+			Host: broker.Host,
+			Port: broker.Port,
+			ID:   broker.ID,
+			Rack: broker.Rack,
+		}
+	}
+
+	var partitions []Partition
+
+	for _, topic := range resp.Topics {
+		if topic.Error != nil {
+			return nil, err
+		}
+		for _, partition := range topic.Partitions {
+			partitions = append(partitions, Partition{
+				Topic:    topic.Name,
+				ID:       partition.ID,
+				Leader:   brokers[partition.Leader.ID],
+				Replicas: partition.Replicas,
+				Isr:      partition.Isr,
+				Error:    partition.Error,
+			})
+		}
+	}
+
+	return partitions, nil
+}
+
+// syncGroup implements coordinator
+func (cc *clientCoordinator) syncGroup(req syncGroupRequestV0) (syncGroupResponseV0, error) {
+	ctx, cancel := cc.ctx(cc.sessionTimeout)
+	defer cancel()
+	resp, err := cc.client.
 }
 
 // timeoutCoordinator wraps the Conn to ensure that every operation has a
