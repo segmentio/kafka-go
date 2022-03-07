@@ -1224,6 +1224,10 @@ func (r *writerRecords) Close() error {
 	return nil
 }
 
+func (r *writerRecords) Len() int {
+	return len(r.msgs) - r.index
+}
+
 func (r *writerRecords) ReadRecord() (*Record, error) {
 	if r.index >= 0 && r.index < len(r.msgs) {
 		m := &r.msgs[r.index]
