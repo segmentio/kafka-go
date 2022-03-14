@@ -801,7 +801,6 @@ func (cc *clientCoordinator) readPartitions(topics ...string) ([]Partition, erro
 func (cc *clientCoordinator) syncGroup(req syncGroupRequestV0) (syncGroupResponseV0, error) {
 	ctx, cancel := cc.ctx(cc.sessionTimeout)
 	defer cancel()
-	resp, err := cc.client.
 }
 
 // timeoutCoordinator wraps the Conn to ensure that every operation has a

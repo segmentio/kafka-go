@@ -3,7 +3,42 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"net"
+	"time"
 )
+
+type JoinGroupRequest struct {
+	// Address of the kafka broker to send the request to.
+	Addr net.Addr
+
+	GroupID string
+
+	SessionTimeout time.Duration
+
+	RebalanceTimeout time.Duration
+
+	MemberID string
+
+	ProtocolType string
+
+	Protocols []GroupProtocol
+}
+
+type GroupProtocol struct {
+	Name     string
+	Metadata []byte
+}
+
+type JoinGroupResponse struct {
+	Error        error
+	ThrottleTime time.Duration
+	GenerationID int
+	ProtocolName string
+	ProtocolType string
+	Leader       string
+	MemberID     string
+	Members      []GroupMember
+}
 
 type memberGroupMetadata struct {
 	// MemberID assigned by the group coordinator or null if joining for the
