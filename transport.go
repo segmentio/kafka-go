@@ -1203,7 +1203,7 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 			tlsConfig.ServerName = host
 		}
 		tlsConn := tls.Client(netConn, tlsConfig)
-		netConn = tlsConn
+		netConn = errorDecoratingConn{tlsConn}
 		err = performTLSHandshake(ctx, tlsConn, deadline)
 		if err != nil {
 			return nil, err
@@ -1303,6 +1303,26 @@ func (c *conn) roundTrip(ctx context.Context, pc *protocol.Conn, req Request) (R
 	return pc.RoundTrip(req)
 }
 
+type errorDecoratingConn struct {
+	net.Conn
+}
+
+func (l errorDecoratingConn) Read(b []byte) (n int, err error) {
+	n, err = l.Conn.Read(b)
+	if errors.Is(err, io.EOF) {
+		err = fmt.Errorf("error reading %s <- %s: %w", l.LocalAddr(), l.RemoteAddr(), err)
+	}
+	return n, err
+}
+
+func (l errorDecoratingConn) Write(b []byte) (n int, err error) {
+	n, err = l.Conn.Write(b)
+	if errors.Is(err, io.EOF) {
+		err = fmt.Errorf("error writing %s -> %s: %w", l.LocalAddr(), l.RemoteAddr(), err)
+	}
+	return n, err
+}
+
 // authenticateSASL performs all of the required requests to authenticate this
 // connection.  If any step fails, this function returns with an error.  A nil
 // error indicates successful authentication.
@@ -1325,7 +1345,6 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 				// data over the wire since there's no protocol info).
 				return SASLAuthenticationFailed
 			}
-
 			return err
 		}
 
