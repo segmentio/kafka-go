@@ -1126,6 +1126,33 @@ func (g *connGroup) releaseConn(c *conn) bool {
 	return true
 }
 
+func performTLSHandshake(ctx context.Context, conn *tls.Conn, deadline time.Time) error {
+	// Handshake requires both read and write deadlines to be set or risks indefinite blocking.
+	err := conn.SetDeadline(deadline)
+	if err != nil {
+		return fmt.Errorf("failed to set connection deadline before TLS handshake: %w", err)
+	}
+
+	errch := make(chan error, 1)
+
+	go func() {
+		defer close(errch)
+		errch <- conn.Handshake()
+	}()
+
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	case err = <-errch:
+	}
+
+	if err != nil {
+		return fmt.Errorf("%w during TLS handshake", err)
+	}
+
+	return nil
+}
+
 func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	deadline := time.Now().Add(g.pool.dialTimeout)
 
@@ -1175,7 +1202,12 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 			tlsConfig = tlsConfig.Clone()
 			tlsConfig.ServerName = host
 		}
-		netConn = tls.Client(netConn, tlsConfig)
+		tlsConn := tls.Client(netConn, tlsConfig)
+		netConn = tlsConn
+		err = performTLSHandshake(ctx, tlsConn, deadline)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	pc := protocol.NewConn(netConn, g.pool.clientID)
