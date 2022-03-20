@@ -422,6 +422,22 @@ type Partition struct {
 	Offline  []int32
 }
 
+// RawExchanger is an extention to the Message interface to allow messages
+// to control the request response cycle for the message. This is currently
+// only used to facilitate v0 SASL Authenticate requests being written in
+// a non-standard fashion when the SASL Handshake was done at v0 but not
+// when done at v1.
+type RawExchanger interface {
+	// Required should return true when a RawExchange is needed.
+	// The passed in versions are the negotiated versions for the connection
+	// performing the request.
+	Required(versions map[ApiKey]int16) bool
+	// RawExchange is given the raw connection to the broker and the Message
+	// is responsible for writing itself to the connection as well as reading
+	// the response.
+	RawExchange(rw io.ReadWriter) (Message, error)
+}
+
 // BrokerMessage is an extension of the Message interface implemented by some
 // request types to customize the broker assignment logic.
 type BrokerMessage interface {

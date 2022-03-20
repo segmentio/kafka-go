@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/sasl/plain"
 )
 
 func TestBatchQueue(t *testing.T) {
@@ -163,6 +165,10 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "terminates on an attempt to write a message to a nonexistent topic",
 			function: testWriterTerminateMissingTopic,
+		},
+		{
+			scenario: "writing a message with SASL Plain authentication",
+			function: testWriterSasl,
 		},
 	}
 
@@ -763,6 +769,50 @@ func testWriterTerminateMissingTopic(t *testing.T) {
 	if err := writer.WriteMessages(context.Background(), msg); err == nil {
 		t.Fatal("Kafka error [3] UNKNOWN_TOPIC_OR_PARTITION is expected")
 		return
+	}
+}
+
+func testWriterSasl(t *testing.T) {
+	topic := makeTopic()
+	defer deleteTopic(t, topic)
+	dialer := &Dialer{
+		Timeout: 10 * time.Second,
+		SASLMechanism: plain.Mechanism{
+			Username: "adminplain",
+			Password: "admin-secret",
+		},
+	}
+
+	w := newTestWriter(WriterConfig{
+		Dialer:  dialer,
+		Topic:   topic,
+		Brokers: []string{"localhost:9093"},
+	})
+
+	w.AllowAutoTopicCreation = true
+
+	defer w.Close()
+
+	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
+
+	var err error
+	const retries = 5
+	for i := 0; i < retries; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err = w.WriteMessages(ctx, msg)
+		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
+			time.Sleep(time.Millisecond * 250)
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+			return
+		}
+	}
+	if err != nil {
+		t.Errorf("unable to create topic %v", err)
 	}
 }
 
