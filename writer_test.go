@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/sasl/plain"
 )
 
 func TestBatchQueue(t *testing.T) {
@@ -159,6 +161,10 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "writing a message to a non-existant topic creates the topic",
 			function: testWriterAutoCreateTopic,
+		},
+		{
+			scenario: "writing with SASL Plain",
+			function: testWriterSasl,
 		},
 	}
 
@@ -712,6 +718,49 @@ func testWriterAutoCreateTopic(t *testing.T) {
 		Topic:    topic,
 		Balancer: &RoundRobin{},
 	})
+	defer w.Close()
+
+	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
+
+	var err error
+	const retries = 5
+	for i := 0; i < retries; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err = w.WriteMessages(ctx, msg)
+		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
+			time.Sleep(time.Millisecond * 250)
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+			return
+		}
+	}
+	if err != nil {
+		t.Errorf("unable to create topic %v", err)
+	}
+}
+
+func testWriterSasl(t *testing.T) {
+	topic := makeTopic()
+	defer deleteTopic(t, topic)
+	dialer := &Dialer{
+		Timeout:  10 * time.Second,
+		ClientID: "clientId",
+		SASLMechanism: plain.Mechanism{
+			Username: "adminplain",
+			Password: "admin-secret",
+		},
+	}
+
+	w := newTestWriter(WriterConfig{
+		Dialer:  dialer,
+		Topic:   topic,
+		Brokers: []string{"localhost:9093"},
+	})
+
 	defer w.Close()
 
 	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
