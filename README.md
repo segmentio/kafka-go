@@ -697,7 +697,8 @@ For visiblity into the operations of the Reader/Writer types, configure a logger
 
 ```go
 func logf(msg string, a ...interface{}) {
-	fmt.Println(msg, a...)
+	fmt.Printf(msg, a...)
+	fmt.Println()
 }
 
 r := kafka.NewReader(kafka.ReaderConfig{
@@ -713,7 +714,8 @@ r := kafka.NewReader(kafka.ReaderConfig{
 
 ```go
 func logf(msg string, a ...interface{}) {
-	fmt.Println(msg, a...)
+	fmt.Printf(msg, a...)
+	fmt.Println()
 }
 
 w := &kafka.Writer{
