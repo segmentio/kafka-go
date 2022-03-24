@@ -305,6 +305,8 @@ func (e Error) Title() string {
 		return "Unknown Leader Epoch"
 	case UnsupportedCompressionType:
 		return "Unsupported Compression Type"
+	case MemberIDRequired:
+		return "Member ID Required"
 	case EligibleLeadersNotAvailable:
 		return "Eligible Leader Not Available"
 	case ElectionNotNeeded:
@@ -476,6 +478,8 @@ func (e Error) Description() string {
 		return "the leader epoch in the request is newer than the epoch on the broker"
 	case UnsupportedCompressionType:
 		return "the requesting client does not support the compression type of given partition"
+	case MemberIDRequired:
+		return "the group member needs to have a valid member id before actually entering a consumer group"
 	case EligibleLeadersNotAvailable:
 		return "eligible topic partition leaders are not available"
 	case ElectionNotNeeded:

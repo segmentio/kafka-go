@@ -15,6 +15,7 @@ type Request struct {
 	SessionTimeoutMS   int32             `kafka:"min=v0,max=v7"`
 	RebalanceTimeoutMS int32             `kafka:"min=v1,max=v7"`
 	MemberID           string            `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
+	GroupInstanceID    string            `kafka:"min=v5,max=v5,nullable|min=v6,max=v7,compact,nullable"`
 	ProtocolType       string            `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
 	Protocols          []RequestProtocol `kafka:"min=v0,max=v7"`
 }
@@ -46,7 +47,7 @@ type Response struct {
 	GenerationID   int32            `kafka:"min=v0,max=v7"`
 	ProtocolName   string           `kafka:"min=v0,max=v5|min=v6,max=v6,compact|min=v7,max=v7,compact,nullable"`
 	ProtocolType   string           `kafka:"min=v7,max=v7,compact,nullable"`
-	Leader         string           `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
+	LeaderID       string           `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
 	MemberID       string           `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
 	Members        []ResponseMember `kafka:"min=v0,max=v7"`
 }
@@ -57,8 +58,10 @@ type ResponseMember struct {
 	_ struct{} `kafka:"min=v6,max=v7,tag"`
 
 	MemberID        string `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
-	Metadata        []byte `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
 	GroupInstanceID string `kafka:"min=v5,max=v5,nullable|min=v6,max=v7,nullable,compact"`
+	Metadata        []byte `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
 }
+
+type ResponseMemberMetadata struct{}
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.JoinGroup }

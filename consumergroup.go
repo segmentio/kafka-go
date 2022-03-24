@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -641,12 +639,97 @@ func (cc *clientCoordinator) heartbeat(req heartbeatRequestV0) (heartbeatRespons
 }
 
 // joinGroup implements coordinator
-func (*clientCoordinator) joinGroup(joinGroupRequestV1) (joinGroupResponseV1, error) {
-	panic("unimplemented")
+func (cc *clientCoordinator) joinGroup(req joinGroupRequestV1) (joinGroupResponseV1, error) {
+	ctx, cancel := cc.ctx(0)
+	defer cancel()
+
+	protocols := make([]GroupProtocol, 0, len(req.GroupProtocols))
+
+	for _, protocol := range req.GroupProtocols {
+		protocols = append(protocols, GroupProtocol{
+			Name:     protocol.ProtocolName,
+			Metadata: protocol.ProtocolMetadata,
+		})
+	}
+
+	resp, err := cc.client.JoinGroup(ctx, &JoinGroupRequest{
+		GroupID:          req.GroupID,
+		SessionTimeout:   cc.sessionTimeout,
+		RebalanceTimeout: cc.rebalanceTimeout,
+		MemberID:         req.MemberID,
+		ProtocolType:     req.ProtocolType,
+		Protocols:        protocols,
+	})
+	if err != nil {
+		return joinGroupResponseV1{}, err
+	}
+
+	if errors.Is(resp.Error, MemberIDRequired) {
+		resp, err = cc.client.JoinGroup(ctx, &JoinGroupRequest{
+			GroupID:          req.GroupID,
+			SessionTimeout:   cc.sessionTimeout,
+			RebalanceTimeout: cc.rebalanceTimeout,
+			MemberID:         resp.MemberID,
+			ProtocolType:     req.ProtocolType,
+			Protocols:        protocols,
+		})
+		if err != nil {
+			return joinGroupResponseV1{}, err
+		}
+	}
+
+	var errorCode int16
+
+	var kerr Error
+	if errors.As(resp.Error, &kerr) {
+		errorCode = int16(kerr)
+	}
+
+	v1Resp := joinGroupResponseV1{
+		ErrorCode:     errorCode,
+		GenerationID:  int32(resp.GenerationID),
+		GroupProtocol: resp.ProtocolName,
+		LeaderID:      resp.LeaderID,
+		MemberID:      resp.MemberID,
+		Members:       make([]joinGroupResponseMemberV1, 0, len(resp.Members)),
+	}
+
+	for _, member := range resp.Members {
+		v1Resp.Members = append(v1Resp.Members, joinGroupResponseMemberV1{
+			MemberID:       member.ID,
+			MemberMetadata: member.Metadata,
+		})
+	}
+
+	return v1Resp, nil
 }
 
-func (cc *clientCoordinator) leaveGroup(leaveGroupRequestV0) (leaveGroupResponseV0, error) {
-	panic("unimplemented")
+func (cc *clientCoordinator) leaveGroup(req leaveGroupRequestV0) (leaveGroupResponseV0, error) {
+	ctx, cancel := cc.ctx(0)
+	defer cancel()
+
+	resp, err := cc.client.LeaveGroup(ctx, &LeaveGroupRequest{
+		GroupID: req.GroupID,
+		Members: []LeaveGroupRequestMember{
+			{
+				ID: req.MemberID,
+			},
+		},
+	})
+	if err != nil {
+		return leaveGroupResponseV0{}, err
+	}
+
+	var errorCode int16
+
+	var kerr Error
+	if errors.As(resp.Error, &kerr) {
+		errorCode = int16(kerr)
+	}
+
+	return leaveGroupResponseV0{
+		ErrorCode: errorCode,
+	}, nil
 }
 
 func (cc *clientCoordinator) offsetCommit(req offsetCommitRequestV2) (offsetCommitResponseV2, error) {
@@ -799,8 +882,41 @@ func (cc *clientCoordinator) readPartitions(topics ...string) ([]Partition, erro
 
 // syncGroup implements coordinator
 func (cc *clientCoordinator) syncGroup(req syncGroupRequestV0) (syncGroupResponseV0, error) {
-	ctx, cancel := cc.ctx(cc.sessionTimeout)
+	ctx, cancel := cc.ctx(0)
 	defer cancel()
+	clReq := SyncGroupRequest{
+		GroupID:      req.GroupID,
+		GenerationID: int(req.GenerationID),
+		MemberID:     req.MemberID,
+		ProtocolType: defaultProtocolType,
+		Assigments:   make([]SyncGroupRequestAssignment, 0, len(req.GroupAssignments)),
+	}
+
+	for _, assignment := range req.GroupAssignments {
+		clReq.Assigments = append(clReq.Assigments, SyncGroupRequestAssignment{
+			MemberID:   assignment.MemberID,
+			Assignment: assignment.MemberAssignments,
+		})
+	}
+
+	res, err := cc.client.SyncGroup(ctx, &clReq)
+	if err != nil {
+		return syncGroupResponseV0{}, err
+	}
+
+	var errorCode int16
+
+	var kerr Error
+	if errors.As(res.Error, &kerr) {
+		errorCode = int16(kerr)
+	}
+
+	v0Resp := syncGroupResponseV0{
+		ErrorCode:         errorCode,
+		MemberAssignments: res.Assigments,
+	}
+
+	return v0Resp, nil
 }
 
 // timeoutCoordinator wraps the Conn to ensure that every operation has a
@@ -916,6 +1032,9 @@ type ConsumerGroup struct {
 	closeOnce sync.Once
 	wg        sync.WaitGroup
 	done      chan struct{}
+
+	mu    sync.Mutex
+	coord coordinator
 }
 
 // Close terminates the current generation by causing this member to leave and
@@ -1131,28 +1250,25 @@ func makeConnect(config ConsumerGroupConfig) func(dialer *Dialer, brokers ...str
 // coordinator establishes a connection to the coordinator for this consumer
 // group.
 func (cg *ConsumerGroup) coordinator() (coordinator, error) {
-	// NOTE : could try to cache the coordinator to avoid the double connect
-	//        here.  since consumer group balances happen infrequently and are
-	//        an expensive operation, we're not currently optimizing that case
-	//        in order to keep the code simpler.
-	conn, err := cg.config.connect(cg.config.Dialer, cg.config.Brokers...)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	cg.mu.Lock()
+	defer cg.mu.Unlock()
 
-	out, err := conn.findCoordinator(findCoordinatorRequestV0{
-		CoordinatorKey: cg.config.ID,
-	})
-	if err == nil && out.ErrorCode != 0 {
-		err = Error(out.ErrorCode)
-	}
-	if err != nil {
-		return nil, err
+	if cg.coord == nil {
+		cg.coord = &clientCoordinator{
+			client: &Client{
+				Addr:    TCP(cg.config.Brokers...),
+				Timeout: cg.config.Timeout,
+				Transport: &Transport{
+					ClientID: DefaultClientID,
+				},
+			},
+			timeout:          cg.config.Timeout,
+			sessionTimeout:   cg.config.SessionTimeout,
+			rebalanceTimeout: cg.config.RebalanceTimeout,
+		}
 	}
 
-	address := net.JoinHostPort(out.Coordinator.Host, strconv.Itoa(int(out.Coordinator.Port)))
-	return cg.config.connect(cg.config.Dialer, address)
+	return cg.coord, nil
 }
 
 // joinGroup attempts to join the reader to the consumer group.
@@ -1291,6 +1407,7 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 		metadata := groupMetadata{}
 		reader := bufio.NewReader(bytes.NewReader(item.MemberMetadata))
 		if remain, err := (&metadata).readFrom(reader, len(item.MemberMetadata)); err != nil || remain != 0 {
+			fmt.Println(item.MemberMetadata)
 			return nil, fmt.Errorf("unable to read metadata for member, %v: %v", item.MemberID, err)
 		}
 

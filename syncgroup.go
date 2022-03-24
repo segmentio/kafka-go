@@ -3,7 +3,81 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"fmt"
+	"net"
+	"time"
+
+	"github.com/segmentio/kafka-go/protocol/syncgroup"
 )
+
+type SyncGroupRequest struct {
+	Addr net.Addr
+
+	GroupID string
+
+	GenerationID int
+
+	MemberID string
+
+	GroupInstanceID string
+
+	ProtocolType string
+
+	ProtocolName string
+
+	Assigments []SyncGroupRequestAssignment
+}
+
+type SyncGroupRequestAssignment struct {
+	MemberID   string
+	Assignment []byte
+}
+
+type SyncGroupResponse struct {
+	Throttle time.Duration
+	Error    error
+
+	ProtocolType string
+	ProtocolName string
+	Assigments   []byte
+}
+
+func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGroupResponse, error) {
+	syncGroup := syncgroup.Request{
+		GroupID:         req.GroupID,
+		GenerationID:    int32(req.GenerationID),
+		MemberID:        req.MemberID,
+		GroupInstanceID: req.GroupInstanceID,
+		ProtocolType:    req.ProtocolType,
+		ProtocolName:    req.ProtocolName,
+		Assignments:     make([]syncgroup.RequestAssignment, 0, len(req.Assigments)),
+	}
+
+	for _, assigment := range req.Assigments {
+		syncGroup.Assignments = append(syncGroup.Assignments, syncgroup.RequestAssignment{
+			MemberID:   assigment.MemberID,
+			Assignment: assigment.Assignment,
+		})
+	}
+
+	m, err := c.roundTrip(ctx, req.Addr, &syncGroup)
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).SyncGroup: %w", err)
+	}
+
+	r := m.(*syncgroup.Response)
+
+	res := &SyncGroupResponse{
+		Throttle:     makeDuration(r.ThrottleTimeMS),
+		Error:        makeError(r.ErrorCode, ""),
+		ProtocolType: r.ProtocolType,
+		ProtocolName: r.ProtocolName,
+		Assigments:   r.Assignments,
+	}
+
+	return res, nil
+}
 
 type groupAssignment struct {
 	Version  int16

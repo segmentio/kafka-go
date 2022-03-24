@@ -25,13 +25,32 @@ func TestJoinGroupReq(t *testing.T) {
 
 	// Version 1 added
 	// RebalanceTimeoutMS
-	for _, version := range []int16{1, 2, 3, 4, 5, 6, 7} {
+	for _, version := range []int16{1, 2, 3, 4} {
 		prototest.TestRequest(t, version, &joingroup.Request{
 			GroupID:            "group-id",
 			SessionTimeoutMS:   10,
 			RebalanceTimeoutMS: 10,
 			MemberID:           "member-id",
 			ProtocolType:       "protocol-type",
+			Protocols: []joingroup.RequestProtocol{
+				{
+					Name:     "protocol-1",
+					Metadata: []byte{0, 1, 2, 3, 4},
+				},
+			},
+		})
+	}
+
+	// Version 5 added
+	// GroupInstanceID
+	for _, version := range []int16{5, 6, 7} {
+		prototest.TestRequest(t, version, &joingroup.Request{
+			GroupID:            "group-id",
+			SessionTimeoutMS:   10,
+			RebalanceTimeoutMS: 10,
+			MemberID:           "member-id",
+			ProtocolType:       "protocol-type",
+			GroupInstanceID:    "group-instance-id",
 			Protocols: []joingroup.RequestProtocol{
 				{
 					Name:     "protocol-1",
@@ -48,7 +67,7 @@ func TestJoinGroupResp(t *testing.T) {
 			ErrorCode:    10,
 			GenerationID: 10,
 			ProtocolName: "protocol-name",
-			Leader:       "leader",
+			LeaderID:     "leader",
 			MemberID:     "member-id-1",
 			Members: []joingroup.ResponseMember{
 				{
@@ -67,7 +86,7 @@ func TestJoinGroupResp(t *testing.T) {
 			GenerationID:   10,
 			ThrottleTimeMS: 100,
 			ProtocolName:   "protocol-name",
-			Leader:         "leader",
+			LeaderID:       "leader",
 			MemberID:       "member-id-1",
 			Members: []joingroup.ResponseMember{
 				{
@@ -86,7 +105,7 @@ func TestJoinGroupResp(t *testing.T) {
 			GenerationID:   10,
 			ThrottleTimeMS: 100,
 			ProtocolName:   "protocol-name",
-			Leader:         "leader",
+			LeaderID:       "leader",
 			MemberID:       "member-id-1",
 			Members: []joingroup.ResponseMember{
 				{
@@ -107,7 +126,7 @@ func TestJoinGroupResp(t *testing.T) {
 			ThrottleTimeMS: 100,
 			ProtocolName:   "protocol-name",
 			ProtocolType:   "protocol-type",
-			Leader:         "leader",
+			LeaderID:       "leader",
 			MemberID:       "member-id-1",
 			Members: []joingroup.ResponseMember{
 				{

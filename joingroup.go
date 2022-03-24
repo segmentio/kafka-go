@@ -3,8 +3,12 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"fmt"
 	"net"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol/joingroup"
 )
 
 type JoinGroupRequest struct {
@@ -19,6 +23,8 @@ type JoinGroupRequest struct {
 
 	MemberID string
 
+	GroupInstanceID string
+
 	ProtocolType string
 
 	Protocols []GroupProtocol
@@ -31,13 +37,67 @@ type GroupProtocol struct {
 
 type JoinGroupResponse struct {
 	Error        error
-	ThrottleTime time.Duration
+	Throttle     time.Duration
 	GenerationID int
 	ProtocolName string
 	ProtocolType string
-	Leader       string
+	LeaderID     string
 	MemberID     string
-	Members      []GroupMember
+	Members      []JoinGroupResponseMember
+}
+
+type JoinGroupResponseMember struct {
+	ID              string
+	GroupInstanceID string
+	Metadata        []byte
+}
+
+func (c *Client) JoinGroup(ctx context.Context, req *JoinGroupRequest) (*JoinGroupResponse, error) {
+	joinGroup := joingroup.Request{
+		GroupID:            req.GroupID,
+		SessionTimeoutMS:   int32(req.SessionTimeout.Milliseconds()),
+		RebalanceTimeoutMS: int32(req.RebalanceTimeout.Milliseconds()),
+		MemberID:           req.MemberID,
+		GroupInstanceID:    req.GroupInstanceID,
+		ProtocolType:       req.ProtocolType,
+		Protocols:          make([]joingroup.RequestProtocol, 0, len(req.Protocols)),
+	}
+
+	for _, protocol := range req.Protocols {
+		joinGroup.Protocols = append(joinGroup.Protocols, joingroup.RequestProtocol{
+			Name:     protocol.Name,
+			Metadata: protocol.Metadata,
+		})
+	}
+
+	m, err := c.roundTrip(ctx, req.Addr, &joinGroup)
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).JoinGroup: %w", err)
+	}
+
+	r := m.(*joingroup.Response)
+
+	res := &JoinGroupResponse{
+		Error:        makeError(r.ErrorCode, ""),
+		Throttle:     makeDuration(r.ThrottleTimeMS),
+		GenerationID: int(r.GenerationID),
+		ProtocolName: r.ProtocolName,
+		ProtocolType: r.ProtocolType,
+		LeaderID:     r.LeaderID,
+		MemberID:     r.MemberID,
+		Members:      make([]JoinGroupResponseMember, 0, len(r.Members)),
+	}
+
+	for _, member := range r.Members {
+		fmt.Println("join", member.Metadata)
+		res.Members = append(res.Members, JoinGroupResponseMember{
+			ID:              member.MemberID,
+			GroupInstanceID: member.GroupInstanceID,
+			Metadata:        member.Metadata,
+		})
+	}
+
+	return res, nil
 }
 
 type memberGroupMetadata struct {
