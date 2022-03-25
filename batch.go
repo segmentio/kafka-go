@@ -3,7 +3,6 @@ package kafka
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -71,10 +70,7 @@ func (batch *Batch) Close() error {
 	batch.mutex.Lock()
 	err := batch.close()
 	batch.mutex.Unlock()
-	if err != nil {
-		fmt.Errorf("failed to close batch: %w", err)
-	}
-	return nil
+	return err
 }
 
 func (batch *Batch) close() (err error) {
@@ -87,7 +83,7 @@ func (batch *Batch) close() (err error) {
 		batch.msgs.discard()
 	}
 
-	if err = batch.err; errors.Is(err, io.EOF) {
+	if err = batch.err; errors.Is(batch.err, io.EOF) {
 		err = nil
 	}
 

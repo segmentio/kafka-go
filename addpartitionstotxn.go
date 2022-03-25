@@ -83,7 +83,7 @@ func (c *Client) AddPartitionsToTxn(
 
 	m, err := c.roundTrip(ctx, req.Addr, protoReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to add partitions to transaction: %w", err)
+		return nil, fmt.Errorf("kafka.(*Client).AddPartitionsToTxn: %w", err)
 	}
 
 	r := m.(*addpartitionstotxn.Response)

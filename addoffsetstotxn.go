@@ -53,7 +53,7 @@ func (c *Client) AddOffsetsToTxn(
 		GroupID:         req.GroupID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to add offsets to transaction: %w", err)
+		return nil, fmt.Errorf("kafka.(*Client).AddOffsetsToTxn: %w", err)
 	}
 
 	r := m.(*addoffsetstotxn.Response)

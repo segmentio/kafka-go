@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"context"
-	"fmt"
 	"net"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -50,7 +49,7 @@ func (c *Client) ApiVersions(
 		apiReq,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to determine supported API versions from broker: %w", err)
+		return nil, err
 	}
 	apiResp := protoResp.(*apiversions.Response)
 
