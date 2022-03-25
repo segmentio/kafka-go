@@ -641,10 +641,13 @@ func testConnReadBatchWithMaxWait(t *testing.T, conn *Conn) {
 	conn.Seek(0, SeekAbsolute)
 	conn.SetDeadline(time.Now().Add(50 * time.Millisecond))
 	batch = conn.ReadBatchWith(cfg)
+	var netErr net.Error
 	if err := batch.Err(); err == nil {
 		t.Fatal("should have timed out, but got no error")
-	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
-		t.Fatalf("should have timed out, but got: %v", err)
+	} else if errors.As(err, &netErr) {
+		if !netErr.Timeout() {
+			t.Fatalf("should have timed out, but got: %v", err)
+		}
 	}
 }
 
