@@ -374,7 +374,7 @@ if err := w.Close(); err != nil {
 
 ```go
 // Make a writer that publishes messages to topic-A.
-// The topic is being if missing.
+// The topic is being created if missing.
 w := &Writer{
     Addr:                   TCP("localhost:9092"),
     Topic:                  "topic-A",
