@@ -160,6 +160,10 @@ func TestWriter(t *testing.T) {
 			scenario: "writing a message to a non-existant topic creates the topic",
 			function: testWriterAutoCreateTopic,
 		},
+		{
+			scenario: "terminates on an attempts to write a message to a non-existant topic",
+			function: testWriterTerminateMissingTopic,
+		},
 	}
 
 	for _, test := range tests {
@@ -734,6 +738,30 @@ func testWriterAutoCreateTopic(t *testing.T) {
 	}
 	if err != nil {
 		t.Errorf("unable to create topic %v", err)
+	}
+}
+
+func testWriterTerminateMissingTopic(t *testing.T) {
+	topic := makeTopic()
+
+	transport := &Transport{}
+	defer transport.CloseIdleConnections()
+
+	writer := &Writer{
+		Addr:                   TCP("localhost:9092"),
+		Topic:                  topic,
+		Balancer:               &RoundRobin{},
+		RequiredAcks:           RequireNone,
+		AllowAutoTopicCreation: false,
+		Transport:              transport,
+	}
+	defer writer.Close()
+
+	msg := Message{Value: []byte("FooBar")}
+
+	if err := writer.WriteMessages(context.Background(), msg); err == nil {
+		t.Fatal("Kafka error [3] UNKNOWN_TOPIC_OR_PARTITION is expected")
+		return
 	}
 }
 

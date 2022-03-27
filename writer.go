@@ -185,6 +185,9 @@ type Writer struct {
 	// If nil, DefaultTransport is used.
 	Transport RoundTripper
 
+	// AllowAutoTopicCreation notifies writer to create topic is missing.
+	AllowAutoTopicCreation bool
+
 	// Manages the current set of partition-topic writers.
 	group   sync.WaitGroup
 	mutex   sync.Mutex
@@ -733,7 +736,7 @@ func (w *Writer) partitions(ctx context.Context, topic string) (int, error) {
 	// caching recent results (the kafka.Transport types does).
 	r, err := client.transport().RoundTrip(ctx, client.Addr, &metadataAPI.Request{
 		TopicNames:             []string{topic},
-		AllowAutoTopicCreation: true,
+		AllowAutoTopicCreation: w.AllowAutoTopicCreation,
 	})
 	if err != nil {
 		return 0, err
@@ -941,7 +944,7 @@ func newBatchQueue(initialSize int) batchQueue {
 	bq := batchQueue{
 		queue: make([]*writeBatch, 0, initialSize),
 		mutex: &sync.Mutex{},
-		cond: &sync.Cond{},
+		cond:  &sync.Cond{},
 	}
 
 	bq.cond.L = bq.mutex
