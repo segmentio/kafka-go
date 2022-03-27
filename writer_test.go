@@ -716,6 +716,7 @@ func testWriterAutoCreateTopic(t *testing.T) {
 		Topic:    topic,
 		Balancer: &RoundRobin{},
 	})
+	w.AllowAutoTopicCreation = true
 	defer w.Close()
 
 	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
