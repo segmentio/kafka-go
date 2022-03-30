@@ -402,7 +402,7 @@ for i := 0; i < retries; i++ {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
     
-    // an attempt to creating topic prior to publishing the message is being made.
+    // attempt to create topic prior to publishing the message
     err = w.WriteMessages(ctx, messages...)
     if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
         time.Sleep(time.Millisecond * 250)
