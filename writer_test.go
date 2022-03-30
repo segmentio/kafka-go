@@ -161,7 +161,7 @@ func TestWriter(t *testing.T) {
 			function: testWriterAutoCreateTopic,
 		},
 		{
-			scenario: "terminates on an attempts to write a message to a non-existant topic",
+			scenario: "terminates on an attempt to write a message to a nonexistent topic",
 			function: testWriterTerminateMissingTopic,
 		},
 	}
