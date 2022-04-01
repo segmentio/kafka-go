@@ -337,6 +337,7 @@ to use in most cases as it provides additional features:
 - Synchronous or asynchronous writes of messages to Kafka.
 - Asynchronous cancellation using contexts.
 - Flushing of pending messages on close to support graceful shutdowns.
+- Creation of a missing topic before publishing a message. *Note!* it was the default behaviour up to the version `v0.4.30`.
 
 ```go
 // make a writer that produces to topic-A, using the least-bytes distribution
@@ -362,6 +363,55 @@ err := w.WriteMessages(context.Background(),
 )
 if err != nil {
     log.Fatal("failed to write messages:", err)
+}
+
+if err := w.Close(); err != nil {
+    log.Fatal("failed to close writer:", err)
+}
+```
+
+### Missing topic creation before publication
+
+```go
+// Make a writer that publishes messages to topic-A.
+// The topic will be created if it is missing.
+w := &Writer{
+    Addr:                   TCP("localhost:9092"),
+    Topic:                  "topic-A",
+    AllowAutoTopicCreation: true,
+}
+
+messages := []kafka.Message{
+    {
+        Key:   []byte("Key-A"),
+        Value: []byte("Hello World!"),
+    },
+    {
+        Key:   []byte("Key-B"),
+        Value: []byte("One!"),
+    },
+    {
+        Key:   []byte("Key-C"),
+        Value: []byte("Two!"),
+    },
+}
+
+var err error
+const retries = 3
+for i := 0; i < retries; i++ {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    
+    // attempt to create topic prior to publishing the message
+    err = w.WriteMessages(ctx, messages...)
+    if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
+        time.Sleep(time.Millisecond * 250)
+        continue
+    }
+
+    if err != nil {
+        log.Fatalf("unexpected error %v", err)
+    }
 }
 
 if err := w.Close(); err != nil {
