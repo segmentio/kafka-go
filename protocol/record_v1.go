@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func readMessage(b *pageBuffer, d *decoder) (attributes int8, baseOffset, timestamp int64, key, value Bytes, err error) {
+func readMessage(b *pageBuffer, d *decoder) (attributes int8, baseOffset, timestamp int64, key, value Bytes, n int64, err error) {
 	md := decoder{
 		reader: d,
 		remain: 12,
@@ -16,6 +16,7 @@ func readMessage(b *pageBuffer, d *decoder) (attributes int8, baseOffset, timest
 
 	baseOffset = md.readInt64()
 	md.remain = int(md.readInt32())
+	n = int64(md.remain)
 
 	crc := uint32(md.readInt32())
 	md.setCRC(crc32.IEEETable)
@@ -48,43 +49,36 @@ func readMessage(b *pageBuffer, d *decoder) (attributes int8, baseOffset, timest
 	} else {
 		err = dontExpectEOF(md.err)
 	}
-
 	return
 }
 
-func (rs *RecordSet) readFromVersion1(d *decoder) error {
+func (rs *RecordSet) readFromVersion1(d *decoder) (int64, error) {
 	var records RecordReader
 
 	b := newPageBuffer()
 	defer b.unref()
 
-	attributes, baseOffset, timestamp, key, value, err := readMessage(b, d)
+	attributes, baseOffset, timestamp, key, value, n, err := readMessage(b, d)
 	if err != nil {
-		return err
+		return n, err
 	}
 
 	if compression := Attributes(attributes).Compression(); compression == 0 {
 		records = &message{
 			Record: Record{
 				Offset: baseOffset,
-				Time:   makeTime(timestamp),
+				Time:   MakeTime(timestamp),
 				Key:    key,
 				Value:  value,
 			},
 		}
 	} else {
-		// Can we have a non-nil key when reading a compressed message?
-		if key != nil {
-			key.Close()
-		}
 		if value == nil {
 			records = emptyRecordReader{}
 		} else {
-			defer value.Close()
-
 			codec := compression.Codec()
 			if codec == nil {
-				return Errorf("unsupported compression codec: %d", compression)
+				return n, Errorf("unsupported compression codec: %d", compression)
 			}
 			decompressor := codec.NewReader(value)
 			defer decompressor.Close()
@@ -102,20 +96,16 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 			}
 
 			for !d.done() {
-				_, offset, timestamp, key, value, err := readMessage(b, d)
+				_, offset, timestamp, key, value, _, err := readMessage(b, d)
 				if err != nil {
 					if errors.Is(err, io.ErrUnexpectedEOF) {
 						break
 					}
-					for _, rec := range r.records {
-						closeBytes(rec.Key)
-						closeBytes(rec.Value)
-					}
-					return err
+					return n, err
 				}
 				r.records = append(r.records, Record{
 					Offset: offset,
-					Time:   makeTime(timestamp),
+					Time:   MakeTime(timestamp),
 					Key:    key,
 					Value:  value,
 				})
@@ -146,7 +136,7 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 		Records:    records,
 	}
 
-	return nil
+	return n, nil
 }
 
 func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) error {
@@ -194,10 +184,10 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 	}
 
 	e := encoder{writer: buffer}
-	currentTimestamp := timestamp(time.Now())
+	currentTimestamp := Timestamp(time.Now())
 
 	return forEachRecord(records, func(i int, r *Record) error {
-		t := timestamp(r.Time)
+		t := Timestamp(r.Time)
 		if t == 0 {
 			t = currentTimestamp
 		}
@@ -232,6 +222,11 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 type message struct {
 	Record Record
 	read   bool
+}
+
+func (m *message) Close() error {
+	m.read = true
+	return nil
 }
 
 func (m *message) ReadRecord() (*Record, error) {

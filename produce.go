@@ -142,7 +142,12 @@ type ProduceResponse struct {
 //
 // When the request is configured with RequiredAcks=none, both the response and
 // the error will be nil on success.
+//
+// The method always closes the records reader carried by the request.
 func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResponse, error) {
+	if req.Records != nil {
+		defer req.Records.Close()
+	}
 	attributes := protocol.Attributes(req.Compression) & 0x7
 
 	m, err := c.roundTrip(ctx, req.Addr, &produceAPI.Request{

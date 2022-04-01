@@ -32,7 +32,7 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	size := d.readInt32()
 
 	if err = d.err; err != nil {
-		err = dontExpectEOF(err)
+		err = fmt.Errorf("reading %s response v%d size: %w", apiKey, apiVersion, dontExpectEOF(err))
 		return
 	}
 
@@ -77,9 +77,8 @@ func ReadResponse(r io.Reader, apiKey ApiKey, apiVersion int16) (correlationID i
 	d.discardAll()
 
 	if err = d.err; err != nil {
-		err = dontExpectEOF(err)
+		err = fmt.Errorf("reading %s response v%d: %w", apiKey, apiVersion, dontExpectEOF(err))
 	}
-
 	return
 }
 
