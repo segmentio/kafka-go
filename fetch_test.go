@@ -273,7 +273,7 @@ func TestClientPipeline(t *testing.T) {
 		for {
 			r, err := res.Records.ReadRecord()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				t.Fatal(err)

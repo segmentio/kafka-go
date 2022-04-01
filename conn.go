@@ -853,7 +853,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	default:
 		throttle, highWaterMark, remain, err = readFetchResponseHeaderV2(&c.rbuf, size)
 	}
-	if err == errShortRead {
+	if errors.Is(err, errShortRead) {
 		err = checkTimeoutErr(adjustedDeadline)
 	}
 
@@ -865,9 +865,10 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 			msgs, err = newMessageSetReader(&c.rbuf, remain)
 		}
 	}
-	if err == errShortRead {
+	if errors.Is(err, errShortRead) {
 		err = checkTimeoutErr(adjustedDeadline)
 	}
+
 	return &Batch{
 		conn:          c,
 		msgs:          msgs,

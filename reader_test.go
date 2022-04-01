@@ -3,6 +3,7 @@ package kafka
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -1622,7 +1623,7 @@ func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 	for {
 		msg, err := r.ReadMessage(ctx)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				t.Log("reader closed")
 				break
 			}

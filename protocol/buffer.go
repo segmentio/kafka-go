@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -151,7 +152,7 @@ func (p *page) ReadAt(b []byte, off int64) (int, error) {
 
 func (p *page) ReadFrom(r io.Reader) (int64, error) {
 	n, err := io.ReadFull(r, p.buffer[p.length:])
-	if err == io.EOF || err == io.ErrUnexpectedEOF {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		err = nil
 	}
 	p.length += n

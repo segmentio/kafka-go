@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -82,7 +83,7 @@ func (batch *Batch) close() (err error) {
 		batch.msgs.discard()
 	}
 
-	if err = batch.err; err == io.EOF {
+	if err = batch.err; errors.Is(batch.err, io.EOF) {
 		err = nil
 	}
 
@@ -93,7 +94,8 @@ func (batch *Batch) close() (err error) {
 		conn.mutex.Unlock()
 
 		if err != nil {
-			if _, ok := err.(Error); !ok && err != io.ErrShortBuffer {
+			var kafkaError Error
+			if !errors.As(err, &kafkaError) && !errors.Is(err, io.ErrShortBuffer) {
 				conn.Close()
 			}
 		}
@@ -238,11 +240,11 @@ func (batch *Batch) readMessage(
 
 	var lastOffset int64
 	offset, lastOffset, timestamp, headers, err = batch.msgs.readMessage(batch.offset, key, val)
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		batch.offset = offset + 1
 		batch.lastOffset = lastOffset
-	case errShortRead:
+	case errors.Is(err, errShortRead):
 		// As an "optimization" kafka truncates the returned response after
 		// producing MaxBytes, which could then cause the code to return
 		// errShortRead.
@@ -272,7 +274,7 @@ func (batch *Batch) readMessage(
 			//   to MaxBytes truncation
 			// - `batch.lastOffset` to ensure that the message format contains
 			//   `lastOffset`
-			if batch.err == io.EOF && batch.msgs.lengthRemain == 0 && batch.lastOffset != -1 {
+			if errors.Is(batch.err, io.EOF) && batch.msgs.lengthRemain == 0 && batch.lastOffset != -1 {
 				// Log compaction can create batches that end with compacted
 				// records so the normal strategy that increments the "next"
 				// offset as records are read doesn't work as the compacted

@@ -411,7 +411,7 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 		var msg Message
 
 		if msg, err = batch.ReadMessage(); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = nil
 			}
 			return

@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -276,7 +277,7 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 
 	c, err := d.dialContext(ctx, network, address)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to dial: %w", err)
 	}
 
 	conn := NewConnWith(c, connCfg)
@@ -284,7 +285,7 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 	if d.SASLMechanism != nil {
 		host, port, err := splitHostPortNumber(address)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not determine host/port for SASL authentication: %w", err)
 		}
 		metadata := &sasl.Metadata{
 			Host: host,
@@ -292,7 +293,7 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 		}
 		if err := d.authenticateSASL(sasl.WithMetadata(ctx, metadata), conn); err != nil {
 			_ = conn.Close()
-			return nil, err
+			return nil, fmt.Errorf("could not successfully authenticate to %s:%d with SASL: %w", host, port, err)
 		}
 	}
 
@@ -307,19 +308,19 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 // responsibility of the caller.
 func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
 	if err := conn.saslHandshake(d.SASLMechanism.Name()); err != nil {
-		return err
+		return fmt.Errorf("SASL handshake failed: %w", err)
 	}
 
 	sess, state, err := d.SASLMechanism.Start(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("SASL authentication process could not be started: %w", err)
 	}
 
 	for completed := false; !completed; {
 		challenge, err := conn.saslAuthenticate(state)
-		switch err {
-		case nil:
-		case io.EOF:
+		switch {
+		case err == nil:
+		case errors.Is(err, io.EOF):
 			// the broker may communicate a failed exchange by closing the
 			// connection (esp. in the case where we're passing opaque sasl
 			// data over the wire since there's no protocol info).
@@ -330,7 +331,7 @@ func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
 
 		completed, state, err = sess.Next(ctx, challenge)
 		if err != nil {
-			return err
+			return fmt.Errorf("SASL authentication process has failed: %w", err)
 		}
 	}
 
@@ -340,7 +341,7 @@ func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
 func (d *Dialer) dialContext(ctx context.Context, network string, addr string) (net.Conn, error) {
 	address, err := lookupHost(ctx, addr, d.Resolver)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve host: %w", err)
 	}
 
 	dial := d.DialFunc
@@ -355,7 +356,7 @@ func (d *Dialer) dialContext(ctx context.Context, network string, addr string) (
 
 	conn, err := dial(ctx, network, address)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open connection to %s: %w", address, err)
 	}
 
 	if d.TLS != nil {
@@ -469,7 +470,7 @@ func lookupHost(ctx context.Context, address string, resolver Resolver) (string,
 	if resolver != nil {
 		resolved, err := resolver.LookupHost(ctx, host)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to resolve host %s: %w", host, err)
 		}
 
 		// if the resolver doesn't return anything, we'll fall back on the provided

@@ -516,15 +516,15 @@ func isTransientNetworkError(err error) bool {
 }
 
 func silentEOF(err error) error {
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		err = nil
 	}
 	return err
 }
 
 func dontExpectEOF(err error) error {
-	if err == io.EOF {
-		err = io.ErrUnexpectedEOF
+	if errors.Is(err, io.EOF) {
+		return io.ErrUnexpectedEOF
 	}
 	return err
 }

@@ -3,6 +3,7 @@ package kafka
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -640,10 +641,13 @@ func testConnReadBatchWithMaxWait(t *testing.T, conn *Conn) {
 	conn.Seek(0, SeekAbsolute)
 	conn.SetDeadline(time.Now().Add(50 * time.Millisecond))
 	batch = conn.ReadBatchWith(cfg)
+	var netErr net.Error
 	if err := batch.Err(); err == nil {
 		t.Fatal("should have timed out, but got no error")
-	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
-		t.Fatalf("should have timed out, but got: %v", err)
+	} else if errors.As(err, &netErr) {
+		if !netErr.Timeout() {
+			t.Fatalf("should have timed out, but got: %v", err)
+		}
 	}
 }
 
@@ -761,7 +765,7 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 
 func testConnJoinGroupInvalidGroupID(t *testing.T, conn *Conn) {
 	_, err := conn.joinGroup(joinGroupRequestV1{})
-	if err != InvalidGroupId && err != NotCoordinatorForGroup {
+	if !errors.Is(err, InvalidGroupId) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", InvalidGroupId, NotCoordinatorForGroup, err)
 	}
 }
@@ -773,7 +777,7 @@ func testConnJoinGroupInvalidSessionTimeout(t *testing.T, conn *Conn) {
 	_, err := conn.joinGroup(joinGroupRequestV1{
 		GroupID: groupID,
 	})
-	if err != InvalidSessionTimeout && err != NotCoordinatorForGroup {
+	if !errors.Is(err, InvalidSessionTimeout) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", InvalidSessionTimeout, NotCoordinatorForGroup, err)
 	}
 }
@@ -786,7 +790,7 @@ func testConnJoinGroupInvalidRefreshTimeout(t *testing.T, conn *Conn) {
 		GroupID:        groupID,
 		SessionTimeout: int32(3 * time.Second / time.Millisecond),
 	})
-	if err != InvalidSessionTimeout && err != NotCoordinatorForGroup {
+	if !errors.Is(err, InvalidSessionTimeout) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", InvalidSessionTimeout, NotCoordinatorForGroup, err)
 	}
 }
@@ -798,7 +802,7 @@ func testConnHeartbeatErr(t *testing.T, conn *Conn) {
 	_, err := conn.syncGroup(syncGroupRequestV0{
 		GroupID: groupID,
 	})
-	if err != UnknownMemberId && err != NotCoordinatorForGroup {
+	if !errors.Is(err, UnknownMemberId) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", UnknownMemberId, NotCoordinatorForGroup, err)
 	}
 }
@@ -810,7 +814,7 @@ func testConnLeaveGroupErr(t *testing.T, conn *Conn) {
 	_, err := conn.leaveGroup(leaveGroupRequestV0{
 		GroupID: groupID,
 	})
-	if err != UnknownMemberId && err != NotCoordinatorForGroup {
+	if !errors.Is(err, UnknownMemberId) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", UnknownMemberId, NotCoordinatorForGroup, err)
 	}
 }
@@ -822,7 +826,7 @@ func testConnSyncGroupErr(t *testing.T, conn *Conn) {
 	_, err := conn.syncGroup(syncGroupRequestV0{
 		GroupID: groupID,
 	})
-	if err != UnknownMemberId && err != NotCoordinatorForGroup {
+	if !errors.Is(err, UnknownMemberId) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", UnknownMemberId, NotCoordinatorForGroup, err)
 	}
 }
@@ -985,7 +989,7 @@ func testConnReadShortBuffer(t *testing.T, conn *Conn) {
 		b[3] = 0
 
 		n, err := conn.Read(b)
-		if err != io.ErrShortBuffer {
+		if !errors.Is(err, io.ErrShortBuffer) {
 			t.Error("bad error:", i, err)
 		}
 		if n != 4 {
@@ -1061,7 +1065,7 @@ func testDeleteTopicsInvalidTopic(t *testing.T, conn *Conn) {
 	}
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 	err = conn.DeleteTopics("invalid-topic", topic)
-	if err != UnknownTopicOrPartition {
+	if !errors.Is(err, UnknownTopicOrPartition) {
 		t.Fatalf("expected UnknownTopicOrPartition error, but got %v", err)
 	}
 	partitions, err := conn.ReadPartitions(topic)
@@ -1154,7 +1158,7 @@ func TestUnsupportedSASLMechanism(t *testing.T) {
 	}
 	defer conn.Close()
 
-	if err := conn.saslHandshake("FOO"); err != UnsupportedSASLMechanism {
+	if err := conn.saslHandshake("FOO"); !errors.Is(err, UnsupportedSASLMechanism) {
 		t.Errorf("Expected UnsupportedSASLMechanism but got %v", err)
 	}
 }

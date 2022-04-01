@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"strconv"
@@ -30,11 +31,11 @@ func TestBatchDontExpectEOF(t *testing.T) {
 
 	batch := conn.ReadBatch(1024, 8192)
 
-	if _, err := batch.ReadMessage(); err != io.ErrUnexpectedEOF {
+	if _, err := batch.ReadMessage(); !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Error("bad error when reading message:", err)
 	}
 
-	if err := batch.Close(); err != io.ErrUnexpectedEOF {
+	if err := batch.Close(); !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Error("bad error when closing the batch:", err)
 	}
 }

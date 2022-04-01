@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -67,7 +68,7 @@ func (c *Client) ConsumerOffsets(ctx context.Context, tg TopicAndGroup) (map[int
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get topic metadata :%w", err)
 	}
 
 	topic := metadata.Topics[0]
@@ -85,7 +86,7 @@ func (c *Client) ConsumerOffsets(ctx context.Context, tg TopicAndGroup) (map[int
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get offsets: %w", err)
 	}
 
 	topicOffsets := offsets.Topics[topic.Name]
