@@ -19,7 +19,7 @@ type HeartbeatRequest struct {
 	GroupID string
 
 	// GenerationID is the current generation for the group.
-	GenerationID int32
+	GenerationID int
 
 	// MemberID is the ID of the group member.
 	MemberID string
@@ -55,7 +55,7 @@ type heartbeatRequestV0 struct {
 func (c *Client) Heartbeat(ctx context.Context, req *HeartbeatRequest) (*HeartbeatResponse, error) {
 	m, err := c.roundTrip(ctx, req.Addr, &heartbeatAPI.Request{
 		GroupID:         req.GroupID,
-		GenerationID:    req.GenerationID,
+		GenerationID:    int32(req.GenerationID),
 		MemberID:        req.MemberID,
 		GroupInstanceID: req.GroupInstanceID,
 	})

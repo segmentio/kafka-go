@@ -26,7 +26,6 @@ func TestClientHeartbeat(t *testing.T) {
 		Brokers:           []string{"localhost:9092"},
 		HeartbeatInterval: 2 * time.Second,
 		RebalanceTimeout:  2 * time.Second,
-		RetentionTime:     time.Hour,
 		Logger:            log.New(os.Stdout, "cg-test: ", 0),
 	})
 	if err != nil {
@@ -44,7 +43,7 @@ func TestClientHeartbeat(t *testing.T) {
 
 	resp, err := client.Heartbeat(ctx, &HeartbeatRequest{
 		GroupID:      groupID,
-		GenerationID: gen.ID,
+		GenerationID: int(gen.ID),
 		MemberID:     gen.MemberID,
 	})
 	if err != nil {

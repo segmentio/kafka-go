@@ -89,7 +89,6 @@ func (c *Client) JoinGroup(ctx context.Context, req *JoinGroupRequest) (*JoinGro
 	}
 
 	for _, member := range r.Members {
-		fmt.Println("join", member.Metadata)
 		res.Members = append(res.Members, JoinGroupResponseMember{
 			ID:              member.MemberID,
 			GroupInstanceID: member.GroupInstanceID,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"sort"
 	"strconv"
 	"sync"
@@ -172,7 +173,7 @@ func (r *Reader) commitOffsetsWithRetry(gen *Generation, offsetStash offsetStash
 			}
 		}
 
-		if err = gen.CommitOffsets(offsetStash); err == nil {
+		if err = gen.CommitOffsets(offsetStash.commits()); err == nil {
 			return
 		}
 	}
@@ -182,6 +183,20 @@ func (r *Reader) commitOffsetsWithRetry(gen *Generation, offsetStash offsetStash
 
 // offsetStash holds offsets by topic => partition => offset
 type offsetStash map[string]map[int]int64
+
+func (o offsetStash) commits() map[string]map[int]OffsetCommit {
+	commits := make(map[string]map[int]OffsetCommit, len(o))
+	for topic, offsets := range o {
+		commits[topic] = make(map[int]OffsetCommit, len(offsets))
+		for partition, offset := range offsets {
+			commits[topic][partition] = OffsetCommit{
+				Partition: partition,
+				Offset:    offset,
+			}
+		}
+	}
+	return commits
+}
 
 // merge updates the offsetStash with the offsets from the provided messages
 func (o offsetStash) merge(commits []commit) {
@@ -719,10 +734,60 @@ func NewReader(config ReaderConfig) *Reader {
 	if r.useConsumerGroup() {
 		r.done = make(chan struct{})
 		r.runError = make(chan error)
+
+		var transport RoundTripper
+		if r.config.Dialer != nil {
+			kafkaDialer := r.config.Dialer
+
+			dialer := (&net.Dialer{
+				Timeout:       kafkaDialer.Timeout,
+				Deadline:      kafkaDialer.Deadline,
+				LocalAddr:     kafkaDialer.LocalAddr,
+				DualStack:     kafkaDialer.DualStack,
+				FallbackDelay: kafkaDialer.FallbackDelay,
+				KeepAlive:     kafkaDialer.KeepAlive,
+			})
+
+			var resolver Resolver
+			if r, ok := kafkaDialer.Resolver.(*net.Resolver); ok {
+				dialer.Resolver = r
+			} else {
+				resolver = kafkaDialer.Resolver
+			}
+
+			// For backward compatibility with the pre-0.4 APIs, support custom
+			// resolvers by wrapping the dial function.
+			dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+				start := time.Now()
+				defer func() {
+					r.stats.dials.observe(1)
+					r.stats.dialTime.observe(int64(time.Since(start)))
+				}()
+				address, err := lookupHost(ctx, addr, resolver)
+				if err != nil {
+					return nil, err
+				}
+				return dialer.DialContext(ctx, network, address)
+			}
+
+			metadataTTL := r.config.RebalanceTimeout
+			if metadataTTL == 0 {
+				metadataTTL = defaultRebalanceTimeout
+			}
+
+			transport = &Transport{
+				Dial:        dial,
+				SASL:        kafkaDialer.SASLMechanism,
+				TLS:         kafkaDialer.TLS,
+				ClientID:    kafkaDialer.ClientID,
+				MetadataTTL: metadataTTL,
+			}
+		}
+
 		cg, err := NewConsumerGroup(ConsumerGroupConfig{
 			ID:                     r.config.GroupID,
 			Brokers:                r.config.Brokers,
-			Dialer:                 r.config.Dialer,
+			Transport:              transport,
 			Topics:                 r.getTopics(),
 			GroupBalancers:         r.config.GroupBalancers,
 			HeartbeatInterval:      r.config.HeartbeatInterval,
@@ -731,7 +796,6 @@ func NewReader(config ReaderConfig) *Reader {
 			SessionTimeout:         r.config.SessionTimeout,
 			RebalanceTimeout:       r.config.RebalanceTimeout,
 			JoinGroupBackoff:       r.config.JoinGroupBackoff,
-			RetentionTime:          r.config.RetentionTime,
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,

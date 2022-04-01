@@ -54,10 +54,11 @@ func TestLeaveGroupResp(t *testing.T) {
 		prototest.TestResponse(t, version, &leavegroup.Response{
 			ErrorCode:      10,
 			ThrottleTimeMS: 100,
-			Members: []leavegroup.RequestMember{
+			Members: []leavegroup.ResponseMember{
 				{
 					MemberID:        "member-id-1",
 					GroupInstanceID: "group-instance-id",
+					ErrorCode:       10,
 				},
 			},
 		})

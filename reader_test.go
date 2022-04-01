@@ -1289,10 +1289,12 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 	var commitCount int
 	gen := &Generation{
 		conn: mockCoordinator{
-			offsetCommitFunc: func(r offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+			offsetCommitFunc: func(r *OffsetCommitRequest) (*OffsetCommitResponse, error) {
 				commitCount++
-				committedOffset = r.Topics[0].Partitions[0].Offset
-				return offsetCommitResponseV2{}, nil
+				for _, offsets := range r.Topics {
+					committedOffset = offsets[0].Offset
+				}
+				return &OffsetCommitResponse{}, nil
 			},
 		},
 		done:     make(chan struct{}),
@@ -1358,12 +1360,12 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 			count := 0
 			gen := &Generation{
 				conn: mockCoordinator{
-					offsetCommitFunc: func(offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+					offsetCommitFunc: func(*OffsetCommitRequest) (*OffsetCommitResponse, error) {
 						count++
 						if count <= test.Fails {
-							return offsetCommitResponseV2{}, io.EOF
+							return nil, io.EOF
 						}
-						return offsetCommitResponseV2{}, nil
+						return &OffsetCommitResponse{}, nil
 					},
 				},
 				done:     make(chan struct{}),
@@ -1642,26 +1644,21 @@ func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 
 func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
 	// minimal config required to lookup coordinator
-	cg := ConsumerGroup{
-		config: ConsumerGroupConfig{
-			ID:      config.GroupID,
-			Brokers: config.Brokers,
-			Dialer:  config.Dialer,
-		},
-	}
+	cg, _ := NewConsumerGroup(ConsumerGroupConfig{
+		ID:      config.GroupID,
+		Brokers: config.Brokers,
+	})
 
 	conn, err := cg.coordinator()
 	if err != nil {
 		t.Errorf("unable to connect to coordinator: %v", err)
 	}
-	defer conn.Close()
 
-	offsets, err := conn.offsetFetch(offsetFetchRequestV1{
+	offsets, err := conn.offsetFetch(&OffsetFetchRequest{
 		GroupID: config.GroupID,
-		Topics: []offsetFetchRequestV1Topic{{
-			Topic:      config.Topic,
-			Partitions: []int32{0},
-		}},
+		Topics: map[string][]int{
+			config.Topic: {0},
+		},
 	})
 	if err != nil {
 		t.Errorf("bad fetchOffsets: %v", err)
@@ -1669,10 +1666,10 @@ func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
 
 	m := map[int]int64{}
 
-	for _, r := range offsets.Responses {
-		if r.Topic == config.Topic {
-			for _, p := range r.PartitionResponses {
-				m[int(p.Partition)] = p.Offset
+	for topic, partitions := range offsets.Topics {
+		if topic == config.Topic {
+			for _, p := range partitions {
+				m[int(p.Partition)] = p.CommittedOffset
 			}
 		}
 	}
