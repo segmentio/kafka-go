@@ -87,6 +87,10 @@ func (c *Conn) RoundTrip(msg Message) (Message, error) {
 		p.Prepare(apiVersion)
 	}
 
+	if raw, ok := msg.(RawExchanger); ok && raw.Required(versions) {
+		return raw.RawExchange(c)
+	}
+
 	return RoundTrip(c, apiVersion, correlationID, c.clientID, msg)
 }
 
