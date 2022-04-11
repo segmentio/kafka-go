@@ -8,7 +8,9 @@ assignees: ''
 ---
 
 **Describe the solution you would like**
-A clear and concise description of what you want to happen.
+
+> A clear and concise description of what you want to happen.
 
 **Supporting documentation**
-Please provides links to relevant Kafka protocol docs and/or KIPs.
+
+> Please provides links to relevant Kafka protocol docs and/or KIPs.
