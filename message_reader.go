@@ -318,10 +318,12 @@ func (r *messageSetReader) readMessageV2(_ int64, key readBytesFunc, val readByt
 	if err = r.readVarInt(&headerCount); err != nil {
 		return
 	}
-	headers = make([]Header, headerCount)
-	for i := 0; i < int(headerCount); i++ {
-		if err = r.readMessageHeader(&headers[i]); err != nil {
-			return
+	if headerCount > 0 {
+		headers = make([]Header, headerCount)
+		for i := range headers {
+			if err = r.readMessageHeader(&headers[i]); err != nil {
+				return
+			}
 		}
 	}
 	lastOffset = r.header.firstOffset + int64(r.header.v2.lastOffsetDelta)
