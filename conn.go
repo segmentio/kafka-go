@@ -313,6 +313,11 @@ func (c *Conn) DeleteTopics(topics ...string) error {
 	return err
 }
 
+func (c *Conn) ProbeCoordinator() error {
+	_, err := c.findCoordinator(findCoordinatorRequestV0{})
+	return err
+}
+
 // findCoordinator finds the coordinator for the specified group or transaction
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_FindCoordinator
