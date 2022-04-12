@@ -669,7 +669,7 @@ if err != nil {
 // it's generally best to create a few of these and share them across your
 // application.
 sharedTransport := &kafka.Transport{
-    SASLMechanism: mechanism,
+    SASL: mechanism,
 }
 
 w := kafka.Writer{
@@ -692,7 +692,7 @@ if err != nil {
 // it's generally best to create a few of these and share them across your
 // application.
 sharedTransport := &kafka.Transport{
-    SASLMechanism: mechanism,
+    SASL: mechanism,
 }
 
 client := &kafka.Client{
