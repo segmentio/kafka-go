@@ -205,9 +205,6 @@ type Writer struct {
 	// are safe to use concurrently from multiple goroutines, there is no need
 	// for extra synchronization to access this field.
 	roundRobin RoundRobin
-
-	// non-nil when a transport was created by NewWriter, remove in 1.0.
-	transport *Transport
 }
 
 // WriterConfig is a configuration type used to create new instances of Writer.
@@ -489,7 +486,6 @@ func NewWriter(config WriterConfig) *Writer {
 		Logger:       config.Logger,
 		ErrorLogger:  config.ErrorLogger,
 		Transport:    transport,
-		transport:    transport,
 		writerStats:  stats,
 	}
 
@@ -560,8 +556,8 @@ func (w *Writer) Close() error {
 	w.mutex.Unlock()
 	w.group.Wait()
 
-	if w.transport != nil {
-		w.transport.CloseIdleConnections()
+	if t, ok := w.Transport.(interface{ CloseIdleConnections() }); ok {
+		t.CloseIdleConnections()
 	}
 
 	return nil
