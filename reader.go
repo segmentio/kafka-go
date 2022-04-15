@@ -792,7 +792,6 @@ func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	if err != nil {
 		return Message{}, err
 	}
-
 	if r.useConsumerGroup() {
 		if err := r.CommitMessages(ctx, m); err != nil {
 			return Message{}, err
@@ -822,10 +821,12 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 
 		version := r.version
 		r.mutex.Unlock()
-
 		select {
 		case <-ctx.Done():
 			return Message{}, ctx.Err()
+
+		case <-r.stctx.Done():
+			return Message{}, r.stctx.Err()
 
 		case err := <-r.runError:
 			return Message{}, err
@@ -909,6 +910,10 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 		return ctx.Err()
 	case err := <-errch:
 		return err
+	case <-r.stctx.Done():
+		// This context is used to ensure we don't allow commits after the
+		// reader was closed.
+		return io.ErrClosedPipe
 	}
 }
 
