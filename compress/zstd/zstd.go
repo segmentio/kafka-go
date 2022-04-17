@@ -33,7 +33,6 @@ func (c *Codec) NewReader(r io.Reader) io.ReadCloser {
 	} else {
 		z, err := zstd.NewReader(r,
 			zstd.WithDecoderConcurrency(1),
-			zstd.WithDecoderLowmem(true),
 		)
 		if err != nil {
 			p.err = err
