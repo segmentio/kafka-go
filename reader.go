@@ -495,6 +495,16 @@ type ReaderConfig struct {
 	// Only used when GroupID is set
 	StartOffset int64
 
+	// AutoOffsetReset determines from if, and whence, the reader should restart consuming if
+	// it hits an OffsetOutOfRange error. If non-zero, it must be set to one of FirstOffset or
+	// LastOffset. If AutoOffsetReset is not enabled, the consumer will only be able to resume
+	// reading once the partition's offset has once again reached the current offset value.
+	//
+	// Default: 0 (reset is not enabled)
+	//
+	// Only used when GroupID is *not* set
+	AutoOffsetReset int64
+
 	// BackoffDelayMin optionally sets the smallest amount of time the reader will wait before
 	// polling for new messages
 	//
@@ -1208,6 +1218,7 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 				stats:           r.stats,
 				isolationLevel:  r.config.IsolationLevel,
 				maxAttempts:     r.config.MaxAttempts,
+				autoOffsetReset: r.config.AutoOffsetReset,
 			}).run(ctx, offset)
 		}(ctx, key, offset, &r.join)
 	}
@@ -1233,6 +1244,7 @@ type reader struct {
 	stats           *readerStats
 	isolationLevel  IsolationLevel
 	maxAttempts     int
+	autoOffsetReset int64
 }
 
 type readerMessage struct {
@@ -1268,11 +1280,20 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		case nil:
 		case OffsetOutOfRange:
 			// This would happen if the requested offset is passed the last
-			// offset on the partition leader. In that case we're just going
+			// offset on the partition leader. If autoReset is not enabled, we're just going
 			// to retry later hoping that enough data has been produced.
 			r.withErrorLogger(func(log Logger) {
 				log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, OffsetOutOfRange)
 			})
+			switch r.autoOffsetReset {
+			case FirstOffset, LastOffset:
+				offset = r.autoOffsetReset
+			case 0:
+			default:
+				r.withErrorLogger(func(log Logger) {
+					log.Printf("invalid ReaderConfig.AutoOffsetReset value %v for reader of %s", r.autoOffsetReset, r.topic)
+				})
+			}
 			continue
 		default:
 			// Perform a configured number of attempts before

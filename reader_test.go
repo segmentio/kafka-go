@@ -49,6 +49,11 @@ func TestReader(t *testing.T) {
 		},
 
 		{
+			scenario: "setting missing offset for reader",
+			function: testReaderSetMissingOffset,
+		},
+
+		{
 			scenario: "calling Lag returns the lag of the last message read from kafka",
 			function: testReaderLag,
 		},
@@ -73,11 +78,13 @@ func TestReader(t *testing.T) {
 			defer cancel()
 
 			r := NewReader(ReaderConfig{
-				Brokers:  []string{"localhost:9092"},
-				Topic:    makeTopic(),
-				MinBytes: 1,
-				MaxBytes: 10e6,
-				MaxWait:  100 * time.Millisecond,
+				Brokers:         []string{"localhost:9092"},
+				Topic:           makeTopic(),
+				MinBytes:        1,
+				MaxBytes:        10e6,
+				MaxWait:         100 * time.Millisecond,
+				AutoOffsetReset: FirstOffset,
+				Logger:          LoggerFunc(t.Logf),
 			})
 			defer r.Close()
 			testFunc(t, ctx, r)
@@ -203,6 +210,19 @@ func testReaderSetOffsetAt(t *testing.T, ctx context.Context, r *Reader) {
 	if m.Offset != 10 {
 		t.Errorf("expected offset of 10, received offset %d", m.Offset)
 	}
+}
+
+func testReaderSetMissingOffset(t *testing.T, ctx context.Context, r *Reader) {
+	const N = 10
+	prepareReader(t, ctx, r, makeTestSequence(N)...)
+
+	err := r.SetOffset(20)
+	require.NoError(t, err)
+
+	m, err := r.ReadMessage(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(0), m.Offset)
 }
 
 func testReaderLag(t *testing.T, ctx context.Context, r *Reader) {
