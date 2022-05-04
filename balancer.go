@@ -167,6 +167,53 @@ func (h *Hash) Balance(msg Message, partitions ...int) int {
 	return int(partition)
 }
 
+// ReferenceHash is a Balancer that uses the provided hash function to determine which
+// partition to route messages to.  This ensures that messages with the same key
+// are routed to the same partition.
+//
+// The logic to calculate the partition is:
+//
+//      (int32(hasher.Sum32()) & 0x7fffffff) % len(partitions) => partition
+//
+// By default, ReferenceHash uses the FNV-1a algorithm. This is the same algorithm as
+// the Sarama NewReferenceHashPartitioner and ensures that messages produced by kafka-go will
+// be delivered to the same topics that the Sarama producer would be delivered to
+type ReferenceHash struct {
+	rr     RoundRobin
+	Hasher hash.Hash32
+
+	// lock protects Hasher while calculating the hash code.  It is assumed that
+	// the Hasher field is read-only once the Balancer is created, so as a
+	// performance optimization, reads of the field are not protected.
+	lock sync.Mutex
+}
+
+func (h *ReferenceHash) Balance(msg Message, partitions ...int) int {
+	if msg.Key == nil {
+		return h.rr.Balance(msg, partitions...)
+	}
+
+	hasher := h.Hasher
+	if hasher != nil {
+		h.lock.Lock()
+		defer h.lock.Unlock()
+	} else {
+		hasher = fnv1aPool.Get().(hash.Hash32)
+		defer fnv1aPool.Put(hasher)
+	}
+
+	hasher.Reset()
+	if _, err := hasher.Write(msg.Key); err != nil {
+		panic(err)
+	}
+
+	// uses the same algorithm as the Sarama's referenceHashPartitioner.
+	// note the type conversions here. if the uint32 hash code is not cast to
+	// an int32, we do not get the same result as sarama.
+	partition := (int32(hasher.Sum32()) & 0x7fffffff) % int32(len(partitions))
+	return int(partition)
+}
+
 type randomBalancer struct {
 	mock int // mocked return value, used for testing
 }
