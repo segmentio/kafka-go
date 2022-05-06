@@ -15,20 +15,8 @@ func discardN(r *bufio.Reader, sz int, n int) (int, error) {
 	return sz - n, err
 }
 
-func discardInt8(r *bufio.Reader, sz int) (int, error) {
-	return discardN(r, sz, 1)
-}
-
-func discardInt16(r *bufio.Reader, sz int) (int, error) {
-	return discardN(r, sz, 2)
-}
-
 func discardInt32(r *bufio.Reader, sz int) (int, error) {
 	return discardN(r, sz, 4)
-}
-
-func discardInt64(r *bufio.Reader, sz int) (int, error) {
-	return discardN(r, sz, 8)
 }
 
 func discardString(r *bufio.Reader, sz int) (int, error) {

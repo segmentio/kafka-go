@@ -28,10 +28,6 @@ func sizeof(a interface{}) int32 {
 	panic(fmt.Sprintf("unsupported type: %T", a))
 }
 
-func sizeofInt8(_ int8) int32 {
-	return 1
-}
-
 func sizeofInt16(_ int16) int32 {
 	return 2
 }
@@ -53,10 +49,6 @@ func sizeofNullableString(s *string) int32 {
 		return 2
 	}
 	return sizeofString(*s)
-}
-
-func sizeofBool(_ bool) int32 {
-	return 1
 }
 
 func sizeofBytes(b []byte) int32 {

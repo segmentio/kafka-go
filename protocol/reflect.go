@@ -35,10 +35,6 @@ func valueOf(x interface{}) value {
 	return value{val: reflect.ValueOf(x).Elem()}
 }
 
-func makeValue(t reflect.Type) value {
-	return value{val: reflect.New(t).Elem()}
-}
-
 func (v value) bool() bool { return v.val.Bool() }
 
 func (v value) int8() int8 { return int8(v.int64()) }

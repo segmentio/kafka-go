@@ -108,17 +108,6 @@ func (m *multiRecordReader) ReadRecord() (*Record, error) {
 	}
 }
 
-func concatRecordReader(head RecordReader, tail RecordReader) RecordReader {
-	if head == nil {
-		return tail
-	}
-	if m, _ := head.(*multiRecordReader); m != nil {
-		m.batches = append(m.batches, tail)
-		return m
-	}
-	return MultiRecordReader(head, tail)
-}
-
 // optimizedRecordReader is an implementation of a RecordReader which exposes a
 // sequence
 type optimizedRecordReader struct {
