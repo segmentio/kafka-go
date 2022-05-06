@@ -39,7 +39,7 @@ func TestSnappyEncode(t *testing.T) {
 }
 
 func TestSnappyEncodeStream(t *testing.T) {
-	for src, _ := range snappyStreamTestCases {
+	for src := range snappyStreamTestCases {
 		dst := EncodeStream(nil, []byte(src))
 
 		// Block size can change the bytes generated, so let's just decode and make sure in matches out
@@ -195,7 +195,7 @@ func BenchmarkSnappyStreamDecodeInto(b *testing.B) {
 	b.ResetTimer()
 
 	var (
-		dst = make([]byte, 1024, 1024)
+		dst = make([]byte, 1024)
 		err error
 	)
 
@@ -236,7 +236,7 @@ func BenchmarkSnappyStreamDecodeIntoMassive(b *testing.B) {
 	b.SetBytes(int64(len(massiveString)))
 
 	var (
-		dst = make([]byte, 1024, 1024)
+		dst = make([]byte, 1024)
 		err error
 	)
 

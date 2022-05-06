@@ -951,7 +951,7 @@ func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx cont
 	if err := r.CommitMessages(ctx, m); err != nil {
 		t.Errorf("bad commit message: %v", err)
 	}
-	if elapsed := time.Now().Sub(started); elapsed > 10*time.Millisecond {
+	if elapsed := time.Since(started); elapsed > 10*time.Millisecond {
 		t.Errorf("background commits should happen nearly instantly")
 	}
 

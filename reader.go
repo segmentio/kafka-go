@@ -533,15 +533,15 @@ func (config *ReaderConfig) Validate() error {
 	}
 
 	if config.Partition < 0 || config.Partition >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
+		return fmt.Errorf("partition number out of bounds: %d", config.Partition)
 	}
 
 	if config.MinBytes < 0 {
-		return errors.New(fmt.Sprintf("invalid negative minimum batch size (min = %d)", config.MinBytes))
+		return fmt.Errorf("invalid negative minimum batch size (min = %d)", config.MinBytes)
 	}
 
 	if config.MaxBytes < 0 {
-		return errors.New(fmt.Sprintf("invalid negative maximum batch size (max = %d)", config.MaxBytes))
+		return fmt.Errorf("invalid negative maximum batch size (max = %d)", config.MaxBytes)
 	}
 
 	if config.GroupID != "" {
@@ -557,15 +557,15 @@ func (config *ReaderConfig) Validate() error {
 	}
 
 	if config.MinBytes > config.MaxBytes {
-		return errors.New(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
+		return fmt.Errorf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes)
 	}
 
 	if config.ReadBackoffMax < 0 {
-		return errors.New(fmt.Sprintf("ReadBackoffMax out of bounds: %d", config.ReadBackoffMax))
+		return fmt.Errorf("ReadBackoffMax out of bounds: %d", config.ReadBackoffMax)
 	}
 
 	if config.ReadBackoffMin < 0 {
-		return errors.New(fmt.Sprintf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin))
+		return fmt.Errorf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin)
 	}
 
 	return nil

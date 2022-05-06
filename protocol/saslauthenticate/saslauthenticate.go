@@ -29,7 +29,7 @@ func (*Request) Required(versions map[protocol.ApiKey]int16) bool {
 
 func (r *Request) writeTo(w io.Writer) error {
 	size := len(r.AuthBytes) + 4
-	buf := make([]byte, size, size)
+	buf := make([]byte, size)
 	binary.BigEndian.PutUint32(buf[:4], uint32(len(r.AuthBytes)))
 	copy(buf[4:], r.AuthBytes)
 	_, err := w.Write(buf)

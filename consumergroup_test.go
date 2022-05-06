@@ -645,7 +645,7 @@ func TestGenerationExitsOnPartitionChange(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for partition watcher to exit")
 	case <-done:
-		if time.Now().Sub(now).Seconds() > watchTime.Seconds()*4 {
+		if time.Since(now).Seconds() > watchTime.Seconds()*4 {
 			t.Error("partitionWatcher didn't see update")
 		}
 	}

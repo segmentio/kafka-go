@@ -553,7 +553,7 @@ func TestRackAffinityGroupBalancer(t *testing.T) {
 					maxLoad++
 				}
 				for _, member := range members {
-					assignments, _ := res[member.ID]["test"]
+					assignments := res[member.ID]["test"]
 					if len(assignments) < minLoad || len(assignments) > maxLoad {
 						t.Errorf("expected between %d and %d partitions for member %s", minLoad, maxLoad, member.ID)
 					}

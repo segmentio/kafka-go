@@ -372,7 +372,7 @@ func BenchmarkCompression(b *testing.B) {
 		benchmark := &benchmarks[i]
 		ratio := 0.0
 
-		b.Run(fmt.Sprintf("%s", benchmark.codec.Name()), func(b *testing.B) {
+		b.Run(benchmark.codec.Name(), func(b *testing.B) {
 			ratio = benchmark.function(b, benchmark.codec, &buffer, payload)
 		})
 

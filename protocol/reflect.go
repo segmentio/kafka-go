@@ -51,7 +51,7 @@ func (v value) bytes() []byte { return v.val.Bytes() }
 
 func (v value) iface(t reflect.Type) interface{} { return v.val.Addr().Interface() }
 
-func (v value) array(t reflect.Type) array { return array{val: v.val} }
+func (v value) array(t reflect.Type) array { return array(v) }
 
 func (v value) setBool(b bool) { v.val.SetBool(b) }
 

@@ -217,27 +217,27 @@ func (config *ConsumerGroupConfig) Validate() error {
 	}
 
 	if config.HeartbeatInterval < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
+		return fmt.Errorf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval)
 	}
 
 	if config.SessionTimeout < 0 || (config.SessionTimeout/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("SessionTimeout out of bounds: %d", config.SessionTimeout))
+		return fmt.Errorf("SessionTimeout out of bounds: %d", config.SessionTimeout)
 	}
 
 	if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
+		return fmt.Errorf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout)
 	}
 
 	if config.JoinGroupBackoff < 0 || (config.JoinGroupBackoff/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff))
+		return fmt.Errorf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff)
 	}
 
 	if config.RetentionTime < 0 && config.RetentionTime != defaultRetentionTime {
-		return errors.New(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
+		return fmt.Errorf("RetentionTime out of bounds: %d", config.RetentionTime)
 	}
 
 	if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
+		return fmt.Errorf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval)
 	}
 
 	if config.StartOffset == 0 {
@@ -245,7 +245,7 @@ func (config *ConsumerGroupConfig) Validate() error {
 	}
 
 	if config.StartOffset != FirstOffset && config.StartOffset != LastOffset {
-		return errors.New(fmt.Sprintf("StartOffset is not valid %d", config.StartOffset))
+		return fmt.Errorf("StartOffset is not valid %d", config.StartOffset)
 	}
 
 	if config.Timeout == 0 {
