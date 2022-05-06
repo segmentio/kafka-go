@@ -1,0 +1,15 @@
+linters:
+  enable-all: true
+  disable:
+    - exhaustivestruct
+    - golint
+    - interfacer
+    - maligned
+    - scopelint
+    - testpackage
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    ignoretests: true

@@ -1,5 +1,12 @@
 version: 2
 jobs:
+  lint:
+    docker:
+      - image: golangci/golangci-lint:v1.45-alpine
+    steps:
+      - checkout
+      - run: golangci-lint run
+
   # The kafka 0.10 tests are maintained as a separate configuration because
   # kafka only supported plain text SASL in this version.
   kafka-010:
@@ -287,6 +294,7 @@ workflows:
   version: 2
   run:
     jobs:
+    - lint
     - kafka-010
     - kafka-011
     - kafka-101
