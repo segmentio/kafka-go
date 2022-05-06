@@ -101,6 +101,24 @@ const (
 	GroupSubscribedToTopic             Error = 86
 	InvalidRecord                      Error = 87
 	UnstableOffsetCommit               Error = 88
+	ThrottlingQuotaExceeded            Error = 89
+	ProducerFenced                     Error = 90
+	ResourceNotFound                   Error = 91
+	DuplicateResource                  Error = 92
+	UnacceptableCredential             Error = 93
+	InconsistentVoterSet               Error = 94
+	InvalidUpdateVersion               Error = 95
+	FeatureUpdateFailed                Error = 96
+	PrincipalDeserializationFailure    Error = 97
+	SnapshotNotFound                   Error = 98
+	PositionOutOfRange                 Error = 99
+	UnknownTopicID                     Error = 100
+	DuplicateBrokerRegistration        Error = 101
+	BrokerIDNotRegistered              Error = 102
+	InconsistentTopicID                Error = 103
+	InconsistentClusterID              Error = 104
+	TransactionalIDNotFound            Error = 105
+	FetchSessionTopicIDError           Error = 106
 )
 
 // Error satisfies the error interface.
@@ -143,7 +161,11 @@ func (e Error) Temporary() bool {
 		ElectionNotNeeded,
 		NoReassignmentInProgress,
 		GroupSubscribedToTopic,
-		UnstableOffsetCommit:
+		UnstableOffsetCommit,
+		ThrottlingQuotaExceeded,
+		UnknownTopicID,
+		InconsistentTopicID,
+		FetchSessionTopicIDError:
 		return true
 	default:
 		return false
@@ -317,6 +339,42 @@ func (e Error) Title() string {
 		return "Invalid Record"
 	case UnstableOffsetCommit:
 		return "Unstable Offset Commit"
+	case ThrottlingQuotaExceeded:
+		return "Throttling Quota Exceeded"
+	case ProducerFenced:
+		return "Producer Fenced"
+	case ResourceNotFound:
+		return "Resource Not Found"
+	case DuplicateResource:
+		return "Duplicate Resource"
+	case UnacceptableCredential:
+		return "Unacceptable Credential"
+	case InconsistentVoterSet:
+		return "Inconsistent Voter Set"
+	case InvalidUpdateVersion:
+		return "Invalid Update Version"
+	case FeatureUpdateFailed:
+		return "Feature Update Failed"
+	case PrincipalDeserializationFailure:
+		return "Principal Deserialization Failure"
+	case SnapshotNotFound:
+		return "Snapshot Not Found"
+	case PositionOutOfRange:
+		return "Position Out Of Range"
+	case UnknownTopicID:
+		return "Unknown Topic ID"
+	case DuplicateBrokerRegistration:
+		return "Duplicate Broker Registration"
+	case BrokerIDNotRegistered:
+		return "Broker ID Not Registered"
+	case InconsistentTopicID:
+		return "Inconsistent Topic ID"
+	case InconsistentClusterID:
+		return "Inconsistent Cluster ID"
+	case TransactionalIDNotFound:
+		return "Transactional ID Not Found"
+	case FetchSessionTopicIDError:
+		return "Fetch Session Topic ID Error"
 	}
 	return ""
 }
@@ -488,6 +546,42 @@ func (e Error) Description() string {
 		return "this record has failed the validation on broker and hence be rejected"
 	case UnstableOffsetCommit:
 		return "there are unstable offsets that need to be cleared"
+	case ThrottlingQuotaExceeded:
+		return "The throttling quota has been exceeded"
+	case ProducerFenced:
+		return "There is a newer producer with the same transactionalId which fences the current one"
+	case ResourceNotFound:
+		return "A request illegally referred to a resource that does not exist"
+	case DuplicateResource:
+		return "A request illegally referred to the same resource twice"
+	case UnacceptableCredential:
+		return "Requested credential would not meet criteria for acceptability"
+	case InconsistentVoterSet:
+		return "Indicates that the either the sender or recipient of a voter-only request is not one of the expected voters"
+	case InvalidUpdateVersion:
+		return "The given update version was invalid"
+	case FeatureUpdateFailed:
+		return "Unable to update finalized features due to an unexpected server error"
+	case PrincipalDeserializationFailure:
+		return "Request principal deserialization failed during forwarding. This indicates an internal error on the broker cluster security setup"
+	case SnapshotNotFound:
+		return "Requested snapshot was not found"
+	case PositionOutOfRange:
+		return "Requested position is not greater than or equal to zero, and less than the size of the snapshot"
+	case UnknownTopicID:
+		return "This server does not host this topic ID"
+	case DuplicateBrokerRegistration:
+		return "This broker ID is already in use"
+	case BrokerIDNotRegistered:
+		return "The given broker ID was not registered"
+	case InconsistentTopicID:
+		return "The log's topic ID did not match the topic ID in the request"
+	case InconsistentClusterID:
+		return "The clusterId in the request does not match that found on the server"
+	case TransactionalIDNotFound:
+		return "The transactionalId could not be found"
+	case FetchSessionTopicIDError:
+		return "The fetch session encountered inconsistent topic ID usage"
 	}
 	return ""
 }
