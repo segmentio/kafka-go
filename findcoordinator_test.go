@@ -63,7 +63,7 @@ func TestClientFindCoordinator(t *testing.T) {
 	}
 }
 
-// WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found
+// WaitForCoordinatorIndefinitely is a blocking call till a coordinator is found.
 func waitForCoordinatorIndefinitely(ctx context.Context, c *Client, req *FindCoordinatorRequest) (*FindCoordinatorResponse, error) {
 	fmt.Println("Trying to find Coordinator.")
 	resp, err := c.FindCoordinator(ctx, req)
@@ -76,7 +76,7 @@ func waitForCoordinatorIndefinitely(ctx context.Context, c *Client, req *FindCoo
 }
 
 // Should retry looking for coordinator
-// Returns true when the test Kafka broker is still setting up
+// Returns true when the test Kafka broker is still setting up.
 func shouldRetryfindingCoordinator(resp *FindCoordinatorResponse, err error) bool {
 	brokerSetupIncomplete := err != nil &&
 		strings.Contains(

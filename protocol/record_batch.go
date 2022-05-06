@@ -109,7 +109,7 @@ func (m *multiRecordReader) ReadRecord() (*Record, error) {
 }
 
 // optimizedRecordReader is an implementation of a RecordReader which exposes a
-// sequence
+// sequence.
 type optimizedRecordReader struct {
 	records []optimizedRecord
 	index   int

@@ -35,15 +35,15 @@ const (
 	// the consumer will be considered dead and the coordinator will rebalance the
 	// group.
 	//
-	// As a rule, the heartbeat interval should be no greater than 1/3 the session timeout
+	// As a rule, the heartbeat interval should be no greater than 1/3 the session timeout.
 	defaultHeartbeatInterval = 3 * time.Second
 
 	// defaultSessionTimeout contains the default interval the coordinator will wait
-	// for a heartbeat before marking a consumer as dead
+	// for a heartbeat before marking a consumer as dead.
 	defaultSessionTimeout = 30 * time.Second
 
 	// defaultRebalanceTimeout contains the amount of time the coordinator will wait
-	// for consumers to issue a join group once a rebalance has been requested
+	// for consumers to issue a join group once a rebalance has been requested.
 	defaultRebalanceTimeout = 30 * time.Second
 
 	// defaultJoinGroupBackoff is the amount of time to wait after a failed
@@ -868,7 +868,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	}
 }
 
-// connect returns a connection to ANY broker
+// connect returns a connection to ANY broker.
 func makeConnect(config ConsumerGroupConfig) func(dialer *Dialer, brokers ...string) (coordinator, error) {
 	return func(dialer *Dialer, brokers ...string) (coordinator, error) {
 		var err error
@@ -971,7 +971,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 }
 
 // makeJoinGroupRequestV1 handles the logic of constructing a joinGroup
-// request
+// request.
 func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupRequestV1, error) {
 	request := joinGroupRequestV1{
 		GroupID:          cg.config.ID,
@@ -1000,7 +1000,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 }
 
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
-// their various partitions
+// their various partitions.
 func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroupResponseV1) (GroupMemberAssignments, error) {
 	cg.withLogger(func(l Logger) {
 		l.Printf("selected as leader for group, %s\n", cg.config.ID)
@@ -1043,7 +1043,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	return balancer.AssignGroups(members, partitions), nil
 }
 
-// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember
+// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember.
 func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]GroupMember, error) {
 	members := make([]GroupMember, 0, len(in))
 	for _, item := range in {

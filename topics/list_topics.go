@@ -11,7 +11,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// List returns a slice of all the Topics
+// List returns a slice of all the Topics.
 func List(ctx context.Context, client *kafka.Client) (topics []kafka.Topic, err error) {
 	if client == nil {
 		return nil, errors.New("client is required")
@@ -26,7 +26,7 @@ func List(ctx context.Context, client *kafka.Client) (topics []kafka.Topic, err 
 	return response.Topics, nil
 }
 
-// ListRe returns a slice of Topics that match a regex
+// ListRe returns a slice of Topics that match a regex.
 func ListRe(ctx context.Context, cli *kafka.Client, re *regexp.Regexp) (topics []kafka.Topic, err error) {
 	alltopics, err := List(ctx, cli)
 	if err != nil {

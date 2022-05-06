@@ -16,11 +16,11 @@ const (
 var (
 	xerialHeader = []byte{130, 83, 78, 65, 80, 80, 89, 0}
 
-	// This is xerial version 1 and minimally compatible with version 1
+	// This is xerial version 1 and minimally compatible with version 1.
 	xerialVersionInfo = []byte{0, 0, 0, 1, 0, 0, 0, 1}
 
 	// ErrMalformed is returned by the decoder when the xerial framing
-	// is malformed
+	// is malformed.
 	ErrMalformed = errors.New("malformed xerial framing")
 )
 

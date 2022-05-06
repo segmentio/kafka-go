@@ -9,7 +9,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/alterconfigs"
 )
 
-// AlterConfigsRequest represents a request sent to a kafka broker to alter configs
+// AlterConfigsRequest represents a request sent to a kafka broker to alter configs.
 type AlterConfigsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
@@ -54,7 +54,8 @@ type AlterConfigsResponse struct {
 	Errors map[AlterConfigsResponseResource]error
 }
 
-// AlterConfigsResponseResource
+// AlterConfigsResponseResource helps map errors to specific resources in an
+// alter config response.
 type AlterConfigsResponseResource struct {
 	Type int8
 	Name string

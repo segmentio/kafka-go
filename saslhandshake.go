@@ -5,7 +5,7 @@ import (
 )
 
 // saslHandshakeRequestV0 implements the format for V0 and V1 SASL
-// requests (they are identical)
+// requests (they are identical).
 type saslHandshakeRequestV0 struct {
 	// Mechanism holds the SASL Mechanism chosen by the client.
 	Mechanism string
@@ -24,7 +24,7 @@ func (t saslHandshakeRequestV0) writeTo(wb *writeBuffer) {
 }
 
 // saslHandshakeResponseV0 implements the format for V0 and V1 SASL
-// responses (they are identical)
+// responses (they are identical).
 type saslHandshakeResponseV0 struct {
 	// ErrorCode holds response error code
 	ErrorCode int16

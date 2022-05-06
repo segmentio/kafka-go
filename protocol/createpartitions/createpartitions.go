@@ -7,7 +7,7 @@ func init() {
 }
 
 // Detailed API definition: https://kafka.apache.org/protocol#The_Messages_CreatePartitions.
-// TODO: Support version 2
+// TODO: Support version 2.
 type Request struct {
 	Topics       []RequestTopic `kafka:"min=v0,max=v1"`
 	TimeoutMs    int32          `kafka:"min=v0,max=v1"`

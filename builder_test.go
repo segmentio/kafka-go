@@ -222,7 +222,7 @@ func (f v2MessageSetBuilder) bytes() []byte {
 	})
 }
 
-// kafkaWriteBuffer is a write buffer that helps writing fetch responses
+// kafkaWriteBuffer is a write buffer that helps writing fetch responses.
 type kafkaWriteBuffer struct {
 	writeBuffer
 	buf bytes.Buffer

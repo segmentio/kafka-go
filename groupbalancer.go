@@ -17,10 +17,10 @@ type GroupMember struct {
 	UserData []byte
 }
 
-// GroupMemberAssignments holds MemberID => topic => partitions
+// GroupMemberAssignments holds MemberID => topic => partitions.
 type GroupMemberAssignments map[string]map[string][]int
 
-// GroupBalancer encapsulates the client side rebalancing logic
+// GroupBalancer encapsulates the client side rebalancing logic.
 type GroupBalancer interface {
 	// ProtocolName of the GroupBalancer
 	ProtocolName() string
@@ -286,7 +286,7 @@ func (r *RackAffinityGroupBalancer) assignTopic(members []GroupMember, partition
 }
 
 // findPartitions extracts the partition ids associated with the topic from the
-// list of Partitions provided
+// list of Partitions provided.
 func findPartitions(topic string, partitions []Partition) []int {
 	var ids []int
 	for _, partition := range partitions {
@@ -297,7 +297,7 @@ func findPartitions(topic string, partitions []Partition) []int {
 	return ids
 }
 
-// findMembersByTopic groups the memberGroupMetadata by topic
+// findMembersByTopic groups the memberGroupMetadata by topic.
 func findMembersByTopic(members []GroupMember) map[string][]GroupMember {
 	membersByTopic := map[string][]GroupMember{}
 	for _, member := range members {
@@ -328,7 +328,7 @@ func findMembersByTopic(members []GroupMember) map[string][]GroupMember {
 }
 
 // findGroupBalancer returns the GroupBalancer with the specified protocolName
-// from the slice provided
+// from the slice provided.
 func findGroupBalancer(protocolName string, balancers []GroupBalancer) (GroupBalancer, bool) {
 	for _, balancer := range balancers {
 		if balancer.ProtocolName() == protocolName {

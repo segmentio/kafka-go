@@ -9,7 +9,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/initproducerid"
 )
 
-// InitProducerIDRequest is the request structure for the InitProducerId function
+// InitProducerIDRequest is the request structure for the InitProducerId function.
 type InitProducerIDRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
@@ -32,7 +32,7 @@ type InitProducerIDRequest struct {
 	ProducerEpoch int
 }
 
-// ProducerSession contains useful information about the producer session from the broker's response
+// ProducerSession contains useful information about the producer session from the broker's response.
 type ProducerSession struct {
 	// The Producer ID (PID) for the current producer session
 	ProducerID int
@@ -41,7 +41,7 @@ type ProducerSession struct {
 	ProducerEpoch int
 }
 
-// InitProducerIDResponse is the response structure for the InitProducerId function
+// InitProducerIDResponse is the response structure for the InitProducerId function.
 type InitProducerIDResponse struct {
 	// The Transaction/Group Coordinator details
 	Producer *ProducerSession

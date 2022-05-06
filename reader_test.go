@@ -322,7 +322,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	waitForTopic(ctx, t, topic)
 }
 
-// Block until topic exists
+// Block until topic exists.
 func waitForTopic(ctx context.Context, t *testing.T, topic string) {
 	t.Helper()
 
@@ -1860,7 +1860,7 @@ func TestReaderReadCompactedMessage(t *testing.T) {
 	}
 }
 
-// writeMessagesForCompactionCheck writes messages with specific writer configuration
+// writeMessagesForCompactionCheck writes messages with specific writer configuration.
 func writeMessagesForCompactionCheck(t *testing.T, topic string, msgs []Message) {
 	t.Helper()
 
@@ -1919,7 +1919,7 @@ func makeTestDuplicateSequence() []Message {
 	return msgs
 }
 
-// countKeys counts unique keys from given Message slice
+// countKeys counts unique keys from given Message slice.
 func countKeys(msgs []Message) int {
 	m := make(map[string]struct{})
 	for _, msg := range msgs {

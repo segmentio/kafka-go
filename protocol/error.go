@@ -14,7 +14,7 @@ func Errorf(msg string, args ...interface{}) Error {
 }
 
 const (
-	// ErrNoTopic is returned when a request needs to be sent to a specific
+	// ErrNoTopic is returned when a request needs to be sent to a specific.
 	ErrNoTopic Error = "topic not found"
 
 	// ErrNoPartition is returned when a request needs to be sent to a specific
