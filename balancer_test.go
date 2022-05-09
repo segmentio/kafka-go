@@ -65,15 +65,17 @@ func TestHashBalancer(t *testing.T) {
 
 func TestReferenceHashBalancer(t *testing.T) {
 	testCases := map[string]struct {
-		Key        []byte
-		Hasher     hash.Hash32
-		Partitions []int
-		Partition  int
+		Key               []byte
+		Hasher            hash.Hash32
+		Partitions        []int
+		Partition         int
+		RndBalancerResult int
 	}{
 		"nil": {
-			Key:        nil,
-			Partitions: []int{0, 1, 2},
-			Partition:  0,
+			Key:               nil, // nil key means random partition
+			Partitions:        []int{0, 1, 2},
+			Partition:         123,
+			RndBalancerResult: 123,
 		},
 		"partition-0": {
 			Key:        []byte("blah"),
@@ -105,10 +107,13 @@ func TestReferenceHashBalancer(t *testing.T) {
 
 	for label, test := range testCases {
 		t.Run(label, func(t *testing.T) {
-			msg := Message{Key: test.Key}
-			h := ReferenceHash{
-				Hasher: test.Hasher,
+			var rr randomBalancer
+			if test.Key == nil {
+				rr.mock = test.RndBalancerResult
 			}
+
+			msg := Message{Key: test.Key}
+			h := ReferenceHash{Hasher: test.Hasher, rr: rr}
 			partition := h.Balance(msg, test.Partitions...)
 			if partition != test.Partition {
 				t.Errorf("expected %v; got %v", test.Partition, partition)

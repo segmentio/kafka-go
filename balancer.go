@@ -179,7 +179,7 @@ func (h *Hash) Balance(msg Message, partitions ...int) int {
 // the Sarama NewReferenceHashPartitioner and ensures that messages produced by kafka-go will
 // be delivered to the same topics that the Sarama producer would be delivered to
 type ReferenceHash struct {
-	rr     RoundRobin
+	rr     randomBalancer
 	Hasher hash.Hash32
 
 	// lock protects Hasher while calculating the hash code.  It is assumed that
