@@ -996,7 +996,7 @@ func (r *Reader) Offset() int64 {
 	offset := r.offset
 	r.mutex.Unlock()
 	r.withLogger(func(log Logger) {
-		log.Printf("looking up offset of kafka reader for partition %d of %s: %d", r.config.Partition, r.config.Topic, offset)
+		log.Printf("looking up offset of kafka reader for partition %d of %s: %s", r.config.Partition, r.config.Topic, toHumanOffset(offset))
 	})
 	return offset
 }
@@ -1034,8 +1034,8 @@ func (r *Reader) SetOffset(offset int64) error {
 		err = io.ErrClosedPipe
 	} else if offset != r.offset {
 		r.withLogger(func(log Logger) {
-			log.Printf("setting the offset of the kafka reader for partition %d of %s from %d to %d",
-				r.config.Partition, r.config.Topic, r.offset, offset)
+			log.Printf("setting the offset of the kafka reader for partition %d of %s from %s to %s",
+				r.config.Partition, r.config.Topic, toHumanOffset(r.offset), toHumanOffset(offset))
 		})
 		r.offset = offset
 
@@ -1260,7 +1260,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		}
 
 		r.withLogger(func(log Logger) {
-			log.Printf("initializing kafka reader for partition %d of %s starting at offset %d", r.partition, r.topic, offset)
+			log.Printf("initializing kafka reader for partition %d of %s starting at offset %d", r.partition, r.topic, toHumanOffset(offset))
 		})
 
 		conn, start, err := r.initialize(ctx, offset)
@@ -1320,7 +1320,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				continue
 			case UnknownTopicOrPartition:
 				r.withErrorLogger(func(log Logger) {
-					log.Printf("failed to read from current broker for partition %d of %s at offset %d, topic or parition not found on this broker, %v", r.partition, r.topic, offset, r.brokers)
+					log.Printf("failed to read from current broker for partition %d of %s at offset %d, topic or parition not found on this broker, %v", r.partition, r.topic, toHumanOffset(offset), r.brokers)
 				})
 
 				conn.Close()
@@ -1331,7 +1331,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				break readLoop
 			case NotLeaderForPartition:
 				r.withErrorLogger(func(log Logger) {
-					log.Printf("failed to read from current broker for partition %d of %s at offset %d, not the leader", r.partition, r.topic, offset)
+					log.Printf("failed to read from current broker for partition %d of %s at offset %d, not the leader", r.partition, r.topic, toHumanOffset(offset))
 				})
 
 				conn.Close()
@@ -1345,7 +1345,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
 				r.withLogger(func(log Logger) {
-					log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, offset)
+					log.Printf("no messages received from kafka within the allocated time for partition %d of %s at offset %d", r.partition, r.topic, toHumanOffset(offset))
 				})
 				r.stats.timeouts.observe(1)
 				continue
@@ -1363,7 +1363,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				switch {
 				case offset < first:
 					r.withErrorLogger(func(log Logger) {
-						log.Printf("the kafka reader is reading before the first offset for partition %d of %s, skipping from offset %d to %d (%d messages)", r.partition, r.topic, offset, first, first-offset)
+						log.Printf("the kafka reader is reading before the first offset for partition %d of %s, skipping from offset %d to %d (%d messages)", r.partition, r.topic, toHumanOffset(offset), first, first-offset)
 					})
 					offset, errcount = first, 0
 					continue // retry immediately so we don't keep falling behind due to the backoff
@@ -1375,7 +1375,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				default:
 					// We may be reading past the last offset, will retry later.
 					r.withErrorLogger(func(log Logger) {
-						log.Printf("the kafka reader is reading passed the last offset for partition %d of %s at offset %d", r.partition, r.topic, offset)
+						log.Printf("the kafka reader is reading passed the last offset for partition %d of %s at offset %d", r.partition, r.topic, toHumanOffset(offset))
 					})
 				}
 
@@ -1396,7 +1396,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 					r.sendError(ctx, err)
 				} else {
 					r.withErrorLogger(func(log Logger) {
-						log.Printf("the kafka reader got an unknown error reading partition %d of %s at offset %d: %s", r.partition, r.topic, offset, err)
+						log.Printf("the kafka reader got an unknown error reading partition %d of %s at offset %d: %s", r.partition, r.topic, toHumanOffset(offset), err)
 					})
 					r.stats.errors.observe(1)
 					conn.Close()
@@ -1442,7 +1442,7 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 		}
 
 		r.withLogger(func(log Logger) {
-			log.Printf("the kafka reader for partition %d of %s is seeking to offset %d", r.partition, r.topic, offset)
+			log.Printf("the kafka reader for partition %d of %s is seeking to offset %d", r.partition, r.topic, toHumanOffset(offset))
 		})
 
 		if start, err = conn.Seek(offset, SeekAbsolute); err != nil {
@@ -1577,4 +1577,22 @@ func extractTopics(members []GroupMember) []string {
 	sort.Strings(topics)
 
 	return topics
+}
+
+type humanOffset int64
+
+func toHumanOffset(v int64) humanOffset {
+	return humanOffset(v)
+}
+
+func (offset humanOffset) Format(w fmt.State, _ rune) {
+	v := int64(offset)
+	switch v {
+	case FirstOffset:
+		fmt.Fprint(w, "first offset")
+	case LastOffset:
+		fmt.Fprintf(w, "last offset")
+	default:
+		fmt.Fprintf(w, strconv.FormatInt(v, 10))
+	}
 }
