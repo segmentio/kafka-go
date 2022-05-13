@@ -248,15 +248,6 @@ func (d *decoder) readBytes() []byte {
 	}
 }
 
-func (d *decoder) readBytesTo(w io.Writer) bool {
-	if n := d.readInt32(); n < 0 {
-		return false
-	} else {
-		d.writeTo(w, int(n))
-		return d.err == nil
-	}
-}
-
 func (d *decoder) readVarBytes() []byte {
 	if n := d.readVarInt(); n < 0 {
 		return nil
@@ -265,29 +256,11 @@ func (d *decoder) readVarBytes() []byte {
 	}
 }
 
-func (d *decoder) readVarBytesTo(w io.Writer) bool {
-	if n := d.readVarInt(); n < 0 {
-		return false
-	} else {
-		d.writeTo(w, int(n))
-		return d.err == nil
-	}
-}
-
 func (d *decoder) readCompactBytes() []byte {
 	if n := d.readUnsignedVarInt(); n < 1 {
 		return nil
 	} else {
 		return d.read(int(n - 1))
-	}
-}
-
-func (d *decoder) readCompactBytesTo(w io.Writer) bool {
-	if n := d.readUnsignedVarInt(); n < 1 {
-		return false
-	} else {
-		d.writeTo(w, int(n-1))
-		return d.err == nil
 	}
 }
 

@@ -142,21 +142,6 @@ func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
 	})
 }
 
-func (r *Reader) waitThrottleTime(throttleTimeMS int32) {
-	if throttleTimeMS == 0 {
-		return
-	}
-
-	t := time.NewTimer(time.Duration(throttleTimeMS) * time.Millisecond)
-	defer t.Stop()
-
-	select {
-	case <-r.stctx.Done():
-		return
-	case <-t.C:
-	}
-}
-
 // commitOffsetsWithRetry attempts to commit the specified offsets and retries
 // up to the specified number of times.
 func (r *Reader) commitOffsetsWithRetry(gen *Generation, offsetStash offsetStash, retries int) (err error) {

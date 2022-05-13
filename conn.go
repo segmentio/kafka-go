@@ -1221,12 +1221,6 @@ func (c *Conn) SetRequiredAcks(n int) error {
 	}
 }
 
-func (c *Conn) writeRequestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32, size int32) {
-	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
-	hdr.Size = (hdr.size() + size) - 4
-	hdr.writeTo(&c.wb)
-}
-
 func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req request) error {
 	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
 	hdr.Size = (hdr.size() + req.size()) - 4

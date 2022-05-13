@@ -133,20 +133,12 @@ func (e *encoder) encodeString(v value) {
 	e.writeString(v.string())
 }
 
-func (e *encoder) encodeVarString(v value) {
-	e.writeVarString(v.string())
-}
-
 func (e *encoder) encodeCompactString(v value) {
 	e.writeCompactString(v.string())
 }
 
 func (e *encoder) encodeNullString(v value) {
 	e.writeNullString(v.string())
-}
-
-func (e *encoder) encodeVarNullString(v value) {
-	e.writeVarNullString(v.string())
 }
 
 func (e *encoder) encodeCompactNullString(v value) {
@@ -157,20 +149,12 @@ func (e *encoder) encodeBytes(v value) {
 	e.writeBytes(v.bytes())
 }
 
-func (e *encoder) encodeVarBytes(v value) {
-	e.writeVarBytes(v.bytes())
-}
-
 func (e *encoder) encodeCompactBytes(v value) {
 	e.writeCompactBytes(v.bytes())
 }
 
 func (e *encoder) encodeNullBytes(v value) {
 	e.writeNullBytes(v.bytes())
-}
-
-func (e *encoder) encodeVarNullBytes(v value) {
-	e.writeVarNullBytes(v.bytes())
 }
 
 func (e *encoder) encodeCompactNullBytes(v value) {
@@ -270,15 +254,6 @@ func (e *encoder) writeNullString(s string) {
 	}
 }
 
-func (e *encoder) writeVarNullString(s string) {
-	if s == "" {
-		e.writeVarInt(-1)
-	} else {
-		e.writeVarInt(int64(len(s)))
-		e.WriteString(s)
-	}
-}
-
 func (e *encoder) writeCompactNullString(s string) {
 	if s == "" {
 		e.writeUnsignedVarInt(0)
@@ -290,11 +265,6 @@ func (e *encoder) writeCompactNullString(s string) {
 
 func (e *encoder) writeBytes(b []byte) {
 	e.writeInt32(int32(len(b)))
-	e.Write(b)
-}
-
-func (e *encoder) writeVarBytes(b []byte) {
-	e.writeVarInt(int64(len(b)))
 	e.Write(b)
 }
 
@@ -330,16 +300,6 @@ func (e *encoder) writeCompactNullBytes(b []byte) {
 	}
 }
 
-func (e *encoder) writeBytesFrom(b Bytes) error {
-	size := int64(b.Len())
-	e.writeInt32(int32(size))
-	n, err := io.Copy(e, b)
-	if err == nil && n != size {
-		err = fmt.Errorf("size of bytes does not match the number of bytes that were written (size=%d, written=%d): %w", size, n, io.ErrUnexpectedEOF)
-	}
-	return err
-}
-
 func (e *encoder) writeNullBytesFrom(b Bytes) error {
 	if b == nil {
 		e.writeInt32(-1)
@@ -365,21 +325,6 @@ func (e *encoder) writeVarNullBytesFrom(b Bytes) error {
 		n, err := io.Copy(e, b)
 		if err == nil && n != size {
 			err = fmt.Errorf("size of nullable bytes does not match the number of bytes that were written (size=%d, written=%d): %w", size, n, io.ErrUnexpectedEOF)
-		}
-		return err
-	}
-}
-
-func (e *encoder) writeCompactNullBytesFrom(b Bytes) error {
-	if b == nil {
-		e.writeUnsignedVarInt(0)
-		return nil
-	} else {
-		size := int64(b.Len())
-		e.writeUnsignedVarInt(uint64(size + 1))
-		n, err := io.Copy(e, b)
-		if err == nil && n != size {
-			err = fmt.Errorf("size of compact nullable bytes does not match the number of bytes that were written (size=%d, written=%d): %w", size, n, io.ErrUnexpectedEOF)
 		}
 		return err
 	}

@@ -1243,23 +1243,6 @@ func TestOffsetStash(t *testing.T) {
 	}
 }
 
-type mockOffsetCommitter struct {
-	invocations int
-	failCount   int
-	err         error
-}
-
-func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
-	m.invocations++
-
-	if m.failCount > 0 {
-		m.failCount--
-		return offsetCommitResponseV2{}, io.EOF
-	}
-
-	return offsetCommitResponseV2{}, nil
-}
-
 func TestValidateReader(t *testing.T) {
 	tests := []struct {
 		config       ReaderConfig
