@@ -146,6 +146,9 @@ func TestReadNewBytes(t *testing.T) {
 		if len(b) > 0 {
 			t.Error("not all bytes were consumed")
 		}
+		if err != nil {
+			t.Error("should not have errored during peek")
+		}
 	})
 
 	t.Run("discards bytes when insufficient", func(t *testing.T) {
@@ -163,6 +166,9 @@ func TestReadNewBytes(t *testing.T) {
 		b, err = r.Peek(0)
 		if len(b) > 0 {
 			t.Error("not all bytes were consumed")
+		}
+		if err != nil {
+			t.Error("should not have errored during peek")
 		}
 	})
 }
