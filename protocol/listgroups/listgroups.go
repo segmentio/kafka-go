@@ -71,7 +71,7 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
 			)
 		}
 
-		response.Groups = append(response.Groups, brokerResp.Groups...)
+		response.Groups = append(response.Groups, respGroups...)
 	}
 
 	return response, nil

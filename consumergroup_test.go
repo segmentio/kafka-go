@@ -244,10 +244,10 @@ func TestConsumerGroup(t *testing.T) {
 			function: func(t *testing.T, ctx context.Context, cg *ConsumerGroup) {
 				gen1, err := cg.Next(ctx)
 				if gen1 == nil {
-					t.Errorf("expected generation 1 not to be nil")
+					t.Fatalf("expected generation 1 not to be nil")
 				}
 				if err != nil {
-					t.Errorf("expected no error, but got %+v", err)
+					t.Fatalf("expected no error, but got %+v", err)
 				}
 				// returning from this function should cause the generation to
 				// exit.
@@ -257,10 +257,10 @@ func TestConsumerGroup(t *testing.T) {
 				// the
 				gen2, err := cg.Next(ctx)
 				if gen2 == nil {
-					t.Errorf("expected generation 2 not to be nil")
+					t.Fatalf("expected generation 2 not to be nil")
 				}
 				if err != nil {
-					t.Errorf("expected no error, but got %+v", err)
+					t.Fatalf("expected no error, but got %+v", err)
 				}
 
 				if gen1.ID == gen2.ID {
