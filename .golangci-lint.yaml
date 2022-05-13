@@ -1,6 +1,12 @@
 linters:
   enable-all: true
   disable:
+    # errcheck flags a lot of issues that we don't find valid, especially as
+    # fixing them has the potential to change behavior.
+    - errcheck
+
+    # these linters are either deprecated or unhelpful, so likely they will not
+    # be used in the future
     - exhaustivestruct
     - golint
     - interfacer
@@ -9,7 +15,17 @@ linters:
     - testpackage
 
 linters-settings:
+  # While not enabled atm, errcheck could be enabled in the future, so leaving
+  # behind the config here for now.
   errcheck:
     check-type-assertions: true
     check-blank: true
+
+    # One notable gap in the configuration here is the ability to exclude test
+    # files, which appears to be supported by the errcheck linter itself, but is
+    # not part of the config struct contained in golangci-lint. This seems like
+    # a good candidate for a first-time contribution to golangci-lint.
+    #
+    # @dominicbarnes: I plan on submitting a PR to address this gap, which I
+    # will link to here once it is open.
     ignoretests: true
