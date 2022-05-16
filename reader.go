@@ -1576,8 +1576,8 @@ func (offset humanOffset) Format(w fmt.State, _ rune) {
 	case FirstOffset:
 		fmt.Fprint(w, "first offset")
 	case LastOffset:
-		fmt.Fprintf(w, "last offset")
+		fmt.Fprint(w, "last offset")
 	default:
-		fmt.Fprintf(w, strconv.FormatInt(v, 10))
+		fmt.Fprint(w, strconv.FormatInt(v, 10))
 	}
 }
