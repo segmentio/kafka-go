@@ -10,18 +10,18 @@ import (
 	"github.com/segmentio/kafka-go/protocol/findcoordinator"
 )
 
-// CoordinatorKeyType is used to specify the type of coordinator to look for
+// CoordinatorKeyType is used to specify the type of coordinator to look for.
 type CoordinatorKeyType int8
 
 const (
-	// CoordinatorKeyTypeConsumer type is used when looking for a Group coordinator
+	// CoordinatorKeyTypeConsumer type is used when looking for a Group coordinator.
 	CoordinatorKeyTypeConsumer CoordinatorKeyType = 0
 
-	// CoordinatorKeyTypeTransaction type is used when looking for a Transaction coordinator
+	// CoordinatorKeyTypeTransaction type is used when looking for a Transaction coordinator.
 	CoordinatorKeyTypeTransaction CoordinatorKeyType = 1
 )
 
-// FindCoordinatorRequest is the request structure for the FindCoordinator function
+// FindCoordinatorRequest is the request structure for the FindCoordinator function.
 type FindCoordinatorRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
@@ -33,7 +33,7 @@ type FindCoordinatorRequest struct {
 	KeyType CoordinatorKeyType
 }
 
-// FindCoordinatorResponseCoordinator contains details about the found coordinator
+// FindCoordinatorResponseCoordinator contains details about the found coordinator.
 type FindCoordinatorResponseCoordinator struct {
 	// NodeID holds the broker id.
 	NodeID int
@@ -45,7 +45,7 @@ type FindCoordinatorResponseCoordinator struct {
 	Port int
 }
 
-// FindCoordinatorResponse is the response structure for the FindCoordinator function
+// FindCoordinatorResponse is the response structure for the FindCoordinator function.
 type FindCoordinatorResponse struct {
 	// The Transaction/Group Coordinator details
 	Coordinator *FindCoordinatorResponseCoordinator

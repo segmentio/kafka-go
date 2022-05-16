@@ -16,19 +16,19 @@ const (
 var (
 	xerialHeader = []byte{130, 83, 78, 65, 80, 80, 89, 0}
 
-	// This is xerial version 1 and minimally compatible with version 1
+	// This is xerial version 1 and minimally compatible with version 1.
 	xerialVersionInfo = []byte{0, 0, 0, 1, 0, 0, 0, 1}
 
 	// ErrMalformed is returned by the decoder when the xerial framing
-	// is malformed
+	// is malformed.
 	ErrMalformed = errors.New("malformed xerial framing")
 )
 
 func min(x, y int) int {
-    if x < y {
-        return x
-    }
-    return y
+	if x < y {
+		return x
+	}
+	return y
 }
 
 // Encode encodes data as snappy with no framing header.
@@ -48,14 +48,14 @@ func EncodeStream(dst, src []byte) []byte {
 
 	// Snappy encode in blocks of maximum 32KB
 	var (
-		max = len(src)
+		max       = len(src)
 		blockSize = 32 * 1024
-		pos   = 0
-		chunk []byte
+		pos       = 0
+		chunk     []byte
 	)
 
 	for pos < max {
-		newPos := min(pos + blockSize, max)
+		newPos := min(pos+blockSize, max)
 		chunk = master.Encode(chunk[:cap(chunk)], src[pos:newPos])
 
 		// First encode the compressed size (big-endian)
@@ -104,7 +104,7 @@ func DecodeInto(dst, src []byte) ([]byte, error) {
 	var (
 		pos   = sizeOffset
 		chunk []byte
-		err       error
+		err   error
 	)
 
 	for pos+sizeBytes <= max {

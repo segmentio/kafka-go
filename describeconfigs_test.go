@@ -49,6 +49,10 @@ func TestClientDescribeConfigs(t *testing.T) {
 		}},
 	})
 
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	maxMessageBytesValue := "0"
 	for _, resource := range describeResp.Resources {
 		if resource.ResourceType == int8(ResourceTypeTopic) && resource.ResourceName == topic {

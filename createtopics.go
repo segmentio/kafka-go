@@ -88,10 +88,7 @@ type ConfigEntry struct {
 }
 
 func (c ConfigEntry) toCreateTopicsRequestV0ConfigEntry() createTopicsRequestV0ConfigEntry {
-	return createTopicsRequestV0ConfigEntry{
-		ConfigName:  c.ConfigName,
-		ConfigValue: c.ConfigValue,
-	}
+	return createTopicsRequestV0ConfigEntry(c)
 }
 
 type createTopicsRequestV0ConfigEntry struct {

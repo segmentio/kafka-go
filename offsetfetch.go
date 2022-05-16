@@ -261,19 +261,3 @@ func (t *offsetFetchResponseV1) readFrom(r *bufio.Reader, size int) (remain int,
 
 	return
 }
-
-func findOffset(topic string, partition int32, response offsetFetchResponseV1) (int64, bool) {
-	for _, r := range response.Responses {
-		if r.Topic != topic {
-			continue
-		}
-
-		for _, pr := range r.PartitionResponses {
-			if pr.Partition == partition {
-				return pr.Offset, true
-			}
-		}
-	}
-
-	return 0, false
-}

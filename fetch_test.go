@@ -13,23 +13,6 @@ import (
 	"github.com/segmentio/kafka-go/compress"
 )
 
-func copyRecords(records []Record) []Record {
-	newRecords := make([]Record, len(records))
-
-	for i := range records {
-		k, _ := ReadAll(records[i].Key)
-		v, _ := ReadAll(records[i].Value)
-
-		records[i].Key = NewBytes(k)
-		records[i].Value = NewBytes(v)
-
-		newRecords[i].Key = NewBytes(k)
-		newRecords[i].Value = NewBytes(v)
-	}
-
-	return newRecords
-}
-
 func produceRecords(t *testing.T, n int, addr net.Addr, topic string, compression compress.Codec) []Record {
 	conn, err := (&Dialer{
 		Resolver: &net.Resolver{},

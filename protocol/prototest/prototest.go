@@ -180,9 +180,3 @@ func deepEqualRecord(r1, r2 *protocol.Record) bool {
 
 	return deepEqual(r1.Headers, r2.Headers)
 }
-
-func reset(v interface{}) {
-	if r, _ := v.(interface{ Reset() }); r != nil {
-		r.Reset()
-	}
-}

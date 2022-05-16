@@ -607,12 +607,6 @@ func (a *pageRefAllocator) newPageRef() *pageRef {
 	return ref
 }
 
-func unref(x interface{}) {
-	if r, _ := x.(interface{ unref() }); r != nil {
-		r.unref()
-	}
-}
-
 func seek(cursor, limit, offset int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
@@ -636,11 +630,5 @@ func seek(cursor, limit, offset int64, whence int) (int64, error) {
 func closeBytes(b Bytes) {
 	if b != nil {
 		b.Close()
-	}
-}
-
-func resetBytes(b Bytes) {
-	if r, _ := b.(interface{ Reset() }); r != nil {
-		r.Reset()
 	}
 }

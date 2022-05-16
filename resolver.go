@@ -39,11 +39,6 @@ type brokerResolver struct {
 }
 
 func (r brokerResolver) LookupBrokerIPAddr(ctx context.Context, broker Broker) ([]net.IPAddr, error) {
-	rslv := r.Resolver
-	if rslv == nil {
-		rslv = net.DefaultResolver
-	}
-
 	ipAddrs, err := r.LookupIPAddr(ctx, broker.Host)
 	if err != nil {
 		return nil, err

@@ -9,7 +9,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/describeconfigs"
 )
 
-// DescribeConfigsRequest represents a request sent to a kafka broker to describe configs
+// DescribeConfigsRequest represents a request sent to a kafka broker to describe configs.
 type DescribeConfigsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
@@ -44,7 +44,7 @@ type DescribeConfigsResponse struct {
 	Resources []DescribeConfigResponseResource
 }
 
-// DescribeConfigResponseResource
+// DescribeConfigResponseResource.
 type DescribeConfigResponseResource struct {
 	// Resource Type
 	ResourceType int8
@@ -59,7 +59,7 @@ type DescribeConfigResponseResource struct {
 	ConfigEntries []DescribeConfigResponseConfigEntry
 }
 
-// DescribeConfigResponseConfigEntry
+// DescribeConfigResponseConfigEntry.
 type DescribeConfigResponseConfigEntry struct {
 	ConfigName  string
 	ConfigValue string
@@ -83,7 +83,7 @@ type DescribeConfigResponseConfigEntry struct {
 	ConfigDocumentation string
 }
 
-// DescribeConfigResponseConfigSynonym
+// DescribeConfigResponseConfigSynonym.
 type DescribeConfigResponseConfigSynonym struct {
 	// Ignored if API version is less than v1
 	ConfigName string

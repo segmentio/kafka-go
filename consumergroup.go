@@ -35,15 +35,15 @@ const (
 	// the consumer will be considered dead and the coordinator will rebalance the
 	// group.
 	//
-	// As a rule, the heartbeat interval should be no greater than 1/3 the session timeout
+	// As a rule, the heartbeat interval should be no greater than 1/3 the session timeout.
 	defaultHeartbeatInterval = 3 * time.Second
 
 	// defaultSessionTimeout contains the default interval the coordinator will wait
-	// for a heartbeat before marking a consumer as dead
+	// for a heartbeat before marking a consumer as dead.
 	defaultSessionTimeout = 30 * time.Second
 
 	// defaultRebalanceTimeout contains the amount of time the coordinator will wait
-	// for consumers to issue a join group once a rebalance has been requested
+	// for consumers to issue a join group once a rebalance has been requested.
 	defaultRebalanceTimeout = 30 * time.Second
 
 	// defaultJoinGroupBackoff is the amount of time to wait after a failed
@@ -217,27 +217,27 @@ func (config *ConsumerGroupConfig) Validate() error {
 	}
 
 	if config.HeartbeatInterval < 0 || (config.HeartbeatInterval/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval))
+		return fmt.Errorf("HeartbeatInterval out of bounds: %d", config.HeartbeatInterval)
 	}
 
 	if config.SessionTimeout < 0 || (config.SessionTimeout/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("SessionTimeout out of bounds: %d", config.SessionTimeout))
+		return fmt.Errorf("SessionTimeout out of bounds: %d", config.SessionTimeout)
 	}
 
 	if config.RebalanceTimeout < 0 || (config.RebalanceTimeout/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout))
+		return fmt.Errorf("RebalanceTimeout out of bounds: %d", config.RebalanceTimeout)
 	}
 
 	if config.JoinGroupBackoff < 0 || (config.JoinGroupBackoff/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff))
+		return fmt.Errorf("JoinGroupBackoff out of bounds: %d", config.JoinGroupBackoff)
 	}
 
 	if config.RetentionTime < 0 && config.RetentionTime != defaultRetentionTime {
-		return errors.New(fmt.Sprintf("RetentionTime out of bounds: %d", config.RetentionTime))
+		return fmt.Errorf("RetentionTime out of bounds: %d", config.RetentionTime)
 	}
 
 	if config.PartitionWatchInterval < 0 || (config.PartitionWatchInterval/time.Millisecond) >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval))
+		return fmt.Errorf("PartitionWachInterval out of bounds %d", config.PartitionWatchInterval)
 	}
 
 	if config.StartOffset == 0 {
@@ -245,7 +245,7 @@ func (config *ConsumerGroupConfig) Validate() error {
 	}
 
 	if config.StartOffset != FirstOffset && config.StartOffset != LastOffset {
-		return errors.New(fmt.Sprintf("StartOffset is not valid %d", config.StartOffset))
+		return fmt.Errorf("StartOffset is not valid %d", config.StartOffset)
 	}
 
 	if config.Timeout == 0 {
@@ -868,7 +868,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	}
 }
 
-// connect returns a connection to ANY broker
+// connect returns a connection to ANY broker.
 func makeConnect(config ConsumerGroupConfig) func(dialer *Dialer, brokers ...string) (coordinator, error) {
 	return func(dialer *Dialer, brokers ...string) (coordinator, error) {
 		var err error
@@ -971,7 +971,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 }
 
 // makeJoinGroupRequestV1 handles the logic of constructing a joinGroup
-// request
+// request.
 func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupRequestV1, error) {
 	request := joinGroupRequestV1{
 		GroupID:          cg.config.ID,
@@ -1000,7 +1000,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 }
 
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
-// their various partitions
+// their various partitions.
 func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroupResponseV1) (GroupMemberAssignments, error) {
 	cg.withLogger(func(l Logger) {
 		l.Printf("selected as leader for group, %s\n", cg.config.ID)
@@ -1043,7 +1043,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	return balancer.AssignGroups(members, partitions), nil
 }
 
-// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember
+// makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember.
 func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]GroupMember, error) {
 	members := make([]GroupMember, 0, len(in))
 	for _, item := range in {

@@ -249,7 +249,7 @@ func (c *Conn) Broker() Broker {
 	}
 }
 
-// Controller requests kafka for the current controller and returns its URL
+// Controller requests kafka for the current controller and returns its URL.
 func (c *Conn) Controller() (broker Broker, err error) {
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
@@ -276,7 +276,7 @@ func (c *Conn) Controller() (broker Broker, err error) {
 	return broker, err
 }
 
-// Brokers retrieve the broker list from the Kafka metadata
+// Brokers retrieve the broker list from the Kafka metadata.
 func (c *Conn) Brokers() ([]Broker, error) {
 	var brokers []Broker
 	err := c.readOperation(
@@ -1219,12 +1219,6 @@ func (c *Conn) SetRequiredAcks(n int) error {
 	default:
 		return InvalidRequiredAcks
 	}
-}
-
-func (c *Conn) writeRequestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32, size int32) {
-	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
-	hdr.Size = (hdr.size() + size) - 4
-	hdr.writeTo(&c.wb)
 }
 
 func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req request) error {

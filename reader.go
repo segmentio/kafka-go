@@ -20,7 +20,7 @@ const (
 
 const (
 	// defaultCommitRetries holds the number commit attempts to make
-	// before giving up
+	// before giving up.
 	defaultCommitRetries = 3
 )
 
@@ -38,7 +38,7 @@ var (
 
 const (
 	// defaultReadBackoffMax/Min sets the boundaries for how long the reader wait before
-	// polling for new messages
+	// polling for new messages.
 	defaultReadBackoffMin = 100 * time.Millisecond
 	defaultReadBackoffMax = 1 * time.Second
 )
@@ -142,23 +142,8 @@ func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
 	})
 }
 
-func (r *Reader) waitThrottleTime(throttleTimeMS int32) {
-	if throttleTimeMS == 0 {
-		return
-	}
-
-	t := time.NewTimer(time.Duration(throttleTimeMS) * time.Millisecond)
-	defer t.Stop()
-
-	select {
-	case <-r.stctx.Done():
-		return
-	case <-t.C:
-	}
-}
-
 // commitOffsetsWithRetry attempts to commit the specified offsets and retries
-// up to the specified number of times
+// up to the specified number of times.
 func (r *Reader) commitOffsetsWithRetry(gen *Generation, offsetStash offsetStash, retries int) (err error) {
 	const (
 		backoffDelayMin = 100 * time.Millisecond
@@ -180,10 +165,10 @@ func (r *Reader) commitOffsetsWithRetry(gen *Generation, offsetStash offsetStash
 	return // err will not be nil
 }
 
-// offsetStash holds offsets by topic => partition => offset
+// offsetStash holds offsets by topic => partition => offset.
 type offsetStash map[string]map[int]int64
 
-// merge updates the offsetStash with the offsets from the provided messages
+// merge updates the offsetStash with the offsets from the provided messages.
 func (o offsetStash) merge(commits []commit) {
 	for _, c := range commits {
 		offsetsByPartition, ok := o[c.topic]
@@ -198,14 +183,14 @@ func (o offsetStash) merge(commits []commit) {
 	}
 }
 
-// reset clears the contents of the offsetStash
+// reset clears the contents of the offsetStash.
 func (o offsetStash) reset() {
 	for key := range o {
 		delete(o, key)
 	}
 }
 
-// commitLoopImmediate handles each commit synchronously
+// commitLoopImmediate handles each commit synchronously.
 func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 	offsets := offsetStash{}
 
@@ -242,7 +227,7 @@ func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 }
 
 // commitLoopInterval handles each commit asynchronously with a period defined
-// by ReaderConfig.CommitInterval
+// by ReaderConfig.CommitInterval.
 func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 	ticker := time.NewTicker(r.config.CommitInterval)
 	defer ticker.Stop()
@@ -283,7 +268,7 @@ func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 	}
 }
 
-// commitLoop processes commits off the commit chan
+// commitLoop processes commits off the commit chan.
 func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 	r.withLogger(func(l Logger) {
 		l.Printf("started commit for group %s\n", r.config.GroupID)
@@ -533,15 +518,15 @@ func (config *ReaderConfig) Validate() error {
 	}
 
 	if config.Partition < 0 || config.Partition >= math.MaxInt32 {
-		return errors.New(fmt.Sprintf("partition number out of bounds: %d", config.Partition))
+		return fmt.Errorf("partition number out of bounds: %d", config.Partition)
 	}
 
 	if config.MinBytes < 0 {
-		return errors.New(fmt.Sprintf("invalid negative minimum batch size (min = %d)", config.MinBytes))
+		return fmt.Errorf("invalid negative minimum batch size (min = %d)", config.MinBytes)
 	}
 
 	if config.MaxBytes < 0 {
-		return errors.New(fmt.Sprintf("invalid negative maximum batch size (max = %d)", config.MaxBytes))
+		return fmt.Errorf("invalid negative maximum batch size (max = %d)", config.MaxBytes)
 	}
 
 	if config.GroupID != "" {
@@ -557,15 +542,15 @@ func (config *ReaderConfig) Validate() error {
 	}
 
 	if config.MinBytes > config.MaxBytes {
-		return errors.New(fmt.Sprintf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes))
+		return fmt.Errorf("minimum batch size greater than the maximum (min = %d, max = %d)", config.MinBytes, config.MaxBytes)
 	}
 
 	if config.ReadBackoffMax < 0 {
-		return errors.New(fmt.Sprintf("ReadBackoffMax out of bounds: %d", config.ReadBackoffMax))
+		return fmt.Errorf("ReadBackoffMax out of bounds: %d", config.ReadBackoffMax)
 	}
 
 	if config.ReadBackoffMin < 0 {
-		return errors.New(fmt.Sprintf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin))
+		return fmt.Errorf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin)
 	}
 
 	return nil
@@ -1558,7 +1543,7 @@ func (r *reader) withErrorLogger(do func(Logger)) {
 }
 
 // extractTopics returns the unique list of topics represented by the set of
-// provided members
+// provided members.
 func extractTopics(members []GroupMember) []string {
 	visited := map[string]struct{}{}
 	var topics []string
@@ -1591,8 +1576,8 @@ func (offset humanOffset) Format(w fmt.State, _ rune) {
 	case FirstOffset:
 		fmt.Fprint(w, "first offset")
 	case LastOffset:
-		fmt.Fprintf(w, "last offset")
+		fmt.Fprint(w, "last offset")
 	default:
-		fmt.Fprintf(w, strconv.FormatInt(v, 10))
+		fmt.Fprint(w, strconv.FormatInt(v, 10))
 	}
 }

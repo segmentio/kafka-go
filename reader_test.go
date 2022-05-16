@@ -322,7 +322,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	waitForTopic(ctx, t, topic)
 }
 
-// Block until topic exists
+// Block until topic exists.
 func waitForTopic(ctx context.Context, t *testing.T, topic string) {
 	t.Helper()
 
@@ -951,7 +951,7 @@ func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx cont
 	if err := r.CommitMessages(ctx, m); err != nil {
 		t.Errorf("bad commit message: %v", err)
 	}
-	if elapsed := time.Now().Sub(started); elapsed > 10*time.Millisecond {
+	if elapsed := time.Since(started); elapsed > 10*time.Millisecond {
 		t.Errorf("background commits should happen nearly instantly")
 	}
 
@@ -1241,23 +1241,6 @@ func TestOffsetStash(t *testing.T) {
 			}
 		})
 	}
-}
-
-type mockOffsetCommitter struct {
-	invocations int
-	failCount   int
-	err         error
-}
-
-func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
-	m.invocations++
-
-	if m.failCount > 0 {
-		m.failCount--
-		return offsetCommitResponseV2{}, io.EOF
-	}
-
-	return offsetCommitResponseV2{}, nil
 }
 
 func TestValidateReader(t *testing.T) {
@@ -1860,7 +1843,7 @@ func TestReaderReadCompactedMessage(t *testing.T) {
 	}
 }
 
-// writeMessagesForCompactionCheck writes messages with specific writer configuration
+// writeMessagesForCompactionCheck writes messages with specific writer configuration.
 func writeMessagesForCompactionCheck(t *testing.T, topic string, msgs []Message) {
 	t.Helper()
 
@@ -1919,7 +1902,7 @@ func makeTestDuplicateSequence() []Message {
 	return msgs
 }
 
-// countKeys counts unique keys from given Message slice
+// countKeys counts unique keys from given Message slice.
 func countKeys(msgs []Message) int {
 	m := make(map[string]struct{})
 	for _, msg := range msgs {

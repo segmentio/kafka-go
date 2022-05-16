@@ -147,7 +147,7 @@ func (f v1MessageSetBuilder) bytes() []byte {
 	})
 	if f.codec != nil {
 		bs = newWB().call(func(wb *kafkaWriteBuffer) {
-			wb.writeInt64(f.msgs[len(f.msgs)-1].Offset)   // offset of the wrapper message is the last offset of the inner messages
+			wb.writeInt64(f.msgs[len(f.msgs)-1].Offset) // offset of the wrapper message is the last offset of the inner messages
 			wb.writeBytes(newWB().call(func(wb *kafkaWriteBuffer) {
 				bs := mustCompress(bs, f.codec)
 				wb.writeInt32(-1)                           // crc, unused
@@ -194,14 +194,14 @@ func (f v2MessageSetBuilder) bytes() []byte {
 				for i, msg := range f.msgs {
 					wb.Write(newWB().call(func(wb *kafkaWriteBuffer) {
 						bs := newWB().call(func(wb *kafkaWriteBuffer) {
-							wb.writeInt8(0)                                               // record attributes, not used here
-							wb.writeVarInt(1000 * (time.Now().Unix() - msg.Time.Unix()))  // timestamp
-							wb.writeVarInt(int64(i))                                      // offset delta
-							wb.writeVarInt(int64(len(msg.Key)))                           // key len
-							wb.Write(msg.Key)                                             // key bytes
-							wb.writeVarInt(int64(len(msg.Value)))                         // value len
-							wb.Write(msg.Value)                                           // value bytes
-							wb.writeVarInt(int64(len(msg.Headers)))                       // number of headers
+							wb.writeInt8(0)                                              // record attributes, not used here
+							wb.writeVarInt(1000 * (time.Now().Unix() - msg.Time.Unix())) // timestamp
+							wb.writeVarInt(int64(i))                                     // offset delta
+							wb.writeVarInt(int64(len(msg.Key)))                          // key len
+							wb.Write(msg.Key)                                            // key bytes
+							wb.writeVarInt(int64(len(msg.Value)))                        // value len
+							wb.Write(msg.Value)                                          // value bytes
+							wb.writeVarInt(int64(len(msg.Headers)))                      // number of headers
 							for _, header := range msg.Headers {
 								wb.writeVarInt(int64(len(header.Key)))
 								wb.Write([]byte(header.Key))
@@ -222,7 +222,7 @@ func (f v2MessageSetBuilder) bytes() []byte {
 	})
 }
 
-// kafkaWriteBuffer is a write buffer that helps writing fetch responses
+// kafkaWriteBuffer is a write buffer that helps writing fetch responses.
 type kafkaWriteBuffer struct {
 	writeBuffer
 	buf bytes.Buffer

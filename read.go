@@ -8,10 +8,6 @@ import (
 	"reflect"
 )
 
-type readable interface {
-	readFrom(*bufio.Reader, int) (int, error)
-}
-
 var errShortRead = errors.New("not enough bytes available to load the response")
 
 func peekRead(r *bufio.Reader, sz int, n int, f func([]byte)) (int, error) {
@@ -272,39 +268,6 @@ func read(r *bufio.Reader, sz int, a interface{}) (int, error) {
 		return readSlice(r, sz, v)
 	default:
 		panic(fmt.Sprintf("unsupported type: %T", a))
-	}
-}
-
-func readAll(r *bufio.Reader, sz int, ptrs ...interface{}) (int, error) {
-	var err error
-
-	for _, ptr := range ptrs {
-		if sz, err = readPtr(r, sz, ptr); err != nil {
-			break
-		}
-	}
-
-	return sz, err
-}
-
-func readPtr(r *bufio.Reader, sz int, ptr interface{}) (int, error) {
-	switch v := ptr.(type) {
-	case *int8:
-		return readInt8(r, sz, v)
-	case *int16:
-		return readInt16(r, sz, v)
-	case *int32:
-		return readInt32(r, sz, v)
-	case *int64:
-		return readInt64(r, sz, v)
-	case *string:
-		return readString(r, sz, v)
-	case *[]byte:
-		return readBytes(r, sz, v)
-	case readable:
-		return v.readFrom(r, sz)
-	default:
-		panic(fmt.Sprintf("unsupported type: %T", v))
 	}
 }
 
@@ -596,44 +559,4 @@ func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, wate
 	watermark = p.HighwaterMarkOffset
 	return
 
-}
-
-func readMessageHeader(r *bufio.Reader, sz int) (offset int64, attributes int8, timestamp int64, remain int, err error) {
-	var version int8
-
-	if remain, err = readInt64(r, sz, &offset); err != nil {
-		return
-	}
-
-	// On discarding the message size and CRC:
-	// ---------------------------------------
-	//
-	// - Not sure why kafka gives the message size here, we already have the
-	// number of remaining bytes in the response and kafka should only truncate
-	// the trailing message.
-	//
-	// - TCP is already taking care of ensuring data integrity, no need to
-	// waste resources doing it a second time so we just skip the message CRC.
-	//
-	if remain, err = discardN(r, remain, 8); err != nil {
-		return
-	}
-
-	if remain, err = readInt8(r, remain, &version); err != nil {
-		return
-	}
-
-	if remain, err = readInt8(r, remain, &attributes); err != nil {
-		return
-	}
-
-	switch version {
-	case 0:
-	case 1:
-		remain, err = readInt64(r, remain, &timestamp)
-	default:
-		err = fmt.Errorf("unsupported message version %d found in fetch response", version)
-	}
-
-	return
 }

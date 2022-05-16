@@ -156,23 +156,6 @@ func (c *Client) DescribeGroups(
 	return resp, nil
 }
 
-// readFrom decodes an owned partition item from the member metadata.
-func (t *DescribeGroupsResponseMemberMetadataOwnedPartition) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readString(r, size, &t.Topic); err != nil {
-		return
-	}
-	partitions := []int32{}
-
-	if remain, err = readInt32Array(r, remain, &partitions); err != nil {
-		return
-	}
-	for _, partition := range partitions {
-		t.Partitions = append(t.Partitions, int(partition))
-	}
-
-	return
-}
-
 // decodeMemberMetadata converts raw metadata bytes to a
 // DescribeGroupsResponseMemberMetadata struct.
 //

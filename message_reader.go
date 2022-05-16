@@ -3,7 +3,6 @@ package kafka
 import (
 	"bufio"
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -519,16 +518,6 @@ func (r *messageSetReader) readBytesWith(fn readBytesFunc) (err error) {
 func (r *messageSetReader) log(msg string, args ...interface{}) {
 	if r.debug {
 		log.Printf("[DEBUG] "+msg, args...)
-	}
-}
-
-func (r *messageSetReader) dumpHex(msg string) {
-	if r.debug {
-		buf := bytes.Buffer{}
-		io.Copy(&buf, r.reader)
-		bs := buf.Bytes()
-		r.log(fmt.Sprintf("Hex dump: %s (%d bytes)\n%s", msg, len(bs), hex.Dump(bs)))
-		r.reader = bufio.NewReader(bytes.NewReader(bs))
 	}
 }
 

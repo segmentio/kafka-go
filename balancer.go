@@ -126,7 +126,7 @@ var (
 //
 // By default, Hash uses the FNV-1a algorithm.  This is the same algorithm used
 // by the Sarama Producer and ensures that messages produced by kafka-go will
-// be delivered to the same topics that the Sarama producer would be delivered to
+// be delivered to the same topics that the Sarama producer would be delivered to.
 type Hash struct {
 	rr     RoundRobin
 	Hasher hash.Hash32

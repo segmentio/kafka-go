@@ -20,7 +20,7 @@ import (
 
 // This regression test covers reading messages using offsets that
 // are at the beginning and in the middle of compressed and uncompressed
-// v1 message sets
+// v1 message sets.
 func TestV1BatchOffsets(t *testing.T) {
 	const highWatermark = 5000
 	const topic = "test-topic"

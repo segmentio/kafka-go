@@ -249,35 +249,6 @@ func (p produceRequestPartitionV2) writeTo(wb *writeBuffer) {
 	p.MessageSet.writeTo(wb)
 }
 
-type produceResponseV2 struct {
-	ThrottleTime int32
-	Topics       []produceResponseTopicV2
-}
-
-func (r produceResponseV2) size() int32 {
-	return 4 + sizeofArray(len(r.Topics), func(i int) int32 { return r.Topics[i].size() })
-}
-
-func (r produceResponseV2) writeTo(wb *writeBuffer) {
-	wb.writeInt32(r.ThrottleTime)
-	wb.writeArray(len(r.Topics), func(i int) { r.Topics[i].writeTo(wb) })
-}
-
-type produceResponseTopicV2 struct {
-	TopicName  string
-	Partitions []produceResponsePartitionV2
-}
-
-func (t produceResponseTopicV2) size() int32 {
-	return sizeofString(t.TopicName) +
-		sizeofArray(len(t.Partitions), func(i int) int32 { return t.Partitions[i].size() })
-}
-
-func (t produceResponseTopicV2) writeTo(wb *writeBuffer) {
-	wb.writeString(t.TopicName)
-	wb.writeArray(len(t.Partitions), func(i int) { t.Partitions[i].writeTo(wb) })
-}
-
 type produceResponsePartitionV2 struct {
 	Partition int32
 	ErrorCode int16

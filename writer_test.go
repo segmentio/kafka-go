@@ -47,8 +47,8 @@ func testBatchQueuePutWakesSleepingGetter(t *testing.T) {
 	var wg sync.WaitGroup
 	ready := make(chan struct{})
 	var batch *writeBatch
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 		close(ready)
 		batch = bq.Get()

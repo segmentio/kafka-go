@@ -237,7 +237,7 @@ func (d *Dialer) LookupPartitions(ctx context.Context, network string, address s
 	return prt, err
 }
 
-// connectTLS returns a tls.Conn that has already completed the Handshake
+// connectTLS returns a tls.Conn that has already completed the Handshake.
 func (d *Dialer) connectTLS(ctx context.Context, conn net.Conn, config *tls.Config) (tlsConn *tls.Conn, err error) {
 	tlsConn = tls.Client(conn, config)
 	errch := make(chan error)
