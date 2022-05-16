@@ -1,27 +1,14 @@
 linters:
-  enable-all: true
+  enable:
+    - bodyclose
+    - goconst
+    - godot
+    - gofmt
+    - goimports
+    - prealloc
+
   disable:
-    # errcheck flags a lot of issues that we don't find valid, especially as
-    # fixing them has the potential to change behavior.
+    # Temporarily disabling so it can be addressed in a dedicated PR.
     - errcheck
-
-    # these linters are either deprecated or unhelpful, so likely they will not
-    # be used in the future
-    - exhaustivestruct
-    - golint
-    - interfacer
-    - maligned
-    - scopelint
-    - testpackage
-
-linters-settings:
-  # While not enabled atm, errcheck could be enabled in the future, so leaving
-  # behind the config here for now.
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-    # One notable gap in the configuration here is the ability to exclude test
-    # files, which appears to be supported by the errcheck linter itself, but is
-    # not part of the config struct contained in golangci-lint. This seems like
-    # a good candidate for a first-time contribution to golangci-lint.
+    - errorlint
+    - goerr113

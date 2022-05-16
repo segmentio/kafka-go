@@ -110,7 +110,7 @@ const (
 	v7  = 7
 	v10 = 10
 
-	// Unused protocol versions: v4, v6, v8, v9
+	// Unused protocol versions: v4, v6, v8, v9.
 )
 
 var apiKeyStrings = [...]string{
