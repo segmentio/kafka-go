@@ -146,7 +146,7 @@ func assertRecords(t *testing.T, r1, r2 RecordReader) {
 		rec2, err2 := r2.ReadRecord()
 
 		if err1 != nil || err2 != nil {
-			if err1 != err2 {
+			if !errors.Is(err1, err2) {
 				t.Error("errors mismatch:")
 				t.Log("expected:", err2)
 				t.Log("found:   ", err1)

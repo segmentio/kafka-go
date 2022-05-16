@@ -605,7 +605,7 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 			}
 			r, err := res.await(deadline)
 			cancel()
-			if err != nil && err == ctx.Err() {
+			if err != nil && errors.Is(err, ctx.Err()) {
 				return
 			}
 			ret, _ := r.(*meta.Response)
@@ -1286,14 +1286,14 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 
 	for completed := false; !completed; {
 		challenge, err := saslAuthenticateRoundTrip(pc, state)
-		switch err {
-		case nil:
-		case io.EOF:
-			// the broker may communicate a failed exchange by closing the
-			// connection (esp. in the case where we're passing opaque sasl
-			// data over the wire since there's no protocol info).
-			return SASLAuthenticationFailed
-		default:
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// the broker may communicate a failed exchange by closing the
+				// connection (esp. in the case where we're passing opaque sasl
+				// data over the wire since there's no protocol info).
+				return SASLAuthenticationFailed
+			}
+
 			return err
 		}
 

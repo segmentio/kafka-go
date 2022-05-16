@@ -359,21 +359,21 @@ func testWriterMaxBytes(t *testing.T) {
 		t.Error("expected error")
 		return
 	} else if err != nil {
-		switch e := err.(type) {
-		case MessageTooLargeError:
-			if string(e.Message.Value) != string(firstMsg) {
-				t.Errorf("unxpected returned message. Expected: %s, Got %s", firstMsg, e.Message.Value)
+		var messageTooLargeError MessageTooLargeError
+		if errors.As(err, &messageTooLargeError) {
+			if string(messageTooLargeError.Message.Value) != string(firstMsg) {
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", firstMsg, messageTooLargeError.Message.Value)
 				return
 			}
-			if len(e.Remaining) != 1 {
+			if len(messageTooLargeError.Remaining) != 1 {
 				t.Error("expected remaining errors; found none")
 				return
 			}
-			if string(e.Remaining[0].Value) != string(secondMsg) {
-				t.Errorf("unxpected returned message. Expected: %s, Got %s", secondMsg, e.Message.Value)
+			if string(messageTooLargeError.Remaining[0].Value) != string(secondMsg) {
+				t.Errorf("unxpected returned message. Expected: %s, Got %s", secondMsg, messageTooLargeError.Message.Value)
 				return
 			}
-		default:
+		} else {
 			t.Errorf("unexpected error: %s", err)
 			return
 		}

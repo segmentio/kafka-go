@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -551,7 +552,7 @@ func TestMessageSetReaderEmpty(t *testing.T) {
 	if headers != nil {
 		t.Errorf("expected nil headers, got %v", headers)
 	}
-	if err != RequestTimedOut {
+	if !errors.Is(err, RequestTimedOut) {
 		t.Errorf("expected RequestTimedOut, got %v", err)
 	}
 

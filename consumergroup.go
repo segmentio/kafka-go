@@ -523,19 +523,19 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 				return
 			case <-ticker.C:
 				ops, err := g.conn.readPartitions(topic)
-				switch err {
-				case nil, UnknownTopicOrPartition:
+				if err == nil || errors.Is(err, UnknownTopicOrPartition) {
 					if len(ops) != oParts {
 						g.log(func(l Logger) {
 							l.Printf("Partition changes found, reblancing group: %v.", g.GroupID)
 						})
 						return
 					}
-				default:
+				} else {
 					g.logError(func(l Logger) {
 						l.Printf("Problem getting partitions while checking for changes, %v", err)
 					})
-					if _, ok := err.(Error); ok {
+					var kafkaError Error
+					if errors.As(err, &kafkaError) {
 						continue
 					}
 					// other errors imply that we lost the connection to the coordinator, so we
@@ -724,21 +724,21 @@ func (cg *ConsumerGroup) run() {
 		// to the next generation.  it will be non-nil in the case of an error
 		// joining or syncing the group.
 		var backoff <-chan time.Time
-		switch err {
-		case nil:
+
+		if err == nil {
 			// no error...the previous generation finished normally.
 			continue
-		case ErrGroupClosed:
+		} else if errors.Is(err, ErrGroupClosed) {
 			// the CG has been closed...leave the group and exit loop.
 			_ = cg.leaveGroup(memberID)
 			return
-		case RebalanceInProgress:
+		} else if errors.Is(err, RebalanceInProgress) {
 			// in case of a RebalanceInProgress, don't leave the group or
 			// change the member ID, but report the error.  the next attempt
 			// to join the group will then be subject to the rebalance
 			// timeout, so the broker will be responsible for throttling
 			// this loop.
-		default:
+		} else {
 			// leave the group and report the error if we had gotten far
 			// enough so as to have a member ID.  also clear the member id
 			// so we don't attempt to use it again.  in order to avoid
@@ -984,7 +984,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 	for _, balancer := range cg.config.GroupBalancers {
 		userData, err := balancer.UserData()
 		if err != nil {
-			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %v", balancer.ProtocolName(), err)
+			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
 		}
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName: balancer.ProtocolName(),
@@ -1050,7 +1050,7 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 		metadata := groupMetadata{}
 		reader := bufio.NewReader(bytes.NewReader(item.MemberMetadata))
 		if remain, err := (&metadata).readFrom(reader, len(item.MemberMetadata)); err != nil || remain != 0 {
-			return nil, fmt.Errorf("unable to read metadata for member, %v: %v", item.MemberID, err)
+			return nil, fmt.Errorf("unable to read metadata for member, %v: %w", item.MemberID, err)
 		}
 
 		members = append(members, GroupMember{

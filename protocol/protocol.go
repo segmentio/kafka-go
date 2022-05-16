@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -365,14 +366,15 @@ func parseVersion(s string) (int16, error) {
 }
 
 func dontExpectEOF(err error) error {
-	switch err {
-	case nil:
-		return nil
-	case io.EOF:
-		return io.ErrUnexpectedEOF
-	default:
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return io.ErrUnexpectedEOF
+		}
+
 		return err
 	}
+
+	return nil
 }
 
 type Broker struct {

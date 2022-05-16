@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -294,7 +295,7 @@ func TestDialerConnectTLSHonorsContext(t *testing.T) {
 	defer cancel()
 
 	_, err := d.connectTLS(ctx, conn, d.TLS)
-	if context.DeadlineExceeded != err {
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("expected err to be %v; got %v", context.DeadlineExceeded, err)
 		t.FailNow()
 	}

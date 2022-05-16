@@ -2,6 +2,7 @@ package snappy
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 )
 
@@ -92,7 +93,7 @@ func TestSnappyDecodeMalformedTruncatedHeader(t *testing.T) {
 	for i := 0; i < len(xerialHeader); i++ {
 		buf := make([]byte, i)
 		copy(buf, xerialHeader[:i])
-		if _, err := Decode(buf); err != ErrMalformed {
+		if _, err := Decode(buf); !errors.Is(err, ErrMalformed) {
 			t.Errorf("expected ErrMalformed got %v", err)
 		}
 	}
@@ -104,7 +105,7 @@ func TestSnappyDecodeMalformedTruncatedSize(t *testing.T) {
 	for _, size := range sizes {
 		buf := make([]byte, size)
 		copy(buf, xerialHeader)
-		if _, err := Decode(buf); err != ErrMalformed {
+		if _, err := Decode(buf); !errors.Is(err, ErrMalformed) {
 			t.Errorf("expected ErrMalformed got %v", err)
 		}
 	}
@@ -116,7 +117,7 @@ func TestSnappyDecodeMalformedBNoData(t *testing.T) {
 	copy(buf, xerialHeader)
 	// indicate that there's one byte of data to be read
 	buf[len(buf)-1] = 1
-	if _, err := Decode(buf); err != ErrMalformed {
+	if _, err := Decode(buf); !errors.Is(err, ErrMalformed) {
 		t.Errorf("expected ErrMalformed got %v", err)
 	}
 }
@@ -128,7 +129,7 @@ func TestSnappyMasterDecodeFailed(t *testing.T) {
 	buf[len(buf)-2] = 1
 	// A payload which will not decode
 	buf[len(buf)-1] = 1
-	if _, err := Decode(buf); err == ErrMalformed || err == nil {
+	if _, err := Decode(buf); errors.Is(err, ErrMalformed) || err == nil {
 		t.Errorf("unexpected err: %v", err)
 	}
 }

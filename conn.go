@@ -1231,11 +1231,10 @@ func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID 
 
 func (c *Conn) readResponse(size int, res interface{}) error {
 	size, err := read(&c.rbuf, size, res)
-	switch err.(type) {
-	case Error:
-		var e error
-		if size, e = discardN(&c.rbuf, size, size); e != nil {
-			err = e
+	if err != nil {
+		var kafkaError Error
+		if errors.As(err, &kafkaError) {
+			size, err = discardN(&c.rbuf, size, size)
 		}
 	}
 	return expectZeroSize(size, err)
@@ -1294,9 +1293,8 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func
 	}
 
 	if err = read(deadline, size); err != nil {
-		switch err.(type) {
-		case Error:
-		default:
+		var kafkaError Error
+		if !errors.As(err, &kafkaError) {
 			c.conn.Close()
 		}
 	}

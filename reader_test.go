@@ -89,7 +89,7 @@ func testReaderReadCanceled(t *testing.T, ctx context.Context, r *Reader) {
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
 
-	if _, err := r.ReadMessage(ctx); err != context.Canceled {
+	if _, err := r.ReadMessage(ctx); !errors.Is(err, context.Canceled) {
 		t.Error(err)
 	}
 }
@@ -259,7 +259,7 @@ func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Read
 	}
 
 	_, err := r.ReadMessage(ctx)
-	if err != context.DeadlineExceeded {
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Error("bad error:", err)
 	}
 
@@ -305,15 +305,12 @@ func createTopic(t *testing.T, topic string, partitions int) {
 		},
 		Timeout: milliseconds(time.Second),
 	})
-	switch err {
-	case nil:
-		// ok
-	case TopicAlreadyExists:
-		// ok
-	default:
-		err = fmt.Errorf("creaetTopic, conn.createtTopics: %w", err)
-		t.Error(err)
-		t.FailNow()
+	if err != nil {
+		if !errors.Is(err, TopicAlreadyExists) {
+			err = fmt.Errorf("creaetTopic, conn.createtTopics: %w", err)
+			t.Error(err)
+			t.FailNow()
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -664,7 +661,7 @@ func testConsumerGroupSimple(t *testing.T, ctx context.Context, r *Reader) {
 
 func TestReaderSetOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if err := r.SetOffset(LastOffset); err != errNotAvailableWithGroup {
+	if err := r.SetOffset(LastOffset); !errors.Is(err, errNotAvailableWithGroup) {
 		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
 	}
 }
@@ -687,7 +684,7 @@ func TestReaderReadLagReturnsZeroLagWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
 	lag, err := r.ReadLag(context.Background())
 
-	if err != errNotAvailableWithGroup {
+	if !errors.Is(err, errNotAvailableWithGroup) {
 		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
 	}
 
@@ -1943,13 +1940,10 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 			},
 		},
 	})
-	switch err {
-	case nil:
-		// ok
-	case TopicAlreadyExists:
-		// ok
-	default:
-		require.NoError(t, err)
+	if err != nil {
+		if !errors.Is(err, TopicAlreadyExists) {
+			require.NoError(t, err)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

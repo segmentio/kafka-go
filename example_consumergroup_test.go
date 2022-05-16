@@ -2,6 +2,7 @@ package kafka_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -42,18 +43,20 @@ func ExampleGeneration_Start_consumerGroupParallelReaders() {
 				reader.SetOffset(offset)
 				for {
 					msg, err := reader.ReadMessage(ctx)
-					switch err {
-					case kafka.ErrGenerationEnded:
-						// generation has ended.  commit offsets.  in a real app,
-						// offsets would be committed periodically.
-						gen.CommitOffsets(map[string]map[int]int64{"my-topic": {partition: offset + 1}})
-						return
-					case nil:
-						fmt.Printf("received message %s/%d/%d : %s\n", msg.Topic, msg.Partition, msg.Offset, string(msg.Value))
-						offset = msg.Offset
-					default:
+					if err != nil {
+						if errors.Is(err, kafka.ErrGenerationEnded) {
+							// generation has ended.  commit offsets.  in a real app,
+							// offsets would be committed periodically.
+							gen.CommitOffsets(map[string]map[int]int64{"my-topic": {partition: offset + 1}})
+							return
+						}
+
 						fmt.Printf("error reading message: %+v\n", err)
+						return
 					}
+
+					fmt.Printf("received message %s/%d/%d : %s\n", msg.Topic, msg.Partition, msg.Offset, string(msg.Value))
+					offset = msg.Offset
 				}
 			})
 		}
