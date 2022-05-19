@@ -185,7 +185,7 @@ type Writer struct {
 	// If nil, DefaultTransport is used.
 	Transport RoundTripper
 
-	// AllowAutoTopicCreation notifies writer to create topic is missing.
+	// AllowAutoTopicCreation notifies writer to create topic if missing.
 	AllowAutoTopicCreation bool
 
 	// Manages the current set of partition-topic writers.
