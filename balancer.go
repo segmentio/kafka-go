@@ -177,7 +177,7 @@ func (h *Hash) Balance(msg Message, partitions ...int) int {
 //
 // By default, ReferenceHash uses the FNV-1a algorithm. This is the same algorithm as
 // the Sarama NewReferenceHashPartitioner and ensures that messages produced by kafka-go will
-// be delivered to the same topics that the Sarama producer would be delivered to
+// be delivered to the same topics that the Sarama producer would be delivered to.
 type ReferenceHash struct {
 	rr     randomBalancer
 	Hasher hash.Hash32
