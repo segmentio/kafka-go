@@ -63,6 +63,65 @@ func TestHashBalancer(t *testing.T) {
 	}
 }
 
+func TestReferenceHashBalancer(t *testing.T) {
+	testCases := map[string]struct {
+		Key               []byte
+		Hasher            hash.Hash32
+		Partitions        []int
+		Partition         int
+		RndBalancerResult int
+	}{
+		"nil": {
+			Key:               nil, // nil key means random partition
+			Partitions:        []int{0, 1, 2},
+			Partition:         123,
+			RndBalancerResult: 123,
+		},
+		"partition-0": {
+			Key:        []byte("blah"),
+			Partitions: []int{0, 1},
+			Partition:  0,
+		},
+		"partition-1": {
+			Key:        []byte("blah"),
+			Partitions: []int{0, 1, 2},
+			Partition:  1,
+		},
+		"partition-2": {
+			Key:        []byte("castle"),
+			Partitions: []int{0, 1, 2},
+			Partition:  2,
+		},
+		"custom hash": {
+			Key:        []byte("boop"),
+			Hasher:     crc32.NewIEEE(),
+			Partitions: []int{0, 1, 2},
+			Partition:  1,
+		},
+		"hash code with MSB set": {
+			Key:        []byte("20"),
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+			Partition:  15,
+		},
+	}
+
+	for label, test := range testCases {
+		t.Run(label, func(t *testing.T) {
+			var rr randomBalancer
+			if test.Key == nil {
+				rr.mock = test.RndBalancerResult
+			}
+
+			msg := Message{Key: test.Key}
+			h := ReferenceHash{Hasher: test.Hasher, rr: rr}
+			partition := h.Balance(msg, test.Partitions...)
+			if partition != test.Partition {
+				t.Errorf("expected %v; got %v", test.Partition, partition)
+			}
+		})
+	}
+}
+
 func TestCRC32Balancer(t *testing.T) {
 	// These tests are taken from the default "consistent_random" partitioner from
 	// https://github.com/edenhill/librdkafka/blob/master/tests/0048-partitioner.c
