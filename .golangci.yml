@@ -1,6 +1,7 @@
 linters:
   enable:
     - bodyclose
+    - errorlint
     - goconst
     - godot
     - gofmt
@@ -10,5 +11,4 @@ linters:
   disable:
     # Temporarily disabling so it can be addressed in a dedicated PR.
     - errcheck
-    - errorlint
     - goerr113

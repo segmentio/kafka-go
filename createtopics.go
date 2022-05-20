@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -384,12 +385,14 @@ func (c *Conn) CreateTopics(topics ...TopicConfig) error {
 	_, err := c.createTopics(createTopicsRequestV0{
 		Topics: requestV0Topics,
 	})
+	if err != nil {
+		if errors.Is(err, TopicAlreadyExists) {
+			// ok
+			return nil
+		}
 
-	switch err {
-	case TopicAlreadyExists:
-		// ok
-		return nil
-	default:
 		return err
 	}
+
+	return nil
 }

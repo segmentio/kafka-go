@@ -2,6 +2,7 @@ package prototest
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"reflect"
 	"time"
@@ -152,7 +153,7 @@ func deepEqualRecords(r1, r2 protocol.RecordReader) bool {
 		rec2, err2 := r2.ReadRecord()
 
 		if err1 != nil || err2 != nil {
-			return err1 == err2
+			return errors.Is(err1, err2)
 		}
 
 		if !deepEqualRecord(rec1, rec2) {

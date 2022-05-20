@@ -389,9 +389,11 @@ func testConnWrite(t *testing.T, conn *Conn) {
 func testConnCloseAndWrite(t *testing.T, conn *Conn) {
 	conn.Close()
 
-	switch _, err := conn.Write([]byte("Hello World!")); err.(type) {
-	case *net.OpError:
-	default:
+	_, err := conn.Write([]byte("Hello World!"))
+
+	// expect a network error
+	var netOpError *net.OpError
+	if !errors.As(err, &netOpError) {
 		t.Error(err)
 	}
 }
@@ -489,7 +491,7 @@ func testConnSeekDontCheck(t *testing.T, conn *Conn) {
 		t.Error("bad offset:", offset)
 	}
 
-	if _, err := conn.ReadMessage(1024); err != OffsetOutOfRange {
+	if _, err := conn.ReadMessage(1024); !errors.Is(err, OffsetOutOfRange) {
 		t.Error("unexpected error:", err)
 	}
 }
@@ -659,13 +661,15 @@ func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
 		_, err := conn.findCoordinator(findCoordinatorRequestV0{
 			CoordinatorKey: groupID,
 		})
-		switch err {
-		case nil:
+		if err != nil {
+			if errors.Is(err, GroupCoordinatorNotAvailable) {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			} else {
+				t.Fatalf("unable to find coordinator for group: %v", err)
+			}
+		} else {
 			return
-		case GroupCoordinatorNotAvailable:
-			time.Sleep(250 * time.Millisecond)
-		default:
-			t.Fatalf("unable to find coordinator for group: %v", err)
 		}
 	}
 
@@ -690,15 +694,18 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 					},
 				},
 			})
-			switch err {
-			case nil:
+			if err != nil {
+				if errors.Is(err, NotCoordinatorForGroup) {
+					time.Sleep(250 * time.Millisecond)
+					continue
+				} else {
+					t.Fatalf("bad joinGroup: %s", err)
+				}
+			} else {
 				return
-			case NotCoordinatorForGroup:
-				time.Sleep(250 * time.Millisecond)
-			default:
-				t.Fatalf("bad joinGroup: %s", err)
 			}
 		}
+
 		return
 	}
 
@@ -742,12 +749,11 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 		}
 		response, err := conn.findCoordinator(findCoordinatorRequestV0{CoordinatorKey: groupID})
 		if err != nil {
-			switch err {
-			case GroupCoordinatorNotAvailable:
+			if errors.Is(err, GroupCoordinatorNotAvailable) {
 				continue
-			default:
-				t.Fatalf("bad findCoordinator: %s", err)
 			}
+
+			t.Fatalf("bad findCoordinator: %s", err)
 		}
 
 		if response.Coordinator.NodeID == 0 {

@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 )
@@ -52,7 +53,7 @@ func TestDiscardN(t *testing.T) {
 			scenario: "discard more than available",
 			function: func(t *testing.T, r *bufio.Reader, sz int) {
 				remain, err := discardN(r, sz, sz+1)
-				if err != errShortRead {
+				if !errors.Is(err, errShortRead) {
 					t.Errorf("Expected errShortRead, got %v", err)
 				}
 				if remain != 0 {
@@ -64,7 +65,7 @@ func TestDiscardN(t *testing.T) {
 			scenario: "discard returns error",
 			function: func(t *testing.T, r *bufio.Reader, sz int) {
 				remain, err := discardN(r, sz+2, sz+1)
-				if err != io.EOF {
+				if !errors.Is(err, io.EOF) {
 					t.Errorf("Expected EOF, got %v", err)
 				}
 				if remain != 2 {
@@ -76,7 +77,7 @@ func TestDiscardN(t *testing.T) {
 			scenario: "errShortRead doesn't mask error",
 			function: func(t *testing.T, r *bufio.Reader, sz int) {
 				remain, err := discardN(r, sz+1, sz+2)
-				if err != io.EOF {
+				if !errors.Is(err, io.EOF) {
 					t.Errorf("Expected EOF, got %v", err)
 				}
 				if remain != 1 {

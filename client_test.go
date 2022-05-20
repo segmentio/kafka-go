@@ -3,6 +3,7 @@ package kafka
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"math/rand"
 	"net"
@@ -262,7 +263,7 @@ func TestClientProduceAndConsume(t *testing.T) {
 		for {
 			r, err := res.Records.ReadRecord()
 			if err != nil {
-				if err != io.EOF {
+				if !errors.Is(err, io.EOF) {
 					t.Fatal(err)
 				}
 				break
