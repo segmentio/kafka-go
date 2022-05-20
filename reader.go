@@ -1291,17 +1291,20 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			}
 
 			offset, err = r.read(ctx, offset, conn)
-			if err == nil {
+			switch {
+			case err == nil:
 				errcount = 0
 				continue
-			} else if errors.Is(err, io.EOF) {
+
+			case errors.Is(err, io.EOF):
 				// done with this batch of messages...carry on.  note that this
 				// block relies on the batch repackaging real io.EOF errors as
 				// io.UnexpectedEOF.  otherwise, we would end up swallowing real
 				// errors here.
 				errcount = 0
 				continue
-			} else if errors.Is(err, UnknownTopicOrPartition) {
+
+			case errors.Is(err, UnknownTopicOrPartition):
 				r.withErrorLogger(func(log Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d, topic or parition not found on this broker, %v", r.partition, r.topic, toHumanOffset(offset), r.brokers)
 				})
@@ -1312,7 +1315,8 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				// topic/partition broker combo.
 				r.stats.rebalances.observe(1)
 				break readLoop
-			} else if errors.Is(err, NotLeaderForPartition) {
+
+			case errors.Is(err, NotLeaderForPartition):
 				r.withErrorLogger(func(log Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d, not the leader", r.partition, r.topic, toHumanOffset(offset))
 				})
@@ -1323,7 +1327,8 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				// partition leader.
 				r.stats.rebalances.observe(1)
 				break readLoop
-			} else if errors.Is(err, RequestTimedOut) {
+
+			case errors.Is(err, RequestTimedOut):
 				// Timeout on the kafka side, this can be safely retried.
 				errcount = 0
 				r.withLogger(func(log Logger) {
@@ -1331,7 +1336,8 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				})
 				r.stats.timeouts.observe(1)
 				continue
-			} else if errors.Is(err, OffsetOutOfRange) {
+
+			case errors.Is(err, OffsetOutOfRange):
 				first, last, err := r.readOffsets(conn)
 				if err != nil {
 					r.withErrorLogger(func(log Logger) {
@@ -1359,17 +1365,20 @@ func (r *reader) run(ctx context.Context, offset int64) {
 						log.Printf("the kafka reader is reading passed the last offset for partition %d of %s at offset %d", r.partition, r.topic, toHumanOffset(offset))
 					})
 				}
-			} else if errors.Is(err, context.Canceled) {
+
+			case errors.Is(err, context.Canceled):
 				// Another reader has taken over, we can safely quit.
 				conn.Close()
 				return
-			} else if errors.Is(err, errUnknownCodec) {
+
+			case errors.Is(err, errUnknownCodec):
 				// The compression codec is either unsupported or has not been
 				// imported.  This is a fatal error b/c the reader cannot
 				// proceed.
 				r.sendError(ctx, err)
 				break readLoop
-			} else {
+
+			default:
 				var kafkaError Error
 				if errors.As(err, &kafkaError) {
 					r.sendError(ctx, err)
