@@ -183,5 +183,9 @@ func newTestKafkaLogger(t *testing.T, prefix string) Logger {
 
 func (l *testKafkaLogger) Printf(msg string, args ...interface{}) {
 	l.T.Helper()
-	l.T.Logf(l.Prefix+" "+msg, args...)
+	if l.Prefix != "" {
+		l.T.Logf(l.Prefix+" "+msg, args...)
+	} else {
+		l.T.Logf(msg, args...)
+	}
 }
