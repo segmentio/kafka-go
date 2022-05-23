@@ -738,6 +738,13 @@ func (w *Writer) partitions(ctx context.Context, topic string) (int, error) {
 		TopicNames:             []string{topic},
 		AllowAutoTopicCreation: w.AllowAutoTopicCreation,
 	})
+
+	// Metadata request fails if topic does not exist, even if
+	// `AllowAutoTopicCreation` is set
+	if w.AllowAutoTopicCreation && errors.Is(err, UnknownTopicOrPartition) {
+		return 1, nil
+	}
+
 	if err != nil {
 		return 0, err
 	}
