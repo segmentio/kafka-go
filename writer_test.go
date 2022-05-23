@@ -718,7 +718,7 @@ func testWriterUnexpectedMessageTopic(t *testing.T) {
 func testWriterAutoCreateTopic(t *testing.T) {
 	topic := makeTopic()
 	// Assume it's going to get created.
-	defer deleteTopic(t, topic)
+	deleteTopic(t, topic)
 
 	w := newTestWriter(WriterConfig{
 		Topic:    topic,
