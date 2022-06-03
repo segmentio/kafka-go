@@ -99,7 +99,7 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
 			return nil, v
 
 		default:
-			return nil, fmt.Errorf("Unknown result type: %T", result)
+			panic(fmt.Sprintf("unknown result type in Merge: %T", result))
 		}
 	}
 
@@ -132,6 +132,4 @@ type ResponseConfigSynonym struct {
 	ConfigSource int8   `kafka:"min=v1,max=v3"`
 }
 
-var (
-	_ protocol.BrokerMessage = (*Request)(nil)
-)
+var _ protocol.BrokerMessage = (*Request)(nil)
