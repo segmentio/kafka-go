@@ -1,6 +1,7 @@
 package describeconfigs
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -87,11 +88,19 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
 	response := &Response{}
 
 	for _, result := range results {
-		brokerResp := result.(*Response)
-		response.Resources = append(
-			response.Resources,
-			brokerResp.Resources...,
-		)
+		switch v := result.(type) {
+		case *Response:
+			response.Resources = append(
+				response.Resources,
+				v.Resources...,
+			)
+
+		case error:
+			return nil, v
+
+		default:
+			panic(fmt.Sprintf("unknown result type in Merge: %T", result))
+		}
 	}
 
 	return response, nil
@@ -123,6 +132,4 @@ type ResponseConfigSynonym struct {
 	ConfigSource int8   `kafka:"min=v1,max=v3"`
 }
 
-var (
-	_ protocol.BrokerMessage = (*Request)(nil)
-)
+var _ protocol.BrokerMessage = (*Request)(nil)
