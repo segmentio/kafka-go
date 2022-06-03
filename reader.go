@@ -509,6 +509,12 @@ type ReaderConfig struct {
 	//
 	// The default is to try 3 times.
 	MaxAttempts int
+
+	// OffsetOutOfRangeError indicates that the reader should return an error in
+	// the event of an OffsetOutOfRange error, rather than retrying indefinitely.
+	// This flag is being added to retain backwards-compatibility, so it will be
+	// removed in a future version of kafka-go.
+	OffsetOutOfRangeError bool
 }
 
 // Validate method validates ReaderConfig properties.
@@ -1191,6 +1197,9 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 				stats:           r.stats,
 				isolationLevel:  r.config.IsolationLevel,
 				maxAttempts:     r.config.MaxAttempts,
+
+				// backwards-compatibility flags
+				offsetOutOfRangeError: r.config.OffsetOutOfRangeError,
 			}).run(ctx, offset)
 		}(ctx, key, offset, &r.join)
 	}
@@ -1216,6 +1225,8 @@ type reader struct {
 	stats           *readerStats
 	isolationLevel  IsolationLevel
 	maxAttempts     int
+
+	offsetOutOfRangeError bool
 }
 
 type readerMessage struct {
@@ -1249,12 +1260,18 @@ func (r *reader) run(ctx context.Context, offset int64) {
 		conn, start, err := r.initialize(ctx, offset)
 		if err != nil {
 			if errors.Is(err, OffsetOutOfRange) {
+				if r.offsetOutOfRangeError {
+					r.sendError(ctx, err)
+					return
+				}
+
 				// This would happen if the requested offset is passed the last
 				// offset on the partition leader. In that case we're just going
 				// to retry later hoping that enough data has been produced.
 				r.withErrorLogger(func(log Logger) {
 					log.Printf("error initializing the kafka reader for partition %d of %s: %s", r.partition, r.topic, err)
 				})
+
 				continue
 			}
 

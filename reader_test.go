@@ -62,6 +62,11 @@ func TestReader(t *testing.T) {
 			scenario: "reading from an out-of-range offset waits until the context is cancelled",
 			function: testReaderOutOfRangeGetsCanceled,
 		},
+
+		{
+			scenario: "topic being recreated will return an error",
+			function: testReaderTopicRecreated,
+		},
 	}
 
 	for _, test := range tests {
@@ -78,6 +83,7 @@ func TestReader(t *testing.T) {
 				MinBytes: 1,
 				MaxBytes: 10e6,
 				MaxWait:  100 * time.Millisecond,
+				Logger:   newTestKafkaLogger(t, ""),
 			})
 			defer r.Close()
 			testFunc(t, ctx, r)
@@ -1949,4 +1955,30 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	waitForTopic(ctx, t, topic)
+}
+
+// The current behavior of the Reader is to retry OffsetOutOfRange errors
+// indefinitely, which results in programs hanging in the event of a topic being
+// re-created while a consumer is running. To retain backwards-compatibility,
+// ReaderConfig.OffsetOutOfRangeError is being used to instruct the Reader to
+// return an error in this case instead, allowing callers to react.
+func testReaderTopicRecreated(t *testing.T, ctx context.Context, r *Reader) {
+	r.config.OffsetOutOfRangeError = true
+
+	topic := r.config.Topic
+
+	// add 1 message to the topic
+	prepareReader(t, ctx, r, makeTestSequence(1)...)
+
+	// consume the message (moving the offset from 0 -> 1)
+	_, err := r.ReadMessage(ctx)
+	require.NoError(t, err)
+
+	// destroy the topic, then recreate it so the offset now becomes 0
+	deleteTopic(t, topic)
+	createTopic(t, topic, 1)
+
+	// expect an error, since the offset should now be out of range
+	_, err = r.ReadMessage(ctx)
+	require.ErrorIs(t, err, OffsetOutOfRange)
 }
