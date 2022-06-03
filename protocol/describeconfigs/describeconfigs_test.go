@@ -54,4 +54,23 @@ func TestResponse_Merge(t *testing.T) {
 			t.Fatalf("wanted err io.EOF, got %v", err)
 		}
 	})
+
+	t.Run("panic with unexpected type", func(t *testing.T) {
+		defer func() {
+			msg := recover()
+			if msg != "unknown result type in Merge: string" {
+				t.Fatal("unexpected panic", msg)
+			}
+		}()
+		r := &Response{}
+
+		r1 := &Response{
+			Resources: []ResponseResource{
+				{ResourceName: "r1"},
+			},
+		}
+
+		_, _ = r.Merge([]protocol.Message{&Request{}}, []interface{}{r1, "how did a string got here"})
+		t.Fatal("did not panic")
+	})
 }
