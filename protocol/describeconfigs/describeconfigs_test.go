@@ -1,6 +1,7 @@
 package describeconfigs
 
 import (
+	"errors"
 	"io"
 	"reflect"
 	"testing"
@@ -50,7 +51,7 @@ func TestResponse_Merge(t *testing.T) {
 		}
 
 		_, err := r.Merge([]protocol.Message{&Request{}}, []interface{}{r1, io.EOF})
-		if err != io.EOF {
+		if !errors.Is(err, io.EOF) {
 			t.Fatalf("wanted err io.EOF, got %v", err)
 		}
 	})
