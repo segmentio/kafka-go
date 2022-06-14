@@ -1,6 +1,8 @@
 package listgroups
 
 import (
+	"fmt"
+
 	"github.com/segmentio/kafka-go/protocol"
 )
 
@@ -57,8 +59,15 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
 	response := &Response{}
 
 	for r, result := range results {
-		brokerResp := result.(*Response)
-		respGroups := []ResponseGroup{}
+		brokerResp, ok := result.(*Response)
+		if !ok {
+			if err, ok := result.(error); ok {
+				return nil, fmt.Errorf("listgroups.(*Response).Merge: %w", err)
+			}
+			return nil, fmt.Errorf("listgroups.(*Response).Merge expect got %T", result)
+		}
+
+		respGroups := make([]ResponseGroup, 0, len(brokerResp.Groups))
 
 		for _, brokerResp := range brokerResp.Groups {
 			respGroups = append(
