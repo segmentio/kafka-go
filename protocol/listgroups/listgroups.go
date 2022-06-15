@@ -64,7 +64,7 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
 			if err, ok := result.(error); ok {
 				return nil, fmt.Errorf("listgroups.(*Response).Merge: %w", err)
 			}
-			return nil, fmt.Errorf("listgroups.(*Response).Merge expect got %T", result)
+			return nil, fmt.Errorf("listgroups.(*Response).Merge: unexpected got type %T", result)
 		}
 
 		respGroups := make([]ResponseGroup, 0, len(brokerResp.Groups))
