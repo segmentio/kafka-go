@@ -277,7 +277,7 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 
 	if compressor != nil {
 		if err := compressor.Close(); err != nil {
-			return err
+			return fmt.Errorf("compressor could not be closed: %w", err)
 		}
 	}
 

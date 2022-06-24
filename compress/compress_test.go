@@ -60,10 +60,10 @@ func compress(codec pkg.Codec, src []byte) ([]byte, error) {
 	w := codec.NewWriter(b)
 	if _, err := io.Copy(w, r); err != nil {
 		w.Close()
-		return nil, err
+		return nil, fmt.Errorf("copy failed: %w", err)
 	}
 	if err := w.Close(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("codec writer could not be closed: %w", err)
 	}
 	return b.Bytes(), nil
 }
@@ -73,10 +73,10 @@ func decompress(codec pkg.Codec, src []byte) ([]byte, error) {
 	r := codec.NewReader(bytes.NewReader(src))
 	if _, err := io.Copy(b, r); err != nil {
 		r.Close()
-		return nil, err
+		return nil, fmt.Errorf("copy failed: %w", err)
 	}
 	if err := r.Close(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("codec reader could not be closed: %w", err)
 	}
 	return b.Bytes(), nil
 }

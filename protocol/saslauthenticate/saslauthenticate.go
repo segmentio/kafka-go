@@ -2,6 +2,7 @@ package saslauthenticate
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -32,20 +33,22 @@ func (r *Request) writeTo(w io.Writer) error {
 	buf := make([]byte, size)
 	binary.BigEndian.PutUint32(buf[:4], uint32(len(r.AuthBytes)))
 	copy(buf[4:], r.AuthBytes)
-	_, err := w.Write(buf)
-	return err
+	if _, err := w.Write(buf); err != nil {
+		return fmt.Errorf("sasl request write failed: %w", err)
+	}
+	return nil
 }
 
 func (r *Request) readResp(read io.Reader) (protocol.Message, error) {
 	var lenBuf [4]byte
 	if _, err := io.ReadFull(read, lenBuf[:]); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sasl request length read failed: %w", err)
 	}
 	respLen := int32(binary.BigEndian.Uint32(lenBuf[:]))
 	data := make([]byte, respLen)
 
 	if _, err := io.ReadFull(read, data[:]); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sasl request data read failed: %w", err)
 	}
 	return &Response{
 		AuthBytes: data,

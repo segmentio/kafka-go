@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	master "github.com/klauspost/compress/snappy"
 )
@@ -89,7 +90,11 @@ func DecodeInto(dst, src []byte) ([]byte, error) {
 	}
 
 	if !bytes.Equal(src[:8], xerialHeader) {
-		return master.Decode(dst[:cap(dst)], src)
+		data, err := master.Decode(dst[:cap(dst)], src)
+		if err != nil {
+			return data, fmt.Errorf("snappy decode failed: %w", err)
+		}
+		return data, nil
 	}
 
 	if max < sizeOffset+sizeBytes {
@@ -122,7 +127,7 @@ func DecodeInto(dst, src []byte) ([]byte, error) {
 		chunk, err = master.Decode(chunk[:cap(chunk)], src[pos:nextPos])
 
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("snappy decode failed: %w", err)
 		}
 		pos = nextPos
 		dst = append(dst, chunk...)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/sha512"
+	"fmt"
 	"hash"
 
 	"github.com/segmentio/kafka-go/sasl"
@@ -63,7 +64,7 @@ func Mechanism(algo Algorithm, username, password string) (sasl.Mechanism, error
 	hashGen := scram.HashGeneratorFcn(algo.Hash)
 	client, err := hashGen.NewClient(username, password, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create scram sasl client: %w", err)
 	}
 
 	return &mechanism{
@@ -80,7 +81,7 @@ func (m *mechanism) Start(ctx context.Context) (sasl.StateMachine, []byte, error
 	convo := m.client.NewConversation()
 	str, err := convo.Step("")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("sasl first step failed to initialize: %w", err)
 	}
 	return &session{convo: convo}, []byte(str), nil
 }

@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -49,7 +50,14 @@ func (d *decoder) Read(b []byte) (int, error) {
 		d.crc32 = crc32.Update(d.crc32, d.table, b[:n])
 	}
 	d.remain -= n
-	return n, err
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return n, io.EOF
+		}
+
+		return n, fmt.Errorf("decoder read failed: %w", err)
+	}
+	return n, nil
 }
 
 func (d *decoder) ReadByte() (byte, error) {

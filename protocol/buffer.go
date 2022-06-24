@@ -52,8 +52,10 @@ func ReadAll(b Bytes) ([]byte, error) {
 		return nil, nil
 	}
 	s := make([]byte, b.Len())
-	_, err := io.ReadFull(b, s)
-	return s, err
+	if _, err := io.ReadFull(b, s); err != nil {
+		return s, fmt.Errorf("read failed: %w", err)
+	}
+	return s, nil
 }
 
 type bytesReader struct{ bytes.Reader }

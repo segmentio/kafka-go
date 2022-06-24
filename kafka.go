@@ -1,6 +1,10 @@
 package kafka
 
-import "github.com/segmentio/kafka-go/protocol"
+import (
+	"fmt"
+
+	"github.com/segmentio/kafka-go/protocol"
+)
 
 // Broker represents a kafka broker in a kafka cluster.
 type Broker struct {
@@ -64,14 +68,21 @@ type Partition struct {
 // encode types based on specific versions of kafka APIs, use the Version type
 // instead.
 func Marshal(v interface{}) ([]byte, error) {
-	return protocol.Marshal(-1, v)
+	data, err := protocol.Marshal(-1, v)
+	if err != nil {
+		return nil, fmt.Errorf("protocol marshal failed: %w", err)
+	}
+	return data, nil
 }
 
 // Unmarshal decodes a binary representation from b into v.
 //
 // See Marshal for details.
 func Unmarshal(b []byte, v interface{}) error {
-	return protocol.Unmarshal(b, -1, v)
+	if err := protocol.Unmarshal(b, -1, v); err != nil {
+		return fmt.Errorf("protocol unmarshal failed: %w", err)
+	}
+	return nil
 }
 
 // Version represents a version number for kafka APIs.
@@ -81,12 +92,19 @@ type Version int16
 // fields for which n falls within the min and max versions specified on the
 // struct tag.
 func (n Version) Marshal(v interface{}) ([]byte, error) {
-	return protocol.Marshal(int16(n), v)
+	data, err := protocol.Marshal(int16(n), v)
+	if err != nil {
+		return nil, fmt.Errorf("protocol marshal failed: %w", err)
+	}
+	return data, nil
 }
 
 // Unmarshal is like the top-level Unmarshal function, but will only decode
 // struct fields for which n falls within the min and max versions specified on
 // the struct tag.
 func (n Version) Unmarshal(b []byte, v interface{}) error {
-	return protocol.Unmarshal(b, int16(n), v)
+	if err := protocol.Unmarshal(b, int16(n), v); err != nil {
+		return fmt.Errorf("protocol unmarshal failed: %w", err)
+	}
+	return nil
 }

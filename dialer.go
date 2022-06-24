@@ -205,7 +205,10 @@ func (d *Dialer) LookupPartition(ctx context.Context, network string, address st
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
-	return prt, err
+	if err != nil {
+		return prt, fmt.Errorf("lookup partition failed: %w", err)
+	}
+	return prt, nil
 }
 
 // LookupPartitions returns the list of partitions that exist for the given topic.
@@ -234,7 +237,10 @@ func (d *Dialer) LookupPartitions(ctx context.Context, network string, address s
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
-	return prt, err
+	if err != nil {
+		return prt, fmt.Errorf("lookup partitions failed: %w", err)
+	}
+	return prt, nil
 }
 
 // connectTLS returns a tls.Conn that has already completed the Handshake.

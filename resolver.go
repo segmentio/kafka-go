@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"net"
 )
 
@@ -41,7 +42,7 @@ type brokerResolver struct {
 func (r brokerResolver) LookupBrokerIPAddr(ctx context.Context, broker Broker) ([]net.IPAddr, error) {
 	ipAddrs, err := r.LookupIPAddr(ctx, broker.Host)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ip address lookup failed: %w", err)
 	}
 
 	if len(ipAddrs) == 0 {

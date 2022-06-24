@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"math"
@@ -177,10 +178,10 @@ func (rs *RecordSet) writeToVersion1(buffer *pageBuffer, bufferOffset int64) err
 				return err == nil
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("buffer page scan (%d/%d) failed: %w", bufferOffset, buffer.Size(), err)
 			}
 			if err := compressor.Close(); err != nil {
-				return err
+				return fmt.Errorf("compressor could not be closed: %w", err)
 			}
 
 			buffer.Truncate(int(bufferOffset))

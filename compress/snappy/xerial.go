@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/klauspost/compress/snappy"
@@ -60,7 +61,7 @@ func (x *xerialReader) WriteTo(w io.Writer) (int64, error) {
 			wn += int64(n)
 			x.offset += int64(n)
 			if err != nil {
-				return wn, err
+				return wn, fmt.Errorf("snappy write failed: %w", err)
 			}
 		}
 
@@ -162,13 +163,19 @@ func (x *xerialReader) readChunk(dst []byte) (int, error) {
 func (x *xerialReader) read(b []byte) (int, error) {
 	n, err := x.reader.Read(b)
 	x.nbytes += int64(n)
-	return n, err
+	if err != nil {
+		return n, fmt.Errorf("snappy read failed: %w", err)
+	}
+	return n, nil
 }
 
 func (x *xerialReader) readFull(b []byte) (int, error) {
 	n, err := io.ReadFull(x.reader, b)
 	x.nbytes += int64(n)
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 // An implementation of a xerial-framed snappy-encoded output stream.
@@ -287,7 +294,10 @@ func (x *xerialWriter) Flush() error {
 func (x *xerialWriter) write(b []byte) (int, error) {
 	n, err := x.writer.Write(b)
 	x.nbytes += int64(n)
-	return n, err
+	if err != nil {
+		return n, fmt.Errorf("snappy write failed: %w", err)
+	}
+	return n, nil
 }
 
 func (x *xerialWriter) full() bool {

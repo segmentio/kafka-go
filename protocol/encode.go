@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -29,7 +30,14 @@ func (e *encoderChecksum) Read(b []byte) (int, error) {
 	if n > 0 {
 		e.encoder.update(b[:n])
 	}
-	return n, err
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return n, io.EOF
+		}
+
+		return n, fmt.Errorf("encoder checksum read failed: %w", err)
+	}
+	return n, nil
 }
 
 func (e *encoder) Reset(w io.Writer) {
@@ -47,7 +55,12 @@ func (e *encoder) ReadFrom(r io.Reader) (int64, error) {
 			encoder: e,
 		}
 	}
-	return io.Copy(e.writer, r)
+
+	n, err := io.Copy(e.writer, r)
+	if err != nil {
+		return n, fmt.Errorf("encoder copy failed: %w", err)
+	}
+	return n, nil
 }
 
 func (e *encoder) Write(b []byte) (int, error) {
@@ -60,8 +73,9 @@ func (e *encoder) Write(b []byte) (int, error) {
 	}
 	if err != nil {
 		e.err = err
+		return n, fmt.Errorf("encoder write failed: %w", err)
 	}
-	return n, err
+	return n, nil
 }
 
 func (e *encoder) WriteByte(b byte) error {

@@ -16,7 +16,7 @@ func peekRead(r *bufio.Reader, sz int, n int, f func([]byte)) (int, error) {
 	}
 	b, err := r.Peek(n)
 	if err != nil {
-		return sz, err
+		return sz, fmt.Errorf("peek read failed: %w", err)
 	}
 	f(b)
 	return discardN(r, sz, n)

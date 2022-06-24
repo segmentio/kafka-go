@@ -6,6 +6,7 @@ package topics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 
 	"github.com/segmentio/kafka-go"
@@ -20,7 +21,7 @@ func List(ctx context.Context, client *kafka.Client) (topics []kafka.Topic, err 
 		Addr: client.Addr,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("metadata request failed: %w", err)
 	}
 
 	return response.Topics, nil

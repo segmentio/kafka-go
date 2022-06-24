@@ -2,6 +2,7 @@ package testing
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 )
@@ -28,5 +29,8 @@ type groupConn struct {
 
 func (c *groupConn) Close() error {
 	defer c.once.Do(c.group.Done)
-	return c.Conn.Close()
+	if err := c.Conn.Close(); err != nil {
+		return fmt.Errorf("could not close kafka connection: %w", err)
+	}
+	return nil
 }

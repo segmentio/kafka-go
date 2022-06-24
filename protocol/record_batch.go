@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"time"
 )
@@ -102,7 +103,7 @@ func (m *multiRecordReader) ReadRecord() (*Record, error) {
 			return r, nil
 		}
 		if !errors.Is(err, io.EOF) {
-			return nil, err
+			return nil, fmt.Errorf("batch read record failed: %w", err)
 		}
 		m.index++
 	}
@@ -257,7 +258,11 @@ func NewControlBatch(records ...ControlRecord) *ControlBatch {
 }
 
 func (c *ControlBatch) ReadRecord() (*Record, error) {
-	return c.Records.ReadRecord()
+	record, err := c.Records.ReadRecord()
+	if err != nil {
+		return record, fmt.Errorf("ControlBatch: read record failed: %w", err)
+	}
+	return record, nil
 }
 
 func (c *ControlBatch) ReadControlRecord() (*ControlRecord, error) {
@@ -295,7 +300,11 @@ type RecordBatch struct {
 }
 
 func (r *RecordBatch) ReadRecord() (*Record, error) {
-	return r.Records.ReadRecord()
+	record, err := r.Records.ReadRecord()
+	if err != nil {
+		return record, fmt.Errorf("RecordBatch: read record failed: %w", err)
+	}
+	return record, nil
 }
 
 func (r *RecordBatch) Offset() int64 {
@@ -315,7 +324,11 @@ type MessageSet struct {
 }
 
 func (m *MessageSet) ReadRecord() (*Record, error) {
-	return m.Records.ReadRecord()
+	record, err := m.Records.ReadRecord()
+	if err != nil {
+		return record, fmt.Errorf("MessageSet: read record failed: %w", err)
+	}
+	return record, nil
 }
 
 func (m *MessageSet) Offset() int64 {
@@ -351,8 +364,10 @@ func (s *RecordStream) ReadRecord() (*Record, error) {
 				s.index++
 				continue
 			}
+
+			return r, fmt.Errorf("RecordStream: read record failed: %w", err)
 		}
 
-		return r, err
+		return r, nil
 	}
 }

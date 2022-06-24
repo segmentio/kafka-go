@@ -1,6 +1,7 @@
 package listoffsets
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -190,8 +191,10 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (pr
 	}
 
 	if errors > 0 && errors == len(results) {
-		_, err := protocol.Result(results[0])
-		return nil, err
+		if _, err := protocol.Result(results[0]); err != nil {
+			return nil, fmt.Errorf("could not convert to message: %w", err)
+		}
+		return nil, nil
 	}
 
 	r.Topics = make([]ResponseTopic, 0, len(topics))

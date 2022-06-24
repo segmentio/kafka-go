@@ -2,6 +2,7 @@ package incrementalalterconfigs
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -54,7 +55,7 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 		if resource.ResourceType == resourceTypeBroker {
 			brokerID, err := strconv.Atoi(resource.ResourceName)
 			if err != nil {
-				return protocol.Broker{}, err
+				return protocol.Broker{}, fmt.Errorf("resource name %s not convertible to number: %w", resource.ResourceName, err)
 			}
 
 			return cluster.Brokers[int32(brokerID)], nil

@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -162,7 +163,11 @@ func (batch *Batch) Read(b []byte) (int, error) {
 			}
 			nbytes, err := io.ReadFull(r, b[:nbytes])
 			if err != nil {
-				return size - nbytes, err
+				if errors.Is(err, io.EOF) {
+					return size - nbytes, io.EOF
+				}
+
+				return size - nbytes, fmt.Errorf("batch read failure: %w", err)
 			}
 			return discardN(r, size-nbytes, n-nbytes)
 		},

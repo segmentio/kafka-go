@@ -455,7 +455,11 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 		})
 	}
 
-	return err
+	if err != nil {
+		return fmt.Errorf("could not commit offsets: %w", err)
+	}
+
+	return nil
 }
 
 // heartbeatLoop checks in with the consumer group coordinator at the provided
@@ -1033,7 +1037,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	// clients: java, python, and librdkafka.
 	// a topic watcher can trigger a rebalance when the topic comes into being.
 	if err != nil && !errors.Is(err, UnknownTopicOrPartition) {
-		return nil, err
+		return nil, fmt.Errorf("unable to read partitions: %w", err)
 	}
 
 	cg.withLogger(func(l Logger) {
@@ -1156,7 +1160,7 @@ func (cg *ConsumerGroup) fetchOffsets(conn coordinator, subs map[string][]int32)
 	}
 	offsets, err := conn.offsetFetch(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not fetch offsets: %w", err)
 	}
 
 	offsetsByTopic := make(map[string]map[int]int64)
@@ -1234,7 +1238,7 @@ func (cg *ConsumerGroup) leaveGroup(memberID string) error {
 
 	_ = coordinator.Close()
 
-	return err
+	return fmt.Errorf("leave group failed: %w", err)
 }
 
 func (cg *ConsumerGroup) withLogger(do func(Logger)) {

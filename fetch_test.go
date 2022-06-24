@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -177,7 +178,7 @@ func readRecords(records RecordReader) ([]memoryRecord, error) {
 			if errors.Is(err, io.EOF) {
 				return list, nil
 			}
-			return nil, err
+			return nil, fmt.Errorf("read record failed: %w", err)
 		}
 
 		var (

@@ -2,7 +2,9 @@ package protocol
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync/atomic"
 	"time"
@@ -29,23 +31,46 @@ func (c *Conn) String() string {
 }
 
 func (c *Conn) Close() error {
-	return c.conn.Close()
+	if err := c.conn.Close(); err != nil {
+		return fmt.Errorf("could not close kafka connection: %w", err)
+	}
+	return nil
 }
 
 func (c *Conn) Discard(n int) (int, error) {
-	return c.buffer.Discard(n)
+	n, err := c.buffer.Discard(n)
+	if err != nil {
+		return n, fmt.Errorf("kafka connection discard failed: %w", err)
+	}
+	return n, nil
 }
 
 func (c *Conn) Peek(n int) ([]byte, error) {
-	return c.buffer.Peek(n)
+	data, err := c.buffer.Peek(n)
+	if err != nil {
+		return data, fmt.Errorf("kakfa connection peek failed: %w", err)
+	}
+	return data, nil
 }
 
 func (c *Conn) Read(b []byte) (int, error) {
-	return c.buffer.Read(b)
+	n, err := c.buffer.Read(b)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return n, io.EOF
+		}
+
+		return n, fmt.Errorf("kafka connection read failed: %w", err)
+	}
+	return n, nil
 }
 
 func (c *Conn) Write(b []byte) (int, error) {
-	return c.conn.Write(b)
+	n, err := c.conn.Write(b)
+	if err != nil {
+		return n, fmt.Errorf("kafka connection write failed: %w", err)
+	}
+	return n, nil
 }
 
 func (c *Conn) LocalAddr() net.Addr {
@@ -57,15 +82,27 @@ func (c *Conn) RemoteAddr() net.Addr {
 }
 
 func (c *Conn) SetDeadline(t time.Time) error {
-	return c.conn.SetDeadline(t)
+	if err := c.conn.SetDeadline(t); err != nil {
+		return fmt.Errorf("kafka connection set deadline failed: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Conn) SetReadDeadline(t time.Time) error {
-	return c.conn.SetReadDeadline(t)
+	if err := c.conn.SetReadDeadline(t); err != nil {
+		return fmt.Errorf("kafka connection set read deadline failed: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Conn) SetWriteDeadline(t time.Time) error {
-	return c.conn.SetWriteDeadline(t)
+	if err := c.conn.SetWriteDeadline(t); err != nil {
+		return fmt.Errorf("kafka connection set write deadline failed: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Conn) SetVersions(versions map[ApiKey]int16) {
@@ -88,7 +125,11 @@ func (c *Conn) RoundTrip(msg Message) (Message, error) {
 	}
 
 	if raw, ok := msg.(RawExchanger); ok && raw.Required(versions) {
-		return raw.RawExchange(c)
+		msg, err := raw.RawExchange(c)
+		if err != nil {
+			return msg, fmt.Errorf("raw exchange failed: %w", err)
+		}
+		return msg, nil
 	}
 
 	return RoundTrip(c, apiVersion, correlationID, c.clientID, msg)

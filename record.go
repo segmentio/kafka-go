@@ -1,6 +1,8 @@
 package kafka
 
 import (
+	"fmt"
+
 	"github.com/segmentio/kafka-go/protocol"
 )
 
@@ -21,7 +23,13 @@ type Bytes = protocol.Bytes
 func NewBytes(b []byte) Bytes { return protocol.NewBytes(b) }
 
 // ReadAll reads b into a byte slice.
-func ReadAll(b Bytes) ([]byte, error) { return protocol.ReadAll(b) }
+func ReadAll(b Bytes) ([]byte, error) {
+	data, err := protocol.ReadAll(b)
+	if err != nil {
+		return nil, fmt.Errorf("protocol read all failed: %w", err)
+	}
+	return data, nil
+}
 
 // Record is an interface representing a single kafka record.
 //

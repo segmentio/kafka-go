@@ -147,16 +147,27 @@ func (wb *writeBuffer) write(a interface{}) {
 }
 
 func (wb *writeBuffer) Write(b []byte) (int, error) {
-	return wb.w.Write(b)
+	n, err := wb.w.Write(b)
+	if err != nil {
+		return n, fmt.Errorf("write failed: %w", err)
+	}
+	return n, nil
 }
 
 func (wb *writeBuffer) WriteString(s string) (int, error) {
-	return io.WriteString(wb.w, s)
+	n, err := io.WriteString(wb.w, s)
+	if err != nil {
+		return n, fmt.Errorf("write string failed: %w", err)
+	}
+	return n, nil
 }
 
 func (wb *writeBuffer) Flush() error {
 	if x, ok := wb.w.(interface{ Flush() error }); ok {
-		return x.Flush()
+		if err := x.Flush(); err != nil {
+			return err
+		}
+		return nil
 	}
 	return nil
 }

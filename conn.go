@@ -1243,7 +1243,7 @@ func (c *Conn) readResponse(size int, res interface{}) error {
 func (c *Conn) peekResponseSizeAndID() (int32, int32, error) {
 	b, err := c.rbuf.Peek(8)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("peek for response size and id failed: %w", err)
 	}
 	size, id := makeInt32(b[:4]), makeInt32(b[4:])
 	return size, id, nil

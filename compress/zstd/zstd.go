@@ -2,6 +2,7 @@
 package zstd
 
 import (
+	"fmt"
 	"io"
 	"sync"
 
@@ -80,7 +81,11 @@ func (r *reader) Read(p []byte) (int, error) {
 	if r.dec == nil {
 		return 0, io.EOF
 	}
-	return r.dec.Read(p)
+	n, err := r.dec.Read(p)
+	if err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 // WriteTo implements the io.WriterTo interface.
@@ -91,7 +96,11 @@ func (r *reader) WriteTo(w io.Writer) (int64, error) {
 	if r.dec == nil {
 		return 0, io.ErrClosedPipe
 	}
-	return r.dec.WriteTo(w)
+	n, err := r.dec.WriteTo(w)
+	if err != nil {
+		return n, fmt.Errorf("zstd decoder write failed: %w", err)
+	}
+	return n, nil
 }
 
 // NewWriter implements the compress.Codec interface.
@@ -135,9 +144,11 @@ func (w *writer) Close() error {
 		w.enc.Reset(devNull{}) // don't retain the underlying writer
 		w.c.encoderPool.Put(w.enc)
 		w.enc = nil
-		return err
 	}
-	return w.err
+	if w.err != nil {
+		return fmt.Errorf("zstd encoder could not be closed: %w", w.err)
+	}
+	return nil
 }
 
 // WriteTo implements the io.WriterTo interface.
@@ -148,7 +159,11 @@ func (w *writer) Write(p []byte) (int, error) {
 	if w.enc == nil {
 		return 0, io.ErrClosedPipe
 	}
-	return w.enc.Write(p)
+	n, err := w.enc.Write(p)
+	if err != nil {
+		return n, fmt.Errorf("zstd encoder write failed: %w", err)
+	}
+	return n, nil
 }
 
 // ReadFrom implements the io.ReaderFrom interface.
@@ -159,7 +174,11 @@ func (w *writer) ReadFrom(r io.Reader) (int64, error) {
 	if w.enc == nil {
 		return 0, io.ErrClosedPipe
 	}
-	return w.enc.ReadFrom(r)
+	n, err := w.enc.ReadFrom(r)
+	if err != nil {
+		return n, fmt.Errorf("zstd encoder read failed: %w", err)
+	}
+	return n, nil
 }
 
 type devNull struct{}

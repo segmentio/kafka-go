@@ -377,7 +377,7 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 		// a merger.
 		messages, merger, err := m.Split(state.layout)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("split failed: %w", err)
 		}
 		promises := make([]promise, len(messages))
 		for i, m := range messages {
@@ -392,7 +392,7 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 
 	r, err := response.await(ctx)
 	if err != nil {
-		return r, err
+		return r, fmt.Errorf("response await failed: %w", err)
 	}
 
 	switch resp := r.(type) {
@@ -930,7 +930,11 @@ func (p *joined) await(ctx context.Context) (Response, error) {
 		}
 	}
 
-	return p.merger.Merge(p.requests, results)
+	resp, err := p.merger.Merge(p.requests, results)
+	if err != nil {
+		return nil, fmt.Errorf("merge failed: %w", err)
+	}
+	return resp, nil
 }
 
 // Default dialer used by the transport connections when no Dial function
@@ -990,7 +994,7 @@ func (g *connGroup) grabConnOrConnect(ctx context.Context) (*conn, error) {
 
 		ipAddrs, err := rslv.LookupBrokerIPAddr(ctx, broker)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("ip address lookup failed for broker %+v: %w", broker, err)
 		}
 
 		for _, ipAddr := range ipAddrs {
@@ -1281,7 +1285,7 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 
 	sess, state, err := mechanism.Start(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("sasl mechanism start failed: %w", err)
 	}
 
 	for completed := false; !completed; {
@@ -1299,7 +1303,7 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 
 		completed, state, err = sess.Next(ctx, challenge)
 		if err != nil {
-			return err
+			return fmt.Errorf("sasl challenge failed: %w", err)
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -448,7 +449,11 @@ func NewWriter(config WriterConfig) *Writer {
 		if err != nil {
 			return nil, err
 		}
-		return dialer.DialContext(ctx, network, address)
+		conn, err := dialer.DialContext(ctx, network, address)
+		if err != nil {
+			return nil, fmt.Errorf("%s dial %s failed: %w", network, address, err)
+		}
+		return conn, nil
 	}
 
 	idleTimeout := config.IdleConnTimeout

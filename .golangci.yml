@@ -7,8 +7,34 @@ linters:
     - gofmt
     - goimports
     - prealloc
+    - wrapcheck
 
   disable:
     # Temporarily disabling so it can be addressed in a dedicated PR.
     - errcheck
     - goerr113
+
+linters-settings:
+  govet:
+    disable:
+      - deepequalerrors
+
+  wrapcheck:
+    ignoreSigs:
+      - .Errorf(
+      - errors.New(
+      - errors.Unwrap(
+      - .Wrap(
+      - .Wrapf(
+      - .WithMessage(
+      - .WithMessagef(
+      - .WithStack(
+      # the list above is the default, with our additions starting below
+      - (context.Context).Err(
+      - .RoundTrip(
+      - .Read(
+      - .Close(
+      - .Flush(
+    ignorePackageGlobs:
+      - bufio
+      - io

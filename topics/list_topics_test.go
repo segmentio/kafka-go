@@ -2,6 +2,7 @@ package topics
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"regexp"
 	"testing"
@@ -68,7 +69,7 @@ func clientCreateTopic(client *kafka.Client, topic string, partitions int) error
 		}},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("could not create topics: %w", err)
 	}
 
 	// Topic creation seems to be asynchronous. Metadata for the topic partition
