@@ -9,8 +9,10 @@ import (
 
 	"github.com/segmentio/kafka-go/sasl"
 
+	sigv2 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	credentialsv2 "github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	sigv4 "github.com/aws/aws-sdk-go/aws/signer/v4"
+	sig "github.com/aws/aws-sdk-go/aws/signer/v4"
 )
 
 const (
@@ -22,26 +24,54 @@ const (
 var signTime = time.Date(2021, 10, 14, 13, 5, 0, 0, time.UTC)
 
 func TestAwsMskIamMechanism(t *testing.T) {
+	credsV1 := credentials.NewStaticCredentials(accessKeyId, secretAccessKey, "")
+	credsV2, err := credentialsv2.NewStaticCredentialsProvider(accessKeyId, secretAccessKey, "").Retrieve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctxWithMetadata := func() context.Context {
+		return sasl.WithMetadata(context.Background(), &sasl.Metadata{
+			Host: "localhost",
+			Port: 9092,
+		})
+
+	}
+
 	tests := []struct {
 		description string
 		ctx         func() context.Context
+		signer      *sig.Signer
+		genSigner   SignerIfc
 		shouldFail  bool
 	}{
 		{
 			description: "with metadata",
-			ctx: func() context.Context {
-				return sasl.WithMetadata(context.Background(), &sasl.Metadata{
-					Host: "localhost",
-					Port: 9092,
-				})
-			},
+			ctx:         ctxWithMetadata,
+			signer:      sig.NewSigner(credsV1),
 		},
 		{
 			description: "without metadata",
 			ctx: func() context.Context {
 				return context.Background()
 			},
+			signer:     sig.NewSigner(credsV1),
 			shouldFail: true,
+		},
+		{
+			description: "v1 generic signer",
+			ctx:         ctxWithMetadata,
+			genSigner:   &AWSSignerV1{Signer: sig.NewSigner(credsV1)},
+		},
+		{
+			description: "v2 generic signer",
+			ctx:         ctxWithMetadata,
+			genSigner:   &AWSSignerV2{Signer: sigv2.NewSigner(), Credentials: credsV2},
+		},
+		{
+			description: "no signer",
+			ctx:         ctxWithMetadata,
+			shouldFail:  true,
 		},
 	}
 
@@ -49,11 +79,11 @@ func TestAwsMskIamMechanism(t *testing.T) {
 		t.Run(tt.description, func(t *testing.T) {
 			ctx := tt.ctx()
 
-			creds := credentials.NewStaticCredentials(accessKeyId, secretAccessKey, "")
 			mskMechanism := &Mechanism{
-				Signer:   sigv4.NewSigner(creds),
-				Region:   "us-east-1",
-				SignTime: signTime,
+				Signer:        tt.signer,
+				GenericSigner: tt.genSigner,
+				Region:        "us-east-1",
+				SignTime:      signTime,
 			}
 
 			sess, auth, err := mskMechanism.Start(ctx)
