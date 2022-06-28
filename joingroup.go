@@ -241,7 +241,7 @@ func (t joinGroupRequestGroupProtocolV1) writeTo(wb *writeBuffer) {
 	wb.writeBytes(t.ProtocolMetadata)
 }
 
-type joinGroupRequestV1 struct {
+type joinGroupRequestV5 struct {
 	// GroupID holds the unique group identifier
 	GroupID string
 
@@ -257,6 +257,9 @@ type joinGroupRequestV1 struct {
 	// for the first time.
 	MemberID string
 
+	// The unique identifier of the consumer instance provided by end user.
+	GroupInstanceID *string
+
 	// ProtocolType holds the unique name for class of protocols implemented by group
 	ProtocolType string
 
@@ -264,42 +267,50 @@ type joinGroupRequestV1 struct {
 	GroupProtocols []joinGroupRequestGroupProtocolV1
 }
 
-func (t joinGroupRequestV1) size() int32 {
+func (t joinGroupRequestV5) size() int32 {
 	return sizeofString(t.GroupID) +
 		sizeofInt32(t.SessionTimeout) +
 		sizeofInt32(t.RebalanceTimeout) +
 		sizeofString(t.MemberID) +
+		sizeofNullableString(t.GroupInstanceID) +
 		sizeofString(t.ProtocolType) +
 		sizeofArray(len(t.GroupProtocols), func(i int) int32 { return t.GroupProtocols[i].size() })
 }
 
-func (t joinGroupRequestV1) writeTo(wb *writeBuffer) {
+func (t joinGroupRequestV5) writeTo(wb *writeBuffer) {
 	wb.writeString(t.GroupID)
 	wb.writeInt32(t.SessionTimeout)
 	wb.writeInt32(t.RebalanceTimeout)
 	wb.writeString(t.MemberID)
+	wb.writeNullableString(t.GroupInstanceID)
 	wb.writeString(t.ProtocolType)
 	wb.writeArray(len(t.GroupProtocols), func(i int) { t.GroupProtocols[i].writeTo(wb) })
 }
 
-type joinGroupResponseMemberV1 struct {
+type joinGroupResponseMemberV5 struct {
 	// MemberID assigned by the group coordinator
-	MemberID       string
-	MemberMetadata []byte
+	MemberID        string
+	GroupInstanceID *string
+	MemberMetadata  []byte
 }
 
-func (t joinGroupResponseMemberV1) size() int32 {
+func (t joinGroupResponseMemberV5) size() int32 {
 	return sizeofString(t.MemberID) +
+		sizeofString(t.MemberID) +
 		sizeofBytes(t.MemberMetadata)
 }
 
-func (t joinGroupResponseMemberV1) writeTo(wb *writeBuffer) {
+func (t joinGroupResponseMemberV5) writeTo(wb *writeBuffer) {
 	wb.writeString(t.MemberID)
+	wb.writeNullableString(t.GroupInstanceID)
 	wb.writeBytes(t.MemberMetadata)
 }
 
-func (t *joinGroupResponseMemberV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+func (t *joinGroupResponseMemberV5) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readString(r, size, &t.MemberID); err != nil {
+		return
+	}
+	if remain, err = readNullableString(r, remain, &t.GroupInstanceID); err != nil {
 		return
 	}
 	if remain, err = readBytes(r, remain, &t.MemberMetadata); err != nil {
@@ -308,7 +319,10 @@ func (t *joinGroupResponseMemberV1) readFrom(r *bufio.Reader, size int) (remain 
 	return
 }
 
-type joinGroupResponseV1 struct {
+type joinGroupResponseV5 struct {
+	// The duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota.
+	ThrottleTime int32
+
 	// ErrorCode holds response error code
 	ErrorCode int16
 
@@ -323,11 +337,12 @@ type joinGroupResponseV1 struct {
 
 	// MemberID assigned by the group coordinator
 	MemberID string
-	Members  []joinGroupResponseMemberV1
+	Members  []joinGroupResponseMemberV5
 }
 
-func (t joinGroupResponseV1) size() int32 {
-	return sizeofInt16(t.ErrorCode) +
+func (t joinGroupResponseV5) size() int32 {
+	return sizeofInt32(t.ThrottleTime) +
+		sizeofInt16(t.ErrorCode) +
 		sizeofInt32(t.GenerationID) +
 		sizeofString(t.GroupProtocol) +
 		sizeofString(t.LeaderID) +
@@ -335,7 +350,8 @@ func (t joinGroupResponseV1) size() int32 {
 		sizeofArray(len(t.MemberID), func(i int) int32 { return t.Members[i].size() })
 }
 
-func (t joinGroupResponseV1) writeTo(wb *writeBuffer) {
+func (t joinGroupResponseV5) writeTo(wb *writeBuffer) {
+	wb.writeInt32(t.ThrottleTime)
 	wb.writeInt16(t.ErrorCode)
 	wb.writeInt32(t.GenerationID)
 	wb.writeString(t.GroupProtocol)
@@ -344,8 +360,11 @@ func (t joinGroupResponseV1) writeTo(wb *writeBuffer) {
 	wb.writeArray(len(t.Members), func(i int) { t.Members[i].writeTo(wb) })
 }
 
-func (t *joinGroupResponseV1) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt16(r, size, &t.ErrorCode); err != nil {
+func (t *joinGroupResponseV5) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+	if remain, err = readInt32(r, size, &t.ThrottleTime); err != nil {
+		return
+	}
+	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
 		return
 	}
 	if remain, err = readInt32(r, remain, &t.GenerationID); err != nil {
@@ -362,7 +381,7 @@ func (t *joinGroupResponseV1) readFrom(r *bufio.Reader, size int) (remain int, e
 	}
 
 	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		var item joinGroupResponseMemberV1
+		var item joinGroupResponseMemberV5
 		if fnRemain, fnErr = (&item).readFrom(r, size); fnErr != nil {
 			return
 		}

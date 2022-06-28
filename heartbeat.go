@@ -40,7 +40,7 @@ type HeartbeatResponse struct {
 	Throttle time.Duration
 }
 
-type heartbeatRequestV0 struct {
+type heartbeatRequestV3 struct {
 	// GroupID holds the unique group identifier
 	GroupID string
 
@@ -49,6 +49,9 @@ type heartbeatRequestV0 struct {
 
 	// MemberID assigned by the group coordinator
 	MemberID string
+
+	// The unique identifier of the consumer instance provided by end user.
+	GroupInstanceID *string
 }
 
 // Heartbeat sends a heartbeat request to a kafka broker and returns the response.
@@ -76,33 +79,42 @@ func (c *Client) Heartbeat(ctx context.Context, req *HeartbeatRequest) (*Heartbe
 	return ret, nil
 }
 
-func (t heartbeatRequestV0) size() int32 {
+func (t heartbeatRequestV3) size() int32 {
 	return sizeofString(t.GroupID) +
 		sizeofInt32(t.GenerationID) +
-		sizeofString(t.MemberID)
+		sizeofString(t.MemberID) +
+		sizeofNullableString(t.GroupInstanceID)
 }
 
-func (t heartbeatRequestV0) writeTo(wb *writeBuffer) {
+func (t heartbeatRequestV3) writeTo(wb *writeBuffer) {
 	wb.writeString(t.GroupID)
 	wb.writeInt32(t.GenerationID)
 	wb.writeString(t.MemberID)
+	wb.writeNullableString(t.GroupInstanceID)
 }
 
-type heartbeatResponseV0 struct {
+type heartbeatResponseV3 struct {
+	// The duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota.
+	ThrottleTime int32
 	// ErrorCode holds response error code
 	ErrorCode int16
 }
 
-func (t heartbeatResponseV0) size() int32 {
-	return sizeofInt16(t.ErrorCode)
+func (t heartbeatResponseV3) size() int32 {
+	return sizeofInt32(t.ThrottleTime) +
+		sizeofInt16(t.ErrorCode)
 }
 
-func (t heartbeatResponseV0) writeTo(wb *writeBuffer) {
+func (t heartbeatResponseV3) writeTo(wb *writeBuffer) {
+	wb.writeInt32(t.ThrottleTime)
 	wb.writeInt16(t.ErrorCode)
 }
 
-func (t *heartbeatResponseV0) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
-	if remain, err = readInt16(r, sz, &t.ErrorCode); err != nil {
+func (t *heartbeatResponseV3) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
+	if remain, err = readInt32(r, sz, &t.ThrottleTime); err != nil {
+		return
+	}
+	if remain, err = readInt16(r, remain, &t.ErrorCode); err != nil {
 		return
 	}
 	return

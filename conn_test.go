@@ -679,11 +679,13 @@ func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
 func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, memberID string, stop func()) {
 	waitForCoordinator(t, conn, groupID)
 
-	join := func() (joinGroup joinGroupResponseV1) {
+	join := func() (joinGroup joinGroupResponseV5) {
 		var err error
+		var memberID string
 		for attempt := 0; attempt < 10; attempt++ {
-			joinGroup, err = conn.joinGroup(joinGroupRequestV1{
+			joinGroup, err = conn.joinGroup(joinGroupRequestV5{
 				GroupID:          groupID,
+				MemberID:         memberID,
 				SessionTimeout:   int32(time.Minute / time.Millisecond),
 				RebalanceTimeout: int32(time.Second / time.Millisecond),
 				ProtocolType:     "roundrobin",
@@ -697,6 +699,9 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 			if err != nil {
 				if errors.Is(err, NotCoordinatorForGroup) {
 					time.Sleep(250 * time.Millisecond)
+					continue
+				} else if errors.Is(err, MemberIDRequired) {
+					memberID = joinGroup.MemberID
 					continue
 				} else {
 					t.Fatalf("bad joinGroup: %s", err)
@@ -770,7 +775,7 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 }
 
 func testConnJoinGroupInvalidGroupID(t *testing.T, conn *Conn) {
-	_, err := conn.joinGroup(joinGroupRequestV1{})
+	_, err := conn.joinGroup(joinGroupRequestV5{})
 	if !errors.Is(err, InvalidGroupId) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", InvalidGroupId, NotCoordinatorForGroup, err)
 	}
@@ -780,7 +785,7 @@ func testConnJoinGroupInvalidSessionTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV1{
+	_, err := conn.joinGroup(joinGroupRequestV5{
 		GroupID: groupID,
 	})
 	if !errors.Is(err, InvalidSessionTimeout) && !errors.Is(err, NotCoordinatorForGroup) {
@@ -792,7 +797,7 @@ func testConnJoinGroupInvalidRefreshTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV1{
+	_, err := conn.joinGroup(joinGroupRequestV5{
 		GroupID:        groupID,
 		SessionTimeout: int32(3 * time.Second / time.Millisecond),
 	})

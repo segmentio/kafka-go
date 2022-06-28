@@ -365,6 +365,9 @@ type ReaderConfig struct {
 	// The topic to read messages from.
 	Topic string
 
+	// The unique identifier of the consumer instance provided by end user.
+	GroupInstanceID *string
+
 	// Partition to read messages from.  Either Partition or GroupID may
 	// be assigned, but not both
 	Partition int
@@ -726,6 +729,7 @@ func NewReader(config ReaderConfig) *Reader {
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
+			GroupInstanceID:        r.config.GroupInstanceID,
 		})
 		if err != nil {
 			panic(err)

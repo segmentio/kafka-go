@@ -56,8 +56,8 @@ func TestClientHeartbeat(t *testing.T) {
 	}
 }
 
-func TestHeartbeatRequestV0(t *testing.T) {
-	item := heartbeatResponseV0{
+func TestHeartbeatRequestV3(t *testing.T) {
+	item := heartbeatResponseV3{
 		ErrorCode: 2,
 	}
 
@@ -65,7 +65,7 @@ func TestHeartbeatRequestV0(t *testing.T) {
 	w := &writeBuffer{w: b}
 	item.writeTo(w)
 
-	var found heartbeatResponseV0
+	var found heartbeatResponseV3
 	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
