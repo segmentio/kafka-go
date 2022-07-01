@@ -59,7 +59,7 @@ func TestResponse_Merge(t *testing.T) {
 	t.Run("panic with unexpected type", func(t *testing.T) {
 		defer func() {
 			msg := recover()
-			if msg != "unknown result type in Merge: string" {
+			if msg != "BUG: result must be a message or an error but not string" {
 				t.Fatal("unexpected panic", msg)
 			}
 		}()
