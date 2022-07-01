@@ -1,7 +1,6 @@
 package describeconfigs
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/segmentio/kafka-go/protocol"
