@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/segmentio/kafka-go/protocol"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResponse_Merge(t *testing.T) {
@@ -59,9 +60,7 @@ func TestResponse_Merge(t *testing.T) {
 	t.Run("panic with unexpected type", func(t *testing.T) {
 		defer func() {
 			msg := recover()
-			if msg != "BUG: result must be a message or an error but not string" {
-				t.Fatal("unexpected panic", msg)
-			}
+			require.Equal(t, "BUG: result must be a message or an error but not string", msg)
 		}()
 		r := &Response{}
 
