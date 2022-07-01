@@ -2,6 +2,7 @@ package describeconfigs
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"testing"
@@ -60,7 +61,7 @@ func TestResponse_Merge(t *testing.T) {
 	t.Run("panic with unexpected type", func(t *testing.T) {
 		defer func() {
 			msg := recover()
-			require.Equal(t, "BUG: result must be a message or an error but not string", msg)
+			require.Equal(t, "BUG: result must be a message or an error but not string", fmt.Sprintf("%s", msg))
 		}()
 		r := &Response{}
 
