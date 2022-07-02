@@ -3,7 +3,191 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"fmt"
+	"net"
+	"time"
+
+	"github.com/segmentio/kafka-go/protocol"
+	"github.com/segmentio/kafka-go/protocol/consumer"
+	"github.com/segmentio/kafka-go/protocol/joingroup"
 )
+
+// JoinGroupRequest is the request structure for the JoinGroup function.
+type JoinGroupRequest struct {
+	// Address of the kafka broker to send the request to.
+	Addr net.Addr
+
+	// GroupID of the group to join.
+	GroupID string
+
+	// The duration after which the coordinator considers the consumer dead
+	// if it has not received a heartbeat.
+	SessionTimeout time.Duration
+
+	// The duration the coordination will wait for each member to rejoin when rebalancing the group.
+	RebalanceTimeout time.Duration
+
+	// The ID assigned by the group coordinator.
+	MemberID string
+
+	// The unique identifier for the consumer instance.
+	GroupInstanceID string
+
+	// The name for the class of protocols implemented by the group being joined.
+	ProtocolType string
+
+	// The list of protocols the member supports.
+	Protocols []GroupProtocol
+}
+
+// GroupProtocol represents a consumer group protocol.
+type GroupProtocol struct {
+	// The protocol name.
+	Name string
+
+	// The protocol metadata.
+	Metadata GroupProtocolSubscription
+}
+
+type GroupProtocolSubscription struct {
+	// The Topics to subscribe to.
+	Topics []string
+
+	// UserData assosiated with the subscription for the given protocol
+	UserData []byte
+
+	// Partitions owned by this consumer.
+	OwnedPartitions map[string][]int
+}
+
+// JoinGroupResponse is the response structure for the JoinGroup function.
+type JoinGroupResponse struct {
+	// An error that may have occurred when attempting to join the group.
+	//
+	// The errors contain the kafka error code. Programs may use the standard
+	// errors.Is function to test the error against kafka error codes.
+	Error error
+
+	// The amount of time that the broker throttled the request.
+	Throttle time.Duration
+
+	// The generation ID of the group.
+	GenerationID int
+
+	// The group protocol selected by the coordinatior.
+	ProtocolName string
+
+	// The group protocol name.
+	ProtocolType string
+
+	// The leader of the group.
+	LeaderID string
+
+	// The group member ID.
+	MemberID string
+
+	// The members of the group.
+	Members []JoinGroupResponseMember
+}
+
+// JoinGroupResponseMember represents a group memmber in a reponse to a JoinGroup request.
+type JoinGroupResponseMember struct {
+	// The group memmber ID.
+	ID string
+
+	// The unique identifier of the consumer instance.
+	GroupInstanceID string
+
+	// The group member metadata.
+	Metadata GroupProtocolSubscription
+}
+
+// JoinGroup sends a join group request to the coordinator and returns the response.
+func (c *Client) JoinGroup(ctx context.Context, req *JoinGroupRequest) (*JoinGroupResponse, error) {
+	joinGroup := joingroup.Request{
+		GroupID:            req.GroupID,
+		SessionTimeoutMS:   int32(req.SessionTimeout.Milliseconds()),
+		RebalanceTimeoutMS: int32(req.RebalanceTimeout.Milliseconds()),
+		MemberID:           req.MemberID,
+		GroupInstanceID:    req.GroupInstanceID,
+		ProtocolType:       req.ProtocolType,
+		Protocols:          make([]joingroup.RequestProtocol, 0, len(req.Protocols)),
+	}
+
+	for _, proto := range req.Protocols {
+		protoMeta := consumer.Subscription{
+			Version:         consumer.MaxVersionSupported,
+			Topics:          proto.Metadata.Topics,
+			UserData:        proto.Metadata.UserData,
+			OwnedPartitions: make([]consumer.TopicPartition, 0, len(proto.Metadata.OwnedPartitions)),
+		}
+		for topic, partitions := range proto.Metadata.OwnedPartitions {
+			tp := consumer.TopicPartition{
+				Topic:      topic,
+				Partitions: make([]int32, 0, len(partitions)),
+			}
+			for _, partition := range partitions {
+				tp.Partitions = append(tp.Partitions, int32(partition))
+			}
+			protoMeta.OwnedPartitions = append(protoMeta.OwnedPartitions, tp)
+		}
+
+		metaBytes, err := protocol.Marshal(consumer.MaxVersionSupported, protoMeta)
+		if err != nil {
+			return nil, fmt.Errorf("kafka.(*Client).JoinGroup: %w", err)
+		}
+
+		joinGroup.Protocols = append(joinGroup.Protocols, joingroup.RequestProtocol{
+			Name:     proto.Name,
+			Metadata: metaBytes,
+		})
+	}
+
+	m, err := c.roundTrip(ctx, req.Addr, &joinGroup)
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).JoinGroup: %w", err)
+	}
+
+	r := m.(*joingroup.Response)
+
+	res := &JoinGroupResponse{
+		Error:        makeError(r.ErrorCode, ""),
+		Throttle:     makeDuration(r.ThrottleTimeMS),
+		GenerationID: int(r.GenerationID),
+		ProtocolName: r.ProtocolName,
+		ProtocolType: r.ProtocolType,
+		LeaderID:     r.LeaderID,
+		MemberID:     r.MemberID,
+		Members:      make([]JoinGroupResponseMember, 0, len(r.Members)),
+	}
+
+	for _, member := range r.Members {
+		var meta consumer.Subscription
+		err = protocol.Unmarshal(member.Metadata, consumer.MaxVersionSupported, &meta)
+		if err != nil {
+			return nil, fmt.Errorf("kafka.(*Client).JoinGroup: %w", err)
+		}
+		subscription := GroupProtocolSubscription{
+			Topics:          meta.Topics,
+			UserData:        meta.UserData,
+			OwnedPartitions: make(map[string][]int, len(meta.OwnedPartitions)),
+		}
+		for _, owned := range meta.OwnedPartitions {
+			subscription.OwnedPartitions[owned.Topic] = make([]int, 0, len(owned.Partitions))
+			for _, partition := range owned.Partitions {
+				subscription.OwnedPartitions[owned.Topic] = append(subscription.OwnedPartitions[owned.Topic], int(partition))
+			}
+		}
+		res.Members = append(res.Members, JoinGroupResponseMember{
+			ID:              member.MemberID,
+			GroupInstanceID: member.GroupInstanceID,
+			Metadata:        subscription,
+		})
+	}
+
+	return res, nil
+}
 
 type groupMetadata struct {
 	Version  int16
