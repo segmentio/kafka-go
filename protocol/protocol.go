@@ -492,7 +492,7 @@ type Merger interface {
 	Merge(messages []Message, results []interface{}) (Message, error)
 }
 
-// Result converts r to a Message or and error, or panics if r could be be
+// Result converts r to a Message or an error, or panics if r could not be
 // converted to these types.
 func Result(r interface{}) (Message, error) {
 	switch v := r.(type) {
