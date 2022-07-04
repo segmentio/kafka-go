@@ -3,9 +3,126 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"errors"
 	"reflect"
 	"testing"
+	"time"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
+
+func TestClientJoinGroup(t *testing.T) {
+	topic := makeTopic()
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	err := clientCreateTopic(client, topic, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	groupID := makeGroupID()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
+		Addr:    client.Addr,
+		Key:     groupID,
+		KeyType: CoordinatorKeyTypeConsumer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if respc.Error != nil {
+		t.Fatal(err)
+	}
+
+	groupInstanceID := "group-instance-id"
+	if !ktesting.KafkaIsAtLeast("2.4.1") {
+		groupInstanceID = ""
+	}
+	const userData = "user-data"
+
+	req := &JoinGroupRequest{
+		GroupID:          groupID,
+		GroupInstanceID:  groupInstanceID,
+		ProtocolType:     "consumer",
+		SessionTimeout:   time.Minute,
+		RebalanceTimeout: time.Minute,
+		Protocols: []GroupProtocol{
+			{
+				Name: RoundRobinGroupBalancer{}.ProtocolName(),
+				Metadata: GroupProtocolSubscription{
+					Topics:   []string{topic},
+					UserData: []byte(userData),
+					OwnedPartitions: map[string][]int{
+						topic: {0, 1, 2},
+					},
+				},
+			},
+		},
+	}
+
+	var resp *JoinGroupResponse
+
+	for {
+		resp, err = client.JoinGroup(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if errors.Is(resp.Error, MemberIDRequired) {
+			req.MemberID = resp.MemberID
+			time.Sleep(time.Second)
+			continue
+		}
+
+		if resp.Error != nil {
+			t.Fatal(resp.Error)
+		}
+		break
+	}
+
+	if resp.GenerationID != 1 {
+		t.Fatalf("expected generation ID to be 1 but got %v", resp.GenerationID)
+	}
+
+	if resp.MemberID == "" {
+		t.Fatal("expected a member ID in response")
+	}
+
+	if resp.LeaderID != resp.MemberID {
+		t.Fatalf("expected to be group leader but got %v", resp.LeaderID)
+	}
+
+	if len(resp.Members) != 1 {
+		t.Fatalf("expected 1 member got %v", resp.Members)
+	}
+
+	member := resp.Members[0]
+
+	if member.ID != resp.MemberID {
+		t.Fatal("expected to be the only group memmber")
+	}
+
+	if member.GroupInstanceID != groupInstanceID {
+		t.Fatalf("expected the group instance ID to be %v, got %v", groupInstanceID, member.GroupInstanceID)
+	}
+
+	expectedMetadata := GroupProtocolSubscription{
+		Topics:   []string{topic},
+		UserData: []byte(userData),
+		OwnedPartitions: map[string][]int{
+			topic: {0, 1, 2},
+		},
+	}
+
+	if !reflect.DeepEqual(member.Metadata, expectedMetadata) {
+		t.Fatalf("\nexpected assignment to be \n%v\nbut got\n%v", expectedMetadata, member.Metadata)
+	}
+}
 
 func TestSaramaCompatibility(t *testing.T) {
 	var (

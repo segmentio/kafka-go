@@ -3,7 +3,156 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"fmt"
+	"net"
+	"time"
+
+	"github.com/segmentio/kafka-go/protocol"
+	"github.com/segmentio/kafka-go/protocol/consumer"
+	"github.com/segmentio/kafka-go/protocol/syncgroup"
 )
+
+// SyncGroupRequest is the request structure for the SyncGroup function.
+type SyncGroupRequest struct {
+	// Address of the kafka broker to sent he request to.
+	Addr net.Addr
+
+	// GroupID of the group to sync.
+	GroupID string
+
+	// The generation of the group.
+	GenerationID int
+
+	// The member ID assigned by the group.
+	MemberID string
+
+	// The unique identifier for the consumer instance.
+	GroupInstanceID string
+
+	// The name for the class of protocols implemented by the group being joined.
+	ProtocolType string
+
+	// The group protocol name.
+	ProtocolName string
+
+	// The group member assignments.
+	Assigments []SyncGroupRequestAssignment
+}
+
+// SyncGroupRequestAssignment represents an assignement for a goroup memeber.
+type SyncGroupRequestAssignment struct {
+	// The ID of the member to assign.
+	MemberID string
+
+	// The member assignment.
+	Assignment GroupProtocolAssignment
+}
+
+// SyncGroupResponse is the response structure for the SyncGroup function.
+type SyncGroupResponse struct {
+	// An error that may have occurred when attempting to sync the group.
+	//
+	// The errors contain the kafka error code. Programs may use the standard
+	// errors.Is function to test the error against kafka error codes.
+	Error error
+
+	// The amount of time that the broker throttled the request.
+	Throttle time.Duration
+
+	// The group protocol type.
+	ProtocolType string
+
+	// The group protocol name.
+	ProtocolName string
+
+	// The member assignment.
+	Assigment GroupProtocolAssignment
+}
+
+// GroupProtocolAssignment represents an assignment of topics and partitions for a group memeber.
+type GroupProtocolAssignment struct {
+	// The topics and partitions assigned to the group memeber.
+	AssignedPartitions map[string][]int
+
+	// UserData for the assignemnt.
+	UserData []byte
+}
+
+// SyncGroup sends a sync group request to the coordinator and returns the response.
+func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGroupResponse, error) {
+	syncGroup := syncgroup.Request{
+		GroupID:         req.GroupID,
+		GenerationID:    int32(req.GenerationID),
+		MemberID:        req.MemberID,
+		GroupInstanceID: req.GroupInstanceID,
+		ProtocolType:    req.ProtocolType,
+		ProtocolName:    req.ProtocolName,
+		Assignments:     make([]syncgroup.RequestAssignment, 0, len(req.Assigments)),
+	}
+
+	for _, assigment := range req.Assigments {
+		assign := consumer.Assignment{
+			Version:            consumer.MaxVersionSupported,
+			AssignedPartitions: make([]consumer.TopicPartition, 0, len(assigment.Assignment.AssignedPartitions)),
+			UserData:           assigment.Assignment.UserData,
+		}
+
+		for topic, partitions := range assigment.Assignment.AssignedPartitions {
+			tp := consumer.TopicPartition{
+				Topic:      topic,
+				Partitions: make([]int32, 0, len(partitions)),
+			}
+			for _, partition := range partitions {
+				tp.Partitions = append(tp.Partitions, int32(partition))
+			}
+			assign.AssignedPartitions = append(assign.AssignedPartitions, tp)
+		}
+
+		assignBytes, err := protocol.Marshal(consumer.MaxVersionSupported, assign)
+		if err != nil {
+			return nil, fmt.Errorf("kafka.(*Client).SyncGroup: %w", err)
+		}
+
+		syncGroup.Assignments = append(syncGroup.Assignments, syncgroup.RequestAssignment{
+			MemberID:   assigment.MemberID,
+			Assignment: assignBytes,
+		})
+	}
+
+	m, err := c.roundTrip(ctx, req.Addr, &syncGroup)
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).SyncGroup: %w", err)
+	}
+
+	r := m.(*syncgroup.Response)
+
+	var assignment consumer.Assignment
+	err = protocol.Unmarshal(r.Assignments, consumer.MaxVersionSupported, &assignment)
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).SyncGroup: %w", err)
+	}
+
+	res := &SyncGroupResponse{
+		Throttle:     makeDuration(r.ThrottleTimeMS),
+		Error:        makeError(r.ErrorCode, ""),
+		ProtocolType: r.ProtocolType,
+		ProtocolName: r.ProtocolName,
+		Assigment: GroupProtocolAssignment{
+			AssignedPartitions: make(map[string][]int, len(assignment.AssignedPartitions)),
+			UserData:           assignment.UserData,
+		},
+	}
+	partitions := map[string][]int{}
+	for _, topicPartition := range assignment.AssignedPartitions {
+		for _, partition := range topicPartition.Partitions {
+			partitions[topicPartition.Topic] = append(partitions[topicPartition.Topic], int(partition))
+		}
+	}
+	res.Assigment.AssignedPartitions = partitions
+
+	return res, nil
+}
 
 type groupAssignment struct {
 	Version  int16
