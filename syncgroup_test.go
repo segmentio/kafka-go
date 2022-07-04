@@ -21,7 +21,7 @@ func TestClientSyncGroup(t *testing.T) {
 	// for some reason the SyncGroup API call errors
 	// when ClientID is null.
 	// The Java Kafka Consumer generates a ClientID if one is not
-	// present or if thep provided ClientID is empty.
+	// present or if the provided ClientID is empty.
 	client.Transport.(*Transport).ClientID = "test-client"
 	defer shutdown()
 
