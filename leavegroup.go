@@ -90,13 +90,12 @@ func (c *Client) LeaveGroup(ctx context.Context, req *LeaveGroupRequest) (*Leave
 		// If we're using a version of the api without the
 		// members array in the response, just add a member
 		// so the api is consistent across versions.
-		res.Members = []LeaveGroupResponseMember{
+		r.Members = []leavegroup.ResponseMember{
 			{
-				ID:              req.Members[0].ID,
+				MemberID:        req.Members[0].ID,
 				GroupInstanceID: req.Members[0].GroupInstanceID,
 			},
 		}
-		return res, nil
 	}
 
 	res.Members = make([]LeaveGroupResponseMember, 0, len(r.Members))
