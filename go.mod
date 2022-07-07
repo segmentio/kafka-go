@@ -3,13 +3,11 @@ module github.com/segmentio/kafka-go
 go 1.15
 
 require (
-	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/klauspost/compress v1.14.2
-	github.com/pierrec/lz4/v4 v4.1.14
-	github.com/stretchr/testify v1.7.1
-	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c
-	github.com/xdg/stringprep v1.0.0 // indirect
-	golang.org/x/crypto v0.0.0-20190506204251-e1dfcc566284 // indirect
-	golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3
-	gopkg.in/yaml.v3 v3.0.0-20220512140231-539c8e751b99 // indirect
+	github.com/klauspost/compress v1.15.7
+	github.com/pierrec/lz4/v4 v4.1.15
+	github.com/stretchr/testify v1.8.0
+	github.com/xdg/scram v1.0.5
+	github.com/xdg/stringprep v1.0.3 // indirect
+	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d // indirect
+	golang.org/x/net v0.0.0-20220706163947-c90051bbdb60
 )
