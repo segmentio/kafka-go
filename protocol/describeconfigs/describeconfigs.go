@@ -1,7 +1,6 @@
 package describeconfigs
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/segmentio/kafka-go/protocol"
@@ -88,19 +87,14 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
 	response := &Response{}
 
 	for _, result := range results {
-		switch v := result.(type) {
-		case *Response:
-			response.Resources = append(
-				response.Resources,
-				v.Resources...,
-			)
-
-		case error:
-			return nil, v
-
-		default:
-			panic(fmt.Sprintf("unknown result type in Merge: %T", result))
+		m, err := protocol.Result(result)
+		if err != nil {
+			return nil, err
 		}
+		response.Resources = append(
+			response.Resources,
+			m.(*Response).Resources...,
+		)
 	}
 
 	return response, nil

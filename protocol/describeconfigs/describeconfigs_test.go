@@ -2,11 +2,13 @@ package describeconfigs
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"testing"
 
 	"github.com/segmentio/kafka-go/protocol"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResponse_Merge(t *testing.T) {
@@ -59,9 +61,7 @@ func TestResponse_Merge(t *testing.T) {
 	t.Run("panic with unexpected type", func(t *testing.T) {
 		defer func() {
 			msg := recover()
-			if msg != "unknown result type in Merge: string" {
-				t.Fatal("unexpected panic", msg)
-			}
+			require.Equal(t, "BUG: result must be a message or an error but not string", fmt.Sprintf("%s", msg))
 		}()
 		r := &Response{}
 
