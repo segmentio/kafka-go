@@ -37,7 +37,7 @@ type SyncGroupRequest struct {
 	ProtocolName string
 
 	// The group member assignments.
-	Assigments []SyncGroupRequestAssignment
+	Assignments []SyncGroupRequestAssignment
 }
 
 // SyncGroupRequestAssignment represents an assignement for a goroup memeber.
@@ -67,7 +67,7 @@ type SyncGroupResponse struct {
 	ProtocolName string
 
 	// The member assignment.
-	Assigment GroupProtocolAssignment
+	Assignment GroupProtocolAssignment
 }
 
 // GroupProtocolAssignment represents an assignment of topics and partitions for a group memeber.
@@ -88,17 +88,17 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 		GroupInstanceID: req.GroupInstanceID,
 		ProtocolType:    req.ProtocolType,
 		ProtocolName:    req.ProtocolName,
-		Assignments:     make([]syncgroup.RequestAssignment, 0, len(req.Assigments)),
+		Assignments:     make([]syncgroup.RequestAssignment, 0, len(req.Assignments)),
 	}
 
-	for _, assigment := range req.Assigments {
+	for _, assignment := range req.Assignments {
 		assign := consumer.Assignment{
 			Version:            consumer.MaxVersionSupported,
-			AssignedPartitions: make([]consumer.TopicPartition, 0, len(assigment.Assignment.AssignedPartitions)),
-			UserData:           assigment.Assignment.UserData,
+			AssignedPartitions: make([]consumer.TopicPartition, 0, len(assignment.Assignment.AssignedPartitions)),
+			UserData:           assignment.Assignment.UserData,
 		}
 
-		for topic, partitions := range assigment.Assignment.AssignedPartitions {
+		for topic, partitions := range assignment.Assignment.AssignedPartitions {
 			tp := consumer.TopicPartition{
 				Topic:      topic,
 				Partitions: make([]int32, 0, len(partitions)),
@@ -115,7 +115,7 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 		}
 
 		syncGroup.Assignments = append(syncGroup.Assignments, syncgroup.RequestAssignment{
-			MemberID:   assigment.MemberID,
+			MemberID:   assignment.MemberID,
 			Assignment: assignBytes,
 		})
 	}
@@ -138,7 +138,7 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 		Error:        makeError(r.ErrorCode, ""),
 		ProtocolType: r.ProtocolType,
 		ProtocolName: r.ProtocolName,
-		Assigment: GroupProtocolAssignment{
+		Assignment: GroupProtocolAssignment{
 			AssignedPartitions: make(map[string][]int, len(assignment.AssignedPartitions)),
 			UserData:           assignment.UserData,
 		},
@@ -149,7 +149,7 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 			partitions[topicPartition.Topic] = append(partitions[topicPartition.Topic], int(partition))
 		}
 	}
-	res.Assigment.AssignedPartitions = partitions
+	res.Assignment.AssignedPartitions = partitions
 
 	return res, nil
 }

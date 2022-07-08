@@ -127,7 +127,7 @@ func TestClientSyncGroup(t *testing.T) {
 	}
 
 	for member, assignment := range assignments {
-		sgRequest.Assigments = append(sgRequest.Assigments, SyncGroupRequestAssignment{
+		sgRequest.Assignments = append(sgRequest.Assignments, SyncGroupRequestAssignment{
 			MemberID: member,
 			Assignment: GroupProtocolAssignment{
 				AssignedPartitions: assignment,
@@ -151,8 +151,8 @@ func TestClientSyncGroup(t *testing.T) {
 		UserData: []byte(userData),
 	}
 
-	if !reflect.DeepEqual(sgResp.Assigment, expectedAssignment) {
-		t.Fatalf("\nexpected assignment to be \n%#v \ngot\n%#v", expectedAssignment, sgResp.Assigment)
+	if !reflect.DeepEqual(sgResp.Assignment, expectedAssignment) {
+		t.Fatalf("\nexpected assignment to be \n%#v \ngot\n%#v", expectedAssignment, sgResp.Assignment)
 	}
 }
 
