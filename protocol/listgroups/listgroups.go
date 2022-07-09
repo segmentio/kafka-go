@@ -1,8 +1,6 @@
 package listgroups
 
 import (
-	"fmt"
-
 	"github.com/segmentio/kafka-go/protocol"
 )
 
