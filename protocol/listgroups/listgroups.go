@@ -59,15 +59,11 @@ func (r *Response) Merge(requests []protocol.Message, results []interface{}) (
 	response := &Response{}
 
 	for r, result := range results {
-		brokerResp, err := protocol.Result(result)
+		m, err := protocol.Result(result)
 		if err != nil {
 			return nil, err
 		}
-
-		resp, ok := brokerResp.(*Response)
-		if !ok {
-			return nil, fmt.Errorf("BUG: result must be a response but not %T", brokerResp)
-		}
+		brokerResp := result.(*Response)
 
 		respGroups := make([]ResponseGroup, 0, len(resp.Groups))
 		for _, brokerResp := range resp.Groups {
