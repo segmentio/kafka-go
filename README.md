@@ -38,7 +38,7 @@ Code Of Conduct see [this](./CODE_OF_CONDUCT.md) document.
 
 ## Kafka versions
 
-`kafka-go` is currently tested with Kafka versions 0.10.1.0 to 2.7.1.
+`kafka-go` is currently tested with Kafka versions 0.10.1.0 to 2.8.1.
 While it should also be compatible with later versions, newer features available
 in the Kafka API may not yet be implemented in the client.
 
