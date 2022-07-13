@@ -336,3 +336,4 @@ workflows:
     - kafka-241
     - kafka-260
     - kafka-271
+    - kafka-281
