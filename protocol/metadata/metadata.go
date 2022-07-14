@@ -7,7 +7,7 @@ func init() {
 }
 
 type Request struct {
-	TopicNames                         []string `kafka:"min=v0,max=v8,nullable"`
+	TopicNames                         []string `kafka:"min=v0,max=v8"`
 	AllowAutoTopicCreation             bool     `kafka:"min=v4,max=v8"`
 	IncludeClusterAuthorizedOperations bool     `kafka:"min=v8,max=v8"`
 	IncludeTopicAuthorizedOperations   bool     `kafka:"min=v8,max=v8"`
