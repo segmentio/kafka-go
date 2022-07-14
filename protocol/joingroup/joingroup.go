@@ -45,8 +45,8 @@ type Response struct {
 	ThrottleTimeMS int32            `kafka:"min=v2,max=v7"`
 	ErrorCode      int16            `kafka:"min=v0,max=v7"`
 	GenerationID   int32            `kafka:"min=v0,max=v7"`
-	ProtocolName   string           `kafka:"min=v0,max=v5|min=v6,max=v6,compact|min=v7,max=v7,compact,nullable"`
 	ProtocolType   string           `kafka:"min=v7,max=v7,compact,nullable"`
+	ProtocolName   string           `kafka:"min=v0,max=v5|min=v6,max=v6,compact|min=v7,max=v7,compact,nullable"`
 	LeaderID       string           `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
 	MemberID       string           `kafka:"min=v0,max=v5|min=v6,max=v7,compact"`
 	Members        []ResponseMember `kafka:"min=v0,max=v7"`
