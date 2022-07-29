@@ -478,6 +478,9 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				g.log(func(l Logger) {
+					l.Printf("heartbeating...\n")
+				})
 				_, err := g.conn.heartbeat(heartbeatRequestV0{
 					GroupID:      g.GroupID,
 					GenerationID: g.ID,
