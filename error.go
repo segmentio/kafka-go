@@ -704,7 +704,7 @@ func (err WriteErrors) Count() int {
 func (err WriteErrors) Error() string {
 	var sb strings.Builder
 	for i, writeError := range err {
-		sb.WriteString(fmt.Sprintf("Message %d: %s \n", i, writeError.Error()))
+		fmt.Fprintf(&sb, "Message %d: %s \n", i, writeError.Error())
 	}
 	return fmt.Sprintf("kafka write errors (%d/%d), errors: %s", err.Count(), len(err), sb.String())
 }
