@@ -1025,7 +1025,7 @@ func makeBrokers(brokers map[int32]Broker, ids ...int32) []Broker {
 			// brokers, use a placeholder to report that the cluster has
 			// logical knowledge of the broker but no information about the
 			// physical host where it is running.
-			br.ID = id
+			br.ID = int(id)
 		}
 		b[i] = br
 	}
