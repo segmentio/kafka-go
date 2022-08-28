@@ -685,7 +685,6 @@ func makeError(code int16, message string) error {
 //		// handle other errors
 //		...
 //	}
-//
 type WriteErrors []error
 
 // Count counts the number of non-nil errors in err.
@@ -704,6 +703,9 @@ func (err WriteErrors) Count() int {
 func (err WriteErrors) Error() string {
 	var sb strings.Builder
 	for i, writeError := range err {
+		if writeError == nil {
+			continue
+		}
 		fmt.Fprintf(&sb, "Message %d: %s \n", i, writeError.Error())
 	}
 	return fmt.Sprintf("kafka write errors (%d/%d), errors: %s", err.Count(), len(err), sb.String())
