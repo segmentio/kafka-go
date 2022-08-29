@@ -1353,16 +1353,19 @@ func TestMakeBrokersAllPresent(t *testing.T) {
 func TestMakeBrokersOneMissing(t *testing.T) {
 	brokers := make(map[int32]Broker)
 	brokers[1] = Broker{ID: 1, Host: "203.0.113.101", Port: 9092}
-	brokers[3] = Broker{ID: 1, Host: "203.0.113.103", Port: 9092}
+	brokers[3] = Broker{ID: 3, Host: "203.0.113.103", Port: 9092}
 
 	b := makeBrokers(brokers, 1, 2, 3)
-	if len(b) != 2 {
-		t.Errorf("Expected 2 brokers, got %d", len(b))
+	if len(b) != 3 {
+		t.Errorf("Expected 3 brokers, got %d", len(b))
 	}
 	if b[0] != brokers[1] {
 		t.Errorf("Expected broker 1 at index 0, got %d", b[0].ID)
 	}
-	if b[1] != brokers[3] {
-		t.Errorf("Expected broker 3 at index 1, got %d", b[1].ID)
+	if b[1] != (Broker{ID: 2}) {
+		t.Errorf("Expected broker 2 at index 1, got %d", b[1].ID)
+	}
+	if b[2] != brokers[3] {
+		t.Errorf("Expected broker 3 at index 1, got %d", b[2].ID)
 	}
 }
