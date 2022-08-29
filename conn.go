@@ -1017,11 +1017,17 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 }
 
 func makeBrokers(brokers map[int32]Broker, ids ...int32) []Broker {
-	b := make([]Broker, 0, len(ids))
-	for _, id := range ids {
-		if br, ok := brokers[id]; ok {
-			b = append(b, br)
+	b := make([]Broker, len(ids))
+	for i, id := range ids {
+		br, ok := brokers[id]
+		if !ok {
+			// When the broker id isn't found in the current list of known
+			// brokers, use a placeholder to report that the cluster has
+			// logical knowledge of the broker but no information about the
+			// physical host where it is running.
+			br.ID = int(id)
 		}
+		b[i] = br
 	}
 	return b
 }

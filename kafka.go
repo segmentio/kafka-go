@@ -38,6 +38,11 @@ type Partition struct {
 	ID    int
 
 	// Leader, replicas, and ISR for the partition.
+	//
+	// When no physical host is known to be running a broker, the Host and Port
+	// fields will be set to the zero values. The logical broker ID is always
+	// set to the value known to the kafka cluster, even if the broker is not
+	// currently backed by a physical host.
 	Leader   Broker
 	Replicas []Broker
 	Isr      []Broker
