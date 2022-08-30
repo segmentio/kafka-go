@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -32,15 +31,15 @@ const (
 	queryExpiryKey   = "X-Amz-Expires"
 )
 
-var signUserAgent = fmt.Sprintf("kafka-go/sasl/aws_msk_iam/%s", runtime.Version())
+var signUserAgent = "kafka-go/sasl/aws_msk_iam_v2/" + runtime.Version()
 
 // Mechanism implements sasl.Mechanism for the AWS_MSK_IAM mechanism, based on the official java implementation:
 // https://github.com/aws/aws-msk-iam-auth
 type Mechanism struct {
 	// The sigv4.Signer of aws-sdk-go-v2 to use when signing the request. Required.
 	Signer *signer.Signer
-	// The aws.Credentials of aws-sdk-go-v2. Required.
-	Credentials aws.Credentials
+	// The aws.Config.Credentials or config.CredentialsProvider of aws-sdk-go-v2. Required.
+	Credentials aws.CredentialsProvider
 	// The region where the msk cluster is hosted, e.g. "us-east-1". Required.
 	Region string
 	// The time the request is planned for. Optional, defaults to time.Now() at time of authentication.
@@ -62,19 +61,20 @@ func (m *Mechanism) Next(ctx context.Context, challenge []byte) (bool, []byte, e
 
 // Start produces the authentication values required for AWS_MSK_IAM. It produces the following json as a byte array,
 // making use of the aws-sdk to produce the signed output.
-// 	{
-// 	  "version" : "2020_10_22",
-// 	  "host" : "<broker host>",
-// 	  "user-agent": "<user agent string from the client>",
-// 	  "action": "kafka-cluster:Connect",
-// 	  "x-amz-algorithm" : "<algorithm>",
-// 	  "x-amz-credential" : "<clientAWSAccessKeyID>/<date in yyyyMMdd format>/<region>/kafka-cluster/aws4_request",
-// 	  "x-amz-date" : "<timestamp in yyyyMMdd'T'HHmmss'Z' format>",
-// 	  "x-amz-security-token" : "<clientAWSSessionToken if any>",
-// 	  "x-amz-signedheaders" : "host",
-// 	  "x-amz-expires" : "<expiration in seconds>",
-// 	  "x-amz-signature" : "<AWS SigV4 signature computed by the client>"
-// 	}
+//
+//	{
+//	  "version" : "2020_10_22",
+//	  "host" : "<broker host>",
+//	  "user-agent": "<user agent string from the client>",
+//	  "action": "kafka-cluster:Connect",
+//	  "x-amz-algorithm" : "<algorithm>",
+//	  "x-amz-credential" : "<clientAWSAccessKeyID>/<date in yyyyMMdd format>/<region>/kafka-cluster/aws4_request",
+//	  "x-amz-date" : "<timestamp in yyyyMMdd'T'HHmmss'Z' format>",
+//	  "x-amz-security-token" : "<clientAWSSessionToken if any>",
+//	  "x-amz-signedheaders" : "host",
+//	  "x-amz-expires" : "<expiration in seconds>",
+//	  "x-amz-signature" : "<AWS SigV4 signature computed by the client>"
+//	}
 func (m *Mechanism) Start(ctx context.Context) (sess sasl.StateMachine, ir []byte, err error) {
 	signedMap, err := m.preSign(ctx)
 	if err != nil {
@@ -92,7 +92,12 @@ func (m *Mechanism) preSign(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 
-	signedUrl, header, err := m.Signer.PresignHTTP(ctx, m.Credentials, req, signPayload, signService, m.Region, defaultSignTime(m.SignTime))
+	creds, err := m.Credentials.Retrieve(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	signedUrl, header, err := m.Signer.PresignHTTP(ctx, creds, req, signPayload, signService, m.Region, defaultSignTime(m.SignTime))
 	if err != nil {
 		return nil, err
 	}
@@ -163,4 +168,13 @@ func defaultSignTime(v time.Time) time.Time {
 		return time.Now()
 	}
 	return v
+}
+
+// NewMechanism provides
+func NewMechanism(awsCfg aws.Config) *Mechanism {
+	return &Mechanism{
+		Signer:      signer.NewSigner(),
+		Credentials: awsCfg.Credentials,
+		Region:      awsCfg.Region,
+	}
 }
