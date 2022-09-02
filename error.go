@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"syscall"
 )
 
@@ -701,12 +700,12 @@ func (err WriteErrors) Count() int {
 }
 
 func (err WriteErrors) Error() string {
-	var sb strings.Builder
-	for i, writeError := range err {
+	var errors []string
+	for _, writeError := range err {
 		if writeError == nil {
 			continue
 		}
-		fmt.Fprintf(&sb, "Message %d: %s \n", i, writeError.Error())
+		errors = append(errors, writeError.Error())
 	}
-	return fmt.Sprintf("kafka write errors (%d/%d), errors: %s", err.Count(), len(err), sb.String())
+	return fmt.Sprintf("Kafka write errors (%d/%d), errors: %v", err.Count(), len(err), errors)
 }
