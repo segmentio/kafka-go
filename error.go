@@ -700,12 +700,13 @@ func (err WriteErrors) Count() int {
 }
 
 func (err WriteErrors) Error() string {
-	var errors []string
+	errCount := err.Count()
+	errors := make([]string, 0, errCount)
 	for _, writeError := range err {
 		if writeError == nil {
 			continue
 		}
 		errors = append(errors, writeError.Error())
 	}
-	return fmt.Sprintf("Kafka write errors (%d/%d), errors: %v", err.Count(), len(err), errors)
+	return fmt.Sprintf("Kafka write errors (%d/%d), errors: %v", errCount, len(err), errors)
 }
