@@ -563,6 +563,7 @@ func (w *Writer) Close() error {
 	if w.transport != nil {
 		w.transport.CloseIdleConnections()
 	}
+	w.removeConnection()
 
 	return nil
 }
@@ -607,7 +608,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 
 	balancer := w.balancer()
 	batchBytes := w.batchBytes()
-
+	w.addConnection()
 	for i := range msgs {
 		n := int64(msgs[i].size())
 		if n > batchBytes {
@@ -887,6 +888,13 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 	}
 
 	return w.Topic, nil
+}
+
+func (w *Writer) addConnection() {
+	atomic.AddInt64(&w.count, 1)
+}
+func (w *Writer) removeConnection() {
+	atomic.AddInt64(&w.count, -1)
 }
 
 type batchQueue struct {
