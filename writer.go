@@ -208,6 +208,9 @@ type Writer struct {
 
 	// non-nil when a transport was created by NewWriter, remove in 1.0.
 	transport *Transport
+	
+	// it holds the counter for connection
+	count int64
 }
 
 // WriterConfig is a configuration type used to create new instances of Writer.
