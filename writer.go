@@ -899,7 +899,7 @@ func (w *Writer) addConnection() {
 func (w *Writer) removeConnection() {
 	atomic.AddInt64(&w.count, -1)
 }
-func (w *Writer) getConnectionCounter() int64 {
+func (w *Writer) GetConnectionCounter() int64 {
 	return w.count
 }
 
