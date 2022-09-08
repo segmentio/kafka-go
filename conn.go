@@ -346,13 +346,41 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV0) (findCoordinato
 func (c *Conn) heartbeat(request heartbeatRequestV3) (heartbeatResponseV3, error) {
 	var response heartbeatResponseV3
 
-	err := c.writeOperation(
+	apiVersion, err := c.negotiateVersion(heartbeat, v0, v3)
+	if err != nil {
+		return heartbeatResponseV3{}, err
+	}
+
+	err = c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(heartbeat, v3, id, request)
+			switch apiVersion {
+			case 0:
+				return c.writeRequest(heartbeat, v0, id, heartbeatRequestV0{
+					GroupID:      request.GroupID,
+					GenerationID: request.GenerationID,
+					MemberID:     request.MemberID,
+				})
+			case 3:
+				return c.writeRequest(heartbeat, v3, id, request)
+			}
+			return fmt.Errorf("given API version is not supported: %d", apiVersion)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
-				return (&response).readFrom(&c.rbuf, size)
+				switch apiVersion {
+				case 0:
+					var responseV0 heartbeatResponseV0
+					remain, err := (&responseV0).readFrom(&c.rbuf, size)
+
+					response = heartbeatResponseV3{
+						ErrorCode: responseV0.ErrorCode,
+					}
+
+					return remain, err
+				case 3:
+					return (&response).readFrom(&c.rbuf, size)
+				}
+				return remain, fmt.Errorf("given API version is not supported: %d", apiVersion)
 			}())
 		},
 	)
@@ -372,12 +400,56 @@ func (c *Conn) heartbeat(request heartbeatRequestV3) (heartbeatResponseV3, error
 func (c *Conn) joinGroup(request joinGroupRequestV5) (joinGroupResponseV5, error) {
 	var response joinGroupResponseV5
 
-	err := c.writeOperation(
+	apiVersion, err := c.negotiateVersion(joinGroup, v1, v5)
+	if err != nil {
+		return joinGroupResponseV5{}, err
+	}
+
+	err = c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(joinGroup, v5, id, request)
+			switch apiVersion {
+			case 5:
+				return c.writeRequest(joinGroup, v5, id, request)
+			case 1:
+				return c.writeRequest(joinGroup, v1, id, joinGroupRequestV1{
+					GroupID:          request.GroupID,
+					SessionTimeout:   request.SessionTimeout,
+					RebalanceTimeout: request.RebalanceTimeout,
+					MemberID:         request.MemberID,
+					ProtocolType:     request.ProtocolType,
+					GroupProtocols:   request.GroupProtocols,
+				})
+			}
+			return fmt.Errorf("given API version is not supported: %d", apiVersion)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
+				switch apiVersion {
+				case 5:
+					break
+				case 1:
+					var responseV1 joinGroupResponseV1
+					var members []joinGroupResponseMemberV5
+					remain, err := (&responseV1).readFrom(&c.rbuf, size)
+
+					for _, jgrm := range responseV1.Members {
+						members = append(members, joinGroupResponseMemberV5{
+							MemberID:       jgrm.MemberID,
+							MemberMetadata: jgrm.MemberMetadata,
+						})
+					}
+
+					response = joinGroupResponseV5{
+						ErrorCode:     responseV1.ErrorCode,
+						GenerationID:  responseV1.GenerationID,
+						GroupProtocol: responseV1.GroupProtocol,
+						LeaderID:      responseV1.LeaderID,
+						MemberID:      responseV1.MemberID,
+						Members:       members,
+					}
+
+					return remain, err
+				}
 				return (&response).readFrom(&c.rbuf, size)
 			}())
 		},
