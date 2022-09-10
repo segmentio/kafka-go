@@ -15,7 +15,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	stdgzip "github.com/klauspost/compress/gzip"
+	gz "github.com/klauspost/compress/gzip"
 	"github.com/segmentio/kafka-go"
 	pkg "github.com/segmentio/kafka-go/compress"
 	"github.com/segmentio/kafka-go/compress/gzip"
@@ -345,7 +345,7 @@ func BenchmarkCompression(b *testing.B) {
 	}
 	defer f.Close()
 
-	z, err := stdgzip.NewReader(f)
+	z, err := gz.NewReader(f)
 	if err != nil {
 		b.Fatal(err)
 	}
