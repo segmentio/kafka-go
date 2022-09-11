@@ -1636,6 +1636,96 @@ func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 	}
 }
 
+func TestConsumerGroupMultipleWithDefaultTransport(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	topic := makeTopic()
+
+	conf1 := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		Topic:                  topic,
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+		Logger:                 newTestKafkaLogger(t, "Reader:"),
+		AllowAutoTopicCreation: true,
+	}
+
+	conf2 := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		Topic:                  topic,
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+		Logger:                 newTestKafkaLogger(t, "Reader:"),
+		AllowAutoTopicCreation: true,
+	}
+
+	r1 := NewReader(conf1)
+	defer r1.Close()
+
+	recvErr1 := make(chan error, len(conf1.GroupTopics))
+	go func() {
+		msg, err := r1.ReadMessage(ctx)
+		t.Log(msg)
+		recvErr1 <- err
+	}()
+
+	r2 := NewReader(conf2)
+	defer r2.Close()
+
+	recvErr2 := make(chan error, len(conf2.GroupTopics))
+	go func() {
+		msg, err := r2.ReadMessage(ctx)
+		t.Log(msg)
+		recvErr2 <- err
+	}()
+
+	time.Sleep(conf1.MaxWait)
+
+	totalMessages := 10
+
+	client, shutdown := newLocalClientWithTopic(topic, 1)
+	defer shutdown()
+
+	w := &Writer{
+		Addr:         TCP(r1.config.Brokers...),
+		Topic:        topic,
+		BatchTimeout: 10 * time.Millisecond,
+		BatchSize:    totalMessages,
+		Transport:    client.Transport,
+		Logger:       newTestKafkaLogger(t, "Writer:"),
+	}
+	defer w.Close()
+
+	if err := w.WriteMessages(ctx, makeTestSequence(totalMessages)...); err != nil {
+		t.Fatalf("write error: %+v", err)
+	}
+
+	time.Sleep(conf1.MaxWait)
+
+	if err := <-recvErr1; err != nil {
+		t.Fatalf("read error from reader 1: %+v", err)
+	}
+
+	if err := <-recvErr2; err != nil {
+		t.Fatalf("read error from reader 2: %+v", err)
+	}
+
+	nMsgs := r1.Stats().Messages
+	if nMsgs != int64(totalMessages) {
+		t.Fatalf("expected to receive %d messages from reader 1, but got %d", totalMessages, nMsgs)
+	}
+
+	nMsgs = r2.Stats().Messages
+	if nMsgs != int64(totalMessages) {
+		t.Fatalf("expected to receive %d messages from reader 2, but got %d", totalMessages, nMsgs)
+	}
+}
+
 func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
 	cl := &Client{
 		Addr:    TCP(config.Brokers...),
