@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/stretchr/testify/assert"
 
 	signer "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	credentialsv2 "github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 )
 
 const (
@@ -23,17 +24,12 @@ const (
 var signTime = time.Date(2021, 10, 14, 13, 5, 0, 0, time.UTC)
 
 func TestAwsMskIamMechanism(t *testing.T) {
-	creds, err := credentialsv2.NewStaticCredentialsProvider(accessKeyId, secretAccessKey, "").Retrieve(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	creds := credentials.NewStaticCredentialsProvider(accessKeyId, secretAccessKey, "")
 	ctxWithMetadata := func() context.Context {
 		return sasl.WithMetadata(context.Background(), &sasl.Metadata{
 			Host: "localhost",
 			Port: 9092,
 		})
-
 	}
 
 	tests := []struct {
@@ -64,7 +60,6 @@ func TestAwsMskIamMechanism(t *testing.T) {
 				Region:      "us-east-1",
 				SignTime:    signTime,
 			}
-
 			sess, auth, err := mskMechanism.Start(ctx)
 			if tt.shouldFail { // if error is expected
 				if err == nil { // but we don't find one
@@ -153,4 +148,16 @@ func TestDefaultSignTime(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewMechanism(t *testing.T) {
+	region := "us-east-1"
+	creds := credentials.StaticCredentialsProvider{}
+	awsCfg := aws.Config{
+		Region:      region,
+		Credentials: creds,
+	}
+	m := NewMechanism(awsCfg)
+	assert.Equal(t, m.Region, region)
+	assert.Equal(t, m.Credentials, creds)
 }
