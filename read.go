@@ -91,6 +91,16 @@ func readBool(r *bufio.Reader, sz int, v *bool) (int, error) {
 	return peekRead(r, sz, 1, func(b []byte) { *v = b[0] != 0 })
 }
 
+func readNullableString(r *bufio.Reader, sz int, v **string) (int, error) {
+	return readStringWith(r, sz, func(r *bufio.Reader, sz int, n int) (remain int, err error) {
+		t, remain, err := readNewString(r, sz, n)
+		if len(t) > 0 {
+			*v = &t
+		}
+		return
+	})
+}
+
 func readString(r *bufio.Reader, sz int, v *string) (int, error) {
 	return readStringWith(r, sz, func(r *bufio.Reader, sz int, n int) (remain int, err error) {
 		*v, remain, err = readNewString(r, sz, n)

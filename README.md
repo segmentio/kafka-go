@@ -222,7 +222,7 @@ process shutdown.
 ```go
 // make a new reader that consumes from topic-A, partition 0, at offset 42
 r := kafka.NewReader(kafka.ReaderConfig{
-    Brokers:   []string{"localhost:9092"},
+    Brokers:   []string{"localhost:9092","localhost:9093", "localhost:9094"},
     Topic:     "topic-A",
     Partition: 0,
     MinBytes:  10e3, // 10KB
@@ -253,7 +253,7 @@ ReadMessage automatically commits offsets when using consumer groups.
 ```go
 // make a new reader that consumes from topic-A
 r := kafka.NewReader(kafka.ReaderConfig{
-    Brokers:   []string{"localhost:9092"},
+    Brokers:   []string{"localhost:9092", "localhost:9093", "localhost:9094"},
     GroupID:   "consumer-group-id",
     Topic:     "topic-A",
     MinBytes:  10e3, // 10KB
@@ -317,7 +317,7 @@ by setting CommitInterval on the ReaderConfig.
 ```go
 // make a new reader that consumes from topic-A
 r := kafka.NewReader(kafka.ReaderConfig{
-    Brokers:        []string{"localhost:9092"},
+    Brokers:        []string{"localhost:9092", "localhost:9093", "localhost:9094"},
     GroupID:        "consumer-group-id",
     Topic:          "topic-A",
     MinBytes:       10e3, // 10KB
@@ -342,7 +342,7 @@ to use in most cases as it provides additional features:
 ```go
 // make a writer that produces to topic-A, using the least-bytes distribution
 w := &kafka.Writer{
-	Addr:     kafka.TCP("localhost:9092"),
+	Addr:     kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 	Topic:   "topic-A",
 	Balancer: &kafka.LeastBytes{},
 }
@@ -376,7 +376,7 @@ if err := w.Close(); err != nil {
 // Make a writer that publishes messages to topic-A.
 // The topic will be created if it is missing.
 w := &Writer{
-    Addr:                   TCP("localhost:9092"),
+    Addr:                   kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
     Topic:                  "topic-A",
     AllowAutoTopicCreation: true,
 }
@@ -427,7 +427,7 @@ the topic on a per-message basis by setting `Message.Topic`.
 
 ```go
 w := &kafka.Writer{
-	Addr:     kafka.TCP("localhost:9092"),
+	Addr:     kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
     // NOTE: When Topic is not defined here, each Message must define it instead.
 	Balancer: &kafka.LeastBytes{},
 }
@@ -478,7 +478,7 @@ aforementioned Sarama partitioners would route them to.
 
 ```go
 w := &kafka.Writer{
-	Addr:     kafka.TCP("localhost:9092"),
+	Addr:     kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 	Topic:    "topic-A",
 	Balancer: &kafka.Hash{},
 }
@@ -491,7 +491,7 @@ default ```consistent_random``` partition strategy.
 
 ```go
 w := &kafka.Writer{
-	Addr:     kafka.TCP("localhost:9092"),
+	Addr:     kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 	Topic:    "topic-A",
 	Balancer: kafka.CRC32Balancer{},
 }
@@ -505,7 +505,7 @@ the partition which is not permitted.
 
 ```go
 w := &kafka.Writer{
-	Addr:     kafka.TCP("localhost:9092"),
+	Addr:     kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 	Topic:    "topic-A",
 	Balancer: kafka.Murmur2Balancer{},
 }
@@ -517,7 +517,7 @@ Compression can be enabled on the `Writer` by setting the `Compression` field:
 
 ```go
 w := &kafka.Writer{
-	Addr:        kafka.TCP("localhost:9092"),
+	Addr:        kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 	Topic:       "topic-A",
 	Compression: kafka.Snappy,
 }
@@ -559,7 +559,7 @@ dialer := &kafka.Dialer{
 }
 
 r := kafka.NewReader(kafka.ReaderConfig{
-    Brokers:        []string{"localhost:9093"},
+    Brokers:        []string{"localhost:9092", "localhost:9093", "localhost:9094"},
     GroupID:        "consumer-group-id",
     Topic:          "topic-A",
     Dialer:         dialer,
@@ -567,6 +567,20 @@ r := kafka.NewReader(kafka.ReaderConfig{
 ```
 
 ### Writer
+
+
+Direct Writer creation
+
+```go
+w := kafka.Writer{
+    Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"), 
+    Topic:   "topic-A",
+    Balancer: &kafka.Hash{},
+    Transport: &kafka.Transport{
+        TLS: &tls.Config{},
+      },
+    }
+```
 
 Using `kafka.NewWriter`
 
@@ -578,26 +592,13 @@ dialer := &kafka.Dialer{
 }
 
 w := kafka.NewWriter(kafka.WriterConfig{
-	Brokers: []string{"localhost:9093"},
+	Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
 	Topic:   "topic-A",
 	Balancer: &kafka.Hash{},
 	Dialer:   dialer,
 })
 ```
-
-Direct Writer creation
-
-```go
-w := kafka.Writer{
-        Addr: kafka.TCP("localhost:9093"),
-	    Topic:   "topic-A",
-	    Balancer: &kafka.Hash{},
-        Transport: &kafka.Transport{
-            TLS: &tls.Config{},
-        },
-    }
-
-```
+Note that `kafka.NewWriter` and `kafka.WriterConfig` are deprecated and will be removed in a future release.
 
 ## SASL Support
 
@@ -654,7 +655,7 @@ dialer := &kafka.Dialer{
 }
 
 r := kafka.NewReader(kafka.ReaderConfig{
-    Brokers:        []string{"localhost:9093"},
+    Brokers:        []string{"localhost:9092","localhost:9093", "localhost:9094"},
     GroupID:        "consumer-group-id",
     Topic:          "topic-A",
     Dialer:         dialer,
@@ -677,7 +678,7 @@ sharedTransport := &kafka.Transport{
 }
 
 w := kafka.Writer{
-	Addr:      kafka.TCP("localhost:9092"),
+	Addr:      kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 	Topic:     "topic-A",
 	Balancer:  &kafka.Hash{},
 	Transport: sharedTransport,
@@ -700,7 +701,7 @@ sharedTransport := &kafka.Transport{
 }
 
 client := &kafka.Client{
-    Addr:      kafka.TCP("localhost:9092"),
+    Addr:      kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
     Timeout:   10 * time.Second,
     Transport: sharedTransport,
 }
@@ -714,7 +715,7 @@ endTime := time.Now()
 batchSize := int(10e6) // 10MB
 
 r := kafka.NewReader(kafka.ReaderConfig{
-    Brokers:   []string{"localhost:9092"},
+    Brokers:   []string{"localhost:9092", "localhost:9093", "localhost:9094"},
     Topic:     "my-topic1",
     Partition: 0,
     MinBytes:  batchSize,
@@ -756,7 +757,7 @@ func logf(msg string, a ...interface{}) {
 }
 
 r := kafka.NewReader(kafka.ReaderConfig{
-	Brokers:     []string{"localhost:9092"},
+	Brokers:     []string{"localhost:9092", "localhost:9093", "localhost:9094"},
 	Topic:       "my-topic1",
 	Partition:   0,
 	Logger:      kafka.LoggerFunc(logf),

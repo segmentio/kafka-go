@@ -343,24 +343,52 @@ func (c *Conn) findCoordinator(request findCoordinatorRequestV0) (findCoordinato
 // heartbeat sends a heartbeat message required by consumer groups
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_Heartbeat
-func (c *Conn) heartbeat(request heartbeatRequestV0) (heartbeatResponseV0, error) {
-	var response heartbeatResponseV0
+func (c *Conn) heartbeat(request heartbeatRequestV3) (heartbeatResponseV3, error) {
+	var response heartbeatResponseV3
 
-	err := c.writeOperation(
+	apiVersion, err := c.negotiateVersion(heartbeat, v0, v3)
+	if err != nil {
+		return heartbeatResponseV3{}, err
+	}
+
+	err = c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(heartbeat, v0, id, request)
+			switch apiVersion {
+			case 0:
+				return c.writeRequest(heartbeat, v0, id, heartbeatRequestV0{
+					GroupID:      request.GroupID,
+					GenerationID: request.GenerationID,
+					MemberID:     request.MemberID,
+				})
+			case 3:
+				return c.writeRequest(heartbeat, v3, id, request)
+			}
+			return fmt.Errorf("given API version is not supported: %d", apiVersion)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
-				return (&response).readFrom(&c.rbuf, size)
+				switch apiVersion {
+				case 0:
+					var responseV0 heartbeatResponseV0
+					remain, err := (&responseV0).readFrom(&c.rbuf, size)
+
+					response = heartbeatResponseV3{
+						ErrorCode: responseV0.ErrorCode,
+					}
+
+					return remain, err
+				case 3:
+					return (&response).readFrom(&c.rbuf, size)
+				}
+				return remain, fmt.Errorf("given API version is not supported: %d", apiVersion)
 			}())
 		},
 	)
 	if err != nil {
-		return heartbeatResponseV0{}, err
+		return heartbeatResponseV3{}, err
 	}
 	if response.ErrorCode != 0 {
-		return heartbeatResponseV0{}, Error(response.ErrorCode)
+		return heartbeatResponseV3{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -369,24 +397,73 @@ func (c *Conn) heartbeat(request heartbeatRequestV0) (heartbeatResponseV0, error
 // joinGroup attempts to join a consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_JoinGroup
-func (c *Conn) joinGroup(request joinGroupRequestV1) (joinGroupResponseV1, error) {
-	var response joinGroupResponseV1
+func (c *Conn) joinGroup(request joinGroupRequestV5) (joinGroupResponseV5, error) {
+	var response joinGroupResponseV5
 
-	err := c.writeOperation(
+	apiVersion, err := c.negotiateVersion(joinGroup, v1, v5)
+	if err != nil {
+		return joinGroupResponseV5{}, err
+	}
+
+	err = c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(joinGroup, v1, id, request)
+			switch apiVersion {
+			case 5:
+				return c.writeRequest(joinGroup, v5, id, request)
+			case 1:
+				return c.writeRequest(joinGroup, v1, id, joinGroupRequestV1{
+					GroupID:          request.GroupID,
+					SessionTimeout:   request.SessionTimeout,
+					RebalanceTimeout: request.RebalanceTimeout,
+					MemberID:         request.MemberID,
+					ProtocolType:     request.ProtocolType,
+					GroupProtocols:   request.GroupProtocols,
+				})
+			}
+			return fmt.Errorf("given API version is not supported: %d", apiVersion)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {
+				switch apiVersion {
+				case 5:
+					break
+				case 1:
+					var responseV1 joinGroupResponseV1
+					var members []joinGroupResponseMemberV5
+					remain, err := (&responseV1).readFrom(&c.rbuf, size)
+
+					for _, jgrm := range responseV1.Members {
+						members = append(members, joinGroupResponseMemberV5{
+							MemberID:       jgrm.MemberID,
+							MemberMetadata: jgrm.MemberMetadata,
+						})
+					}
+
+					response = joinGroupResponseV5{
+						ErrorCode:     responseV1.ErrorCode,
+						GenerationID:  responseV1.GenerationID,
+						GroupProtocol: responseV1.GroupProtocol,
+						LeaderID:      responseV1.LeaderID,
+						MemberID:      responseV1.MemberID,
+						Members:       members,
+					}
+
+					return remain, err
+				}
 				return (&response).readFrom(&c.rbuf, size)
 			}())
 		},
 	)
 	if err != nil {
-		return joinGroupResponseV1{}, err
+		return joinGroupResponseV5{}, err
+	}
+
+	// server requires one more iteration to justify new member identity.
+	if response.ErrorCode == int16(MemberIDRequired) {
+		return joinGroupResponseV5{MemberID: response.MemberID}, Error(response.ErrorCode)
 	}
 	if response.ErrorCode != 0 {
-		return joinGroupResponseV1{}, Error(response.ErrorCode)
+		return joinGroupResponseV5{}, Error(response.ErrorCode)
 	}
 
 	return response, nil
@@ -1017,11 +1094,17 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 }
 
 func makeBrokers(brokers map[int32]Broker, ids ...int32) []Broker {
-	b := make([]Broker, 0, len(ids))
-	for _, id := range ids {
-		if br, ok := brokers[id]; ok {
-			b = append(b, br)
+	b := make([]Broker, len(ids))
+	for i, id := range ids {
+		br, ok := brokers[id]
+		if !ok {
+			// When the broker id isn't found in the current list of known
+			// brokers, use a placeholder to report that the cluster has
+			// logical knowledge of the broker but no information about the
+			// physical host where it is running.
+			br.ID = int(id)
 		}
+		b[i] = br
 	}
 	return b
 }

@@ -82,6 +82,9 @@ type ConsumerGroupConfig struct {
 	// for more complex use cases.
 	Topics []string
 
+	// The unique identifier of the consumer instance provided by end user.
+	GroupInstanceID *string
+
 	// GroupBalancers is the priority-ordered list of client-side consumer group
 	// balancing strategies that will be offered to the coordinator.  The first
 	// strategy that all group members support will be chosen by the leader.
@@ -316,6 +319,9 @@ type Generation struct {
 	// coordinator.
 	MemberID string
 
+	// The unique identifier of the consumer instance provided by end user.
+	GroupInstanceID *string
+
 	// Assignments is the initial state of this Generation.  The partition
 	// assignments are grouped by topic.
 	Assignments map[string][]PartitionAssignment
@@ -478,15 +484,19 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				g.log(func(l Logger) {
-					l.Printf("heartbeating...\n")
+				_, err := g.conn.heartbeat(heartbeatRequestV3{
+					GroupID:         g.GroupID,
+					GenerationID:    g.ID,
+					MemberID:        g.MemberID,
+					GroupInstanceID: g.GroupInstanceID,
 				})
-				_, err := g.conn.heartbeat(heartbeatRequestV0{
-					GroupID:      g.GroupID,
-					GenerationID: g.ID,
-					MemberID:     g.MemberID,
+				g.log(func(l Logger) {
+					l.Printf("heartbeating...")
 				})
 				if err != nil {
+					g.logError(func(l Logger) {
+						l.Printf(err.Error())
+					})
 					return
 				}
 			}
@@ -558,10 +568,10 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 type coordinator interface {
 	io.Closer
 	findCoordinator(findCoordinatorRequestV0) (findCoordinatorResponseV0, error)
-	joinGroup(joinGroupRequestV1) (joinGroupResponseV1, error)
+	joinGroup(joinGroupRequestV5) (joinGroupResponseV5, error)
 	syncGroup(syncGroupRequestV0) (syncGroupResponseV0, error)
 	leaveGroup(leaveGroupRequestV0) (leaveGroupResponseV0, error)
-	heartbeat(heartbeatRequestV0) (heartbeatResponseV0, error)
+	heartbeat(heartbeatRequestV3) (heartbeatResponseV3, error)
 	offsetFetch(offsetFetchRequestV1) (offsetFetchResponseV1, error)
 	offsetCommit(offsetCommitRequestV2) (offsetCommitResponseV2, error)
 	readPartitions(...string) ([]Partition, error)
@@ -591,11 +601,11 @@ func (t *timeoutCoordinator) findCoordinator(req findCoordinatorRequestV0) (find
 	return t.conn.findCoordinator(req)
 }
 
-func (t *timeoutCoordinator) joinGroup(req joinGroupRequestV1) (joinGroupResponseV1, error) {
+func (t *timeoutCoordinator) joinGroup(req joinGroupRequestV5) (joinGroupResponseV5, error) {
 	// in the case of join group, the consumer group coordinator may wait up
 	// to rebalance timeout in order to wait for all members to join.
 	if err := t.conn.SetDeadline(time.Now().Add(t.timeout + t.rebalanceTimeout)); err != nil {
-		return joinGroupResponseV1{}, err
+		return joinGroupResponseV5{}, err
 	}
 	return t.conn.joinGroup(req)
 }
@@ -616,9 +626,9 @@ func (t *timeoutCoordinator) leaveGroup(req leaveGroupRequestV0) (leaveGroupResp
 	return t.conn.leaveGroup(req)
 }
 
-func (t *timeoutCoordinator) heartbeat(req heartbeatRequestV0) (heartbeatResponseV0, error) {
+func (t *timeoutCoordinator) heartbeat(req heartbeatRequestV3) (heartbeatResponseV3, error) {
 	if err := t.conn.SetDeadline(time.Now().Add(t.timeout)); err != nil {
-		return heartbeatResponseV0{}, err
+		return heartbeatResponseV3{}, err
 	}
 	return t.conn.heartbeat(req)
 }
@@ -717,7 +727,7 @@ func (cg *ConsumerGroup) Next(ctx context.Context) (*Generation, error) {
 func (cg *ConsumerGroup) run() {
 	// the memberID is the only piece of information that is maintained across
 	// generations.  it starts empty and will be assigned on the first nextGeneration
-	// when the joinGroup request is processed.  it may change again later if
+	// when the joinGroup request is processed. it may change again later if
 	// the CG coordinator fails over or if the member is evicted.  otherwise, it
 	// will be constant for the lifetime of this group.
 	var memberID string
@@ -739,6 +749,12 @@ func (cg *ConsumerGroup) run() {
 			// the CG has been closed...leave the group and exit loop.
 			_ = cg.leaveGroup(memberID)
 			return
+
+		case errors.Is(err, MemberIDRequired):
+			// When encountering MEMBER_ID_REQUIRED exception,
+			// the client will use the given member id in the join group response to retry the join,
+			// which is expected to be accepted by the broker if id matches.
+			continue
 
 		case errors.Is(err, RebalanceInProgress):
 			// in case of a RebalanceInProgress, don't leave the group or
@@ -801,6 +817,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	memberID, generationID, groupAssignments, err = cg.joinGroup(conn, memberID)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
+			if errors.Is(err, MemberIDRequired) {
+				return
+			}
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
 		})
 		return memberID, err
@@ -833,6 +852,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		ID:              generationID,
 		GroupID:         cg.config.ID,
 		MemberID:        memberID,
+		GroupInstanceID: cg.config.GroupInstanceID,
 		Assignments:     cg.makeAssignments(assignments, offsets),
 		conn:            conn,
 		done:            make(chan struct{}),
@@ -938,7 +958,7 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 //   - InvalidSessionTimeout:
 //   - GroupAuthorizationFailed:
 func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
-	request, err := cg.makeJoinGroupRequestV1(memberID)
+	request, err := cg.makeJoinGroupRequestV5(memberID)
 	if err != nil {
 		return "", 0, nil, err
 	}
@@ -948,7 +968,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		err = Error(response.ErrorCode)
 	}
 	if err != nil {
-		return "", 0, nil, err
+		return response.MemberID, 0, nil, err
 	}
 
 	memberID = response.MemberID
@@ -984,10 +1004,11 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 
 // makeJoinGroupRequestV1 handles the logic of constructing a joinGroup
 // request.
-func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupRequestV1, error) {
-	request := joinGroupRequestV1{
+func (cg *ConsumerGroup) makeJoinGroupRequestV5(memberID string) (joinGroupRequestV5, error) {
+	request := joinGroupRequestV5{
 		GroupID:          cg.config.ID,
 		MemberID:         memberID,
+		GroupInstanceID:  cg.config.GroupInstanceID,
 		SessionTimeout:   int32(cg.config.SessionTimeout / time.Millisecond),
 		RebalanceTimeout: int32(cg.config.RebalanceTimeout / time.Millisecond),
 		ProtocolType:     defaultProtocolType,
@@ -996,7 +1017,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 	for _, balancer := range cg.config.GroupBalancers {
 		userData, err := balancer.UserData()
 		if err != nil {
-			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
+			return joinGroupRequestV5{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
 		}
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName: balancer.ProtocolName(),
@@ -1013,7 +1034,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
 // their various partitions.
-func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroupResponseV1) (GroupMemberAssignments, error) {
+func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroupResponseV5) (GroupMemberAssignments, error) {
 	cg.withLogger(func(l Logger) {
 		l.Printf("selected as leader for group, %s\n", cg.config.ID)
 	})
@@ -1056,7 +1077,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 }
 
 // makeMemberProtocolMetadata maps encoded member metadata ([]byte) into []GroupMember.
-func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]GroupMember, error) {
+func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMemberV5) ([]GroupMember, error) {
 	members := make([]GroupMember, 0, len(in))
 	for _, item := range in {
 		metadata := groupMetadata{}

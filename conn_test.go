@@ -679,11 +679,13 @@ func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
 func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, memberID string, stop func()) {
 	waitForCoordinator(t, conn, groupID)
 
-	join := func() (joinGroup joinGroupResponseV1) {
+	join := func() (joinGroup joinGroupResponseV5) {
 		var err error
+		var memberID string
 		for attempt := 0; attempt < 10; attempt++ {
-			joinGroup, err = conn.joinGroup(joinGroupRequestV1{
+			joinGroup, err = conn.joinGroup(joinGroupRequestV5{
 				GroupID:          groupID,
+				MemberID:         memberID,
 				SessionTimeout:   int32(time.Minute / time.Millisecond),
 				RebalanceTimeout: int32(time.Second / time.Millisecond),
 				ProtocolType:     "roundrobin",
@@ -697,6 +699,9 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 			if err != nil {
 				if errors.Is(err, NotCoordinatorForGroup) {
 					time.Sleep(250 * time.Millisecond)
+					continue
+				} else if errors.Is(err, MemberIDRequired) {
+					memberID = joinGroup.MemberID
 					continue
 				} else {
 					t.Fatalf("bad joinGroup: %s", err)
@@ -770,7 +775,7 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 }
 
 func testConnJoinGroupInvalidGroupID(t *testing.T, conn *Conn) {
-	_, err := conn.joinGroup(joinGroupRequestV1{})
+	_, err := conn.joinGroup(joinGroupRequestV5{})
 	if !errors.Is(err, InvalidGroupId) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", InvalidGroupId, NotCoordinatorForGroup, err)
 	}
@@ -780,7 +785,7 @@ func testConnJoinGroupInvalidSessionTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV1{
+	_, err := conn.joinGroup(joinGroupRequestV5{
 		GroupID: groupID,
 	})
 	if !errors.Is(err, InvalidSessionTimeout) && !errors.Is(err, NotCoordinatorForGroup) {
@@ -792,7 +797,7 @@ func testConnJoinGroupInvalidRefreshTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV1{
+	_, err := conn.joinGroup(joinGroupRequestV5{
 		GroupID:        groupID,
 		SessionTimeout: int32(3 * time.Second / time.Millisecond),
 	})
@@ -1353,16 +1358,19 @@ func TestMakeBrokersAllPresent(t *testing.T) {
 func TestMakeBrokersOneMissing(t *testing.T) {
 	brokers := make(map[int32]Broker)
 	brokers[1] = Broker{ID: 1, Host: "203.0.113.101", Port: 9092}
-	brokers[3] = Broker{ID: 1, Host: "203.0.113.103", Port: 9092}
+	brokers[3] = Broker{ID: 3, Host: "203.0.113.103", Port: 9092}
 
 	b := makeBrokers(brokers, 1, 2, 3)
-	if len(b) != 2 {
-		t.Errorf("Expected 2 brokers, got %d", len(b))
+	if len(b) != 3 {
+		t.Errorf("Expected 3 brokers, got %d", len(b))
 	}
 	if b[0] != brokers[1] {
 		t.Errorf("Expected broker 1 at index 0, got %d", b[0].ID)
 	}
-	if b[1] != brokers[3] {
-		t.Errorf("Expected broker 3 at index 1, got %d", b[1].ID)
+	if b[1] != (Broker{ID: 2}) {
+		t.Errorf("Expected broker 2 at index 1, got %d", b[1].ID)
+	}
+	if b[2] != brokers[3] {
+		t.Errorf("Expected broker 3 at index 1, got %d", b[2].ID)
 	}
 }
