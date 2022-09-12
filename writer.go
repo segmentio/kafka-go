@@ -27,29 +27,29 @@ import (
 // by the function and test if it an instance of kafka.WriteErrors in order to
 // identify which messages have succeeded or failed, for example:
 //
-//	// Construct a synchronous writer (the default mode).
-//	w := &kafka.Writer{
-//		Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-//		Topic:        "topic-A",
-//		RequiredAcks: kafka.RequireAll,
-//	}
-//
-//	...
-//
-//  // Passing a context can prevent the operation from blocking indefinitely.
-//	switch err := w.WriteMessages(ctx, msgs...).(type) {
-//	case nil:
-//	case kafka.WriteErrors:
-//		for i := range msgs {
-//			if err[i] != nil {
-//				// handle the error writing msgs[i]
-//				...
-//			}
+//		// Construct a synchronous writer (the default mode).
+//		w := &kafka.Writer{
+//			Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+//			Topic:        "topic-A",
+//			RequiredAcks: kafka.RequireAll,
 //		}
-//	default:
-//		// handle other errors
+//
 //		...
-//	}
+//
+//	 // Passing a context can prevent the operation from blocking indefinitely.
+//		switch err := w.WriteMessages(ctx, msgs...).(type) {
+//		case nil:
+//		case kafka.WriteErrors:
+//			for i := range msgs {
+//				if err[i] != nil {
+//					// handle the error writing msgs[i]
+//					...
+//				}
+//			}
+//		default:
+//			// handle other errors
+//			...
+//		}
 //
 // In asynchronous mode, the program may configure a completion handler on the
 // writer to receive notifications of messages being written to kafka:
@@ -678,6 +678,57 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 	}
 	return werr
+}
+
+// WriteMessageGroup writes a group of messages to the kafka topic configured on this
+// writer, and message group does not contain messages for different kafka topic.
+//
+// The method blocks until all messages have been written, or until the maximum number of
+// attempts was reached.
+//
+// When the method returns an error, it may be of type kafka.WriteError to allow
+// the caller to determine the status of each message.
+func (w *Writer) WriteMessageGroup(msgs ...Message) error {
+	if w.Addr == nil {
+		return errors.New("kafka.(*Writer).WriteMessages: cannot create a kafka writer with a nil address")
+	}
+
+	if !w.enter() {
+		return io.ErrClosedPipe
+	}
+	defer w.leave()
+
+	if len(msgs) == 0 {
+		return nil
+	}
+
+	balancer := w.balancer()
+
+	ctx, cancel := context.WithTimeout(context.Background(), w.writeTimeout())
+	defer cancel()
+
+	numPartitions, err := w.partitions(ctx, w.Topic)
+	if err != nil {
+		return err
+	}
+
+	partition := balancer.Balance(msgs[0], loadCachedPartitions(numPartitions)...)
+
+	pr, err := w.client(w.writeTimeout()).Produce(ctx, &ProduceRequest{
+		Partition:    partition,
+		Topic:        w.Topic,
+		RequiredAcks: w.RequiredAcks,
+		Compression:  w.Compression,
+		Records: &writerRecords{
+			msgs: msgs,
+		},
+	})
+
+	if pr.Error != nil {
+		return pr.Error
+	}
+
+	return err
 }
 
 func (w *Writer) batchMessages(messages []Message, assignments map[topicPartition][]int32) map[*writeBatch][]int32 {
