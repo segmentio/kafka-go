@@ -170,6 +170,10 @@ func TestWriter(t *testing.T) {
 			scenario: "writing a message with SASL Plain authentication",
 			function: testWriterSasl,
 		},
+		{
+			scenario: "writing a message group",
+			function: testWriterMessageGroup,
+		},
 	}
 
 	for _, test := range tests {
@@ -824,4 +828,53 @@ type staticBalancer struct {
 
 func (b *staticBalancer) Balance(_ Message, partitions ...int) int {
 	return b.partition
+}
+
+func testWriterMessageGroup(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	offset, err := readOffset(topic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newTestWriter(WriterConfig{
+		Topic:        topic,
+		BatchSize:    2,
+		BatchTimeout: math.MaxInt32 * time.Second,
+		Balancer:     &RoundRobin{},
+	})
+	defer w.Close()
+
+	if err := w.WriteMessageGroup([]Message{
+		{Value: []byte("Hi")}, // 24 Bytes
+		{Value: []byte("By")}, // 24 Bytes
+	}...); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if w.Stats().Writes > 1 {
+		t.Error("didn't write message group")
+		return
+	}
+	msgs, err := readPartition(topic, 0, offset)
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+
+	if len(msgs) != 2 {
+		t.Error("bad messages in partition", msgs)
+		return
+	}
+
+	for _, m := range msgs {
+		if string(m.Value) == "Hi" || string(m.Value) == "By" {
+			continue
+		}
+		t.Error("bad messages in partition", msgs)
+	}
 }
