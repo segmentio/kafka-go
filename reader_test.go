@@ -1275,11 +1275,13 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 	var committedOffset int64
 	var commitCount int
 	gen := &Generation{
-		conn: mockCoordinator{
-			offsetCommitFunc: func(r offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+		coord: mockCoordinator{
+			offsetCommitFunc: func(_ context.Context, r *OffsetCommitRequest) (*OffsetCommitResponse, error) {
 				commitCount++
-				committedOffset = r.Topics[0].Partitions[0].Offset
-				return offsetCommitResponseV2{}, nil
+				for _, offsets := range r.Topics {
+					committedOffset = offsets[0].Offset
+				}
+				return &OffsetCommitResponse{}, nil
 			},
 		},
 		done:     make(chan struct{}),
@@ -1344,13 +1346,13 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 		t.Run(label, func(t *testing.T) {
 			count := 0
 			gen := &Generation{
-				conn: mockCoordinator{
-					offsetCommitFunc: func(offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+				coord: mockCoordinator{
+					offsetCommitFunc: func(context.Context, *OffsetCommitRequest) (*OffsetCommitResponse, error) {
 						count++
 						if count <= test.Fails {
-							return offsetCommitResponseV2{}, io.EOF
+							return nil, io.EOF
 						}
-						return offsetCommitResponseV2{}, nil
+						return &OffsetCommitResponse{}, nil
 					},
 				},
 				done:     make(chan struct{}),
@@ -1376,10 +1378,12 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 func TestRebalanceTooManyConsumers(t *testing.T) {
 	ctx := context.Background()
 	conf := ReaderConfig{
-		Brokers: []string{"localhost:9092"},
-		GroupID: makeGroupID(),
-		Topic:   makeTopic(),
-		MaxWait: time.Second,
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		Topic:                  makeTopic(),
+		MaxWait:                time.Second,
+		WatchPartitionChanges:  true,
+		AllowAutoTopicCreation: true,
 	}
 
 	// Create the first reader and wait for it to become the leader.
@@ -1416,6 +1420,7 @@ func TestConsumerGroupWithMissingTopic(t *testing.T) {
 		MaxWait:                time.Second,
 		PartitionWatchInterval: 100 * time.Millisecond,
 		WatchPartitionChanges:  true,
+		AllowAutoTopicCreation: true,
 	}
 
 	r := NewReader(conf)
@@ -1465,6 +1470,7 @@ func TestConsumerGroupWithTopic(t *testing.T) {
 		PartitionWatchInterval: 100 * time.Millisecond,
 		WatchPartitionChanges:  true,
 		Logger:                 newTestKafkaLogger(t, "Reader:"),
+		AllowAutoTopicCreation: true,
 	}
 
 	r := NewReader(conf)
@@ -1483,12 +1489,13 @@ func TestConsumerGroupWithTopic(t *testing.T) {
 	defer shutdown()
 
 	w := &Writer{
-		Addr:         TCP(r.config.Brokers...),
-		Topic:        conf.Topic,
-		BatchTimeout: 10 * time.Millisecond,
-		BatchSize:    1,
-		Transport:    client.Transport,
-		Logger:       newTestKafkaLogger(t, "Writer:"),
+		Addr:                   TCP(r.config.Brokers...),
+		Topic:                  conf.Topic,
+		BatchTimeout:           10 * time.Millisecond,
+		BatchSize:              1,
+		Transport:              client.Transport,
+		Logger:                 newTestKafkaLogger(t, "Writer:"),
+		AllowAutoTopicCreation: true,
 	}
 	defer w.Close()
 	if err := w.WriteMessages(ctx, Message{Value: []byte(conf.Topic)}); err != nil {
@@ -1517,6 +1524,7 @@ func TestConsumerGroupWithGroupTopicsSingle(t *testing.T) {
 		PartitionWatchInterval: 100 * time.Millisecond,
 		WatchPartitionChanges:  true,
 		Logger:                 newTestKafkaLogger(t, "Reader:"),
+		AllowAutoTopicCreation: true,
 	}
 
 	r := NewReader(conf)
@@ -1574,6 +1582,7 @@ func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 		PartitionWatchInterval: 100 * time.Millisecond,
 		WatchPartitionChanges:  true,
 		Logger:                 newTestKafkaLogger(t, "Reader:"),
+		AllowAutoTopicCreation: true,
 	}
 
 	r := NewReader(conf)
@@ -1627,28 +1636,109 @@ func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 	}
 }
 
+func TestConsumerGroupMultipleWithDefaultTransport(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	topic := makeTopic()
+
+	conf1 := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		Topic:                  topic,
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+		Logger:                 newTestKafkaLogger(t, "Reader:"),
+		AllowAutoTopicCreation: true,
+	}
+
+	conf2 := ReaderConfig{
+		Brokers:                []string{"localhost:9092"},
+		GroupID:                makeGroupID(),
+		Topic:                  topic,
+		MaxWait:                time.Second,
+		PartitionWatchInterval: 100 * time.Millisecond,
+		WatchPartitionChanges:  true,
+		Logger:                 newTestKafkaLogger(t, "Reader:"),
+		AllowAutoTopicCreation: true,
+	}
+
+	r1 := NewReader(conf1)
+	defer r1.Close()
+
+	recvErr1 := make(chan error, len(conf1.GroupTopics))
+	go func() {
+		msg, err := r1.ReadMessage(ctx)
+		t.Log(msg)
+		recvErr1 <- err
+	}()
+
+	r2 := NewReader(conf2)
+	defer r2.Close()
+
+	recvErr2 := make(chan error, len(conf2.GroupTopics))
+	go func() {
+		msg, err := r2.ReadMessage(ctx)
+		t.Log(msg)
+		recvErr2 <- err
+	}()
+
+	time.Sleep(conf1.MaxWait)
+
+	totalMessages := 10
+
+	client, shutdown := newLocalClientWithTopic(topic, 1)
+	defer shutdown()
+
+	w := &Writer{
+		Addr:         TCP(r1.config.Brokers...),
+		Topic:        topic,
+		BatchTimeout: 10 * time.Millisecond,
+		BatchSize:    totalMessages,
+		Transport:    client.Transport,
+		Logger:       newTestKafkaLogger(t, "Writer:"),
+	}
+	defer w.Close()
+
+	if err := w.WriteMessages(ctx, makeTestSequence(totalMessages)...); err != nil {
+		t.Fatalf("write error: %+v", err)
+	}
+
+	time.Sleep(conf1.MaxWait)
+
+	if err := <-recvErr1; err != nil {
+		t.Fatalf("read error from reader 1: %+v", err)
+	}
+
+	if err := <-recvErr2; err != nil {
+		t.Fatalf("read error from reader 2: %+v", err)
+	}
+
+	nMsgs := r1.Stats().Messages
+	if nMsgs != int64(totalMessages) {
+		t.Fatalf("expected to receive %d messages from reader 1, but got %d", totalMessages, nMsgs)
+	}
+
+	nMsgs = r2.Stats().Messages
+	if nMsgs != int64(totalMessages) {
+		t.Fatalf("expected to receive %d messages from reader 2, but got %d", totalMessages, nMsgs)
+	}
+}
+
 func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
-	// minimal config required to lookup coordinator
-	cg := ConsumerGroup{
-		config: ConsumerGroupConfig{
-			ID:      config.GroupID,
-			Brokers: config.Brokers,
-			Dialer:  config.Dialer,
-		},
+	cl := &Client{
+		Addr:    TCP(config.Brokers...),
+		Timeout: time.Second * 10,
 	}
 
-	conn, err := cg.coordinator()
-	if err != nil {
-		t.Errorf("unable to connect to coordinator: %v", err)
-	}
-	defer conn.Close()
-
-	offsets, err := conn.offsetFetch(offsetFetchRequestV1{
+	offsets, err := cl.OffsetFetch(context.Background(), &OffsetFetchRequest{
 		GroupID: config.GroupID,
-		Topics: []offsetFetchRequestV1Topic{{
-			Topic:      config.Topic,
-			Partitions: []int32{0},
-		}},
+		Topics: map[string][]int{
+			config.Topic: {
+				0,
+			},
+		},
 	})
 	if err != nil {
 		t.Errorf("bad fetchOffsets: %v", err)
@@ -1656,10 +1746,10 @@ func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
 
 	m := map[int]int64{}
 
-	for _, r := range offsets.Responses {
-		if r.Topic == config.Topic {
-			for _, p := range r.PartitionResponses {
-				m[int(p.Partition)] = p.Offset
+	for topic, partitions := range offsets.Topics {
+		if topic == config.Topic {
+			for _, p := range partitions {
+				m[int(p.Partition)] = p.CommittedOffset
 			}
 		}
 	}

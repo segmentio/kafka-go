@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -205,12 +204,6 @@ func (t groupMetadata) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.Version)
 	wb.writeStringArray(t.Topics)
 	wb.writeBytes(t.UserData)
-}
-
-func (t groupMetadata) bytes() []byte {
-	buf := bytes.NewBuffer(nil)
-	t.writeTo(&writeBuffer{w: buf})
-	return buf.Bytes()
 }
 
 func (t *groupMetadata) readFrom(r *bufio.Reader, size int) (remain int, err error) {

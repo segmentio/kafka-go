@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"sort"
 	"strconv"
 	"sync"
@@ -91,6 +92,8 @@ type Reader struct {
 	// reader stats are all made of atomic values, no need for synchronization.
 	// Use a pointer to ensure 64-bit alignment of the values.
 	stats *readerStats
+
+	transport *Transport
 }
 
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
@@ -328,7 +331,6 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		}
 
 		r.stats.rebalances.observe(1)
-
 		r.subscribe(gen.Assignments)
 
 		gen.Start(func(ctx context.Context) {
@@ -515,6 +517,9 @@ type ReaderConfig struct {
 	// This flag is being added to retain backwards-compatibility, so it will be
 	// removed in a future version of kafka-go.
 	OffsetOutOfRangeError bool
+
+	// AllowAutoTopicCreation configures the reader to create the topics if missing.
+	AllowAutoTopicCreation bool
 }
 
 // Validate method validates ReaderConfig properties.
@@ -708,12 +713,23 @@ func NewReader(config ReaderConfig) *Reader {
 		version: version,
 	}
 	if r.useConsumerGroup() {
+
+		transport := dialerToTransport(config.Dialer, func(start time.Time) {
+			r.stats.dials.observe(1)
+			r.stats.dialTime.observe(int64(time.Since(start)))
+		})
+
+		if transport.ClientID == "" {
+			transport.ClientID = DefaultClientID
+		}
+
+		r.transport = transport
+
 		r.done = make(chan struct{})
 		r.runError = make(chan error)
 		cg, err := NewConsumerGroup(ConsumerGroupConfig{
 			ID:                     r.config.GroupID,
 			Brokers:                r.config.Brokers,
-			Dialer:                 r.config.Dialer,
 			Topics:                 r.getTopics(),
 			GroupBalancers:         r.config.GroupBalancers,
 			HeartbeatInterval:      r.config.HeartbeatInterval,
@@ -726,6 +742,8 @@ func NewReader(config ReaderConfig) *Reader {
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
+			Transport:              transport,
+			AllowAutoTopicCreation: r.config.AllowAutoTopicCreation,
 		})
 		if err != nil {
 			panic(err)
@@ -761,6 +779,10 @@ func (r *Reader) Close() error {
 
 	if !closed {
 		close(r.msgs)
+	}
+
+	if r.transport != nil {
+		r.transport.CloseIdleConnections()
 	}
 
 	return nil
@@ -1590,6 +1612,42 @@ func extractTopics(members []GroupMember) []string {
 	sort.Strings(topics)
 
 	return topics
+}
+
+func dialerToTransport(kafkaDialer *Dialer, observe func(time.Time)) *Transport {
+	dialer := (&net.Dialer{
+		Timeout:       kafkaDialer.Timeout,
+		Deadline:      kafkaDialer.Deadline,
+		LocalAddr:     kafkaDialer.LocalAddr,
+		DualStack:     kafkaDialer.DualStack,
+		FallbackDelay: kafkaDialer.FallbackDelay,
+		KeepAlive:     kafkaDialer.KeepAlive,
+	})
+
+	var resolver Resolver
+	if r, ok := kafkaDialer.Resolver.(*net.Resolver); ok {
+		dialer.Resolver = r
+	} else {
+		resolver = kafkaDialer.Resolver
+	}
+
+	// For backward compatibility with the pre-0.4 APIs, support custom
+	// resolvers by wrapping the dial function.
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		start := time.Now()
+		defer observe(start)
+		address, err := lookupHost(ctx, addr, resolver)
+		if err != nil {
+			return nil, err
+		}
+		return dialer.DialContext(ctx, network, address)
+	}
+	return &Transport{
+		Dial:     dial,
+		SASL:     kafkaDialer.SASLMechanism,
+		TLS:      kafkaDialer.TLS,
+		ClientID: kafkaDialer.ClientID,
+	}
 }
 
 type humanOffset int64
