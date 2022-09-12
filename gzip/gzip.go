@@ -4,8 +4,7 @@
 package gzip
 
 import (
-	gz "compress/gzip"
-
+	gz "github.com/klauspost/compress/gzip"
 	"github.com/segmentio/kafka-go/compress/gzip"
 )
 

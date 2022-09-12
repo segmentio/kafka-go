@@ -1,9 +1,10 @@
 package gzip
 
 import (
-	"compress/gzip"
 	"io"
 	"sync"
+
+	"github.com/klauspost/compress/gzip"
 )
 
 var (

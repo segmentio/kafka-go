@@ -2,7 +2,6 @@ package compress_test
 
 import (
 	"bytes"
-	stdgzip "compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	gz "github.com/klauspost/compress/gzip"
 	"github.com/segmentio/kafka-go"
 	pkg "github.com/segmentio/kafka-go/compress"
 	"github.com/segmentio/kafka-go/compress/gzip"
@@ -345,7 +345,7 @@ func BenchmarkCompression(b *testing.B) {
 	}
 	defer f.Close()
 
-	z, err := stdgzip.NewReader(f)
+	z, err := gz.NewReader(f)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -365,8 +365,6 @@ func BenchmarkCompression(b *testing.B) {
 		fmt.Printf("input => %.2f MB\n", float64(len(payload))/(1024*1024))
 		fmt.Println(ts)
 	}()
-
-	b.ResetTimer()
 
 	for i := range benchmarks {
 		benchmark := &benchmarks[i]
@@ -389,6 +387,7 @@ func benchmarkCompression(b *testing.B, codec pkg.Codec, buf *bytes.Buffer, payl
 	b.Run("compress", func(b *testing.B) {
 		compressed = true
 		r := bytes.NewReader(payload)
+		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
 			buf.Reset()
@@ -422,7 +421,7 @@ func benchmarkCompression(b *testing.B, codec pkg.Codec, buf *bytes.Buffer, payl
 
 	b.Run("decompress", func(b *testing.B) {
 		c := bytes.NewReader(buf.Bytes())
-
+		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			c.Reset(buf.Bytes())
 			r := codec.NewReader(c)
