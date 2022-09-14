@@ -400,7 +400,10 @@ type ReaderConfig struct {
 	// Default: 10s
 	MaxWait time.Duration
 
-	// MaxSafetyTimeout
+	// MaxSafetyTimeout amount of time to wait for new data to come when fetching message
+	// from kafka.
+	//
+	// Default: 10s
 	MaxSafetyTimeout time.Duration
 
 	// ReadLagInterval sets the frequency at which the reader lag is updated.
@@ -655,6 +658,10 @@ func NewReader(config ReaderConfig) *Reader {
 
 	if config.MaxWait == 0 {
 		config.MaxWait = 10 * time.Second
+	}
+
+	if config.MaxSafetyTimeout == 0 {
+		config.MaxSafetyTimeout = 10 * time.Second
 	}
 
 	if config.ReadLagInterval == 0 {
