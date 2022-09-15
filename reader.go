@@ -400,8 +400,7 @@ type ReaderConfig struct {
 	// Default: 10s
 	MaxWait time.Duration
 
-	// MaxSafetyTimeout amount of time to wait for new data to come when fetching message
-	// from kafka.
+	// MaxSafetyTimeout amount of time to wait to fetch message from kafka messages batch.
 	//
 	// Default: 10s
 	MaxSafetyTimeout time.Duration
