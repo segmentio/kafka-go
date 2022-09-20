@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	LeaderReplicaID   int = -1
-	FollowerReplicaID int = -2
+	LeaderReplicaID   int32 = -1
+	FollowerReplicaID int32 = -2
 )
 
 // FetchRequest represents a request sent to a kafka broker to retrieve records
@@ -92,7 +92,7 @@ type FetchResponse struct {
 	Records RecordReader
 
 	// The preferred read replica for the consumer to use on its next fetch request
-	PreferredReadRepica int32
+	PreferredReadReplica int32
 }
 
 // Fetch sends a fetch request to a kafka broker and returns the response.
@@ -111,9 +111,9 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	}
 
 	offset := req.Offset
-	replicaID := req.ReplicaID
+	replicaID := *req.ReplicaID
 
-	if replicaID == nil {
+	if req.ReplicaID == nil {
 		replicaID = LeaderReplicaID
 	}
 	switch offset {
@@ -151,7 +151,7 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &fetchAPI.Request{
-		ReplicaID:      &replicaID,
+		ReplicaID:      replicaID,
 		MaxWaitTime:    milliseconds(timeout),
 		MinBytes:       int32(req.MinBytes),
 		MaxBytes:       int32(req.MaxBytes),
