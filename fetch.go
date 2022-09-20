@@ -111,13 +111,14 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	}
 
 	offset := req.Offset
+	replicaID := req.ReplicaID
+
+	if replicaID == nil {
+		replicaID = LeaderReplicaID
+	}
 	switch offset {
 	case FirstOffset, LastOffset:
-		topic, partition, replicaID := req.Topic, req.Partition, req.ReplicaID
-
-		if replicaID == nil {
-			replicaID = LeaderReplicaID
-		}
+		topic, partition := req.Topic, req.Partition
 
 		r, err := c.ListOffsets(ctx, &ListOffsetsRequest{
 			Addr: req.Addr,
@@ -150,7 +151,7 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &fetchAPI.Request{
-		ReplicaID:      replicaID,
+		ReplicaID:      &replicaID,
 		MaxWaitTime:    milliseconds(timeout),
 		MinBytes:       int32(req.MinBytes),
 		MaxBytes:       int32(req.MaxBytes),

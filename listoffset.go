@@ -66,7 +66,7 @@ type ListOffsetsRequest struct {
 	//
 	// Consumers typically use the sentinel -1, which indicates that fetching is only allowed from the leader.
 	// KIP-392 added an additional sentinel of -2 to allow fetching from followers.
-	ReplicaID ReplicaID
+	ReplicaID int32
 }
 
 // ListOffsetsResponse represents a response from a kafka broker to a offset
