@@ -111,10 +111,12 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	}
 
 	offset := req.Offset
-	replicaID := *req.ReplicaID
+	var replicaID int32
 
 	if req.ReplicaID == nil {
 		replicaID = LeaderReplicaID
+	} else {
+		replicaID = *req.ReplicaID
 	}
 	switch offset {
 	case FirstOffset, LastOffset:
