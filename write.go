@@ -333,7 +333,7 @@ func (wb *writeBuffer) writeFetchRequestV11(
 		sizeOfString(rackID)
 
 	h.writeTo(wb)
-	wb.writeInt32(-1) // replica ID
+	wb.writeInt32(-2) // replica ID -2 - fetch from a preferred read replica, if available and configured
 	wb.writeInt32(milliseconds(maxWait))
 	wb.writeInt32(int32(minBytes))
 	wb.writeInt32(int32(maxBytes))
