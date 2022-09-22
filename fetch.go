@@ -11,11 +11,6 @@ import (
 	fetchAPI "github.com/segmentio/kafka-go/protocol/fetch"
 )
 
-const (
-	LeaderReplicaID   int32 = -1
-	FollowerReplicaID int32 = -2
-)
-
 // FetchRequest represents a request sent to a kafka broker to retrieve records
 // from a topic partition.
 type FetchRequest struct {
@@ -42,15 +37,6 @@ type FetchRequest struct {
 	// This field requires the kafka broker to support the Fetch API in version
 	// 4 or above (otherwise the value is ignored).
 	IsolationLevel IsolationLevel
-
-	// The replica to fetch data from.
-	//
-	// Consumers typically use the sentinel -1, which indicates that fetching is only allowed from the leader.
-	// KIP-392 added an additional sentinel of -2 to allow fetching from followers.
-	ReplicaID *int32
-
-	// Rack ID of the consumer.
-	RackID string
 }
 
 // FetchResponse represents a response from a kafka broker to a fetch request.
@@ -90,9 +76,6 @@ type FetchResponse struct {
 	// the one that was requested. It is the program's responsibility to skip
 	// the offsets that it is not interested in.
 	Records RecordReader
-
-	// The preferred read replica for the consumer to use on its next fetch request
-	PreferredReadReplica int32
 }
 
 // Fetch sends a fetch request to a kafka broker and returns the response.
@@ -111,13 +94,6 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	}
 
 	offset := req.Offset
-	var replicaID int32
-
-	if req.ReplicaID == nil {
-		replicaID = LeaderReplicaID
-	} else {
-		replicaID = *req.ReplicaID
-	}
 	switch offset {
 	case FirstOffset, LastOffset:
 		topic, partition := req.Topic, req.Partition
@@ -130,7 +106,6 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 					Timestamp: offset,
 				}},
 			},
-			ReplicaID: replicaID,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("kafka.(*Client).Fetch: %w", err)
@@ -153,7 +128,7 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	}
 
 	m, err := c.roundTrip(ctx, req.Addr, &fetchAPI.Request{
-		ReplicaID:      replicaID,
+		ReplicaID:      -1,
 		MaxWaitTime:    milliseconds(timeout),
 		MinBytes:       int32(req.MinBytes),
 		MaxBytes:       int32(req.MaxBytes),
@@ -170,7 +145,6 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 				PartitionMaxBytes:  int32(req.MaxBytes),
 			}},
 		}},
-		RackID: req.RackID,
 	})
 
 	if err != nil {
@@ -188,15 +162,14 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	partition := &topic.Partitions[0]
 
 	ret := &FetchResponse{
-		Throttle:             makeDuration(res.ThrottleTimeMs),
-		Topic:                topic.Topic,
-		Partition:            int(partition.Partition),
-		Error:                makeError(res.ErrorCode, ""),
-		HighWatermark:        partition.HighWatermark,
-		LastStableOffset:     partition.LastStableOffset,
-		LogStartOffset:       partition.LogStartOffset,
-		Records:              partition.RecordSet.Records,
-		PreferredReadReplica: partition.PreferredReadReplica,
+		Throttle:         makeDuration(res.ThrottleTimeMs),
+		Topic:            topic.Topic,
+		Partition:        int(partition.Partition),
+		Error:            makeError(res.ErrorCode, ""),
+		HighWatermark:    partition.HighWatermark,
+		LastStableOffset: partition.LastStableOffset,
+		LogStartOffset:   partition.LogStartOffset,
+		Records:          partition.RecordSet.Records,
 	}
 
 	if partition.ErrorCode != 0 {
