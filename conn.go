@@ -66,6 +66,9 @@ type Conn struct {
 	apiVersions atomic.Value // apiVersionMap
 
 	transactionalID *string
+
+	// whether to read from a preferredReadReplica or not
+	usePreferredReadReplica bool
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -96,7 +99,8 @@ type ConnConfig struct {
 	// deliver should be enabled if transactional id is configured.
 	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
 	// Empty string means that this connection can't be transactional.
-	TransactionalID string
+	TransactionalID         string
+	UsePreferredReadReplica bool
 }
 
 // ReadBatchConfig is a configuration object used for reading batches of messages.
@@ -171,17 +175,18 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	}
 
 	c := &Conn{
-		conn:            conn,
-		rbuf:            *bufio.NewReader(conn),
-		wbuf:            *bufio.NewWriter(conn),
-		clientID:        config.ClientID,
-		topic:           config.Topic,
-		partition:       int32(config.Partition),
-		broker:          int32(config.Broker),
-		rack:            config.Rack,
-		offset:          FirstOffset,
-		requiredAcks:    -1,
-		transactionalID: emptyToNullable(config.TransactionalID),
+		conn:                    conn,
+		rbuf:                    *bufio.NewReader(conn),
+		wbuf:                    *bufio.NewWriter(conn),
+		clientID:                config.ClientID,
+		topic:                   config.Topic,
+		partition:               int32(config.Partition),
+		broker:                  int32(config.Broker),
+		rack:                    config.Rack,
+		offset:                  FirstOffset,
+		requiredAcks:            -1,
+		transactionalID:         emptyToNullable(config.TransactionalID),
+		usePreferredReadReplica: config.UsePreferredReadReplica,
 	}
 
 	c.wb.w = &c.wbuf
@@ -768,6 +773,19 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		// truncated messages.
 		adjustedDeadline = deadline
 		switch fetchVersion {
+		case v11:
+			return c.wb.writeFetchRequestV11(
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				offset,
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
+				timeout,
+				int8(cfg.IsolationLevel),
+				cfg.RackID,
+			)
 		case v10:
 			return c.wb.writeFetchRequestV10(
 				id,
@@ -817,8 +835,11 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var throttle int32
 	var highWaterMark int64
 	var remain int
+	var preferredReadReplica *int
 
 	switch fetchVersion {
+	case v11:
+		throttle, highWaterMark, remain, preferredReadReplica, err = readFetchResponseHeaderV11(&c.rbuf, size)
 	case v10:
 		throttle, highWaterMark, remain, err = readFetchResponseHeaderV10(&c.rbuf, size)
 	case v5:
@@ -828,6 +849,10 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	}
 	if errors.Is(err, errShortRead) {
 		err = checkTimeoutErr(adjustedDeadline)
+	}
+
+	if preferredReadReplica != nil && c.broker != preferredReadReplica {
+		// change broker here?
 	}
 
 	var msgs *messageSetReader
