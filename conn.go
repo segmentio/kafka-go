@@ -66,9 +66,6 @@ type Conn struct {
 	apiVersions atomic.Value // apiVersionMap
 
 	transactionalID *string
-
-	// whether to read from a preferredReadReplica or not
-	usePreferredReadReplica bool
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -99,8 +96,7 @@ type ConnConfig struct {
 	// deliver should be enabled if transactional id is configured.
 	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
 	// Empty string means that this connection can't be transactional.
-	TransactionalID         string
-	UsePreferredReadReplica bool
+	TransactionalID string
 }
 
 // ReadBatchConfig is a configuration object used for reading batches of messages.
@@ -175,18 +171,17 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 	}
 
 	c := &Conn{
-		conn:                    conn,
-		rbuf:                    *bufio.NewReader(conn),
-		wbuf:                    *bufio.NewWriter(conn),
-		clientID:                config.ClientID,
-		topic:                   config.Topic,
-		partition:               int32(config.Partition),
-		broker:                  int32(config.Broker),
-		rack:                    config.Rack,
-		offset:                  FirstOffset,
-		requiredAcks:            -1,
-		transactionalID:         emptyToNullable(config.TransactionalID),
-		usePreferredReadReplica: config.UsePreferredReadReplica,
+		conn:            conn,
+		rbuf:            *bufio.NewReader(conn),
+		wbuf:            *bufio.NewWriter(conn),
+		clientID:        config.ClientID,
+		topic:           config.Topic,
+		partition:       int32(config.Partition),
+		broker:          int32(config.Broker),
+		rack:            config.Rack,
+		offset:          FirstOffset,
+		requiredAcks:    -1,
+		transactionalID: emptyToNullable(config.TransactionalID),
 	}
 
 	c.wb.w = &c.wbuf
