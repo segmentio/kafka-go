@@ -561,7 +561,7 @@ func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, wate
 
 }
 
-func readFetchResponseHeaderV11(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, preferredReadReplica, err error) {
+func readFetchResponseHeaderV11(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, preferredReadReplica int32, err error) {
 	var n int32
 	var errorCode int16
 	type AbortedTransaction struct {

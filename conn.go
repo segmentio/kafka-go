@@ -65,7 +65,8 @@ type Conn struct {
 	// lazily loaded API versions used by this connection
 	apiVersions atomic.Value // apiVersionMap
 
-	transactionalID *string
+	transactionalID      *string
+	preferredReadReplica int32
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -726,6 +727,10 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 // ReadBatchWith in every way is similar to ReadBatch. ReadBatch is configured
 // with the default values in ReadBatchConfig except for minBytes and maxBytes.
 func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
+	if c.broker != c.preferredReadReplica {
+		// close out connection to broker and connect to new broker
+	}
+
 	var adjustedDeadline time.Time
 	maxFetch := int(c.fetchMaxBytes)
 
@@ -746,7 +751,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		return &Batch{err: dontExpectEOF(err)}
 	}
 
-	fetchVersion, err := c.negotiateVersion(fetch, v2, v5, v10)
+	fetchVersion, err := c.negotiateVersion(fetch, v2, v5, v10, v11)
 	if err != nil {
 		return &Batch{err: dontExpectEOF(err)}
 	}
@@ -830,7 +835,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var throttle int32
 	var highWaterMark int64
 	var remain int
-	var preferredReadReplica *int
+	var preferredReadReplica int32
 
 	switch fetchVersion {
 	case v11:
@@ -846,9 +851,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		err = checkTimeoutErr(adjustedDeadline)
 	}
 
-	if preferredReadReplica != nil && c.broker != preferredReadReplica {
-		// change broker here?
-	}
+	c.preferredReadReplica = preferredReadReplica
 
 	var msgs *messageSetReader
 	if err == nil {
