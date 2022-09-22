@@ -61,12 +61,6 @@ type ListOffsetsRequest struct {
 	// This field requires the kafka broker to support the ListOffsets API in
 	// version 2 or above (otherwise the value is ignored).
 	IsolationLevel IsolationLevel
-
-	// The replica to fetch data from.
-	//
-	// Consumers typically use the sentinel -1, which indicates that fetching is only allowed from the leader.
-	// KIP-392 added an additional sentinel of -2 to allow fetching from followers.
-	ReplicaID int32
 }
 
 // ListOffsetsResponse represents a response from a kafka broker to a offset
