@@ -400,10 +400,10 @@ type ReaderConfig struct {
 	// Default: 10s
 	MaxWait time.Duration
 
-	// MaxSafetyTimeout amount of time to wait to fetch message from kafka messages batch.
+	// ReadBatchTimeout amount of time to wait to fetch message from kafka messages batch.
 	//
 	// Default: 10s
-	MaxSafetyTimeout time.Duration
+	ReadBatchTimeout time.Duration
 
 	// ReadLagInterval sets the frequency at which the reader lag is updated.
 	// Setting this field to a negative value disables lag reporting.
@@ -659,8 +659,8 @@ func NewReader(config ReaderConfig) *Reader {
 		config.MaxWait = 10 * time.Second
 	}
 
-	if config.MaxSafetyTimeout == 0 {
-		config.MaxSafetyTimeout = 10 * time.Second
+	if config.ReadBatchTimeout == 0 {
+		config.ReadBatchTimeout = 10 * time.Second
 	}
 
 	if config.ReadLagInterval == 0 {
@@ -1221,7 +1221,7 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 				minBytes:         r.config.MinBytes,
 				maxBytes:         r.config.MaxBytes,
 				maxWait:          r.config.MaxWait,
-				maxSafetyTimeout: r.config.MaxSafetyTimeout,
+				readBatchTimeout: r.config.ReadBatchTimeout,
 				backoffDelayMin:  r.config.ReadBackoffMin,
 				backoffDelayMax:  r.config.ReadBackoffMax,
 				version:          r.version,
@@ -1250,7 +1250,7 @@ type reader struct {
 	minBytes         int
 	maxBytes         int
 	maxWait          time.Duration
-	maxSafetyTimeout time.Duration
+	readBatchTimeout time.Duration
 	backoffDelayMin  time.Duration
 	backoffDelayMax  time.Duration
 	version          int64
@@ -1526,7 +1526,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	var bytes int64
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(r.maxSafetyTimeout))
+		conn.SetReadDeadline(time.Now().Add(r.readBatchTimeout))
 
 		if msg, err = batch.ReadMessage(); err != nil {
 			batch.Close()
