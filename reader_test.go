@@ -650,6 +650,10 @@ func TestCloseLeavesGroup(t *testing.T) {
 	}
 }
 
+func testConsumerGroupSimple(t *testing.T, ctx context.Context, r *Reader) {
+	r.Close()
+}
+
 func TestReaderSetOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
 	if err := r.SetOffset(LastOffset); !errors.Is(err, errNotAvailableWithGroup) {
@@ -828,6 +832,13 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 3,
 			function:   testReaderConsumerGroupReadContentAcrossPartitions,
 		},
+
+		{
+			scenario:   "Close immediately after NewReader",
+			partitions: 1,
+			function:   testConsumerGroupSimple,
+		},
+
 	}
 
 	for _, test := range tests {
