@@ -3,6 +3,16 @@
 
 package kafka
 
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"time"
+)
+
 func dialTLS(ctx context.Context, conn net.Conn, tlsConfig *tls.Config, netAddr net.Addr, deadline time.Time) (net.Conn, error) {
 	if tlsConfig.ServerName == "" {
 		host, _ := splitHostPort(netAddr.String())
