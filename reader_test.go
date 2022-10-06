@@ -640,28 +640,13 @@ func TestCloseLeavesGroup(t *testing.T) {
 		t.Fatalf("expected group membership size of %d, but got %d", 1, len(resp.Groups[0].Members))
 	}
 
-	err = r.Close()
-	if err != nil {
-		t.Fatalf("unexpected error closing reader: %s", err.Error())
-	}
+	r.Close()
 	resp = descGroups()
 	if len(resp.Groups) != 1 {
 		t.Fatalf("expected 1 group. got: %d", len(resp.Groups))
 	}
 	if len(resp.Groups[0].Members) != 0 {
 		t.Fatalf("expected group membership size of %d, but got %d", 0, len(resp.Groups[0].Members))
-	}
-}
-
-func testConsumerGroupImmediateClose(t *testing.T, ctx context.Context, r *Reader) {
-	if err := r.Close(); err != nil {
-		t.Fatalf("bad err: %v", err)
-	}
-}
-
-func testConsumerGroupSimple(t *testing.T, ctx context.Context, r *Reader) {
-	if err := r.Close(); err != nil {
-		t.Fatalf("bad err: %v", err)
 	}
 }
 
@@ -843,18 +828,6 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 3,
 			function:   testReaderConsumerGroupReadContentAcrossPartitions,
 		},
-
-		{
-			scenario:   "Close immediately after NewReader",
-			partitions: 1,
-			function:   testConsumerGroupImmediateClose,
-		},
-
-		{
-			scenario:   "Close immediately after NewReader",
-			partitions: 1,
-			function:   testConsumerGroupSimple,
-		},
 	}
 
 	for _, test := range tests {
@@ -983,9 +956,7 @@ func testReaderConsumerGroupVerifyCommitsOnClose(t *testing.T, ctx context.Conte
 		t.Errorf("bad commit message: %v", err)
 	}
 
-	if err := r.Close(); err != nil {
-		t.Errorf("bad Close: %v", err)
-	}
+	r.Close()
 
 	r2 := NewReader(r.config)
 	defer r2.Close()

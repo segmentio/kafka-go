@@ -784,8 +784,6 @@ func (r *Reader) Close() {
 	if r.transport != nil {
 		r.transport.CloseIdleConnections()
 	}
-
-	return nil
 }
 
 // ReadMessage reads and return the next message from the r. The method call
