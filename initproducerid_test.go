@@ -18,7 +18,7 @@ func TestClientInitProducerId(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	tid := "transaction1"
+	tid := makeTransactionalID()
 	// Wait for kafka setup and Coordinator to be available.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
