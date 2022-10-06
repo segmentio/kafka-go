@@ -761,7 +761,7 @@ func (r *Reader) Config() ReaderConfig {
 
 // Close closes the stream, preventing the program from reading any more
 // messages from it.
-func (r *Reader) Close() error {
+func (r *Reader) Close() {
 	atomic.StoreUint32(&r.once, 1)
 
 	r.mutex.Lock()
