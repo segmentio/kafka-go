@@ -838,7 +838,6 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 1,
 			function:   testConsumerGroupSimple,
 		},
-
 	}
 
 	for _, test := range tests {
