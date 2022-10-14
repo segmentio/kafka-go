@@ -244,14 +244,14 @@ func (t *Transport) grabPool(addr net.Addr) *connPool {
 		sasl:        t.SASL,
 		resolver:    t.Resolver,
 
-		ready:  make(event),
-		wake:   make(chan event),
-		conns:  make(map[int32]*connGroup),
-		cancel: cancel,
+		ready:   make(chan struct{}),
+		updates: make(chan metadataUpdate),
+		conns:   make(map[int32]*connGroup),
+		cancel:  cancel,
 	}
 
 	p.ctrl = p.newConnGroup(addr)
-	go p.discover(ctx, p.wake)
+	go p.discover(ctx, p.updates)
 
 	if t.pools == nil {
 		t.pools = make(map[networkAddress]*connPool)
@@ -267,9 +267,17 @@ func (t *Transport) context() context.Context {
 	return context.Background()
 }
 
-type event chan struct{}
+type metadataUpdate struct {
+	topics []string
+	notify chan struct{}
+}
 
-func (e event) trigger() { close(e) }
+func (e *metadataUpdate) complete() {
+	if e.notify != nil {
+		close(e.notify)
+		e.notify = nil
+	}
+}
 
 type connPool struct {
 	refc uintptr
@@ -286,10 +294,10 @@ type connPool struct {
 	resolver    BrokerResolver
 	// Signaling mechanisms to orchestrate communications between the pool and
 	// the rest of the program.
-	once   sync.Once  // ensure that `ready` is triggered only once
-	ready  event      // triggered after the first metadata update
-	wake   chan event // used to force metadata updates
-	cancel context.CancelFunc
+	once    sync.Once           // ensure that `ready` is triggered only once
+	ready   chan struct{}       // triggered after the first metadata update
+	updates chan metadataUpdate // used to force metadata updates
+	cancel  context.CancelFunc
 	// Mutable fields of the connection pool, access must be synchronized.
 	mutex sync.RWMutex
 	conns map[int32]*connGroup // data connections used for produce/fetch/etc...
@@ -445,16 +453,15 @@ func (p *connPool) refreshMetadata(ctx context.Context, expectTopics []string) {
 	cancel := ctx.Done()
 
 	for ctx.Err() == nil {
-		notify := make(event)
+		update := metadataUpdate{
+			topics: expectTopics,
+			notify: make(chan struct{}),
+		}
 		select {
 		case <-cancel:
 			return
-		case p.wake <- notify:
-			select {
-			case <-notify:
-			case <-cancel:
-				return
-			}
+		case p.updates <- update:
+			<-update.notify
 		}
 
 		state := p.grabState()
@@ -486,7 +493,7 @@ func (p *connPool) refreshMetadata(ctx context.Context, expectTopics []string) {
 }
 
 func (p *connPool) setReady() {
-	p.once.Do(p.ready.trigger)
+	p.once.Do(func() { close(p.ready) })
 }
 
 // update is called periodically by the goroutine running the discover method
@@ -578,7 +585,7 @@ func (p *connPool) update(ctx context.Context, metadata *meta.Response, err erro
 // discover is the entry point of an internal goroutine for the transport which
 // periodically requests updates of the cluster metadata and refreshes the
 // transport cached cluster layout.
-func (p *connPool) discover(ctx context.Context, wake <-chan event) {
+func (p *connPool) discover(ctx context.Context, updates <-chan metadataUpdate) {
 	prng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	metadataTTL := func() time.Duration {
 		return time.Duration(prng.Int63n(int64(p.metadataTTL)))
@@ -587,42 +594,54 @@ func (p *connPool) discover(ctx context.Context, wake <-chan event) {
 	timer := time.NewTimer(metadataTTL())
 	defer timer.Stop()
 
-	var notify event
+	update := metadataUpdate{}
+	defer update.complete()
+
 	done := ctx.Done()
+	topicNames := []string{}
+	knownTopics := map[string]struct{}{}
 
 	for {
-		c, err := p.grabClusterConn(ctx)
-		if err != nil {
-			p.update(ctx, nil, err)
-		} else {
-			res := make(async, 1)
-			req := &meta.Request{}
-			deadline, cancel := context.WithTimeout(ctx, p.metadataTTL)
-			c.reqs <- connRequest{
-				ctx: deadline,
-				req: req,
-				res: res,
+		if len(knownTopics) > 0 {
+			c, err := p.grabClusterConn(ctx)
+			if err != nil {
+				p.update(ctx, nil, err)
+			} else {
+				topicNames = topicNames[:0]
+				for topic := range knownTopics {
+					topicNames = append(topicNames, topic)
+				}
+				sort.Strings(topicNames)
+
+				res := make(async, 1)
+				req := &meta.Request{TopicNames: topicNames}
+				deadline, cancel := context.WithTimeout(ctx, p.metadataTTL)
+				c.reqs <- connRequest{
+					ctx: deadline,
+					req: req,
+					res: res,
+				}
+				r, err := res.await(deadline)
+				cancel()
+				if err != nil && errors.Is(err, ctx.Err()) {
+					return
+				}
+				ret, _ := r.(*meta.Response)
+				p.update(ctx, ret, err)
 			}
-			r, err := res.await(deadline)
-			cancel()
-			if err != nil && errors.Is(err, ctx.Err()) {
-				return
-			}
-			ret, _ := r.(*meta.Response)
-			p.update(ctx, ret, err)
 		}
 
-		if notify != nil {
-			notify.trigger()
-			notify = nil
-		}
+		update.complete()
 
 		select {
 		case <-timer.C:
 			timer.Reset(metadataTTL())
 		case <-done:
 			return
-		case notify = <-wake:
+		case update = <-updates:
+			for _, topic := range update.topics {
+				knownTopics[topic] = struct{}{}
+			}
 		}
 	}
 }
