@@ -19,8 +19,10 @@ import (
 	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/apiversions"
 	"github.com/segmentio/kafka-go/protocol/createtopics"
+	fetchAPI "github.com/segmentio/kafka-go/protocol/fetch"
 	"github.com/segmentio/kafka-go/protocol/findcoordinator"
 	meta "github.com/segmentio/kafka-go/protocol/metadata"
+	produceAPI "github.com/segmentio/kafka-go/protocol/produce"
 	"github.com/segmentio/kafka-go/protocol/saslauthenticate"
 	"github.com/segmentio/kafka-go/protocol/saslhandshake"
 	"github.com/segmentio/kafka-go/sasl"
@@ -311,6 +313,26 @@ type connPoolState struct {
 	layout   protocol.Cluster // cluster layout built from metadata response
 }
 
+func (s *connPoolState) missingTopicsOfFetchRequest(r *fetchAPI.Request) (missingTopics []string) {
+	for i := range r.Topics {
+		t := r.Topics[i].Topic
+		if _, exists := s.layout.Topics[t]; !exists {
+			missingTopics = append(missingTopics, t)
+		}
+	}
+	return missingTopics
+}
+
+func (s *connPoolState) missingTopicsOfProduceRequest(r *produceAPI.Request) (missingTopics []string) {
+	for i := range r.Topics {
+		t := r.Topics[i].Topic
+		if _, exists := s.layout.Topics[t]; !exists {
+			missingTopics = append(missingTopics, t)
+		}
+	}
+	return missingTopics
+}
+
 func (p *connPool) grabState() connPoolState {
 	state, _ := p.state.Load().(connPoolState)
 	return state
@@ -349,6 +371,7 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 
 	state := p.grabState()
 	var response promise
+	var err error
 
 	switch m := req.(type) {
 	case *meta.Request:
@@ -377,6 +400,20 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 
 		if !requestNeeded {
 			return cachedMeta, nil
+		}
+
+	case *fetchAPI.Request:
+		if missingTopics := state.missingTopicsOfFetchRequest(m); len(missingTopics) != 0 {
+			if state, err = p.refreshMetadata(ctx, missingTopics); err != nil {
+				return nil, err
+			}
+		}
+
+	case *produceAPI.Request:
+		if missingTopics := state.missingTopicsOfProduceRequest(m); len(missingTopics) != 0 {
+			if state, err = p.refreshMetadata(ctx, missingTopics); err != nil {
+				return nil, err
+			}
 		}
 
 	case protocol.Splitter:
@@ -447,19 +484,19 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 // to account for the fact that topic creation is asynchronous in kafka, and
 // causes subsequent requests to fail while the cluster state is propagated to
 // all the brokers.
-func (p *connPool) refreshMetadata(ctx context.Context, expectTopics []string) {
+func (p *connPool) refreshMetadata(ctx context.Context, expectTopics []string) (connPoolState, error) {
 	minBackoff := 100 * time.Millisecond
 	maxBackoff := 2 * time.Second
-	cancel := ctx.Done()
+	done := ctx.Done()
 
-	for ctx.Err() == nil {
+	for {
 		update := metadataUpdate{
 			topics: expectTopics,
 			notify: make(chan struct{}),
 		}
 		select {
-		case <-cancel:
-			return
+		case <-done:
+			return connPoolState{}, ctx.Err()
 		case p.updates <- update:
 			<-update.notify
 		}
@@ -474,13 +511,14 @@ func (p *connPool) refreshMetadata(ctx context.Context, expectTopics []string) {
 		}
 
 		if found == len(expectTopics) {
-			return
+			return state, nil
 		}
 
 		if delay := time.Duration(rand.Int63n(int64(minBackoff))); delay > 0 {
 			timer := time.NewTimer(minBackoff)
 			select {
-			case <-cancel:
+			case <-done:
+				return state, ctx.Err()
 			case <-timer.C:
 			}
 			timer.Stop()
