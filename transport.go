@@ -633,7 +633,7 @@ func (p *connPool) discover(ctx context.Context, updates <-chan metadataUpdate) 
 	defer timer.Stop()
 
 	update := metadataUpdate{}
-	defer update.complete()
+	defer func() { update.complete() }()
 
 	done := ctx.Done()
 	topicNames := []string{}
