@@ -943,48 +943,96 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 			topics = nil
 		}
 	}
+	metadataVersion, err := c.negotiateVersion(metadata, v1, v6)
+	if err != nil {
+		return nil, err
+	}
 
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(metadata, v1, id, topicMetadataRequestV1(topics))
+			switch metadataVersion {
+			case v6:
+				return c.writeRequest(metadata, v6, id, topicMetadataRequestV6{Topics: topics})
+			default:
+				return c.writeRequest(metadata, v1, id, topicMetadataRequestV1(topics))
+			}
 		},
 		func(deadline time.Time, size int) error {
-			var res metadataResponseV1
-
-			if err := c.readResponse(size, &res); err != nil {
-				return err
-			}
-
-			brokers := make(map[int32]Broker, len(res.Brokers))
-			for _, b := range res.Brokers {
-				brokers[b.NodeID] = Broker{
-					Host: b.Host,
-					Port: int(b.Port),
-					ID:   int(b.NodeID),
-					Rack: b.Rack,
+			switch metadataVersion {
+			case v6:
+				var res metadataResponseV6
+				if err := c.readResponse(size, &res); err != nil {
+					return err
 				}
-			}
-
-			for _, t := range res.Topics {
-				if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
-					// We only report errors if they happened for the topic of
-					// the connection, otherwise the topic will simply have no
-					// partitions in the result set.
-					return Error(t.TopicErrorCode)
+				brokers := readBrokerMetadata(res.Brokers)
+				partitions, err = c.readTopicMetadatav6(brokers, res.Topics)
+			default:
+				var res metadataResponseV1
+				if err := c.readResponse(size, &res); err != nil {
+					return err
 				}
-				for _, p := range t.Partitions {
-					partitions = append(partitions, Partition{
-						Topic:    t.TopicName,
-						Leader:   brokers[p.Leader],
-						Replicas: makeBrokers(brokers, p.Replicas...),
-						Isr:      makeBrokers(brokers, p.Isr...),
-						ID:       int(p.PartitionID),
-					})
-				}
+				brokers := readBrokerMetadata(res.Brokers)
+				partitions, err = c.readTopicMetadatav1(brokers, res.Topics)
 			}
 			return nil
 		},
 	)
+	return
+}
+
+func readBrokerMetadata(brokerMetadata []brokerMetadataV1) map[int32]Broker {
+	brokers := make(map[int32]Broker, len(brokerMetadata))
+	for _, b := range brokerMetadata {
+		brokers[b.NodeID] = Broker{
+			Host: b.Host,
+			Port: int(b.Port),
+			ID:   int(b.NodeID),
+			Rack: b.Rack,
+		}
+	}
+	return brokers
+}
+
+func (c *Conn) readTopicMetadatav1(brokers map[int32]Broker, topicMetadata []topicMetadataV1) (partitions []Partition, err error) {
+	for _, t := range topicMetadata {
+		if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
+			// We only report errors if they happened for the topic of
+			// the connection, otherwise the topic will simply have no
+			// partitions in the result set.
+			return nil, Error(t.TopicErrorCode)
+		}
+		for _, p := range t.Partitions {
+			partitions = append(partitions, Partition{
+				Topic:    t.TopicName,
+				Leader:   brokers[p.Leader],
+				Replicas: makeBrokers(brokers, p.Replicas...),
+				Isr:      makeBrokers(brokers, p.Isr...),
+				ID:       int(p.PartitionID),
+			})
+		}
+	}
+	return
+}
+
+func (c *Conn) readTopicMetadatav6(brokers map[int32]Broker, topicMetadata []topicMetadataV6) (partitions []Partition, err error) {
+	for _, t := range topicMetadata {
+		if t.TopicErrorCode != 0 && (c.topic == "" || t.TopicName == c.topic) {
+			// We only report errors if they happened for the topic of
+			// the connection, otherwise the topic will simply have no
+			// partitions in the result set.
+			return nil, Error(t.TopicErrorCode)
+		}
+		for _, p := range t.Partitions {
+			partitions = append(partitions, Partition{
+				Topic:           t.TopicName,
+				Leader:          brokers[p.Leader],
+				Replicas:        makeBrokers(brokers, p.Replicas...),
+				Isr:             makeBrokers(brokers, p.Isr...),
+				ID:              int(p.PartitionID),
+				OfflineReplicas: makeBrokers(brokers, p.OfflineReplicas...),
+			})
+		}
+	}
 	return
 }
 
