@@ -7,7 +7,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/prototest"
 )
 
-func TestOffsetDeleteequest(t *testing.T) {
+func TestOffsetDeleteRequest(t *testing.T) {
 	for _, version := range []int16{0} {
 		prototest.TestRequest(t, version, &offsetdelete.Request{
 			GroupID: "group-0",
@@ -20,6 +20,29 @@ func TestOffsetDeleteequest(t *testing.T) {
 						},
 						{
 							PartitionIndex: 1,
+						},
+					},
+				},
+			},
+		})
+	}
+}
+
+func TestOffsetDeleteResponse(t *testing.T) {
+	for _, version := range []int16{0} {
+		prototest.TestResponse(t, version, &offsetdelete.Response{
+			ErrorCode: 0,
+			Topics: []offsetdelete.ResponseTopic{
+				{
+					Name: "topic-0",
+					Partitions: []offsetdelete.ResponsePartition{
+						{
+							PartitionIndex: 0,
+							ErrorCode:      1,
+						},
+						{
+							PartitionIndex: 1,
+							ErrorCode:      1,
 						},
 					},
 				},
