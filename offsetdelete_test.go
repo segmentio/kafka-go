@@ -7,9 +7,15 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 func TestClientDeleteOffset(t *testing.T) {
+	if !ktesting.KafkaIsAtLeast("2.4.0") {
+		return
+	}
+
 	topic := makeTopic()
 	client, shutdown := newLocalClientWithTopic(topic, 3)
 	defer shutdown()
