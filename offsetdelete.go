@@ -10,7 +10,7 @@ import (
 )
 
 // OffsetDelete deletes the offset for a consumer group on a particular topic
-// at a particular partition.
+// for a particular partition.
 type OffsetDelete struct {
 	Topic     string
 	Partition int
