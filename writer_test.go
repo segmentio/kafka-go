@@ -824,9 +824,7 @@ func testWriterSasl(t *testing.T) {
 
 func testWriterDefaults(t *testing.T) {
 	w := &Writer{}
-	defer func(w *Writer) {
-		_ = w.Close()
-	}(w)
+	defer w.Close()
 
 	if w.writeBackoffMin() != 100*time.Millisecond {
 		t.Error("Incorrect default min write backoff delay")
