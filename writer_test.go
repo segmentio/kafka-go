@@ -170,6 +170,10 @@ func TestWriter(t *testing.T) {
 			scenario: "writing a message with SASL Plain authentication",
 			function: testWriterSasl,
 		},
+		{
+			scenario: "test default configuration values",
+			function: testWriterDefaults,
+		},
 	}
 
 	for _, test := range tests {
@@ -815,6 +819,21 @@ func testWriterSasl(t *testing.T) {
 	}
 	if err != nil {
 		t.Errorf("unable to create topic %v", err)
+	}
+}
+
+func testWriterDefaults(t *testing.T) {
+	w := &Writer{}
+	defer func(w *Writer) {
+		_ = w.Close()
+	}(w)
+
+	if w.writeBackoffMin() != 100*time.Millisecond {
+		t.Error("Incorrect default min write backoff delay")
+	}
+
+	if w.writeBackoffMax() != 1*time.Second {
+		t.Error("Incorrect default max write backoff delay")
 	}
 }
 
