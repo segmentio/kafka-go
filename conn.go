@@ -952,7 +952,7 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 		func(deadline time.Time, id int32) error {
 			switch metadataVersion {
 			case v6:
-				return c.writeRequest(metadata, v6, id, topicMetadataRequestV6{Topics: topics})
+				return c.writeRequest(metadata, v6, id, topicMetadataRequestV6{Topics: topics, AllowAutoTopicCreation: true})
 			default:
 				return c.writeRequest(metadata, v1, id, topicMetadataRequestV1(topics))
 			}
