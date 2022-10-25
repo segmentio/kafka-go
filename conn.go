@@ -1003,11 +1003,12 @@ func (c *Conn) readTopicMetadatav1(brokers map[int32]Broker, topicMetadata []top
 		}
 		for _, p := range t.Partitions {
 			partitions = append(partitions, Partition{
-				Topic:    t.TopicName,
-				Leader:   brokers[p.Leader],
-				Replicas: makeBrokers(brokers, p.Replicas...),
-				Isr:      makeBrokers(brokers, p.Isr...),
-				ID:       int(p.PartitionID),
+				Topic:           t.TopicName,
+				Leader:          brokers[p.Leader],
+				Replicas:        makeBrokers(brokers, p.Replicas...),
+				Isr:             makeBrokers(brokers, p.Isr...),
+				ID:              int(p.PartitionID),
+				OfflineReplicas: []Broker{},
 			})
 		}
 	}
