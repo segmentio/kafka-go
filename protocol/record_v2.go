@@ -272,7 +272,6 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		numRecords++
 		return nil
 	})
-
 	if err != nil {
 		return err
 	}
