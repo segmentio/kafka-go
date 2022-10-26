@@ -76,6 +76,30 @@ func TestProtocol(t *testing.T) {
 			},
 		},
 
+		topicMetadataRequestV6{
+			Topics:                 []string{"A", "B", "C"},
+			AllowAutoTopicCreation: true,
+		},
+
+		metadataResponseV6{
+			Brokers: []brokerMetadataV1{
+				{NodeID: 1, Host: "localhost", Port: 9001},
+				{NodeID: 2, Host: "localhost", Port: 9002, Rack: "rack2"},
+			},
+			ClusterId:    "cluster",
+			ControllerID: 2,
+			Topics: []topicMetadataV6{
+				{TopicErrorCode: 0, Internal: true, Partitions: []partitionMetadataV6{{
+					PartitionErrorCode: 0,
+					PartitionID:        1,
+					Leader:             2,
+					Replicas:           []int32{1},
+					Isr:                []int32{1},
+					OfflineReplicas:    []int32{1},
+				}}},
+			},
+		},
+
 		listOffsetRequestV1{
 			ReplicaID: 1,
 			Topics: []listOffsetRequestTopicV1{

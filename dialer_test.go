@@ -61,11 +61,12 @@ func testDialerLookupPartitions(t *testing.T, ctx context.Context, d *Dialer) {
 
 	want := []Partition{
 		{
-			Topic:    topic,
-			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
-			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
-			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
-			ID:       0,
+			Topic:           topic,
+			Leader:          Broker{Host: "localhost", Port: 9092, ID: 1},
+			Replicas:        []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+			Isr:             []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+			OfflineReplicas: []Broker{},
+			ID:              0,
 		},
 	}
 	if !reflect.DeepEqual(partitions, want) {
@@ -230,11 +231,12 @@ func TestDialerTLS(t *testing.T) {
 
 	want := []Partition{
 		{
-			Topic:    topic,
-			Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
-			Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
-			Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
-			ID:       0,
+			Topic:           topic,
+			Leader:          Broker{Host: "localhost", Port: 9092, ID: 1},
+			Replicas:        []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+			Isr:             []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+			OfflineReplicas: []Broker{},
+			ID:              0,
 		},
 	}
 	if !reflect.DeepEqual(partitions, want) {
@@ -377,11 +379,12 @@ func TestDialerResolver(t *testing.T) {
 
 			want := []Partition{
 				{
-					Topic:    topic,
-					Leader:   Broker{Host: "localhost", Port: 9092, ID: 1},
-					Replicas: []Broker{{Host: "localhost", Port: 9092, ID: 1}},
-					Isr:      []Broker{{Host: "localhost", Port: 9092, ID: 1}},
-					ID:       0,
+					Topic:           topic,
+					Leader:          Broker{Host: "localhost", Port: 9092, ID: 1},
+					Replicas:        []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+					Isr:             []Broker{{Host: "localhost", Port: 9092, ID: 1}},
+					OfflineReplicas: []Broker{},
+					ID:              0,
 				},
 			}
 			if !reflect.DeepEqual(partitions, want) {
