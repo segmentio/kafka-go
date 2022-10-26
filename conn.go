@@ -958,26 +958,30 @@ func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err err
 			}
 		},
 		func(deadline time.Time, size int) error {
-			switch metadataVersion {
-			case v6:
-				var res metadataResponseV6
-				if err := c.readResponse(size, &res); err != nil {
-					return err
-				}
-				brokers := readBrokerMetadata(res.Brokers)
-				partitions, err = c.readTopicMetadatav6(brokers, res.Topics)
-			default:
-				var res metadataResponseV1
-				if err := c.readResponse(size, &res); err != nil {
-					return err
-				}
-				brokers := readBrokerMetadata(res.Brokers)
-				partitions, err = c.readTopicMetadatav1(brokers, res.Topics)
-			}
-			return nil
+			partitions, err = c.readPartitionsResponse(metadataVersion, size)
+			return err
 		},
 	)
 	return
+}
+
+func (c *Conn) readPartitionsResponse(metadataVersion apiVersion, size int) ([]Partition, error) {
+	switch metadataVersion {
+	case v6:
+		var res metadataResponseV6
+		if err := c.readResponse(size, &res); err != nil {
+			return nil, err
+		}
+		brokers := readBrokerMetadata(res.Brokers)
+		return c.readTopicMetadatav6(brokers, res.Topics)
+	default:
+		var res metadataResponseV1
+		if err := c.readResponse(size, &res); err != nil {
+			return nil, err
+		}
+		brokers := readBrokerMetadata(res.Brokers)
+		return c.readTopicMetadatav1(brokers, res.Topics)
+	}
 }
 
 func readBrokerMetadata(brokerMetadata []brokerMetadataV1) map[int32]Broker {
