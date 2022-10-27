@@ -280,7 +280,7 @@ func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 		l.Printf("stopped commit for group %s\n", r.config.GroupID)
 	})
 
-	if r.config.CommitInterval == 0 {
+	if r.useSyncCommits() {
 		r.commitLoopImmediate(ctx, gen)
 	} else {
 		r.commitLoopInterval(ctx, gen)
