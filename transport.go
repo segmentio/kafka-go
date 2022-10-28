@@ -1142,7 +1142,9 @@ func performTLSHandshake(ctx context.Context, conn *tls.Conn, deadline time.Time
 
 	select {
 	case <-ctx.Done():
+		_ = conn.Close()
 		err = ctx.Err()
+		<-errch
 	case err = <-errch:
 	}
 
