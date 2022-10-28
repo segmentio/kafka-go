@@ -356,7 +356,7 @@ type WriterStats struct {
 	BatchTime  DurationStats `metric:"kafka.writer.batch.seconds"`
 	WriteTime  DurationStats `metric:"kafka.writer.write.seconds"`
 	WaitTime   DurationStats `metric:"kafka.writer.wait.seconds"`
-	Retries    int64         `metric:"kafka.writer.retries.count"`
+	Retries    int64         `metric:"kafka.writer.retries.count" type:"counter"`
 	BatchSize  SummaryStats  `metric:"kafka.writer.batch.size"`
 	BatchBytes SummaryStats  `metric:"kafka.writer.batch.bytes"`
 
