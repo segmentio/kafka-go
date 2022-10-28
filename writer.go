@@ -373,8 +373,8 @@ type WriterStats struct {
 	BatchBytes SummaryStats  `metric:"kafka.writer.batch.bytes"`
 
 	MaxAttempts     int64         `metric:"kafka.writer.attempts.max"  type:"gauge"`
-	WriteBackoffMin time.Duration `metric:"kafka.writer.backoff.min"  type:"gauge"`
-	WriteBackoffMax time.Duration `metric:"kafka.writer.backoff.max"  type:"gauge"`
+	WriteBackoffMin time.Duration `metric:"kafka.writer.backoff.min"   type:"gauge"`
+	WriteBackoffMax time.Duration `metric:"kafka.writer.backoff.max"   type:"gauge"`
 	MaxBatchSize    int64         `metric:"kafka.writer.batch.max"     type:"gauge"`
 	BatchTimeout    time.Duration `metric:"kafka.writer.batch.timeout" type:"gauge"`
 	ReadTimeout     time.Duration `metric:"kafka.writer.read.timeout"  type:"gauge"`
