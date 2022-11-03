@@ -470,12 +470,15 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_, err := g.coord.heartbeat(ctx, &HeartbeatRequest{
+				resp, err := g.coord.heartbeat(ctx, &HeartbeatRequest{
 					GroupID:      g.GroupID,
 					GenerationID: g.ID,
 					MemberID:     g.MemberID,
 				})
 				if err != nil {
+					return
+				}
+				if resp.Error != nil {
 					return
 				}
 			}
