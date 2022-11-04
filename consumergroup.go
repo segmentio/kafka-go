@@ -432,8 +432,15 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 		Topics:       topics,
 	}
 
-	_, err := g.coord.offsetCommit(genCtx{g}, request)
+	resp, err := g.coord.offsetCommit(genCtx{g}, request)
 	if err == nil {
+		for _, partitions := range resp.Topics {
+			for _, partition := range partitions {
+				if partition.Error != nil {
+					return partition.Error
+				}
+			}
+		}
 		// if logging is enabled, print out the partitions that were committed.
 		g.log(func(l Logger) {
 			var report []string
@@ -1094,6 +1101,9 @@ func (cg *ConsumerGroup) fetchOffsets(subs map[string][]int) (map[string]map[int
 	for topic, offsets := range offsets.Topics {
 		offsetsByPartition := map[int]int64{}
 		for _, pr := range offsets {
+			if pr.Error != nil {
+				return nil, pr.Error
+			}
 			if pr.CommittedOffset < 0 {
 				pr.CommittedOffset = cg.config.StartOffset
 			}
@@ -1140,7 +1150,7 @@ func (cg *ConsumerGroup) leaveGroup(ctx context.Context, memberID string) error 
 		log.Printf("Leaving group %s, member %s", cg.config.ID, memberID)
 	})
 
-	_, err := cg.coord.leaveGroup(ctx, &LeaveGroupRequest{
+	resp, err := cg.coord.leaveGroup(ctx, &LeaveGroupRequest{
 		GroupID: cg.config.ID,
 		Members: []LeaveGroupRequestMember{
 			{
@@ -1148,6 +1158,9 @@ func (cg *ConsumerGroup) leaveGroup(ctx context.Context, memberID string) error 
 			},
 		},
 	})
+	if err == nil && resp.Error != nil {
+		err = resp.Error
+	}
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("leave group failed for group, %v, and member, %v: %v", cg.config.ID, memberID, err)
