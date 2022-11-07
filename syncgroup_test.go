@@ -6,10 +6,78 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol"
+	"github.com/segmentio/kafka-go/protocol/consumer"
+	"github.com/segmentio/kafka-go/protocol/syncgroup"
 )
+
+func TestClientSyncGroupAssignmentV0(t *testing.T) {
+	client := &Client{
+		Addr: TCP("fake:9092"),
+		Transport: roundTripFn(func(_ context.Context, _ net.Addr, _ Request) (Response, error) {
+			assigments := consumer.Assignment{
+				Version: 0,
+				AssignedPartitions: []consumer.TopicPartition{
+					{
+						Topic:      "topic",
+						Partitions: []int32{0, 1, 2},
+					},
+				},
+				UserData: nil,
+			}
+			assignmentBytes, err := protocol.Marshal(0, assigments)
+			if err != nil {
+				t.Fatalf("failed to marshal assigments: %v", err)
+			}
+			resp := syncgroup.Response{
+				ProtocolType: "consumer",
+				ProtocolName: RoundRobinGroupBalancer{}.ProtocolName(),
+				Assignments:  assignmentBytes,
+			}
+
+			return &resp, nil
+		}),
+	}
+
+	expResp := SyncGroupResponse{
+		ProtocolType: "consumer",
+		ProtocolName: RoundRobinGroupBalancer{}.ProtocolName(),
+		Assignment: GroupProtocolAssignment{
+			AssignedPartitions: map[string][]int{
+				"topic": {0, 1, 2},
+			},
+		},
+	}
+
+	gotResp, err := client.SyncGroup(context.Background(), &SyncGroupRequest{
+		GroupID:      "group",
+		MemberID:     "member",
+		ProtocolType: "consumer",
+		ProtocolName: "roundrobin",
+		Assignments: []SyncGroupRequestAssignment{
+			{
+				MemberID: "member",
+				Assignment: GroupProtocolAssignment{
+					AssignedPartitions: map[string][]int{
+						"topic": {0, 1, 2},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("error calling SyncGroup: %v", err)
+	}
+
+	if !reflect.DeepEqual(expResp, *gotResp) {
+		t.Fatalf("unexpected SyncGroup resp\nexpected: %#v\n     got: %#v", expResp, *gotResp)
+	}
+}
 
 func TestClientSyncGroup(t *testing.T) {
 	// In order to get to a sync group call we need to first
