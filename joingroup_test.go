@@ -5,10 +5,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/segmentio/kafka-go/protocol"
+	"github.com/segmentio/kafka-go/protocol/consumer"
+	"github.com/segmentio/kafka-go/protocol/joingroup"
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
@@ -121,6 +125,84 @@ func TestClientJoinGroup(t *testing.T) {
 
 	if !reflect.DeepEqual(member.Metadata, expectedMetadata) {
 		t.Fatalf("\nexpected assignment to be \n%v\nbut got\n%v", expectedMetadata, member.Metadata)
+	}
+}
+
+type roundTripFn func(context.Context, net.Addr, Request) (Response, error)
+
+func (f roundTripFn) RoundTrip(ctx context.Context, addr net.Addr, req Request) (Response, error) {
+	return f(ctx, addr, req)
+}
+
+// https://github.com/Shopify/sarama/blob/610514edec1825240d59b62e4d7f1aba4b1fa000/consumer_group_members.go#L43
+func TestClientJoinGroupSaramaCompatibility(t *testing.T) {
+	subscription := consumer.Subscription{
+		Version: 1,
+		Topics:  []string{"topic"},
+	}
+
+	// Marhsal as Verzon 0 (Without OwnedPartitions) but
+	// with Version=1.
+	metadata, err := protocol.Marshal(0, subscription)
+	if err != nil {
+		t.Fatalf("failed to marshal subscription %v", err)
+	}
+
+	client := &Client{
+		Addr: TCP("fake:9092"),
+		Transport: roundTripFn(func(_ context.Context, _ net.Addr, _ Request) (Response, error) {
+			resp := joingroup.Response{
+				ProtocolType: "consumer",
+				ProtocolName: RoundRobinGroupBalancer{}.ProtocolName(),
+				LeaderID:     "member",
+				MemberID:     "member",
+				Members: []joingroup.ResponseMember{
+					{
+						MemberID: "member",
+						Metadata: metadata,
+					},
+				},
+			}
+			return &resp, nil
+		}),
+	}
+
+	expResp := JoinGroupResponse{
+		ProtocolName: RoundRobinGroupBalancer{}.ProtocolName(),
+		ProtocolType: "consumer",
+		LeaderID:     "member",
+		MemberID:     "member",
+		Members: []JoinGroupResponseMember{
+			{
+				ID: "member",
+				Metadata: GroupProtocolSubscription{
+					Topics:          []string{"topic"},
+					OwnedPartitions: map[string][]int{},
+				},
+			},
+		},
+	}
+
+	gotResp, err := client.JoinGroup(context.Background(), &JoinGroupRequest{
+		GroupID:      "group",
+		MemberID:     "member",
+		ProtocolType: "consumer",
+		Protocols: []GroupProtocol{
+			{
+				Name: RoundRobinGroupBalancer{}.ProtocolName(),
+				Metadata: GroupProtocolSubscription{
+					Topics:   []string{"topic"},
+					UserData: metadata,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("error calling JoinGroup: %v", err)
+	}
+
+	if !reflect.DeepEqual(expResp, *gotResp) {
+		t.Fatalf("unexpected JoinGroup resp\nexpected: %#v\n     got: %#v", expResp, *gotResp)
 	}
 }
 
