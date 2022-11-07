@@ -19,7 +19,7 @@ import (
 func TestClientSyncGroupAssignmentV0(t *testing.T) {
 	client := &Client{
 		Addr: TCP("fake:9092"),
-		Transport: roundTripFn(func(_ context.Context, _ net.Addr, _ Request) (Response, error) {
+		Transport: roundTripFn(func(context.Context, net.Addr, Request) (Response, error) {
 			assigments := consumer.Assignment{
 				Version: 0,
 				AssignedPartitions: []consumer.TopicPartition{
@@ -28,7 +28,6 @@ func TestClientSyncGroupAssignmentV0(t *testing.T) {
 						Partitions: []int32{0, 1, 2},
 					},
 				},
-				UserData: nil,
 			}
 			assignmentBytes, err := protocol.Marshal(0, assigments)
 			if err != nil {
@@ -39,7 +38,6 @@ func TestClientSyncGroupAssignmentV0(t *testing.T) {
 				ProtocolName: RoundRobinGroupBalancer{}.ProtocolName(),
 				Assignments:  assignmentBytes,
 			}
-
 			return &resp, nil
 		}),
 	}

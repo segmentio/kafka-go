@@ -670,3 +670,32 @@ func TestGenerationEndsOnHeartbeatRebalaceInProgress(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerationOffsetCommitErrorsAreReturned(t *testing.T) {
+	mc := mockCoordinator{
+		offsetCommitFunc: func(context.Context, *OffsetCommitRequest) (*OffsetCommitResponse, error) {
+			return &OffsetCommitResponse{
+				Topics: map[string][]OffsetCommitPartition{
+					"topic": {
+						{
+							Error: ErrGenerationEnded,
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	gen := Generation{
+		coord: mc,
+		log:   func(func(Logger)) {},
+	}
+
+	err := gen.CommitOffsets(map[string]map[int]int64{
+		"topic": {
+			0: 100,
+		},
+	})
+	if err == nil {
+		t.Fatal("got nil from CommitOffsets when expecting an error")
+	}
+}

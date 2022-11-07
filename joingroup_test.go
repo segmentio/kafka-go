@@ -150,7 +150,7 @@ func TestClientJoinGroupSaramaCompatibility(t *testing.T) {
 
 	client := &Client{
 		Addr: TCP("fake:9092"),
-		Transport: roundTripFn(func(_ context.Context, _ net.Addr, _ Request) (Response, error) {
+		Transport: roundTripFn(func(context.Context, net.Addr, Request) (Response, error) {
 			resp := joingroup.Response{
 				ProtocolType: "consumer",
 				ProtocolName: RoundRobinGroupBalancer{}.ProtocolName(),
