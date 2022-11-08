@@ -606,3 +606,96 @@ func TestGenerationStartsFunctionAfterClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerationEndsOnHeartbeatError(t *testing.T) {
+	gen := Generation{
+		coord: &mockCoordinator{
+			heartbeatFunc: func(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+				return nil, errors.New("some error")
+			},
+		},
+		done:     make(chan struct{}),
+		joined:   make(chan struct{}),
+		log:      func(func(Logger)) {},
+		logError: func(func(Logger)) {},
+	}
+
+	ch := make(chan error)
+	gen.Start(func(ctx context.Context) {
+		<-ctx.Done()
+		ch <- ctx.Err()
+	})
+
+	gen.heartbeatLoop(time.Millisecond)
+
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for func to run")
+	case err := <-ch:
+		if !errors.Is(err, ErrGenerationEnded) {
+			t.Fatalf("expected %v but got %v", ErrGenerationEnded, err)
+		}
+	}
+}
+
+func TestGenerationEndsOnHeartbeatRebalaceInProgress(t *testing.T) {
+	gen := Generation{
+		coord: &mockCoordinator{
+			heartbeatFunc: func(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+				return &HeartbeatResponse{
+					Error: makeError(int16(RebalanceInProgress), ""),
+				}, nil
+			},
+		},
+		done:     make(chan struct{}),
+		joined:   make(chan struct{}),
+		log:      func(func(Logger)) {},
+		logError: func(func(Logger)) {},
+	}
+
+	ch := make(chan error)
+	gen.Start(func(ctx context.Context) {
+		<-ctx.Done()
+		ch <- ctx.Err()
+	})
+
+	gen.heartbeatLoop(time.Millisecond)
+
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for func to run")
+	case err := <-ch:
+		if !errors.Is(err, ErrGenerationEnded) {
+			t.Fatalf("expected %v but got %v", ErrGenerationEnded, err)
+		}
+	}
+}
+
+func TestGenerationOffsetCommitErrorsAreReturned(t *testing.T) {
+	mc := mockCoordinator{
+		offsetCommitFunc: func(context.Context, *OffsetCommitRequest) (*OffsetCommitResponse, error) {
+			return &OffsetCommitResponse{
+				Topics: map[string][]OffsetCommitPartition{
+					"topic": {
+						{
+							Error: ErrGenerationEnded,
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	gen := Generation{
+		coord: mc,
+		log:   func(func(Logger)) {},
+	}
+
+	err := gen.CommitOffsets(map[string]map[int]int64{
+		"topic": {
+			0: 100,
+		},
+	})
+	if err == nil {
+		t.Fatal("got nil from CommitOffsets when expecting an error")
+	}
+}
