@@ -27,42 +27,29 @@ import (
 // by the function and test if it an instance of kafka.WriteErrors in order to
 // identify which messages have succeeded or failed, for example:
 //
-//		// Construct a synchronous writer (the default mode).
-//		w := &kafka.Writer{
-//			Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-//			Topic:        "topic-A",
-//			RequiredAcks: kafka.RequireAll,
-//		}
+//	// Construct a synchronous writer (the default mode).
+//	w := &kafka.Writer{
+//		Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+//		Topic:        "topic-A",
+//		RequiredAcks: kafka.RequireAll,
+//	}
 //
-//		...
+//	...
 //
-//	 // Passing a context can prevent the operation from blocking indefinitely.
-//		switch err := w.WriteMessages(ctx, msgs...).(type) {
-//		case nil:
-//		case kafka.WriteErrors:
-//			for i := range msgs {
-//				if err[i] != nil {
-//					// handle the error writing msgs[i]
-//					...
-//				}
-//			}
-//
-//			...
-//
-//		 // Passing a context can prevent the operation from blocking indefinitely.
-//			switch err := w.WriteMessages(ctx, msgs...).(type) {
-//			case nil:
-//			case kafka.WriteErrors:
-//				for i := range msgs {
-//					if err[i] != nil {
-//						// handle the error writing msgs[i]
-//						...
-//					}
-//				}
-//			default:
-//				// handle other errors
+//  // Passing a context can prevent the operation from blocking indefinitely.
+//	switch err := w.WriteMessages(ctx, msgs...).(type) {
+//	case nil:
+//	case kafka.WriteErrors:
+//		for i := range msgs {
+//			if err[i] != nil {
+//				// handle the error writing msgs[i]
 //				...
 //			}
+//		}
+//	default:
+//		// handle other errors
+//		...
+//	}
 //
 // In asynchronous mode, the program may configure a completion handler on the
 // writer to receive notifications of messages being written to kafka:
@@ -445,11 +432,38 @@ func NewWriter(config WriterConfig) *Writer {
 	if config.Dialer != nil {
 		kafkaDialer = config.Dialer
 	}
-	stats := new(writerStats)
-	transport := dialerToTransport(kafkaDialer, func(start time.Time) {
-		stats.dials.observe(1)
-		stats.dialTime.observe(int64(time.Since(start)))
+
+	dialer := (&net.Dialer{
+		Timeout:       kafkaDialer.Timeout,
+		Deadline:      kafkaDialer.Deadline,
+		LocalAddr:     kafkaDialer.LocalAddr,
+		DualStack:     kafkaDialer.DualStack,
+		FallbackDelay: kafkaDialer.FallbackDelay,
+		KeepAlive:     kafkaDialer.KeepAlive,
 	})
+
+	var resolver Resolver
+	if r, ok := kafkaDialer.Resolver.(*net.Resolver); ok {
+		dialer.Resolver = r
+	} else {
+		resolver = kafkaDialer.Resolver
+	}
+
+	stats := new(writerStats)
+	// For backward compatibility with the pre-0.4 APIs, support custom
+	// resolvers by wrapping the dial function.
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		start := time.Now()
+		defer func() {
+			stats.dials.observe(1)
+			stats.dialTime.observe(int64(time.Since(start)))
+		}()
+		address, err := lookupHost(ctx, addr, resolver)
+		if err != nil {
+			return nil, err
+		}
+		return dialer.DialContext(ctx, network, address)
+	}
 
 	idleTimeout := config.IdleConnTimeout
 	if idleTimeout == 0 {
@@ -465,8 +479,14 @@ func NewWriter(config WriterConfig) *Writer {
 		metadataTTL = 15 * time.Second
 	}
 
-	transport.IdleTimeout = idleTimeout
-	transport.MetadataTTL = metadataTTL
+	transport := &Transport{
+		Dial:        dial,
+		SASL:        kafkaDialer.SASLMechanism,
+		TLS:         kafkaDialer.TLS,
+		ClientID:    kafkaDialer.ClientID,
+		IdleTimeout: idleTimeout,
+		MetadataTTL: metadataTTL,
+	}
 
 	w := &Writer{
 		Addr:         TCP(config.Brokers...),

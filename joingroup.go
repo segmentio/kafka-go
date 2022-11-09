@@ -2,10 +2,9 @@ package kafka
 
 import (
 	"bufio"
+	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"time"
 
@@ -165,9 +164,7 @@ func (c *Client) JoinGroup(ctx context.Context, req *JoinGroupRequest) (*JoinGro
 
 	for _, member := range r.Members {
 		var meta consumer.Subscription
-		metaVersion := makeInt16(member.Metadata[0:2])
-		err = protocol.Unmarshal(member.Metadata, metaVersion, &meta)
-		err = joinGroupSubscriptionMetaError(err, metaVersion)
+		err = protocol.Unmarshal(member.Metadata, consumer.MaxVersionSupported, &meta)
 		if err != nil {
 			return nil, fmt.Errorf("kafka.(*Client).JoinGroup: %w", err)
 		}
@@ -192,16 +189,6 @@ func (c *Client) JoinGroup(ctx context.Context, req *JoinGroupRequest) (*JoinGro
 	return res, nil
 }
 
-// sarama indicates there are some misbehaving clients out there that
-// set the version as 1 but don't include the OwnedPartitions section
-// https://github.com/Shopify/sarama/blob/610514edec1825240d59b62e4d7f1aba4b1fa000/consumer_group_members.go#L43
-func joinGroupSubscriptionMetaError(err error, version int16) error {
-	if version >= 1 && errors.Is(err, io.ErrUnexpectedEOF) {
-		return nil
-	}
-	return err
-}
-
 type groupMetadata struct {
 	Version  int16
 	Topics   []string
@@ -218,6 +205,12 @@ func (t groupMetadata) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.Version)
 	wb.writeStringArray(t.Topics)
 	wb.writeBytes(t.UserData)
+}
+
+func (t groupMetadata) bytes() []byte {
+	buf := bytes.NewBuffer(nil)
+	t.writeTo(&writeBuffer{w: buf})
+	return buf.Bytes()
 }
 
 func (t *groupMetadata) readFrom(r *bufio.Reader, size int) (remain int, err error) {
