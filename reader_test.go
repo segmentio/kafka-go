@@ -1684,7 +1684,7 @@ func TestConsumerGroupMultipleWithDefaultTransport(t *testing.T) {
 		recvErr2 <- err
 	}()
 
-	time.Sleep(conf1.MaxWait * 5)
+	time.Sleep(conf1.MaxWait)
 
 	totalMessages := 10
 

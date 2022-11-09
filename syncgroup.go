@@ -127,13 +127,9 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 	r := m.(*syncgroup.Response)
 
 	var assignment consumer.Assignment
-	var metaVersion int16
-	if len(r.Assignments) > 2 {
-		metaVersion = makeInt16(r.Assignments[0:2])
-		err = protocol.Unmarshal(r.Assignments, metaVersion, &assignment)
-		if err != nil {
-			return nil, fmt.Errorf("kafka.(*Client).SyncGroup: %w", err)
-		}
+	err = protocol.Unmarshal(r.Assignments, consumer.MaxVersionSupported, &assignment)
+	if err != nil {
+		return nil, fmt.Errorf("kafka.(*Client).SyncGroup: %w", err)
 	}
 
 	res := &SyncGroupResponse{
