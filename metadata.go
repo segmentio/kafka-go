@@ -17,10 +17,6 @@ type MetadataRequest struct {
 
 	// The list of topics to retrieve metadata for.
 	Topics []string
-
-	// If true, the broker may auto-create topics which do not exist, if
-	// it's configured to do so.
-	AllowAutoTopicCreation bool
 }
 
 // MetadatResponse represents a response from a kafka broker to a metadata
@@ -45,9 +41,9 @@ type MetadataResponse struct {
 // Metadata sends a metadata request to a kafka broker and returns the response.
 func (c *Client) Metadata(ctx context.Context, req *MetadataRequest) (*MetadataResponse, error) {
 	m, err := c.roundTrip(ctx, req.Addr, &metadataAPI.Request{
-		TopicNames:             req.Topics,
-		AllowAutoTopicCreation: req.AllowAutoTopicCreation,
+		TopicNames: req.Topics,
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).Metadata: %w", err)
 	}

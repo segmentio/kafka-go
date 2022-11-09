@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -201,6 +202,12 @@ func (t *groupAssignment) readFrom(r *bufio.Reader, size int) (remain int, err e
 	}
 
 	return
+}
+
+func (t groupAssignment) bytes() []byte {
+	buf := bytes.NewBuffer(nil)
+	t.writeTo(&writeBuffer{w: buf})
+	return buf.Bytes()
 }
 
 type syncGroupRequestGroupAssignmentV0 struct {
