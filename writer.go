@@ -307,10 +307,6 @@ type WriterConfig struct {
 	// a response to a produce request. The default is -1, which means to wait for
 	// all replicas, and a value above 0 is required to indicate how many replicas
 	// should acknowledge a message to be considered successful.
-	//
-	// This version of kafka-go (v0.3) does not support 0 required acks, due to
-	// some internal complexity implementing this with the Kafka protocol. If you
-	// need that functionality specifically, you'll need to upgrade to v0.4.
 	RequiredAcks int
 
 	// Setting this flag to true causes the WriteMessages method to never block.
