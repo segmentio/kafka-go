@@ -15,14 +15,14 @@ type DescribeLogDirsRequest struct {
 
 	// BrokerIDs is a slice of brokers to get log directories for.
 	// if not set, every broker will be set automatically.
-	BrokerIDs []int32
+	BrokerIDs []int
 }
 
 // DescribeLogDirsResponse is a response from the DescribeLogDirs API.
 type DescribeLogDirsResponse struct {
 	// Mappings of broker ids to log dir descriptions, there will be one entry
 	// for each broker in the request.
-	Results map[int32]map[string]LogDirDescription
+	Results map[int]map[string]LogDirDescription
 }
 
 // LogDirDescription contains the description of a log directory on a particular broker.
@@ -40,7 +40,7 @@ type TopicPartition struct {
 	Topic string
 
 	// ID of the partition.
-	Partition int32
+	Partition int
 }
 
 func (tp *TopicPartition) String() string {
@@ -59,7 +59,7 @@ type ReplicaInfo struct {
 // response.
 func (c *Client) DescribeLogDirs(ctx context.Context, req *DescribeLogDirsRequest) (*DescribeLogDirsResponse, error) {
 	ret := &DescribeLogDirsResponse{
-		Results: make(map[int32]map[string]LogDirDescription),
+		Results: make(map[int]map[string]LogDirDescription),
 	}
 
 	meta, err := c.Metadata(ctx, &MetadataRequest{})
@@ -81,12 +81,12 @@ func (c *Client) DescribeLogDirs(ctx context.Context, req *DescribeLogDirsReques
 
 	if req.BrokerIDs == nil {
 		for _, broker := range meta.Brokers {
-			req.BrokerIDs = append(req.BrokerIDs, int32(broker.ID))
+			req.BrokerIDs = append(req.BrokerIDs, broker.ID)
 		}
 	}
 
 	for _, brokerId := range req.BrokerIDs {
-		m, err := c.roundTrip(ctx, req.Addr, &describelogdirs.Request{Topics: topics, BrokerID: brokerId})
+		m, err := c.roundTrip(ctx, req.Addr, &describelogdirs.Request{Topics: topics, BrokerID: int32(brokerId)})
 		if err != nil {
 			return nil, fmt.Errorf("kafka.(*Client).DescribeLogDirs: %w", err)
 		}
@@ -107,7 +107,7 @@ func (c *Client) DescribeLogDirs(ctx context.Context, req *DescribeLogDirsReques
 				for _, p := range t.Partitions {
 					tp := TopicPartition{
 						Topic:     t.Name,
-						Partition: p.PartitionIndex,
+						Partition: int(p.PartitionIndex),
 					}
 					replicaInfos[tp] = ReplicaInfo{
 						Size:      p.PartitionSize,
