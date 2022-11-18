@@ -14,7 +14,7 @@ type DescribeConfigsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	// List of resources to update.
+	// List of resources to get details for.
 	Resources []DescribeConfigRequestResource
 
 	// Ignored if API version is less than v1
