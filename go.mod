@@ -11,3 +11,7 @@ require (
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d // indirect
 	golang.org/x/net v0.0.0-20220706163947-c90051bbdb60
 )
+
+retract (
+	[v0.4.36, v0.4.37]
+)
