@@ -27,29 +27,29 @@ import (
 // by the function and test if it an instance of kafka.WriteErrors in order to
 // identify which messages have succeeded or failed, for example:
 //
-//	// Construct a synchronous writer (the default mode).
-//	w := &kafka.Writer{
-//		Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-//		Topic:        "topic-A",
-//		RequiredAcks: kafka.RequireAll,
-//	}
-//
-//	...
-//
-//  // Passing a context can prevent the operation from blocking indefinitely.
-//	switch err := w.WriteMessages(ctx, msgs...).(type) {
-//	case nil:
-//	case kafka.WriteErrors:
-//		for i := range msgs {
-//			if err[i] != nil {
-//				// handle the error writing msgs[i]
-//				...
-//			}
+//		// Construct a synchronous writer (the default mode).
+//		w := &kafka.Writer{
+//			Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+//			Topic:        "topic-A",
+//			RequiredAcks: kafka.RequireAll,
 //		}
-//	default:
-//		// handle other errors
+//
 //		...
-//	}
+//
+//	 // Passing a context can prevent the operation from blocking indefinitely.
+//		switch err := w.WriteMessages(ctx, msgs...).(type) {
+//		case nil:
+//		case kafka.WriteErrors:
+//			for i := range msgs {
+//				if err[i] != nil {
+//					// handle the error writing msgs[i]
+//					...
+//				}
+//			}
+//		default:
+//			// handle other errors
+//			...
+//		}
 //
 // In asynchronous mode, the program may configure a completion handler on the
 // writer to receive notifications of messages being written to kafka:
@@ -423,10 +423,6 @@ func NewWriter(config WriterConfig) *Writer {
 		config.Dialer = DefaultDialer
 	}
 
-	if config.Balancer == nil {
-		config.Balancer = &RoundRobin{}
-	}
-
 	// Converts the pre-0.4 Dialer API into a Transport.
 	kafkaDialer := DefaultDialer
 	if config.Dialer != nil {
@@ -619,7 +615,6 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return nil
 	}
 
-	balancer := w.balancer()
 	batchBytes := w.batchBytes()
 
 	for i := range msgs {
@@ -652,7 +647,12 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			return err
 		}
 
-		partition := balancer.Balance(msg, loadCachedPartitions(numPartitions)...)
+		partition := -1
+		if w.Balancer != nil {
+			partition = w.Balancer.Balance(msg, loadCachedPartitions(numPartitions)...)
+		} else {
+			partition = msg.Partition
+		}
 
 		key := topicPartition{
 			topic:     topic,
@@ -779,6 +779,7 @@ func (w *Writer) balancer() Balancer {
 	if w.Balancer != nil {
 		return w.Balancer
 	}
+
 	return &w.roundRobin
 }
 
