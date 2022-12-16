@@ -842,3 +842,26 @@ type staticBalancer struct {
 func (b *staticBalancer) Balance(_ Message, partitions ...int) int {
 	return b.partition
 }
+
+func BenchmarkWriterBatches(b *testing.B) {
+	const topic = "benchmark-writer-1"
+	createTopic(b, topic, 1)
+	w := newTestWriter(WriterConfig{
+		Topic:    topic,
+		Balancer: &RoundRobin{},
+	})
+	defer w.Close()
+
+	messages := make([]Message, 0, 10000)
+	for i := 0; i < cap(messages); i++ {
+		messages = append(messages, Message{Value: []byte("Hello World!")})
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for m := 0; m < len(messages); m += 1000 {
+			w.WriteMessages(context.Background(), messages[m:m+1000]...)
+		}
+
+	}
+}

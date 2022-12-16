@@ -276,7 +276,7 @@ func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Read
 	}
 }
 
-func createTopic(t *testing.T, topic string, partitions int) {
+func createTopic(t testing.TB, topic string, partitions int) {
 	t.Helper()
 
 	t.Logf("createTopic(%s, %d)", topic, partitions)
@@ -326,7 +326,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 }
 
 // Block until topic exists.
-func waitForTopic(ctx context.Context, t *testing.T, topic string) {
+func waitForTopic(ctx context.Context, t testing.TB, topic string) {
 	t.Helper()
 
 	for {
@@ -370,7 +370,7 @@ func waitForTopic(ctx context.Context, t *testing.T, topic string) {
 	}
 }
 
-func deleteTopic(t *testing.T, topic ...string) {
+func deleteTopic(t testing.TB, topic ...string) {
 	t.Helper()
 	conn, err := Dial("tcp", "localhost:9092")
 	if err != nil {

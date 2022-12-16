@@ -27,29 +27,29 @@ import (
 // by the function and test if it an instance of kafka.WriteErrors in order to
 // identify which messages have succeeded or failed, for example:
 //
-//	// Construct a synchronous writer (the default mode).
-//	w := &kafka.Writer{
-//		Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-//		Topic:        "topic-A",
-//		RequiredAcks: kafka.RequireAll,
-//	}
-//
-//	...
-//
-//  // Passing a context can prevent the operation from blocking indefinitely.
-//	switch err := w.WriteMessages(ctx, msgs...).(type) {
-//	case nil:
-//	case kafka.WriteErrors:
-//		for i := range msgs {
-//			if err[i] != nil {
-//				// handle the error writing msgs[i]
-//				...
-//			}
+//		// Construct a synchronous writer (the default mode).
+//		w := &kafka.Writer{
+//			Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+//			Topic:        "topic-A",
+//			RequiredAcks: kafka.RequireAll,
 //		}
-//	default:
-//		// handle other errors
+//
 //		...
-//	}
+//
+//	 // Passing a context can prevent the operation from blocking indefinitely.
+//		switch err := w.WriteMessages(ctx, msgs...).(type) {
+//		case nil:
+//		case kafka.WriteErrors:
+//			for i := range msgs {
+//				if err[i] != nil {
+//					// handle the error writing msgs[i]
+//					...
+//				}
+//			}
+//		default:
+//			// handle other errors
+//			...
+//		}
 //
 // In asynchronous mode, the program may configure a completion handler on the
 // writer to receive notifications of messages being written to kafka:
@@ -220,6 +220,10 @@ type Writer struct {
 
 	// non-nil when a transport was created by NewWriter, remove in 1.0.
 	transport *Transport
+
+	msgsPoolOnce sync.Once
+	// New defined as empty Messages slice with capacity equals to BatchSize
+	msgsPool sync.Pool
 }
 
 // WriterConfig is a configuration type used to create new instances of Writer.
@@ -614,6 +618,14 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	if len(msgs) == 0 {
 		return nil
 	}
+
+	w.msgsPoolOnce.Do(func() {
+		w.msgsPool = sync.Pool{
+			New: func() interface{} {
+				return make([]Message, 0, w.BatchSize)
+			},
+		}
+	})
 
 	balancer := w.balancer()
 	batchBytes := w.batchBytes()
@@ -1059,6 +1071,7 @@ func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*
 // ptw.w can be accessed here because this is called with the lock ptw.mutex already held.
 func (ptw *partitionWriter) newWriteBatch() *writeBatch {
 	batch := newWriteBatch(time.Now(), ptw.w.batchTimeout())
+	batch.msgsPool = &ptw.w.msgsPool
 	ptw.w.spawn(func() { ptw.awaitBatch(batch) })
 	return batch
 }
@@ -1191,14 +1204,15 @@ func (ptw *partitionWriter) close() {
 }
 
 type writeBatch struct {
-	time  time.Time
-	msgs  []Message
-	size  int
-	bytes int64
-	ready chan struct{}
-	done  chan struct{}
-	timer *time.Timer
-	err   error // result of the batch completion
+	time     time.Time
+	msgs     []Message
+	size     int
+	bytes    int64
+	ready    chan struct{}
+	done     chan struct{}
+	timer    *time.Timer
+	err      error      // result of the batch completion
+	msgsPool *sync.Pool // to reuse messages slice
 }
 
 func newWriteBatch(now time.Time, timeout time.Duration) *writeBatch {
@@ -1218,7 +1232,13 @@ func (b *writeBatch) add(msg Message, maxSize int, maxBytes int64) bool {
 	}
 
 	if cap(b.msgs) == 0 {
-		b.msgs = make([]Message, 0, maxSize)
+		if b.msgsPool != nil {
+			b.msgs = b.msgsPool.Get().([]Message)
+			b.msgs = b.msgs[:0]
+		} else {
+			b.msgs = make([]Message, 0, maxSize)
+		}
+
 	}
 
 	b.msgs = append(b.msgs, msg)
@@ -1237,6 +1257,7 @@ func (b *writeBatch) trigger() {
 
 func (b *writeBatch) complete(err error) {
 	b.err = err
+	b.msgsPool.Put(b.msgs)
 	close(b.done)
 }
 
