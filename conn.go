@@ -66,7 +66,7 @@ type Conn struct {
 	apiVersions atomic.Value // apiVersionMap
 
 	transactionalID      *string
-	preferredReadReplica int32
+	preferredReadReplica *int32
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -727,8 +727,22 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 // ReadBatchWith in every way is similar to ReadBatch. ReadBatch is configured
 // with the default values in ReadBatchConfig except for minBytes and maxBytes.
 func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
-	if c.broker != c.preferredReadReplica {
-		// close out connection to broker and connect to new broker
+	if c.preferredReadReplica != nil && &c.preferredReadReplica != c.broker {
+		brokers, err := c.Brokers()
+		if err != nil {
+			// TODO: should there be an err here?
+			return &Batch{}
+		}
+		for _, broker := range brokers {
+			if broker.ID == &c.preferredReadReplica {
+				// close out connection to broker and connect to new broker
+				if err = c.Close(); err != nil {
+					// TODO: should there be an err here?
+					return &Batch{}
+				}
+			}
+		}
+
 	}
 
 	var adjustedDeadline time.Time
