@@ -27,42 +27,29 @@ import (
 // by the function and test if it an instance of kafka.WriteErrors in order to
 // identify which messages have succeeded or failed, for example:
 //
-//		// Construct a synchronous writer (the default mode).
-//		w := &kafka.Writer{
-//			Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-//			Topic:        "topic-A",
-//			RequiredAcks: kafka.RequireAll,
-//		}
+//	// Construct a synchronous writer (the default mode).
+//	w := &kafka.Writer{
+//		Addr:         Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+//		Topic:        "topic-A",
+//		RequiredAcks: kafka.RequireAll,
+//	}
 //
-//		...
+//	...
 //
-//	 // Passing a context can prevent the operation from blocking indefinitely.
-//		switch err := w.WriteMessages(ctx, msgs...).(type) {
-//		case nil:
-//		case kafka.WriteErrors:
-//			for i := range msgs {
-//				if err[i] != nil {
-//					// handle the error writing msgs[i]
-//					...
-//				}
-//			}
-//
-//			...
-//
-//		 // Passing a context can prevent the operation from blocking indefinitely.
-//			switch err := w.WriteMessages(ctx, msgs...).(type) {
-//			case nil:
-//			case kafka.WriteErrors:
-//				for i := range msgs {
-//					if err[i] != nil {
-//						// handle the error writing msgs[i]
-//						...
-//					}
-//				}
-//			default:
-//				// handle other errors
+//  // Passing a context can prevent the operation from blocking indefinitely.
+//	switch err := w.WriteMessages(ctx, msgs...).(type) {
+//	case nil:
+//	case kafka.WriteErrors:
+//		for i := range msgs {
+//			if err[i] != nil {
+//				// handle the error writing msgs[i]
 //				...
 //			}
+//		}
+//	default:
+//		// handle other errors
+//		...
+//	}
 //
 // In asynchronous mode, the program may configure a completion handler on the
 // writer to receive notifications of messages being written to kafka:
@@ -112,6 +99,18 @@ type Writer struct {
 	//
 	// The default is to try at most 10 times.
 	MaxAttempts int
+
+	// WriteBackoffMin optionally sets the smallest amount of time the writer waits before
+	// it attempts to write a batch of messages
+	//
+	// Default: 100ms
+	WriteBackoffMin time.Duration
+
+	// WriteBackoffMax optionally sets the maximum amount of time the writer waits before
+	// it attempts to write a batch of messages
+	//
+	// Default: 1s
+	WriteBackoffMax time.Duration
 
 	// Limit on how many messages will be buffered before being sent to a
 	// partition.
@@ -308,10 +307,6 @@ type WriterConfig struct {
 	// a response to a produce request. The default is -1, which means to wait for
 	// all replicas, and a value above 0 is required to indicate how many replicas
 	// should acknowledge a message to be considered successful.
-	//
-	// This version of kafka-go (v0.3) does not support 0 required acks, due to
-	// some internal complexity implementing this with the Kafka protocol. If you
-	// need that functionality specifically, you'll need to upgrade to v0.4.
 	RequiredAcks int
 
 	// Setting this flag to true causes the WriteMessages method to never block.
@@ -356,17 +351,19 @@ type WriterStats struct {
 	BatchTime  DurationStats `metric:"kafka.writer.batch.seconds"`
 	WriteTime  DurationStats `metric:"kafka.writer.write.seconds"`
 	WaitTime   DurationStats `metric:"kafka.writer.wait.seconds"`
-	Retries    SummaryStats  `metric:"kafka.writer.retries.count"`
+	Retries    int64         `metric:"kafka.writer.retries.count" type:"counter"`
 	BatchSize  SummaryStats  `metric:"kafka.writer.batch.size"`
 	BatchBytes SummaryStats  `metric:"kafka.writer.batch.bytes"`
 
-	MaxAttempts  int64         `metric:"kafka.writer.attempts.max"  type:"gauge"`
-	MaxBatchSize int64         `metric:"kafka.writer.batch.max"     type:"gauge"`
-	BatchTimeout time.Duration `metric:"kafka.writer.batch.timeout" type:"gauge"`
-	ReadTimeout  time.Duration `metric:"kafka.writer.read.timeout"  type:"gauge"`
-	WriteTimeout time.Duration `metric:"kafka.writer.write.timeout" type:"gauge"`
-	RequiredAcks int64         `metric:"kafka.writer.acks.required" type:"gauge"`
-	Async        bool          `metric:"kafka.writer.async"         type:"gauge"`
+	MaxAttempts     int64         `metric:"kafka.writer.attempts.max"  type:"gauge"`
+	WriteBackoffMin time.Duration `metric:"kafka.writer.backoff.min"   type:"gauge"`
+	WriteBackoffMax time.Duration `metric:"kafka.writer.backoff.max"   type:"gauge"`
+	MaxBatchSize    int64         `metric:"kafka.writer.batch.max"     type:"gauge"`
+	BatchTimeout    time.Duration `metric:"kafka.writer.batch.timeout" type:"gauge"`
+	ReadTimeout     time.Duration `metric:"kafka.writer.read.timeout"  type:"gauge"`
+	WriteTimeout    time.Duration `metric:"kafka.writer.write.timeout" type:"gauge"`
+	RequiredAcks    int64         `metric:"kafka.writer.acks.required" type:"gauge"`
+	Async           bool          `metric:"kafka.writer.async"         type:"gauge"`
 
 	Topic string `tag:"topic"`
 
@@ -403,7 +400,7 @@ type writerStats struct {
 	batchTime      summary
 	writeTime      summary
 	waitTime       summary
-	retries        summary
+	retries        counter
 	batchSize      summary
 	batchSizeBytes summary
 }
@@ -431,11 +428,38 @@ func NewWriter(config WriterConfig) *Writer {
 	if config.Dialer != nil {
 		kafkaDialer = config.Dialer
 	}
-	stats := new(writerStats)
-	transport := dialerToTransport(kafkaDialer, func(start time.Time) {
-		stats.dials.observe(1)
-		stats.dialTime.observe(int64(time.Since(start)))
+
+	dialer := (&net.Dialer{
+		Timeout:       kafkaDialer.Timeout,
+		Deadline:      kafkaDialer.Deadline,
+		LocalAddr:     kafkaDialer.LocalAddr,
+		DualStack:     kafkaDialer.DualStack,
+		FallbackDelay: kafkaDialer.FallbackDelay,
+		KeepAlive:     kafkaDialer.KeepAlive,
 	})
+
+	var resolver Resolver
+	if r, ok := kafkaDialer.Resolver.(*net.Resolver); ok {
+		dialer.Resolver = r
+	} else {
+		resolver = kafkaDialer.Resolver
+	}
+
+	stats := new(writerStats)
+	// For backward compatibility with the pre-0.4 APIs, support custom
+	// resolvers by wrapping the dial function.
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		start := time.Now()
+		defer func() {
+			stats.dials.observe(1)
+			stats.dialTime.observe(int64(time.Since(start)))
+		}()
+		address, err := lookupHost(ctx, addr, resolver)
+		if err != nil {
+			return nil, err
+		}
+		return dialer.DialContext(ctx, network, address)
+	}
 
 	idleTimeout := config.IdleConnTimeout
 	if idleTimeout == 0 {
@@ -451,8 +475,14 @@ func NewWriter(config WriterConfig) *Writer {
 		metadataTTL = 15 * time.Second
 	}
 
-	transport.IdleTimeout = idleTimeout
-	transport.MetadataTTL = metadataTTL
+	transport := &Transport{
+		Dial:        dial,
+		SASL:        kafkaDialer.SASLMechanism,
+		TLS:         kafkaDialer.TLS,
+		ClientID:    kafkaDialer.ClientID,
+		IdleTimeout: idleTimeout,
+		MetadataTTL: metadataTTL,
+	}
 
 	w := &Writer{
 		Addr:         TCP(config.Brokers...),
@@ -759,6 +789,20 @@ func (w *Writer) maxAttempts() int {
 	return 10
 }
 
+func (w *Writer) writeBackoffMin() time.Duration {
+	if w.WriteBackoffMin > 0 {
+		return w.WriteBackoffMin
+	}
+	return 100 * time.Millisecond
+}
+
+func (w *Writer) writeBackoffMax() time.Duration {
+	if w.WriteBackoffMax > 0 {
+		return w.WriteBackoffMax
+	}
+	return 1 * time.Second
+}
+
 func (w *Writer) batchSize() int {
 	if w.BatchSize > 0 {
 		return w.BatchSize
@@ -829,26 +873,28 @@ func (w *Writer) stats() *writerStats {
 func (w *Writer) Stats() WriterStats {
 	stats := w.stats()
 	return WriterStats{
-		Dials:        stats.dials.snapshot(),
-		Writes:       stats.writes.snapshot(),
-		Messages:     stats.messages.snapshot(),
-		Bytes:        stats.bytes.snapshot(),
-		Errors:       stats.errors.snapshot(),
-		DialTime:     stats.dialTime.snapshotDuration(),
-		BatchTime:    stats.batchTime.snapshotDuration(),
-		WriteTime:    stats.writeTime.snapshotDuration(),
-		WaitTime:     stats.waitTime.snapshotDuration(),
-		Retries:      stats.retries.snapshot(),
-		BatchSize:    stats.batchSize.snapshot(),
-		BatchBytes:   stats.batchSizeBytes.snapshot(),
-		MaxAttempts:  int64(w.MaxAttempts),
-		MaxBatchSize: int64(w.BatchSize),
-		BatchTimeout: w.BatchTimeout,
-		ReadTimeout:  w.ReadTimeout,
-		WriteTimeout: w.WriteTimeout,
-		RequiredAcks: int64(w.RequiredAcks),
-		Async:        w.Async,
-		Topic:        w.Topic,
+		Dials:           stats.dials.snapshot(),
+		Writes:          stats.writes.snapshot(),
+		Messages:        stats.messages.snapshot(),
+		Bytes:           stats.bytes.snapshot(),
+		Errors:          stats.errors.snapshot(),
+		DialTime:        stats.dialTime.snapshotDuration(),
+		BatchTime:       stats.batchTime.snapshotDuration(),
+		WriteTime:       stats.writeTime.snapshotDuration(),
+		WaitTime:        stats.waitTime.snapshotDuration(),
+		Retries:         stats.retries.snapshot(),
+		BatchSize:       stats.batchSize.snapshot(),
+		BatchBytes:      stats.batchSizeBytes.snapshot(),
+		MaxAttempts:     int64(w.MaxAttempts),
+		WriteBackoffMin: w.WriteBackoffMin,
+		WriteBackoffMax: w.WriteBackoffMax,
+		MaxBatchSize:    int64(w.BatchSize),
+		BatchTimeout:    w.BatchTimeout,
+		ReadTimeout:     w.ReadTimeout,
+		WriteTimeout:    w.WriteTimeout,
+		RequiredAcks:    int64(w.RequiredAcks),
+		Async:           w.Async,
+		Topic:           w.Topic,
 	}
 }
 
@@ -1066,7 +1112,7 @@ func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
 			//   guarantees to abort, but may be better to avoid long wait times
 			//   on close.
 			//
-			delay := backoff(attempt, 100*time.Millisecond, 1*time.Second)
+			delay := backoff(attempt, ptw.w.writeBackoffMin(), ptw.w.writeBackoffMax())
 			ptw.w.withLogger(func(log Logger) {
 				log.Printf("backing off %s writing %d messages to %s (partition: %d)", delay, len(batch.msgs), key.topic, key.partition)
 			})

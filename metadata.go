@@ -17,10 +17,6 @@ type MetadataRequest struct {
 
 	// The list of topics to retrieve metadata for.
 	Topics []string
-
-	// If true, the broker may auto-create topics which do not exist, if
-	// it's configured to do so.
-	AllowAutoTopicCreation bool
 }
 
 // MetadatResponse represents a response from a kafka broker to a metadata
@@ -45,9 +41,9 @@ type MetadataResponse struct {
 // Metadata sends a metadata request to a kafka broker and returns the response.
 func (c *Client) Metadata(ctx context.Context, req *MetadataRequest) (*MetadataResponse, error) {
 	m, err := c.roundTrip(ctx, req.Addr, &metadataAPI.Request{
-		TopicNames:             req.Topics,
-		AllowAutoTopicCreation: req.AllowAutoTopicCreation,
+		TopicNames: req.Topics,
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).Metadata: %w", err)
 	}
@@ -202,4 +198,90 @@ func (p partitionMetadataV1) writeTo(wb *writeBuffer) {
 	wb.writeInt32(p.Leader)
 	wb.writeInt32Array(p.Replicas)
 	wb.writeInt32Array(p.Isr)
+}
+
+type topicMetadataRequestV6 struct {
+	Topics                 []string
+	AllowAutoTopicCreation bool
+}
+
+func (r topicMetadataRequestV6) size() int32 {
+	return sizeofStringArray([]string(r.Topics)) + 1
+}
+
+func (r topicMetadataRequestV6) writeTo(wb *writeBuffer) {
+	// communicate nil-ness to the broker by passing -1 as the array length.
+	// for this particular request, the broker interpets a zero length array
+	// as a request for no topics whereas a nil array is for all topics.
+	if r.Topics == nil {
+		wb.writeArrayLen(-1)
+	} else {
+		wb.writeStringArray([]string(r.Topics))
+	}
+	wb.writeBool(r.AllowAutoTopicCreation)
+}
+
+type metadataResponseV6 struct {
+	ThrottleTimeMs int32
+	Brokers        []brokerMetadataV1
+	ClusterId      string
+	ControllerID   int32
+	Topics         []topicMetadataV6
+}
+
+func (r metadataResponseV6) size() int32 {
+	n1 := sizeofArray(len(r.Brokers), func(i int) int32 { return r.Brokers[i].size() })
+	n2 := sizeofNullableString(&r.ClusterId)
+	n3 := sizeofArray(len(r.Topics), func(i int) int32 { return r.Topics[i].size() })
+	return 4 + 4 + n1 + n2 + n3
+}
+
+func (r metadataResponseV6) writeTo(wb *writeBuffer) {
+	wb.writeInt32(r.ThrottleTimeMs)
+	wb.writeArray(len(r.Brokers), func(i int) { r.Brokers[i].writeTo(wb) })
+	wb.writeString(r.ClusterId)
+	wb.writeInt32(r.ControllerID)
+	wb.writeArray(len(r.Topics), func(i int) { r.Topics[i].writeTo(wb) })
+}
+
+type topicMetadataV6 struct {
+	TopicErrorCode int16
+	TopicName      string
+	Internal       bool
+	Partitions     []partitionMetadataV6
+}
+
+func (t topicMetadataV6) size() int32 {
+	return 2 + 1 +
+		sizeofString(t.TopicName) +
+		sizeofArray(len(t.Partitions), func(i int) int32 { return t.Partitions[i].size() })
+}
+
+func (t topicMetadataV6) writeTo(wb *writeBuffer) {
+	wb.writeInt16(t.TopicErrorCode)
+	wb.writeString(t.TopicName)
+	wb.writeBool(t.Internal)
+	wb.writeArray(len(t.Partitions), func(i int) { t.Partitions[i].writeTo(wb) })
+}
+
+type partitionMetadataV6 struct {
+	PartitionErrorCode int16
+	PartitionID        int32
+	Leader             int32
+	Replicas           []int32
+	Isr                []int32
+	OfflineReplicas    []int32
+}
+
+func (p partitionMetadataV6) size() int32 {
+	return 2 + 4 + 4 + sizeofInt32Array(p.Replicas) + sizeofInt32Array(p.Isr) + sizeofInt32Array(p.OfflineReplicas)
+}
+
+func (p partitionMetadataV6) writeTo(wb *writeBuffer) {
+	wb.writeInt16(p.PartitionErrorCode)
+	wb.writeInt32(p.PartitionID)
+	wb.writeInt32(p.Leader)
+	wb.writeInt32Array(p.Replicas)
+	wb.writeInt32Array(p.Isr)
+	wb.writeInt32Array(p.OfflineReplicas)
 }
