@@ -174,6 +174,10 @@ func TestWriter(t *testing.T) {
 			scenario: "test default configuration values",
 			function: testWriterDefaults,
 		},
+		{
+			scenario: "test write message with metadata",
+			function: testWriteMessageWithMetadata,
+		},
 	}
 
 	for _, test := range tests {
@@ -717,6 +721,45 @@ func testWriterUnexpectedMessageTopic(t *testing.T) {
 		t.Error("expected error")
 		return
 	}
+}
+
+func testWriteMessageWithMetadata(t *testing.T) {
+	topic := makeTopic()
+	defer deleteTopic(t, topic)
+	w := newTestWriter(WriterConfig{
+		Topic:    topic,
+		Balancer: &RoundRobin{},
+	})
+	defer w.Close()
+
+	w.Completion = func(messages []Message, err error) {
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+		}
+
+		for i, msg := range messages {
+			meta := msg.Metadata.(int)
+			if i != meta {
+				t.Errorf("metadata is not correct, i = %d, meta = %d", i, meta)
+			}
+		}
+
+	}
+
+	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
+
+	const retries = 5
+	for i := 0; i < retries; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		msg.Metadata = i
+		err := w.WriteMessages(ctx, msg)
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+		}
+	}
+
 }
 
 func testWriterAutoCreateTopic(t *testing.T) {
