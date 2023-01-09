@@ -20,6 +20,10 @@ type Message struct {
 	Value         []byte
 	Headers       []Header
 
+	// This field is used to hold arbitrary data you wish to include so it
+	// will be available when handle it on the Writer's `Completion` method
+	Metadata interface{}
+
 	// If not set at the creation, Time will be automatically set when
 	// writing the message.
 	Time time.Time
