@@ -746,7 +746,7 @@ func testWriteMessageWithMetadata(t *testing.T) {
 
 	}
 
-	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
+	msg := Message{Topic: topic, Key: []byte("key"), Value: []byte("Hello World")}
 
 	const retries = 5
 	for i := 0; i < retries; i++ {
