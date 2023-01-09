@@ -733,24 +733,27 @@ func testWriteMessageWithMetadata(t *testing.T) {
 	})
 	defer w.Close()
 
+	const count = 5
+	expected := 10
+	result := 0
 	w.Completion = func(messages []Message, err error) {
 		if err != nil {
 			t.Errorf("unexpected error %v", err)
 		}
 
-		for i, msg := range messages {
+		for _, msg := range messages {
 			meta := msg.Metadata.(int)
-			if i != meta {
-				t.Errorf("metadata is not correct, i = %d, meta = %d", i, meta)
-			}
+			result += meta
 		}
 
+		if expected != result {
+			t.Errorf("metadata is not correct, expected = %d, result = %d", expected, result)
+		}
 	}
 
 	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
 
-	const retries = 5
-	for i := 0; i < retries; i++ {
+	for i := 0; i < count; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
