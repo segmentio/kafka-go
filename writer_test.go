@@ -725,6 +725,7 @@ func testWriterUnexpectedMessageTopic(t *testing.T) {
 
 func testWriteMessageWithMetadata(t *testing.T) {
 	topic := makeTopic()
+	createTopic(t, topic, 1)
 	defer deleteTopic(t, topic)
 	w := newTestWriter(WriterConfig{
 		Topic:    topic,
