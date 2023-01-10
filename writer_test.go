@@ -734,8 +734,8 @@ func testWriteMessageWithMetadata(t *testing.T) {
 	defer w.Close()
 
 	const count = 5
-	expected := 10
-	result := 0
+
+	index := 0
 	w.Completion = func(messages []Message, err error) {
 		if err != nil {
 			t.Errorf("unexpected error %v", err)
@@ -743,11 +743,10 @@ func testWriteMessageWithMetadata(t *testing.T) {
 
 		for _, msg := range messages {
 			meta := msg.Metadata.(int)
-			result += meta
-		}
-
-		if expected != result {
-			t.Errorf("metadata is not correct, expected = %d, result = %d", expected, result)
+			if index != meta {
+				t.Errorf("metadata is not correct, index = %d, meta = %d", index, meta)
+			}
+			index += 1
 		}
 	}
 
