@@ -5,6 +5,7 @@ package protocol
 
 import (
 	"reflect"
+	"unsafe"
 )
 
 type index []int
@@ -95,4 +96,4 @@ func (a array) isNil() bool { return a.val.IsNil() }
 
 func indexOf(s reflect.StructField) index { return index(s.Index) }
 
-func bytesToString(b []byte) string { return string(b) }
+func bytesToString(b []byte) string { return *(*string)(unsafe.Pointer(&b)) }
