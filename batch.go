@@ -81,6 +81,7 @@ func (batch *Batch) close() (err error) {
 	batch.lock = nil
 	if batch.msgs != nil {
 		batch.msgs.discard()
+		releaseBuffer(batch.msgs.decompressed)
 	}
 
 	if err = batch.err; errors.Is(batch.err, io.EOF) {
