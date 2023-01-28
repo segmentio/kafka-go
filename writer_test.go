@@ -744,7 +744,7 @@ func testWriteMessageWithWriterData(t *testing.T) {
 		for _, msg := range messages {
 			meta := msg.WriterData.(int)
 			if index != meta {
-				t.Errorf("metadata is not correct, index = %d, meta = %d", index, meta)
+				t.Errorf("metadata is not correct, index = %d, writerData = %d", index, meta)
 			}
 			index += 1
 		}
