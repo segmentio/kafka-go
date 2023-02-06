@@ -23,7 +23,6 @@ type Message struct {
 	// This field is used to hold arbitrary data you wish to include, so it
 	// will be available when handle it on the Writer's `Completion` method,
 	// this support the application can do any post operation on each message.
-	// notion: this won't be sent to kafka broker.
 	WriterData interface{}
 
 	// If not set at the creation, Time will be automatically set when
