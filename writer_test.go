@@ -733,8 +733,6 @@ func testWriteMessageWithWriterData(t *testing.T) {
 	})
 	defer w.Close()
 
-	const count = 5
-
 	index := 0
 	w.Completion = func(messages []Message, err error) {
 		if err != nil {
@@ -751,8 +749,7 @@ func testWriteMessageWithWriterData(t *testing.T) {
 	}
 
 	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
-
-	for i := 0; i < count; i++ {
+	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
