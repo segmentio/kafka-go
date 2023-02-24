@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -741,6 +742,12 @@ func NewReader(config ReaderConfig) *Reader {
 		}
 		go r.run(cg)
 	}
+
+	runtime.SetFinalizer(r, func(r *Reader) {
+		go func() {
+			_ = r.Close()
+		}()
+	})
 
 	return r
 }
