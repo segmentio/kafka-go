@@ -9,9 +9,7 @@ require (
 	github.com/xdg/scram v1.0.5
 	github.com/xdg/stringprep v1.0.3 // indirect
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d // indirect
-	golang.org/x/net v0.0.0-20220706163947-c90051bbdb60
+	golang.org/x/net v0.7.0
 )
 
-retract (
-	[v0.4.36, v0.4.37]
-)
+retract [v0.4.36, v0.4.37]
