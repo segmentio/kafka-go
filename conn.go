@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1419,7 +1418,6 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 		// Optimistically release the read lock if a response has already
 		// been received but the current operation is not the target for it.
 		c.rlock.Unlock()
-		runtime.Gosched()
 	}
 
 	c.leave()
