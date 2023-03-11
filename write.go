@@ -371,7 +371,7 @@ func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlation
 				if err != nil {
 					return err
 				}
-				pb.messages = []Message{{Value: buf.Bytes()}}
+				inputs[i].partitions[j].messages = []Message{{Value: buf.Bytes()}}
 			}
 			inputs[i].partitions[j].size = sz
 			h.Size += sz
