@@ -1386,7 +1386,6 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 				msgArr := [1]msgSetPartitionBatch{{
 					partition: c.partition,
 					messages:  msgs,
-					size:      messageSetSize(msgs...),
 				}}
 				return c.wb.writeProduceRequestV2(
 					codec,
