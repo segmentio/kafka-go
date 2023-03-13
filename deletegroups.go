@@ -3,9 +3,10 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"github.com/segmentio/kafka-go/protocol/deletegroups"
 	"net"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol/deletegroups"
 )
 
 // DeleteGroupsRequest represents a request sent to a kafka broker to delete
