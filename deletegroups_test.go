@@ -3,9 +3,10 @@ package kafka
 import (
 	"context"
 	"errors"
-	ktesting "github.com/segmentio/kafka-go/testing"
 	"testing"
 	"time"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 func TestClientDeleteGroups(t *testing.T) {
