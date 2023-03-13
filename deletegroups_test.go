@@ -3,11 +3,16 @@ package kafka
 import (
 	"context"
 	"errors"
+	ktesting "github.com/segmentio/kafka-go/testing"
 	"testing"
 	"time"
 )
 
 func TestClientDeleteGroups(t *testing.T) {
+	if !ktesting.KafkaIsAtLeast("1.1.0") {
+		t.Skip("Skipping test because kafka version is not high enough.")
+	}
+
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
