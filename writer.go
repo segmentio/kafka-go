@@ -1088,14 +1088,14 @@ func (ptw *partitionWriter) awaitBatch(batch *writeBatch) {
 		// having it leak until it expires.
 		batch.timer.Stop()
 	}
-}
-
-func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
 	stats := ptw.w.stats()
 	stats.batchTime.observe(int64(time.Since(batch.time)))
 	stats.batchSize.observe(int64(len(batch.msgs)))
 	stats.batchSizeBytes.observe(batch.bytes)
+}
 
+func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
+	stats := ptw.w.stats()
 	var res *ProduceResponse
 	var err error
 	key := ptw.meta
