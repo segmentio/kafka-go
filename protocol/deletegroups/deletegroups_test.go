@@ -21,7 +21,7 @@ func TestDeleteGroupsResponse(t *testing.T) {
 			Responses: []deletegroups.ResponseGroup{
 				{
 					GroupID:   "group1",
-					ErrorCode: 1,
+					ErrorCode: 0,
 				},
 				{
 					GroupID:   "group2",

@@ -53,11 +53,7 @@ func (c *Client) DeleteGroups(
 	}
 
 	for _, t := range r.Responses {
-		if t.ErrorCode == 0 {
-			ret.Errors[t.GroupID] = nil
-		} else {
-			ret.Errors[t.GroupID] = Error(t.ErrorCode)
-		}
+		ret.Errors[t.GroupID] = makeError(t.ErrorCode, "")
 	}
 
 	return ret, nil
