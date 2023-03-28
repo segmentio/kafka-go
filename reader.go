@@ -510,7 +510,7 @@ type ReaderConfig struct {
 	// non-transactional and committed records are visible.
 	IsolationLevel IsolationLevel
 
-	// Limit of how many attempts will be made before delivering the error.
+	// Limit of how many attempts to connect will be made before returning the error.
 	//
 	// The default is to try 3 times.
 	MaxAttempts int
