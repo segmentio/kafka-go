@@ -6,19 +6,21 @@ import (
 )
 
 // SummaryStats is a data structure that carries a summary of observed values.
-// The average, minimum, and maximum are reported.
 type SummaryStats struct {
-	Avg int64 `metric:"avg" type:"gauge"`
-	Min int64 `metric:"min" type:"gauge"`
-	Max int64 `metric:"max" type:"gauge"`
+	Avg   int64 `metric:"avg" type:"gauge"`
+	Min   int64 `metric:"min" type:"gauge"`
+	Max   int64 `metric:"max" type:"gauge"`
+	Count int64 `metric:"count" type:"counter"`
+	Sum   int64 `metric:"sum" type:"counter"`
 }
 
-// DurationStats is a data structure that carries a summary of observed duration
-// values. The average, minimum, and maximum are reported.
+// DurationStats is a data structure that carries a summary of observed duration values.
 type DurationStats struct {
-	Avg time.Duration `metric:"avg" type:"gauge"`
-	Min time.Duration `metric:"min" type:"gauge"`
-	Max time.Duration `metric:"max" type:"gauge"`
+	Avg   time.Duration `metric:"avg" type:"gauge"`
+	Min   time.Duration `metric:"min" type:"gauge"`
+	Max   time.Duration `metric:"max" type:"gauge"`
+	Count int64         `metric:"count" type:"counter"`
+	Sum   time.Duration `metric:"sum" type:"counter"`
 }
 
 // counter is an atomic incrementing counter which gets reset on snapshot.
@@ -167,17 +169,21 @@ func (s *summary) snapshot() SummaryStats {
 	}
 
 	return SummaryStats{
-		Avg: avg,
-		Min: min,
-		Max: max,
+		Avg:   avg,
+		Min:   min,
+		Max:   max,
+		Count: count,
+		Sum:   sum,
 	}
 }
 
 func (s *summary) snapshotDuration() DurationStats {
 	summary := s.snapshot()
 	return DurationStats{
-		Avg: time.Duration(summary.Avg),
-		Min: time.Duration(summary.Min),
-		Max: time.Duration(summary.Max),
+		Avg:   time.Duration(summary.Avg),
+		Min:   time.Duration(summary.Min),
+		Max:   time.Duration(summary.Max),
+		Count: summary.Count,
+		Sum:   time.Duration(summary.Sum),
 	}
 }
