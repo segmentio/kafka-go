@@ -1100,6 +1100,7 @@ func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
 	stats.batchTime.observe(int64(time.Since(batch.time)))
 	stats.batchSize.observe(int64(len(batch.msgs)))
 	stats.batchSizeBytes.observe(batch.bytes)
+
 	var res *ProduceResponse
 	var err error
 	key := ptw.meta
