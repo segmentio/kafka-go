@@ -159,7 +159,9 @@ func (r *messageSetReader) readMessageV1(min int64, key readBytesFunc, val readB
 		if codec, err = r.header.compression(); err != nil {
 			return
 		}
-		r.log("Reading with codec=%T", codec)
+		if r.debug {
+			r.log("Reading with codec=%T", codec)
+		}
 		if codec != nil {
 			// discard next four bytes...will be -1 to indicate null key
 			if err = r.discardN(4); err != nil {
@@ -352,14 +354,18 @@ func (r *messageSetReader) markRead() {
 	}
 	r.count--
 	r.unwindStack()
-	r.log("Mark read remain=%d", r.remain)
+	if r.debug {
+		r.log("Mark read remain=%d", r.remain)
+	}
 }
 
 func (r *messageSetReader) unwindStack() {
 	for r.count == 0 {
 		if r.remain == 0 {
 			if r.parent != nil {
-				r.log("Popped reader stack")
+				if r.debug {
+					r.log("Popped reader stack")
+				}
 				r.readerStack = r.parent
 				continue
 			}
@@ -426,7 +432,9 @@ func (r *messageSetReader) readHeader() (err error) {
 		// Set arbitrary non-zero length so that we always assume the
 		// message is truncated since bytes remain.
 		r.lengthRemain = 1
-		r.log("Read v0 header with offset=%d len=%d magic=%d attributes=%d", r.header.firstOffset, r.header.length, r.header.magic, r.header.v1.attributes)
+		if r.debug {
+			r.log("Read v0 header with offset=%d len=%d magic=%d attributes=%d", r.header.firstOffset, r.header.length, r.header.magic, r.header.v1.attributes)
+		}
 	case 1:
 		r.header.crc = crcOrLeaderEpoch
 		if err = r.readInt8(&r.header.v1.attributes); err != nil {
@@ -439,7 +447,9 @@ func (r *messageSetReader) readHeader() (err error) {
 		// Set arbitrary non-zero length so that we always assume the
 		// message is truncated since bytes remain.
 		r.lengthRemain = 1
-		r.log("Read v1 header with remain=%d offset=%d magic=%d and attributes=%d", r.remain, r.header.firstOffset, r.header.magic, r.header.v1.attributes)
+		if r.debug {
+			r.log("Read v1 header with remain=%d offset=%d magic=%d and attributes=%d", r.remain, r.header.firstOffset, r.header.magic, r.header.v1.attributes)
+		}
 	case 2:
 		r.header.v2.leaderEpoch = crcOrLeaderEpoch
 		if err = r.readInt32(&r.header.crc); err != nil {
@@ -472,7 +482,9 @@ func (r *messageSetReader) readHeader() (err error) {
 		r.count = int(r.header.v2.count)
 		// Subtracts the header bytes from the length
 		r.lengthRemain = int(r.header.length) - 49
-		r.log("Read v2 header with count=%d offset=%d len=%d magic=%d attributes=%d", r.count, r.header.firstOffset, r.header.length, r.header.magic, r.header.v2.attributes)
+		if r.debug {
+			r.log("Read v2 header with count=%d offset=%d len=%d magic=%d attributes=%d", r.count, r.header.firstOffset, r.header.length, r.header.magic, r.header.v2.attributes)
+		}
 	default:
 		err = r.header.badMagic()
 		return
@@ -521,9 +533,7 @@ func (r *messageSetReader) readBytesWith(fn readBytesFunc) (err error) {
 }
 
 func (r *messageSetReader) log(msg string, args ...interface{}) {
-	if r.debug {
-		log.Printf("[DEBUG] "+msg, args...)
-	}
+	log.Printf("[DEBUG] "+msg, args...)
 }
 
 func extractOffset(base int64, msgSet []byte) (offset int64, err error) {
