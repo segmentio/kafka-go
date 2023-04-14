@@ -46,7 +46,7 @@ type Response struct {
 	Results        []ResponseQuotas `kafka:"min=v0,max=v1"`
 }
 
-func (r *Response) ApiKey() protocol.ApiKey { return protocol.CreateAcls }
+func (r *Response) ApiKey() protocol.ApiKey { return protocol.AlterClientQuotas }
 
 type ResponseQuotas struct {
 	ErrorCode    int16    `kafka:"min=v0,max=v1"`

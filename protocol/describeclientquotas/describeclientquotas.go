@@ -38,7 +38,7 @@ type Response struct {
 	Entries        []ResponseQuotas `kafka:"min=v0,max=v1"`
 }
 
-func (r *Response) ApiKey() protocol.ApiKey { return protocol.CreateAcls }
+func (r *Response) ApiKey() protocol.ApiKey { return protocol.DescribeClientQuotas }
 
 type Value struct {
 	Key   string  `kafka:"min=v0,max=v1"`
