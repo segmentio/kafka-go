@@ -49,7 +49,7 @@ type FetchResponse struct {
 	Topic     string
 	Partition int
 
-	// Informations about the topic partition layout returned from the broker.
+	// Information about the topic partition layout returned from the broker.
 	//
 	// LastStableOffset requires the kafka broker to support the Fetch API in
 	// version 4 or above (otherwise the value is zero).

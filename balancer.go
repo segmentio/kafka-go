@@ -260,7 +260,7 @@ func (b CRC32Balancer) Balance(msg Message, partitions ...int) (partition int) {
 // determine which partition to route messages to.  This ensures that messages
 // with the same key are routed to the same partition.  This balancer is
 // compatible with the partitioner used by the Java library and by librdkafka's
-// "murmur2" and "murmur2_random" partitioners. /
+// "murmur2" and "murmur2_random" partitioners.
 //
 // With the Consistent field false (default), this partitioner is equivalent to
 // the "murmur2_random" setting in librdkafka.  When Consistent is true, this

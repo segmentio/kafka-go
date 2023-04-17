@@ -533,7 +533,7 @@ func (w *Writer) enter() bool {
 // completed.
 func (w *Writer) leave() { w.group.Done() }
 
-// spawn starts an new asynchronous operation on the writer. This method is used
+// spawn starts a new asynchronous operation on the writer. This method is used
 // instead of starting goroutines inline to help manage the state of the
 // writer's wait group. The wait group is used to block Close calls until all
 // inflight operations have completed, therefore automatically including those

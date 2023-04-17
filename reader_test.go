@@ -313,7 +313,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	})
 	if err != nil {
 		if !errors.Is(err, TopicAlreadyExists) {
-			err = fmt.Errorf("creaetTopic, conn.createtTopics: %w", err)
+			err = fmt.Errorf("createTopic, conn.createTopics: %w", err)
 			t.Error(err)
 			t.FailNow()
 		}
