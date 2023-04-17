@@ -124,6 +124,14 @@ type Writer struct {
 	// The default is to use a kafka default value of 1048576.
 	BatchBytes int64
 
+	// The maximum number of batches to buffer before blocking further message
+	// production. Setting too low a value may reduce throughput or cause the
+	// producer to block. Setting a higher value will increase memory usage when
+	// the producer is running faster than the brokers can keep up with.
+	//
+	// The default is 100.
+	MaxBufferedBatches int
+
 	// Time limit on how often incomplete message batches will be flushed to
 	// kafka.
 	//
@@ -930,9 +938,13 @@ type partitionWriter struct {
 }
 
 func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
+	queueSize := w.MaxBufferedBatches
+	if queueSize == 0 {
+		queueSize = 100
+	}
 	writer := &partitionWriter{
 		meta:  key,
-		queue: make(chan *writeBatch),
+		queue: make(chan *writeBatch, queueSize),
 		w:     w,
 	}
 	w.spawn(writer.writeBatches)
