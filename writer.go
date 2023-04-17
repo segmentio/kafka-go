@@ -915,74 +915,11 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 	return w.Topic, nil
 }
 
-type batchQueue struct {
-	queue []*writeBatch
-
-	// Pointers are used here to make `go vet` happy, and avoid copying mutexes.
-	// It may be better to revert these to non-pointers and avoid the copies in
-	// a different way.
-	mutex *sync.Mutex
-	cond  *sync.Cond
-
-	closed bool
-}
-
-func (b *batchQueue) Put(batch *writeBatch) bool {
-	b.cond.L.Lock()
-	defer b.cond.L.Unlock()
-	defer b.cond.Broadcast()
-
-	if b.closed {
-		return false
-	}
-	b.queue = append(b.queue, batch)
-	return true
-}
-
-func (b *batchQueue) Get() *writeBatch {
-	b.cond.L.Lock()
-	defer b.cond.L.Unlock()
-
-	for len(b.queue) == 0 && !b.closed {
-		b.cond.Wait()
-	}
-
-	if len(b.queue) == 0 {
-		return nil
-	}
-
-	batch := b.queue[0]
-	b.queue[0] = nil
-	b.queue = b.queue[1:]
-
-	return batch
-}
-
-func (b *batchQueue) Close() {
-	b.cond.L.Lock()
-	defer b.cond.L.Unlock()
-	defer b.cond.Broadcast()
-
-	b.closed = true
-}
-
-func newBatchQueue(initialSize int) batchQueue {
-	bq := batchQueue{
-		queue: make([]*writeBatch, 0, initialSize),
-		mutex: &sync.Mutex{},
-		cond:  &sync.Cond{},
-	}
-
-	bq.cond.L = bq.mutex
-
-	return bq
-}
-
-// partitionWriter is a writer for a topic-partion pair. It maintains messaging order
+// partitionWriter is a writer for a topic-partition pair. It maintains messaging order
 // across batches of messages.
 type partitionWriter struct {
 	meta  topicPartition
-	queue batchQueue
+	queue chan *writeBatch
 
 	mutex     sync.Mutex
 	currBatch *writeBatch
@@ -995,7 +932,7 @@ type partitionWriter struct {
 func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
 	writer := &partitionWriter{
 		meta:  key,
-		queue: newBatchQueue(10),
+		queue: make(chan *writeBatch),
 		w:     w,
 	}
 	w.spawn(writer.writeBatches)
@@ -1003,16 +940,7 @@ func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
 }
 
 func (ptw *partitionWriter) writeBatches() {
-	for {
-		batch := ptw.queue.Get()
-
-		// The only time we can return nil is when the queue is closed
-		// and empty. If the queue is closed that means
-		// the Writer is closed so once we're here it's time to exit.
-		if batch == nil {
-			return
-		}
-
+	for batch := range ptw.queue {
 		ptw.writeBatch(batch)
 	}
 }
@@ -1038,14 +966,14 @@ func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*
 		}
 		if !batch.add(msgs[i], batchSize, batchBytes) {
 			batch.trigger()
-			ptw.queue.Put(batch)
+			ptw.queue <- batch
 			ptw.currBatch = nil
 			goto assignMessage
 		}
 
 		if batch.full(batchSize, batchBytes) {
 			batch.trigger()
-			ptw.queue.Put(batch)
+			ptw.queue <- batch
 			ptw.currBatch = nil
 		}
 
@@ -1078,7 +1006,7 @@ func (ptw *partitionWriter) awaitBatch(batch *writeBatch) {
 		// pw.currBatch != batch so we just move on.
 		// Otherwise, we detach the batch from the ptWriter and enqueue it for writing.
 		if ptw.currBatch == batch {
-			ptw.queue.Put(batch)
+			ptw.queue <- batch
 			ptw.currBatch = nil
 		}
 		ptw.mutex.Unlock()
@@ -1182,12 +1110,12 @@ func (ptw *partitionWriter) close() {
 
 	if ptw.currBatch != nil {
 		batch := ptw.currBatch
-		ptw.queue.Put(batch)
+		ptw.queue <- batch
 		ptw.currBatch = nil
 		batch.trigger()
 	}
 
-	ptw.queue.Close()
+	close(ptw.queue)
 }
 
 type writeBatch struct {
