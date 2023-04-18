@@ -45,6 +45,8 @@ func (v value) int32() int32 { return int32(v.int64()) }
 
 func (v value) int64() int64 { return v.val.Int() }
 
+func (v value) float64() float64 { return v.val.Float() }
+
 func (v value) string() string { return v.val.String() }
 
 func (v value) bytes() []byte { return v.val.Bytes() }
@@ -62,6 +64,8 @@ func (v value) setInt16(i int16) { v.setInt64(int64(i)) }
 func (v value) setInt32(i int32) { v.setInt64(int64(i)) }
 
 func (v value) setInt64(i int64) { v.val.SetInt(i) }
+
+func (v value) setFloat64(f float64) { v.val.SetFloat(f) }
 
 func (v value) setString(s string) { v.val.SetString(s) }
 

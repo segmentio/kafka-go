@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"io"
 	"io/ioutil"
+	"math"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -83,6 +84,10 @@ func (d *decoder) decodeInt32(v value) {
 
 func (d *decoder) decodeInt64(v value) {
 	v.setInt64(d.readInt64())
+}
+
+func (d *decoder) decodeFloat64(v value) {
+	v.setFloat64(d.readFloat64())
 }
 
 func (d *decoder) decodeString(v value) {
@@ -216,6 +221,13 @@ func (d *decoder) readInt64() int64 {
 	return 0
 }
 
+func (d *decoder) readFloat64() float64 {
+	if d.readFull(d.buffer[:8]) {
+		return readFloat64(d.buffer[:8])
+	}
+	return 0
+}
+
 func (d *decoder) readString() string {
 	if n := d.readInt16(); n < 0 {
 		return ""
@@ -342,6 +354,8 @@ func decodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag)
 		return (*decoder).decodeInt32
 	case reflect.Int64:
 		return (*decoder).decodeInt64
+	case reflect.Float64:
+		return (*decoder).decodeFloat64
 	case reflect.String:
 		return stringDecodeFuncOf(flexible, tag)
 	case reflect.Struct:
@@ -467,6 +481,10 @@ func readInt32(b []byte) int32 {
 
 func readInt64(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
+}
+
+func readFloat64(b []byte) float64 {
+	return math.Float64frombits(binary.BigEndian.Uint64(b))
 }
 
 func Unmarshal(data []byte, version int16, value interface{}) error {

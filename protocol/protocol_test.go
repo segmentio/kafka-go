@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"math"
 	"reflect"
 	"testing"
 )
@@ -277,5 +278,65 @@ func TestVarInts(t *testing.T) {
 			)
 		}
 
+	}
+}
+
+func TestFloat64(t *testing.T) {
+	type tc struct {
+		input    float64
+		expected []byte
+	}
+
+	tcs := []tc{
+		{
+			input:    0.0,
+			expected: []byte{0, 0, 0, 0, 0, 0, 0, 0},
+		},
+		{
+			input:    math.MaxFloat64,
+			expected: []byte{127, 239, 255, 255, 255, 255, 255, 255},
+		},
+		{
+			input:    -math.MaxFloat64,
+			expected: []byte{255, 239, 255, 255, 255, 255, 255, 255},
+		},
+		{
+			input:    math.SmallestNonzeroFloat64,
+			expected: []byte{0, 0, 0, 0, 0, 0, 0, 1},
+		},
+		{
+			input:    -math.SmallestNonzeroFloat64,
+			expected: []byte{128, 0, 0, 0, 0, 0, 0, 1},
+		},
+	}
+
+	for _, tc := range tcs {
+		b := &bytes.Buffer{}
+		e := &encoder{writer: b}
+		e.writeFloat64(tc.input)
+		if e.err != nil {
+			t.Errorf(
+				"Unexpected error encoding %f as float64: %+v",
+				tc.input,
+				e.err,
+			)
+		}
+		if !reflect.DeepEqual(b.Bytes(), tc.expected) {
+			t.Error(
+				"Wrong output encoding value", tc.input, "as float64",
+				"expected", tc.expected,
+				"got", b.Bytes(),
+			)
+		}
+
+		d := &decoder{reader: b, remain: len(b.Bytes())}
+		v := d.readFloat64()
+		if v != tc.input {
+			t.Error(
+				"Decoded float64 value does not equal encoded one",
+				"expected", tc.input,
+				"got", v,
+			)
+		}
 	}
 }

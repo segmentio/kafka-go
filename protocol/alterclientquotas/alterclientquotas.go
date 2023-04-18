@@ -12,7 +12,7 @@ type Request struct {
 	_ struct{} `kafka:"min=v2,max=v2,tag"`
 
 	Entries      []Entry `kafka:"min=v0,max=v1"`
-	ValidateOnly boolean `kafka:"min=v0,max=v1"`
+	ValidateOnly bool    `kafka:"min=v0,max=v1"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.AlterClientQuotas }
@@ -26,15 +26,22 @@ type Entry struct {
 	Ops      []Ops    `kafka:"min=v0,max=v1"`
 }
 
+type EntityType string
+
+const (
+	ClientID EntityType = "client-id"
+	User     EntityType = "user"
+)
+
 type Entity struct {
-	EntityType string `kafka:"min=v0,max=v1"`
-	EntityName string `kafka:"min=v0,max=v1,nullable"`
+	EntityType EntityType `kafka:"min=v0,max=v1"`
+	EntityName string     `kafka:"min=v0,max=v1,nullable"`
 }
 
 type Ops struct {
 	Key    string  `kafka:"min=v0,max=v1"`
 	Value  float64 `kafka:"min=v0,max=v1"`
-	Remove boolean `kafka:"min=v0,max=v1"`
+	Remove bool    `kafka:"min=v0,max=v1"`
 }
 
 type Response struct {
