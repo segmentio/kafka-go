@@ -9,7 +9,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/alterclientquotas"
 )
 
-// AlterClientQuotasRequest represents a request sent to a kafka broker to add
+// AlterClientQuotasRequest represents a request sent to a kafka broker to
 // alter client quotas.
 type AlterClientQuotasRequest struct {
 	// Address of the kafka broker to send the request to.
