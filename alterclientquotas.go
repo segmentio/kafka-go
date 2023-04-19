@@ -56,7 +56,7 @@ type AlterClientQuotaResponseQuotas struct {
 	// The error message, or `nil` if the quota alteration succeeded.
 	ErrorMessage string
 
-	// The altered quota entities
+	// The altered quota entities.
 	Entities []AlterClientQuotaEntity
 }
 

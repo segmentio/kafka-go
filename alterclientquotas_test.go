@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestClientAlterClientQuotas(t *testing.T) {
@@ -23,7 +24,22 @@ func TestClientAlterClientQuotas(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	_, err := client.AlterClientQuotas(context.Background(), &AlterClientQuotasRequest{
+	expectedAlterResp := AlterClientQuotasResponse{
+		Throttle: 0,
+		Entries: []AlterClientQuotaResponseQuotas{
+			AlterClientQuotaResponseQuotas{
+				ErrorCode: 0,
+				Entities: []AlterClientQuotaEntity{
+					AlterClientQuotaEntity{
+						EntityName: entityName,
+						EntityType: entityType,
+					},
+				},
+			},
+		},
+	}
+
+	alterResp, err := client.AlterClientQuotas(context.Background(), &AlterClientQuotasRequest{
 		Entries: []AlterClientQuotaEntry{
 			AlterClientQuotaEntry{
 				Entities: []AlterClientQuotaEntity{
@@ -46,4 +62,43 @@ func TestClientAlterClientQuotas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	assert.Equal(t, expectedAlterResp, *alterResp)
+
+	expectedDescribeResp := DescribeClientQuotasResponse{
+		Throttle:  0,
+		ErrorCode: 0,
+		Entries: []DescribeClientQuotasResponseQuotas{
+			DescribeClientQuotasResponseQuotas{
+				Entities: []DescribeClientQuotasEntity{
+					DescribeClientQuotasEntity{
+						EntityType: entityType,
+						EntityName: entityName,
+					},
+				},
+				Values: []DescribeClientQuotasValue{
+					DescribeClientQuotasValue{
+						Key:   key,
+						Value: value,
+					},
+				},
+			},
+		},
+	}
+
+	describeResp, err := client.DescribeClientQuotas(context.Background(), &DescribeClientQuotasRequest{
+		Components: []DescribeClientQuotasRequestComponent{
+			DescribeClientQuotasRequestComponent{
+				EntityType: entityType,
+				MatchType:  0,
+				Match:      entityName,
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, expectedDescribeResp, *describeResp)
 }
