@@ -16,7 +16,7 @@ func TestDescribeClientQuotasRequest(t *testing.T) {
 	prototest.TestRequest(t, v0, &describeclientquotas.Request{
 		Strict: true,
 		Components: []describeclientquotas.Component{
-			describeclientquotas.Component{
+			{
 				EntityType: "client-id",
 				MatchType:  0,
 				Match:      "my-client-id",
@@ -27,7 +27,7 @@ func TestDescribeClientQuotasRequest(t *testing.T) {
 	prototest.TestRequest(t, v1, &describeclientquotas.Request{
 		Strict: true,
 		Components: []describeclientquotas.Component{
-			describeclientquotas.Component{
+			{
 				EntityType: "client-id",
 				MatchType:  0,
 				Match:      "my-client-id",
@@ -42,15 +42,15 @@ func TestDescribeClientQuotasResponse(t *testing.T) {
 		ErrorCode:      1,
 		ErrorMessage:   "foo",
 		Entries: []describeclientquotas.ResponseQuotas{
-			describeclientquotas.ResponseQuotas{
+			{
 				Entities: []describeclientquotas.Entity{
-					describeclientquotas.Entity{
+					{
 						EntityType: "client-id",
 						EntityName: "my-client-id",
 					},
 				},
 				Values: []describeclientquotas.Value{
-					describeclientquotas.Value{
+					{
 						Key:   "foo",
 						Value: 1.0,
 					},
@@ -64,15 +64,15 @@ func TestDescribeClientQuotasResponse(t *testing.T) {
 		ErrorCode:      1,
 		ErrorMessage:   "foo",
 		Entries: []describeclientquotas.ResponseQuotas{
-			describeclientquotas.ResponseQuotas{
+			{
 				Entities: []describeclientquotas.Entity{
-					describeclientquotas.Entity{
+					{
 						EntityType: "client-id",
 						EntityName: "my-client-id",
 					},
 				},
 				Values: []describeclientquotas.Value{
-					describeclientquotas.Value{
+					{
 						Key:   "foo",
 						Value: 1.0,
 					},

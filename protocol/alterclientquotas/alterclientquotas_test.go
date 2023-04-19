@@ -16,15 +16,15 @@ func TestAlterClientQuotasRequest(t *testing.T) {
 	prototest.TestRequest(t, v0, &alterclientquotas.Request{
 		ValidateOnly: true,
 		Entries: []alterclientquotas.Entry{
-			alterclientquotas.Entry{
+			{
 				Entities: []alterclientquotas.Entity{
-					alterclientquotas.Entity{
+					{
 						EntityType: "client-id",
 						EntityName: "my-client-id",
 					},
 				},
 				Ops: []alterclientquotas.Ops{
-					alterclientquotas.Ops{
+					{
 						Key:    "producer_byte_rate",
 						Value:  1.0,
 						Remove: false,
@@ -37,15 +37,15 @@ func TestAlterClientQuotasRequest(t *testing.T) {
 	prototest.TestRequest(t, v1, &alterclientquotas.Request{
 		ValidateOnly: true,
 		Entries: []alterclientquotas.Entry{
-			alterclientquotas.Entry{
+			{
 				Entities: []alterclientquotas.Entity{
-					alterclientquotas.Entity{
+					{
 						EntityType: "client-id",
 						EntityName: "my-client-id",
 					},
 				},
 				Ops: []alterclientquotas.Ops{
-					alterclientquotas.Ops{
+					{
 						Key:    "producer_byte_rate",
 						Value:  1.0,
 						Remove: false,
@@ -60,11 +60,11 @@ func TestAlterClientQuotasResponse(t *testing.T) {
 	prototest.TestResponse(t, v0, &alterclientquotas.Response{
 		ThrottleTimeMs: 500,
 		Results: []alterclientquotas.ResponseQuotas{
-			alterclientquotas.ResponseQuotas{
+			{
 				ErrorCode:    1,
 				ErrorMessage: "foo",
 				Entities: []alterclientquotas.Entity{
-					alterclientquotas.Entity{
+					{
 						EntityType: "client-id",
 						EntityName: "my-client-id",
 					},
@@ -76,11 +76,11 @@ func TestAlterClientQuotasResponse(t *testing.T) {
 	prototest.TestResponse(t, v1, &alterclientquotas.Response{
 		ThrottleTimeMs: 500,
 		Results: []alterclientquotas.ResponseQuotas{
-			alterclientquotas.ResponseQuotas{
+			{
 				ErrorCode:    1,
 				ErrorMessage: "foo",
 				Entities: []alterclientquotas.Entity{
-					alterclientquotas.Entity{
+					{
 						EntityType: "client-id",
 						EntityName: "my-client-id",
 					},
