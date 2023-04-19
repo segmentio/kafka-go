@@ -48,6 +48,8 @@ func deepEqualValue(v1, v2 reflect.Value) bool {
 		return v1.Bool() == v2.Bool()
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return v1.Int() == v2.Int()
+	case reflect.Float64:
+		return v1.Float() == v2.Float()
 	case reflect.String:
 		return v1.String() == v2.String()
 	case reflect.Struct:

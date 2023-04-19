@@ -6,11 +6,8 @@ func init() {
 	protocol.Register(&Request{}, &Response{})
 }
 
+// Detailed API definition: https://kafka.apache.org/protocol#The_Messages_AlterClientQuotas
 type Request struct {
-	// We need at least one tagged field to indicate that v2+ uses "flexible"
-	// messages.
-	_ struct{} `kafka:"min=v2,max=v2,tag"`
-
 	Entries      []Entry `kafka:"min=v0,max=v1"`
 	ValidateOnly bool    `kafka:"min=v0,max=v1"`
 }
@@ -26,16 +23,9 @@ type Entry struct {
 	Ops      []Ops    `kafka:"min=v0,max=v1"`
 }
 
-type EntityType string
-
-const (
-	ClientID EntityType = "client-id"
-	User     EntityType = "user"
-)
-
 type Entity struct {
-	EntityType EntityType `kafka:"min=v0,max=v1"`
-	EntityName string     `kafka:"min=v0,max=v1,nullable"`
+	EntityType string `kafka:"min=v0,max=v1"`
+	EntityName string `kafka:"min=v0,max=v1,nullable"`
 }
 
 type Ops struct {
@@ -45,10 +35,6 @@ type Ops struct {
 }
 
 type Response struct {
-	// We need at least one tagged field to indicate that v2+ uses "flexible"
-	// messages.
-	_ struct{} `kafka:"min=v2,max=v2,tag"`
-
 	ThrottleTimeMs int32            `kafka:"min=v0,max=v1"`
 	Results        []ResponseQuotas `kafka:"min=v0,max=v1"`
 }
