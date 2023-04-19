@@ -23,25 +23,41 @@ type AlterClientQuotasRequest struct {
 }
 
 type AlterClientQuotaEntry struct {
+	// The quota entities to alter.
 	Entities []AlterClientQuotaEntity
-	Ops      []AlterClientQuotaOps
+
+	// An individual quota configuration entry to alter.
+	Ops []AlterClientQuotaOps
 }
 
 type AlterClientQuotaEntity struct {
+	// The quota entity type.
 	EntityType string
+
+	// The name of the quota entity, or null if the default.
 	EntityName string
 }
 
 type AlterClientQuotaOps struct {
-	Key    string
-	Value  float64
+	// The quota configuration key.
+	Key string
+
+	// The quota configuration value to set, otherwise ignored if the value is to be removed.
+	Value float64
+
+	// Whether the quota configuration value should be removed, otherwise set.
 	Remove bool
 }
 
 type AlterClientQuotaResponseQuotas struct {
-	ErrorCode    int16
+	// The error code, or `0` if the quota alteration succeeded.
+	ErrorCode int16
+
+	// The error message, or `nil` if the quota alteration succeeded.
 	ErrorMessage string
-	Entities     []AlterClientQuotaEntity
+
+	// The altered quota entities
+	Entities []AlterClientQuotaEntity
 }
 
 // AlterClientQuotasResponse represents a response from a kafka broker to an alter client

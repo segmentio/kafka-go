@@ -23,7 +23,7 @@ func TestClientAlterClientQuotas(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	resp, err := client.AlterClientQuotas(context.Background(), &AlterClientQuotasRequest{
+	_, err := client.AlterClientQuotas(context.Background(), &AlterClientQuotasRequest{
 		Entries: []AlterClientQuotaEntry{
 			AlterClientQuotaEntry{
 				Entities: []AlterClientQuotaEntity{
