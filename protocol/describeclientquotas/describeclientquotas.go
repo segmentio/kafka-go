@@ -7,12 +7,8 @@ func init() {
 }
 
 type Request struct {
-	// We need at least one tagged field to indicate that v2+ uses "flexible"
-	// messages.
-	_ struct{} `kafka:"min=v2,max=v2,tag"`
-
 	Components []Component `kafka:"min=v0,max=v1"`
-	Strict     boolean     `kafka:"min=v0,max=v1"`
+	Strict     bool        `kafka:"min=v0,max=v1"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.DescribeClientQuotas }
@@ -28,10 +24,6 @@ type Component struct {
 }
 
 type Response struct {
-	// We need at least one tagged field to indicate that v2+ uses "flexible"
-	// messages.
-	_ struct{} `kafka:"min=v2,max=v2,tag"`
-
 	ThrottleTimeMs int32            `kafka:"min=v0,max=v1"`
 	ErrorCode      int16            `kafka:"min=v0,max=v1"`
 	ErrorMessage   string           `kafka:"min=v0,max=v1,nullable"`
@@ -39,6 +31,11 @@ type Response struct {
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.DescribeClientQuotas }
+
+type Entity struct {
+	EntityType string `kafka:"min=v0,max=v1"`
+	EntityName string `kafka:"min=v0,max=v1,nullable"`
+}
 
 type Value struct {
 	Key   string  `kafka:"min=v0,max=v1"`
