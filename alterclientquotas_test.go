@@ -27,10 +27,10 @@ func TestClientAlterClientQuotas(t *testing.T) {
 	expectedAlterResp := AlterClientQuotasResponse{
 		Throttle: 0,
 		Entries: []AlterClientQuotaResponseQuotas{
-			AlterClientQuotaResponseQuotas{
+			{
 				ErrorCode: 0,
 				Entities: []AlterClientQuotaEntity{
-					AlterClientQuotaEntity{
+					{
 						EntityName: entityName,
 						EntityType: entityType,
 					},
@@ -41,15 +41,15 @@ func TestClientAlterClientQuotas(t *testing.T) {
 
 	alterResp, err := client.AlterClientQuotas(context.Background(), &AlterClientQuotasRequest{
 		Entries: []AlterClientQuotaEntry{
-			AlterClientQuotaEntry{
+			{
 				Entities: []AlterClientQuotaEntity{
-					AlterClientQuotaEntity{
+					{
 						EntityType: entityType,
 						EntityName: entityName,
 					},
 				},
 				Ops: []AlterClientQuotaOps{
-					AlterClientQuotaOps{
+					{
 						Key:    key,
 						Value:  value,
 						Remove: false,
@@ -69,15 +69,15 @@ func TestClientAlterClientQuotas(t *testing.T) {
 		Throttle:  0,
 		ErrorCode: 0,
 		Entries: []DescribeClientQuotasResponseQuotas{
-			DescribeClientQuotasResponseQuotas{
+			{
 				Entities: []DescribeClientQuotasEntity{
-					DescribeClientQuotasEntity{
+					{
 						EntityType: entityType,
 						EntityName: entityName,
 					},
 				},
 				Values: []DescribeClientQuotasValue{
-					DescribeClientQuotasValue{
+					{
 						Key:   key,
 						Value: value,
 					},
@@ -88,7 +88,7 @@ func TestClientAlterClientQuotas(t *testing.T) {
 
 	describeResp, err := client.DescribeClientQuotas(context.Background(), &DescribeClientQuotasRequest{
 		Components: []DescribeClientQuotasRequestComponent{
-			DescribeClientQuotasRequestComponent{
+			{
 				EntityType: entityType,
 				MatchType:  0,
 				Match:      entityName,
