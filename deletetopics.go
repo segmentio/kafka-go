@@ -25,7 +25,7 @@ type DeleteTopicsRequest struct {
 type DeleteTopicsResponse struct {
 	// The amount of time that the broker throttled the request.
 	//
-	// This field will be zero if the kafka broker did no support the
+	// This field will be zero if the kafka broker did not support the
 	// DeleteTopics API in version 1 or above.
 	Throttle time.Duration
 

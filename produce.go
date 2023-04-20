@@ -111,8 +111,8 @@ type ProduceResponse struct {
 
 	// Offset of the first record that was written to the topic partition.
 	//
-	// This field will be zero if the kafka broker did no support the Produce
-	// API in version 3 or above.
+	// This field will be zero if the kafka broker did not support Produce API
+	// version 3 or above.
 	BaseOffset int64
 
 	// Time at which the broker wrote the records to the topic partition.
@@ -123,15 +123,15 @@ type ProduceResponse struct {
 
 	// First offset in the topic partition that the records were written to.
 	//
-	// This field will be zero if the kafka broker did not support Produce API
-	// version 5 or above (or if the first offset is zero).
+	// This field will be zero if the kafka broker did not support Produce
+	// API version 5 or above (or if the first offset is zero).
 	LogStartOffset int64
 
 	// If errors occurred writing specific records, they will be reported in
 	// this map.
 	//
-	// This field will always be empty if the kafka broker did not support
-	// Produce API version 8 or above.
+	// This field will always be empty if the kafka broker did not support the
+	// Produce API in version 8 or above.
 	RecordErrors map[int]error
 }
 
