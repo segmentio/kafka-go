@@ -131,7 +131,7 @@ func TestWriter(t *testing.T) {
 		},
 
 		{
-			scenario: "writing messsages with a small batch byte size",
+			scenario: "writing messages with a small batch byte size",
 			function: testWriterSmallBatchBytes,
 		},
 		{
@@ -159,7 +159,7 @@ func TestWriter(t *testing.T) {
 			function: testWriterInvalidPartition,
 		},
 		{
-			scenario: "writing a message to a non-existant topic creates the topic",
+			scenario: "writing a message to a non-existent topic creates the topic",
 			function: testWriterAutoCreateTopic,
 		},
 		{

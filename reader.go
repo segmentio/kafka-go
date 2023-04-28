@@ -19,7 +19,7 @@ const (
 )
 
 const (
-	// defaultCommitRetries holds the number commit attempts to make
+	// defaultCommitRetries holds the number of commit attempts to make
 	// before giving up.
 	defaultCommitRetries = 3
 )
@@ -785,7 +785,7 @@ func (r *Reader) Close() error {
 // offset when called. Note that this could result in an offset being committed
 // before the message is fully processed.
 //
-// If more fine grained control of when offsets are  committed is required, it
+// If more fine-grained control of when offsets are committed is required, it
 // is recommended to use FetchMessage with CommitMessages instead.
 func (r *Reader) ReadMessage(ctx context.Context) (Message, error) {
 	m, err := r.FetchMessage(ctx)
@@ -1220,7 +1220,7 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 }
 
 // A reader reads messages from kafka and produces them on its channels, it's
-// used as an way to asynchronously fetch messages while the main program reads
+// used as a way to asynchronously fetch messages while the main program reads
 // them using the high level reader API.
 type reader struct {
 	dialer           *Dialer

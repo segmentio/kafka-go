@@ -60,7 +60,7 @@ type Transport struct {
 
 	// Time limit set for establishing connections to the kafka cluster. This
 	// limit includes all round trips done to establish the connections (TLS
-	// hadbhaske, SASL negotiation, etc...).
+	// handshake, SASL negotiation, etc...).
 	//
 	// Defaults to 5s.
 	DialTimeout time.Duration
@@ -150,7 +150,7 @@ func (t *Transport) CloseIdleConnections() {
 // package.
 //
 // The type of the response message will match the type of the request. For
-// exmple, if RoundTrip was called with a *fetch.Request as argument, the value
+// example, if RoundTrip was called with a *fetch.Request as argument, the value
 // returned will be of type *fetch.Response. It is safe for the program to do a
 // type assertion after checking that no error was returned.
 //
@@ -413,14 +413,16 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 	case *meta.Response:
 		m := req.(*meta.Request)
 		// If we get here with allow auto topic creation then
-		// we didn't have that topic in our cache so we should update
+		// we didn't have that topic in our cache, so we should update
 		// the cache.
 		if m.AllowAutoTopicCreation {
 			topicsToRefresh := make([]string, 0, len(resp.Topics))
 			for _, topic := range resp.Topics {
-				// fixes issue 806: don't refresh topics that failed to create,
-				// it may means kafka doesn't enable auto topic creation.
-				// This causes the library to hang indefinitely, same as createtopics process.
+				// Don't refresh topics that failed to create, since that may
+				// mean that enable automatic topic creation is not enabled.
+				// That causes the library to hang indefinitely, same as
+				// don't refresh topics that failed to create,
+				// createtopics process. Fixes issue 806.
 				if topic.ErrorCode != 0 {
 					continue
 				}

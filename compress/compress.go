@@ -13,7 +13,7 @@ import (
 	"github.com/segmentio/kafka-go/compress/zstd"
 )
 
-// Compression represents the the compression applied to a record set.
+// Compression represents the compression applied to a record set.
 type Compression int8
 
 const (
