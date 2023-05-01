@@ -48,8 +48,6 @@ func TestClientAlterClientQuotas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.Equal(t, expectedAlterResp, *alterResp)
-
 	expectedAlterResp := AlterClientQuotasResponse{
 		Throttle: 0,
 		Entries: []AlterClientQuotaResponseQuotas{
@@ -64,6 +62,8 @@ func TestClientAlterClientQuotas(t *testing.T) {
 			},
 		},
 	}
+
+	assert.Equal(t, expectedAlterResp, *alterResp)
 
 	describeResp, err := client.DescribeClientQuotas(context.Background(), &DescribeClientQuotasRequest{
 		Components: []DescribeClientQuotasRequestComponent{
