@@ -65,20 +65,6 @@ func TestClientAlterClientQuotas(t *testing.T) {
 
 	assert.Equal(t, expectedAlterResp, *alterResp)
 
-	describeResp, err := client.DescribeClientQuotas(context.Background(), &DescribeClientQuotasRequest{
-		Components: []DescribeClientQuotasRequestComponent{
-			{
-				EntityType: entityType,
-				MatchType:  0,
-				Match:      entityName,
-			},
-		},
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	expectedDescribeResp := DescribeClientQuotasResponse{
 		Throttle:  0,
 		ErrorCode: 0,
@@ -98,6 +84,20 @@ func TestClientAlterClientQuotas(t *testing.T) {
 				},
 			},
 		},
+	}
+
+	describeResp, err := client.DescribeClientQuotas(context.Background(), &DescribeClientQuotasRequest{
+		Components: []DescribeClientQuotasRequestComponent{
+			{
+				EntityType: entityType,
+				MatchType:  0,
+				Match:      entityName,
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	assert.Equal(t, expectedDescribeResp, *describeResp)
