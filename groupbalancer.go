@@ -502,7 +502,7 @@ type partitionMovements struct {
 
 // We need to process subscriptions' user data with each consumer's reported generation in mind
 // higher generations overwrite lower generations in case of a conflict
-// note that a conflict could exist only if user data is for different generations
+// note that a conflict could exist only if user data is for different generations.
 func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPartitionAssignment, map[topicPartitionAssignment]consumerGenerationPair, error) {
 	currentAssignment := make(map[string][]topicPartitionAssignment)
 	prevAssignment := make(map[topicPartitionAssignment]consumerGenerationPair)
@@ -905,11 +905,11 @@ func canConsumerParticipateInReassignment(memberID string, currentAssignment map
 	currentPartitions := currentAssignment[memberID]
 	currentAssignmentSize := len(currentPartitions)
 	maxAssignmentSize := len(consumer2AllPotentialPartitions[memberID])
-	if currentAssignmentSize > maxAssignmentSize {
-		//Logger.Printf("The consumer %s is assigned more partitions than the maximum possible", memberID)
-	}
+	// if currentAssignmentSize > maxAssignmentSize {
+	// 	//Logger.Printf("The consumer %s is assigned more partitions than the maximum possible", memberID)
+	// }
 	if currentAssignmentSize < maxAssignmentSize {
-		// if a consumer is not assigned all its potential partitions it is subject to reassignment
+		// if a consumer is not assigned all its potential partitions it is subject to reassignment.
 		return true
 	}
 	for _, partition := range currentPartitions {
@@ -936,15 +936,15 @@ func (s *StickyGroupBalancer) performReassignments(reassignablePartitions []topi
 			}
 
 			// the partition must have at least two consumers
-			if len(partition2AllPotentialConsumers[partition]) <= 1 {
-				//Logger.Printf("Expected more than one potential consumer for partition %s topic %d", partition.Topic, partition.Partition)
-			}
+			// if len(partition2AllPotentialConsumers[partition]) <= 1 {
+			// 	//Logger.Printf("Expected more than one potential consumer for partition %s topic %d", partition.Topic, partition.Partition)
+			// }
 
 			// the partition must have a consumer
 			consumer := currentPartitionConsumer[partition]
-			if consumer == "" {
-				//Logger.Printf("Expected topic %s partition %d to be assigned to a consumer", partition.Topic, partition.Partition)
-			}
+			// if consumer == "" {
+			// 	//Logger.Printf("Expected topic %s partition %d to be assigned to a consumer", partition.Topic, partition.Partition)
+			// }
 
 			if _, exists := prevAssignment[partition]; exists {
 				if len(currentAssignment[consumer]) > (len(currentAssignment[prevAssignment[partition].MemberID]) + 1) {
@@ -1037,7 +1037,7 @@ func (s *StickyGroupBalancer) reassignPartitionToNewConsumer(partition topicPart
 	return sortedCurrentSubscriptions
 }
 
-// Reassign a specific partition to a new consumer
+// Reassign a specific partition to a new consumer.
 func (s *StickyGroupBalancer) reassignPartition(partition topicPartitionAssignment, currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, currentPartitionConsumer map[topicPartitionAssignment]string, newConsumer string) []string {
 	consumer := currentPartitionConsumer[partition]
 	// find the correct partition movement considering the stickiness requirement
@@ -1145,7 +1145,7 @@ func (p *partitionMovements) hasCycles(pairs []consumerPair) bool {
 		if path, linked := p.isLinked(pair.DstMemberID, pair.SrcMemberID, reducedPairs, []string{pair.SrcMemberID}); linked {
 			if !p.in(path, cycles) {
 				cycles = append(cycles, path)
-				//	Logger.Printf("A cycle of length %d was found: %v", len(path)-1, path)
+				//	Logger.Printf("A cycle of length %d was found: %v", len(path)-1, path).
 			}
 		}
 	}

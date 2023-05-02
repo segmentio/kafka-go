@@ -48,22 +48,6 @@ func (t topicPartitionAssignment) writeTo(wb *writeBuffer) {
 	wb.writeInt32((t.Partition))
 }
 
-func (t topicPartitionAssignment) bytes() []byte {
-	buf := bytes.NewBuffer(nil)
-	t.writeTo(&writeBuffer{w: buf})
-	return buf.Bytes()
-}
-
-func (t *topicPartitionAssignment) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readString(r, size, &t.Topic); err != nil {
-		return
-	}
-	if remain, err = readInt32(r, remain, &t.Partition); err != nil {
-		return
-	}
-	return
-}
-
 func (t *StickyAssignorUserDataV2) readFrom(r *bufio.Reader, size int) (remain int, err error) {
 	if remain, err = readMapStringInt32(r, size, &t.Topics); err != nil {
 		return
