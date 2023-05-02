@@ -952,11 +952,6 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 
 	cg.withLogger(func(l Logger) {
 		l.Printf("joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
-		l.Printf("*******joingroupresponse : %v", response)
-	})
-	cg.withLogger(func(l Logger) {
-		l.Printf("joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
-		l.Printf("*******in joingroup: joingroupresponse : %v", response)
 	})
 
 	var assignments GroupMemberAssignments
@@ -994,25 +989,23 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 		ProtocolType:     defaultProtocolType,
 	}
 	for _, balancer := range cg.config.GroupBalancers {
-		// userData, err := balancer.UserData("", make(map[string][]int32), 0)
-		var userdata []byte
-		// if err != nil {
-		// 	return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
-		// }
+		userData, err := balancer.UserData(memberID, make(map[string][]int32), -1)
+		if err != nil {
+			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
+		}
 		if balancer.ProtocolName() == "sticky" {
-			//userdata = append(userdata, cg.userData...)
-			userdata = cg.userData
-			//userDat.appendcg.userData
+			userData = cg.userData
 		}
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName: balancer.ProtocolName(),
 			ProtocolMetadata: groupMetadata{
 				Version:  1,
 				Topics:   cg.config.Topics,
-				UserData: userdata,
+				UserData: userData,
 			}.bytes(),
 		})
 	}
+
 	return request, nil
 }
 
@@ -1127,12 +1120,6 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 	}
 
 	balancer, _ := findGroupBalancer(strategy, cg.config.GroupBalancers)
-	// if !ok {
-	// 	// NOTE : this shouldn't happen in practice...the broker should not
-	// 	//        return successfully from joinGroup unless all members support
-	// 	//        at least one common protocol.
-	// 	return nil, fmt.Errorf("unable to find selected balancer, %v, for group, %v", group.GroupProtocol, cg.config.ID)
-	// }
 
 	if memberAssignments != nil {
 		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV0, 0, 1)
@@ -1150,13 +1137,7 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 			if balancer.ProtocolName() == "sticky" {
 				var stickyBalancer StickyGroupBalancer
 				userDataBytes, _ = stickyBalancer.UserData(memberID, topics32, generationID)
-				// if err != nil {
-				// 	return nil, err
-				// }
-				// userDataBytes,_ = encode(&StickyAssignorUserDataV1{
-				// 	Topics:     topics32,
-				// 	Generation: generationID,
-				// }, nil)
+				// see if we can encode userdata here itself without having to call balancer.Userdata, that would avoid changing UserData()meth signatures and passing strategy var over join and sync group func calls
 			}
 			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
 				MemberID: memberID,

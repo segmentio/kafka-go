@@ -374,28 +374,6 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 		topics[topic] = partitions
 	}
 	fmt.Printf("hello here1")
-	// for topic, members := range membersByTopic {
-	// 	partitions := findPartitions(topic, topicPartitions)
-	// 	partitionCount := len(partitions)
-	// 	memberCount := len(members)
-
-	// 	for memberIndex, member := range members {
-	// 		assignmentsByTopic, ok := groupAssignments[member.ID]
-	// 		if !ok {
-	// 			assignmentsByTopic = map[string][]int{}
-	// 			groupAssignments[member.ID] = assignmentsByTopic
-	// 		}
-
-	// 		minIndex := memberIndex * partitionCount / memberCount
-	// 		maxIndex := (memberIndex + 1) * partitionCount / memberCount
-
-	// 		for partitionIndex, partition := range partitions {
-	// 			if partitionIndex >= minIndex && partitionIndex < maxIndex {
-	// 				assignmentsByTopic[topic] = append(assignmentsByTopic[topic], partition)
-	// 			}
-	// 		}
-	// 	}
-	// }
 
 	// track partition movements during generation of the partition assignment plan
 	s.movements = partitionMovements{
@@ -448,13 +426,11 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 		unvisitedPartitions[partition] = true
 	}
 
-	////
 	membersByID := make(map[string]GroupMember)
 	for _, member := range members {
 		membersByID[member.ID] = member
 	}
 
-	/////
 	var unassignedPartitions []topicPartitionAssignment
 	for memberID, partitions := range currentAssignment {
 		var keepPartitions []topicPartitionAssignment
@@ -600,23 +576,9 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 
 // Deserialize topic partition assignment data to aid with creation of a sticky assignment.
 func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUserData, error) {
-	// userDataV1 := &StickyAssignorUserDataV1{}
-	// if err := decode(userDataBytes, userDataV1, nil); err != nil {
-	// 	userDataV0 := &StickyAssignorUserDataV0{}
-	// 	if err := decode(userDataBytes, userDataV0, nil); err != nil {
-	// 		return nil, err
-	// 	}
-	// 	return userDataV0, nil
-	// }
-	// return userDataV1, nil
-	//userDataV2 := &StickyAssignorUserDataV2{}
 	var userDataV2 = &StickyAssignorUserDataV2{}
-	fmt.Printf("userdatabytes : %v", userDataBytes)
-	fmt.Printf("hello hello : userdatabytes : %v", userDataBytes)
-	fmt.Printf("hello hello : str(userdatabytes) : %v", string(userDataBytes))
 	b := bytes.NewBuffer(userDataBytes)
 
-	fmt.Printf("hello hello : bytes.buffer of userdatabytes : %v", b)
 	if b.Len() == 0 {
 		return userDataV2, nil
 	}
@@ -628,7 +590,6 @@ func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUs
 	if remain != 0 {
 		return nil, errors.New("expected 0 remain, got some bytes remaining")
 	}
-	fmt.Println("somehere userdatav2", userDataV2)
 	return userDataV2, nil
 
 }
