@@ -677,6 +677,7 @@ type ConsumerGroup struct {
 	closeOnce sync.Once
 	wg        sync.WaitGroup
 	done      chan struct{}
+	userData  []byte
 }
 
 // Close terminates the current generation by causing this member to leave and
@@ -795,7 +796,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	// join group.  this will join the group and prepare assignments if our
 	// consumer is elected leader.  it may also change or assign the member ID.
-	memberID, generationID, groupAssignments, err = cg.joinGroup(conn, memberID)
+	memberID, generationID, groupAssignments, strategy, err := cg.joinGroup(conn, memberID)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
@@ -805,9 +806,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	cg.withLogger(func(log Logger) {
 		log.Printf("Joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
 	})
-
 	// sync group
-	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments)
+	//may be we could do findstrategy here
+	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments, strategy)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to sync group %s: %v", cg.config.ID, err)
@@ -925,16 +926,16 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 // the leader.  Otherwise, GroupMemberAssignments will be nil.
 //
 // Possible kafka error codes returned:
-//  * GroupLoadInProgress:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * InconsistentGroupProtocol:
-//  * InvalidSessionTimeout:
-//  * GroupAuthorizationFailed:
-func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
+//   - GroupLoadInProgress:
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - InconsistentGroupProtocol:
+//   - InvalidSessionTimeout:
+//   - GroupAuthorizationFailed:
+func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, string, error) {
 	request, err := cg.makeJoinGroupRequestV1(memberID)
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, nil, "", err
 	}
 
 	response, err := conn.joinGroup(request)
@@ -942,21 +943,27 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		err = Error(response.ErrorCode)
 	}
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, nil, "", err
 	}
 
 	memberID = response.MemberID
 	generationID := response.GenerationID
+	strategy := response.GroupProtocol
 
 	cg.withLogger(func(l Logger) {
 		l.Printf("joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
+		l.Printf("*******joingroupresponse : %v", response)
+	})
+	cg.withLogger(func(l Logger) {
+		l.Printf("joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
+		l.Printf("*******in joingroup: joingroupresponse : %v", response)
 	})
 
 	var assignments GroupMemberAssignments
 	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
 		v, err := cg.assignTopicPartitions(conn, response)
 		if err != nil {
-			return memberID, 0, nil, err
+			return memberID, 0, nil, "", err
 		}
 		assignments = v
 
@@ -973,7 +980,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		l.Printf("joinGroup succeeded for response, %v.  generationID=%v, memberID=%v", cg.config.ID, response.GenerationID, response.MemberID)
 	})
 
-	return memberID, generationID, assignments, nil
+	return memberID, generationID, assignments, strategy, nil
 }
 
 // makeJoinGroupRequestV1 handles the logic of constructing a joinGroup
@@ -986,22 +993,26 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 		RebalanceTimeout: int32(cg.config.RebalanceTimeout / time.Millisecond),
 		ProtocolType:     defaultProtocolType,
 	}
-
 	for _, balancer := range cg.config.GroupBalancers {
-		userData, err := balancer.UserData()
-		if err != nil {
-			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
+		// userData, err := balancer.UserData("", make(map[string][]int32), 0)
+		var userdata []byte
+		// if err != nil {
+		// 	return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
+		// }
+		if balancer.ProtocolName() == "sticky" {
+			//userdata = append(userdata, cg.userData...)
+			userdata = cg.userData
+			//userDat.appendcg.userData
 		}
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName: balancer.ProtocolName(),
 			ProtocolMetadata: groupMetadata{
 				Version:  1,
 				Topics:   cg.config.Topics,
-				UserData: userData,
+				UserData: userdata,
 			}.bytes(),
 		})
 	}
-
 	return request, nil
 }
 
@@ -1073,13 +1084,13 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 // Readers subscriptions topic => partitions
 //
 // Possible kafka error codes returned:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * IllegalGeneration:
-//  * RebalanceInProgress:
-//  * GroupAuthorizationFailed:
-func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
-	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments)
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - IllegalGeneration:
+//   - RebalanceInProgress:
+//   - GroupAuthorizationFailed:
+func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments, strategy string) (map[string][]int32, error) {
+	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments, strategy)
 	response, err := conn.syncGroup(request)
 	if err == nil && response.ErrorCode != 0 {
 		err = Error(response.ErrorCode)
@@ -1103,16 +1114,25 @@ func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generation
 	cg.withLogger(func(l Logger) {
 		l.Printf("sync group finished for group, %v", cg.config.ID)
 	})
+	cg.userData = assignments.UserData
 
 	return assignments.Topics, nil
 }
 
-func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID int32, memberAssignments GroupMemberAssignments) syncGroupRequestV0 {
+func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID int32, memberAssignments GroupMemberAssignments, strategy string) syncGroupRequestV0 {
 	request := syncGroupRequestV0{
 		GroupID:      cg.config.ID,
 		GenerationID: generationID,
 		MemberID:     memberID,
 	}
+
+	balancer, _ := findGroupBalancer(strategy, cg.config.GroupBalancers)
+	// if !ok {
+	// 	// NOTE : this shouldn't happen in practice...the broker should not
+	// 	//        return successfully from joinGroup unless all members support
+	// 	//        at least one common protocol.
+	// 	return nil, fmt.Errorf("unable to find selected balancer, %v, for group, %v", group.GroupProtocol, cg.config.ID)
+	// }
 
 	if memberAssignments != nil {
 		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV0, 0, 1)
@@ -1126,11 +1146,24 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 				}
 				topics32[topic] = partitions32
 			}
+			var userDataBytes []byte
+			if balancer.ProtocolName() == "sticky" {
+				var stickyBalancer StickyGroupBalancer
+				userDataBytes, _ = stickyBalancer.UserData(memberID, topics32, generationID)
+				// if err != nil {
+				// 	return nil, err
+				// }
+				// userDataBytes,_ = encode(&StickyAssignorUserDataV1{
+				// 	Topics:     topics32,
+				// 	Generation: generationID,
+				// }, nil)
+			}
 			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
 				MemberID: memberID,
 				MemberAssignments: groupAssignment{
-					Version: 1,
-					Topics:  topics32,
+					Version:  1,
+					Topics:   topics32,
+					UserData: userDataBytes,
 				}.bytes(),
 			})
 		}
