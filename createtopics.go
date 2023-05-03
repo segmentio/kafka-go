@@ -23,7 +23,7 @@ type CreateTopicsRequest struct {
 	// When set to true, topics are not created but the configuration is
 	// validated as if they were.
 	//
-	// This field will be ignored if the kafka broker did no support the
+	// This field will be ignored if the kafka broker did not support the
 	// CreateTopics API in version 1 or above.
 	ValidateOnly bool
 }
@@ -33,7 +33,7 @@ type CreateTopicsRequest struct {
 type CreateTopicsResponse struct {
 	// The amount of time that the broker throttled the request.
 	//
-	// This field will be zero if the kafka broker did no support the
+	// This field will be zero if the kafka broker did not support the
 	// CreateTopics API in version 2 or above.
 	Throttle time.Duration
 
