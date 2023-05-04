@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const defaultGeneration = -1
+const defaultGeneration int32 = -1
 
 type topicPartitionAssignment struct {
 	Topic     string
@@ -16,7 +16,7 @@ type topicPartitionAssignment struct {
 type StickyAssignorUserData interface {
 	partitions() []topicPartitionAssignment
 	hasGeneration() bool
-	generation() int
+	generation() int32
 }
 
 type StickyAssignorUserDataV2 struct {
@@ -32,7 +32,8 @@ func (s StickyAssignorUserDataV2) writeTo(wb *writeBuffer) {
 		wb.writeString(topic)
 		wb.writeInt32Array(partitions)
 	}
-	wb.writeInt32((s.Generation))
+	fmt.Println("hello here, encoding generation , before encoding : ", s.Generation)
+	wb.writeInt32(s.Generation)
 }
 func (t StickyAssignorUserDataV2) bytes() []byte {
 	buf := bytes.NewBuffer(nil)
@@ -52,16 +53,19 @@ func (t *StickyAssignorUserDataV2) readFrom(r *bufio.Reader, size int) (remain i
 	if remain, err = readMapStringInt32(r, size, &t.Topics); err != nil {
 		return
 	}
+	fmt.Println("hello here, in decoding", remain, r)
 	if remain, err = readInt32(r, remain, &t.Generation); err != nil {
 		return
 	}
+	fmt.Println("hello here, in decoding", remain, r)
+	fmt.Println("hello here, decoded generation", t.Generation)
 	fmt.Println("mytopics", t.Topics)
 	t.topicPartitions = populateTopicPartitions(t.Topics)
 	return
 }
 func (m *StickyAssignorUserDataV2) partitions() []topicPartitionAssignment { return m.topicPartitions }
-func (m *StickyAssignorUserDataV2) hasGeneration() bool                    { return false }
-func (m *StickyAssignorUserDataV2) generation() int                        { return defaultGeneration }
+func (m *StickyAssignorUserDataV2) hasGeneration() bool                    { return true }
+func (m *StickyAssignorUserDataV2) generation() int32                      { return m.Generation }
 
 func populateTopicPartitions(topics map[string][]int32) []topicPartitionAssignment {
 	topicPartitions := make([]topicPartitionAssignment, 0)

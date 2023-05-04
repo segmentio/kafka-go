@@ -45,6 +45,25 @@ type GroupBalancer interface {
 	AssignGroups(members []GroupMember, partitions []Partition) GroupMemberAssignments
 }
 
+type int32Slice []int32
+
+func (s int32Slice) Len() int {
+	return len(s)
+}
+
+func (s int32Slice) Less(i, j int) bool {
+	return s[i] < s[j]
+}
+
+func (s int32Slice) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+// To sort in reverse order
+func (s int32Slice) Reverse() sort.Interface {
+	return sort.Reverse(s)
+}
+
 // RangeGroupBalancer groups consumers by partition
 //
 // Example: 5 partitions, 2 consumers
@@ -485,7 +504,7 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 
 type consumerGenerationPair struct {
 	MemberID   string
-	Generation int
+	Generation int32
 }
 
 // consumerPair represents a pair of Kafka consumer ids involved in a partition reassignment.
@@ -508,7 +527,7 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 	prevAssignment := make(map[topicPartitionAssignment]consumerGenerationPair)
 	fmt.Println("here3")
 	// for each partition we create a sorted map of its consumers by generation
-	sortedPartitionConsumersByGeneration := make(map[topicPartitionAssignment]map[int]string)
+	sortedPartitionConsumersByGeneration := make(map[topicPartitionAssignment]map[int32]string)
 	for _, meta := range members {
 		fmt.Printf("in for loop of prepopulate, member: %v", meta)
 		fmt.Printf("in for loop of prepopulate, member.userdata: %v", meta.UserData)
@@ -523,14 +542,20 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 		fmt.Println("here4")
 		fmt.Printf("cchere : conparts : %v", consumerUserData.partitions())
 		for _, partition := range consumerUserData.partitions() {
+			fmt.Println("in consumerdata loop, Partition ", partition)
 			if consumers, exists := sortedPartitionConsumersByGeneration[partition]; exists {
+				fmt.Println("in consumerdata loop, this partition exists in sortedpartitions", partition)
+				fmt.Println("in consumerdata loop, consumeruserdata", consumerUserData)
+				fmt.Println("in consumerdata loop, this partition has generation", consumerUserData.hasGeneration())
 				if consumerUserData.hasGeneration() {
 					if _, generationExists := consumers[consumerUserData.generation()]; generationExists {
 						// same partition is assigned to two consumers during the same rebalance.
 						// log a warning and skip this record
 						//Logger.Printf("Topic %s Partition %d is assigned to multiple consumers following sticky assignment generation %d", partition.Topic, partition.Partition, consumerUserData.generation())
+						fmt.Printf("Topic %s Partition %d is assigned to multiple consumers following sticky assignment generation %d", partition.Topic, partition.Partition, consumerUserData.generation())
 						continue
 					} else {
+						fmt.Println("in consumerdataloop has gneration, ")
 						consumers[consumerUserData.generation()] = meta.ID
 					}
 				} else {
@@ -541,7 +566,7 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 				if consumerUserData.hasGeneration() {
 					generation = consumerUserData.generation()
 				}
-				sortedPartitionConsumersByGeneration[partition] = map[int]string{generation: meta.ID}
+				sortedPartitionConsumersByGeneration[partition] = map[int32]string{generation: meta.ID}
 			}
 		}
 	}
@@ -550,19 +575,20 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 	// current and previous consumers are the last two consumers of each partition in the above sorted map
 	for partition, consumers := range sortedPartitionConsumersByGeneration {
 		// sort consumers by generation in decreasing order
-		var generations []int
+		var generations []int32
 		for generation := range consumers {
 			generations = append(generations, generation)
 		}
-		sort.Sort(sort.Reverse(sort.IntSlice(generations)))
-
+		//sort.Sort(sort.Reverse(sort.IntSlice(generations)))
+		sort.Sort(sort.Reverse(int32Slice(generations)))
 		consumer := consumers[generations[0]]
 		if _, exists := currentAssignment[consumer]; !exists {
 			currentAssignment[consumer] = []topicPartitionAssignment{partition}
 		} else {
 			currentAssignment[consumer] = append(currentAssignment[consumer], partition)
 		}
-
+		//cremove this
+		fmt.Printf("in prepopulate,generations: %v", generations)
 		// check for previous assignment, if any
 		if len(generations) > 1 {
 			prevAssignment[partition] = consumerGenerationPair{
@@ -571,6 +597,7 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 			}
 		}
 	}
+	fmt.Printf("here here in prepopulate, current: %v \t prev : %v", currentAssignment, prevAssignment)
 	return currentAssignment, prevAssignment, nil
 }
 
@@ -583,6 +610,7 @@ func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUs
 		return userDataV2, nil
 	}
 	fmt.Printf("mybytes : %v", b)
+	fmt.Println("len of mybytes buffer : ", len(userDataBytes))
 	remain, err := (userDataV2).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		return nil, err
@@ -590,6 +618,7 @@ func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUs
 	if remain != 0 {
 		return nil, errors.New("expected 0 remain, got some bytes remaining")
 	}
+	fmt.Println("in deserialize afte decoding checking generation", userDataV2)
 	return userDataV2, nil
 
 }

@@ -931,7 +931,7 @@ func Test_prepopulateCurrentAssignments(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(gotPrevAssignments, tt.wantPrevAssignments) {
-				t.Errorf("deserializeTopicPartitionAssignment() prevAssignments = %v, want %v", gotPrevAssignments, tt.wantPrevAssignments)
+				t.Errorf("deserializeTopicPartitionAssignment() prevAssignments = %v, here want %v", gotPrevAssignments, tt.wantPrevAssignments)
 			}
 		})
 	}
@@ -2048,7 +2048,7 @@ func encodeSubscriberPlanWithGeneration(t *testing.T, assignments map[string][]i
 }
 
 // verify that the plan is fully balanced, assumes that all consumers can
-// consume from the same set of topics
+// consume from the same set of topics.
 func verifyFullyBalanced(t *testing.T, plan GroupMemberAssignments) {
 	min := math.MaxInt32
 	max := math.MinInt32
@@ -2788,7 +2788,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 // }
 
 // // blocked here above test failing
-// below test passing
+// below test passing.
 func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerAdded(t *testing.T) {
 	s := &StickyGroupBalancer{}
 
