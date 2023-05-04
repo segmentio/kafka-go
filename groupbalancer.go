@@ -450,7 +450,7 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 		membersByID[member.ID] = member
 	}
 
-	var unassignedPartitions []topicPartitionAssignment
+	unassignedPartitions := make([]topicPartitionAssignment, 0)
 	for memberID, partitions := range currentAssignment {
 		var keepPartitions []topicPartitionAssignment
 		for _, partition := range partitions {
