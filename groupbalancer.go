@@ -59,7 +59,7 @@ func (s int32Slice) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-// To sort in reverse order
+// To sort in reverse order.
 func (s int32Slice) Reverse() sort.Interface {
 	return sort.Reverse(s)
 }

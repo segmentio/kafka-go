@@ -2819,7 +2819,6 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerAdded(t *testin
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
 }
 
-// // I think this worked below,test passed
 func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
 	s := &StickyGroupBalancer{}
 
@@ -2882,7 +2881,6 @@ func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
 }
 
-// test passing
 func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving(t *testing.T) {
 	s := &StickyGroupBalancer{}
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
