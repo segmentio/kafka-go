@@ -5,10 +5,11 @@ import (
 	"bytes"
 	"container/heap"
 	"errors"
-	"fmt"
 	"math"
 	"sort"
 	"strings"
+
+	"log"
 )
 
 // GroupMember describes a single participant in a consumer group.
@@ -372,7 +373,6 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 		partitionsByTopic[topic] = partitions
 		topics[topic] = partitions
 	}
-	fmt.Printf("hello here1")
 
 	// track partition movements during generation of the partition assignment plan
 	s.movements = partitionMovements{
@@ -384,9 +384,6 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 	if err != nil {
 		return nil
 	}
-	fmt.Printf("hello here2")
-	fmt.Printf("current assignment : %v", currentAssignment)
-	fmt.Printf("previous assignment : %v", prevAssignment)
 	// determine if we're dealing with a completely fresh assignment, or if there's existing assignment state
 	isFreshAssignment := len(currentAssignment) == 0
 
@@ -505,37 +502,23 @@ type partitionMovements struct {
 func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPartitionAssignment, map[topicPartitionAssignment]consumerGenerationPair, error) {
 	currentAssignment := make(map[string][]topicPartitionAssignment)
 	prevAssignment := make(map[topicPartitionAssignment]consumerGenerationPair)
-	fmt.Println("here3")
 	// for each partition we create a sorted map of its consumers by generation
 	sortedPartitionConsumersByGeneration := make(map[topicPartitionAssignment]map[int32]string)
 	for _, meta := range members {
-		fmt.Printf("in for loop of prepopulate, member: %v", meta)
-		fmt.Printf("in for loop of prepopulate, member.userdata: %v", meta.UserData)
-		fmt.Printf("meta.userdata : %v", meta.UserData)
-		fmt.Printf("in for loop of prepopulate, calling deserialize")
 		consumerUserData, err := deserializeTopicPartitionAssignment(meta.UserData)
-		fmt.Printf("error in dese : %v", err)
 		if err != nil {
 			return nil, nil, err
 		}
-		fmt.Printf("in for loop of prepopulate, after deseri, consumeruserdata: %v", consumerUserData)
-		fmt.Println("here4")
-		fmt.Printf("cchere : conparts : %v", consumerUserData.partitions())
 		for _, partition := range consumerUserData.partitions() {
-			fmt.Println("in consumerdata loop, Partition ", partition)
 			if consumers, exists := sortedPartitionConsumersByGeneration[partition]; exists {
-				fmt.Println("in consumerdata loop, this partition exists in sortedpartitions", partition)
-				fmt.Println("in consumerdata loop, consumeruserdata", consumerUserData)
-				fmt.Println("in consumerdata loop, this partition has generation", consumerUserData.hasGeneration())
 				if consumerUserData.hasGeneration() {
 					if _, generationExists := consumers[consumerUserData.generation()]; generationExists {
 						// same partition is assigned to two consumers during the same rebalance.
 						// log a warning and skip this record
 						//Logger.Printf("Topic %s Partition %d is assigned to multiple consumers following sticky assignment generation %d", partition.Topic, partition.Partition, consumerUserData.generation())
-						fmt.Printf("Topic %s Partition %d is assigned to multiple consumers following sticky assignment generation %d", partition.Topic, partition.Partition, consumerUserData.generation())
+						log.Printf("Topic %s Partition %d is assigned to multiple consumers following sticky assignment generation %d", partition.Topic, partition.Partition, consumerUserData.generation())
 						continue
 					} else {
-						fmt.Println("in consumerdataloop has gneration, ")
 						consumers[consumerUserData.generation()] = meta.ID
 					}
 				} else {
@@ -559,8 +542,6 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 		for generation := range consumers {
 			generations = append(generations, generation)
 		}
-		// sort.Sort(sort.Reverse(sort.IntSlice(generations)))
-		// sort.Sort(sort.Reverse(int32Slice(generations)))
 		sort.Slice(generations[:], func(i, j int) bool {
 			return generations[i] > generations[j]
 		})
@@ -570,8 +551,6 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 		} else {
 			currentAssignment[consumer] = append(currentAssignment[consumer], partition)
 		}
-		//cremove this
-		fmt.Printf("in prepopulate,generations: %v", generations)
 		// check for previous assignment, if any
 		if len(generations) > 1 {
 			prevAssignment[partition] = consumerGenerationPair{
@@ -580,7 +559,6 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 			}
 		}
 	}
-	fmt.Printf("here here in prepopulate, current: %v \t prev : %v", currentAssignment, prevAssignment)
 	return currentAssignment, prevAssignment, nil
 }
 
@@ -592,8 +570,6 @@ func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUs
 	if b.Len() == 0 {
 		return userDataV2, nil
 	}
-	fmt.Printf("mybytes : %v", b)
-	fmt.Println("len of mybytes buffer : ", len(userDataBytes))
 	remain, err := (userDataV2).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		return nil, err
@@ -601,7 +577,6 @@ func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUs
 	if remain != 0 {
 		return nil, errors.New("expected 0 remain, got some bytes remaining")
 	}
-	fmt.Println("in deserialize afte decoding checking generation", userDataV2)
 	return userDataV2, nil
 
 }
@@ -917,9 +892,9 @@ func canConsumerParticipateInReassignment(memberID string, currentAssignment map
 	currentPartitions := currentAssignment[memberID]
 	currentAssignmentSize := len(currentPartitions)
 	maxAssignmentSize := len(consumer2AllPotentialPartitions[memberID])
-	// if currentAssignmentSize > maxAssignmentSize {
-	// 	//Logger.Printf("The consumer %s is assigned more partitions than the maximum possible", memberID)
-	// }
+	if currentAssignmentSize > maxAssignmentSize {
+		log.Printf("The consumer %s is assigned more partitions than the maximum possible", memberID)
+	}
 	if currentAssignmentSize < maxAssignmentSize {
 		// if a consumer is not assigned all its potential partitions it is subject to reassignment.
 		return true
@@ -948,15 +923,15 @@ func (s *StickyGroupBalancer) performReassignments(reassignablePartitions []topi
 			}
 
 			// the partition must have at least two consumers
-			// if len(partition2AllPotentialConsumers[partition]) <= 1 {
-			// 	//Logger.Printf("Expected more than one potential consumer for partition %s topic %d", partition.Topic, partition.Partition)
-			// }
+			if len(partition2AllPotentialConsumers[partition]) <= 1 {
+				log.Printf("Expected more than one potential consumer for partition %s topic %d", partition.Topic, partition.Partition)
+			}
 
 			// the partition must have a consumer
 			consumer := currentPartitionConsumer[partition]
-			// if consumer == "" {
-			// 	//Logger.Printf("Expected topic %s partition %d to be assigned to a consumer", partition.Topic, partition.Partition)
-			// }
+			if consumer == "" {
+				log.Printf("Expected topic %s partition %d to be assigned to a consumer", partition.Topic, partition.Partition)
+			}
 
 			if _, exists := prevAssignment[partition]; exists {
 				if len(currentAssignment[consumer]) > (len(currentAssignment[prevAssignment[partition].MemberID]) + 1) {
@@ -997,9 +972,9 @@ func isBalanced(currentAssignment map[string][]topicPartitionAssignment, allSubs
 	allPartitions := make(map[topicPartitionAssignment]string)
 	for memberID, partitions := range currentAssignment {
 		for _, partition := range partitions {
-			// if _, exists := allPartitions[partition]; exists {
-			// 	//Logger.Printf("Topic %s Partition %d is assigned more than one consumer", partition.Topic, partition.Partition)
-			// }
+			if _, exists := allPartitions[partition]; exists {
+				log.Printf("Topic %s Partition %d is assigned more than one consumer", partition.Topic, partition.Partition)
+			}
 			allPartitions[partition] = memberID
 		}
 	}
@@ -1074,9 +1049,9 @@ func (p *partitionMovements) getTheActualPartitionToBeMoved(partition topicParti
 	}
 	if _, exists := p.Movements[partition]; exists {
 		// this partition has previously moved
-		// if oldConsumer != p.Movements[partition].DstMemberID {
-		// 	//Logger.Printf("Partition movement DstMemberID %s was not equal to the oldConsumer ID %s", p.Movements[partition].DstMemberID, oldConsumer)
-		// }
+		if oldConsumer != p.Movements[partition].DstMemberID {
+			log.Printf("Partition movement DstMemberID %s was not equal to the oldConsumer ID %s", p.Movements[partition].DstMemberID, oldConsumer)
+		}
 		oldConsumer = p.Movements[partition].SrcMemberID
 	}
 
@@ -1157,7 +1132,7 @@ func (p *partitionMovements) hasCycles(pairs []consumerPair) bool {
 		if path, linked := p.isLinked(pair.DstMemberID, pair.SrcMemberID, reducedPairs, []string{pair.SrcMemberID}); linked {
 			if !p.in(path, cycles) {
 				cycles = append(cycles, path)
-				//	Logger.Printf("A cycle of length %d was found: %v", len(path)-1, path).
+				log.Printf("A cycle of length %d was found: %v", len(path)-1, path)
 			}
 		}
 	}
@@ -1174,7 +1149,7 @@ func (p *partitionMovements) hasCycles(pairs []consumerPair) bool {
 }
 
 func (p *partitionMovements) isSticky() bool {
-	for _, movements := range p.PartitionMovementsByTopic { //for topic, movements := range p.PartitionMovementsByTopic {
+	for topic, movements := range p.PartitionMovementsByTopic {
 		movementPairs := make([]consumerPair, len(movements))
 		i := 0
 		for pair := range movements {
@@ -1182,8 +1157,8 @@ func (p *partitionMovements) isSticky() bool {
 			i++
 		}
 		if p.hasCycles(movementPairs) {
-			//Logger.Printf("Stickiness is violated for topic %s", topic)
-			//Logger.Printf("Partition movements for this topic occurred among the following consumer pairs: %v", movements)
+			log.Printf("Stickiness is violated for topic %s", topic)
+			log.Printf("Partition movements for this topic occurred among the following consumer pairs: %v", movements)
 			return false
 		}
 	}
@@ -1217,9 +1192,9 @@ func (p *partitionMovements) movePartition(partition topicPartitionAssignment, o
 	if _, exists := p.Movements[partition]; exists {
 		// this partition has previously moved
 		existingPair := p.removeMovementRecordOfPartition(partition)
-		// if existingPair.DstMemberID != oldConsumer {
-		// 	//Logger.Printf("Existing pair DstMemberID %s was not equal to the oldConsumer ID %s", existingPair.DstMemberID, oldConsumer)
-		// }
+		if existingPair.DstMemberID != oldConsumer {
+			log.Printf("Existing pair DstMemberID %s was not equal to the oldConsumer ID %s", existingPair.DstMemberID, oldConsumer)
+		}
 		if existingPair.SrcMemberID != newConsumer {
 			// the partition is not moving back to its previous consumer
 			p.addPartitionMovementRecord(partition, consumerPair{
