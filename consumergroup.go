@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+const stickyBalanceStrategyName = "sticky"
+
 // ErrGroupClosed is returned by ConsumerGroup.Next when the group has already
 // been closed.
 var ErrGroupClosed = errors.New("consumer group is closed")
@@ -993,7 +995,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 		if err != nil {
 			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
 		}
-		if balancer.ProtocolName() == "sticky" {
+		if balancer.ProtocolName() == stickyBalanceStrategyName {
 			userData = cg.userData
 		}
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{

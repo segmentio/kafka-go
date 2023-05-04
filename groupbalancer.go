@@ -29,7 +29,7 @@ type GroupMemberAssignments map[string]map[string][]int
 
 // GroupBalancer encapsulates the client side rebalancing logic.
 type GroupBalancer interface {
-	// ProtocolName of the GroupBalancer
+	// ProtocolName of the GroupBalancer.
 	ProtocolName() string
 
 	// UserData provides the GroupBalancer an opportunity to embed custom
@@ -37,11 +37,11 @@ type GroupBalancer interface {
 	//
 	// Will be used by JoinGroup to begin the consumer group handshake.
 	//
-	// See https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-JoinGroupRequest
+	// See https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-JoinGroupRequest .
 	UserData(memberID string, topics map[string][]int32, generationID int32) ([]byte, error)
 
 	// DefineMemberships returns which members will be consuming
-	// which topic partitions
+	// which topic partitions.
 	AssignGroups(members []GroupMember, partitions []Partition) GroupMemberAssignments
 }
 
@@ -985,9 +985,9 @@ func isBalanced(currentAssignment map[string][]topicPartitionAssignment, allSubs
 	allPartitions := make(map[topicPartitionAssignment]string)
 	for memberID, partitions := range currentAssignment {
 		for _, partition := range partitions {
-			if _, exists := allPartitions[partition]; exists {
-				//Logger.Printf("Topic %s Partition %d is assigned more than one consumer", partition.Topic, partition.Partition)
-			}
+			// if _, exists := allPartitions[partition]; exists {
+			// 	//Logger.Printf("Topic %s Partition %d is assigned more than one consumer", partition.Topic, partition.Partition)
+			// }
 			allPartitions[partition] = memberID
 		}
 	}
@@ -1045,7 +1045,7 @@ func (s *StickyGroupBalancer) reassignPartition(partition topicPartitionAssignme
 	return s.processPartitionMovement(partitionToBeMoved, newConsumer, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer)
 }
 
-// Track the movement of a topic partition after assignment
+// Track the movement of a topic partition after assignment.
 func (s *StickyGroupBalancer) processPartitionMovement(partition topicPartitionAssignment, newConsumer string, currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, currentPartitionConsumer map[topicPartitionAssignment]string) []string {
 	oldConsumer := currentPartitionConsumer[partition]
 	s.movements.movePartition(partition, oldConsumer, newConsumer)
@@ -1062,9 +1062,9 @@ func (p *partitionMovements) getTheActualPartitionToBeMoved(partition topicParti
 	}
 	if _, exists := p.Movements[partition]; exists {
 		// this partition has previously moved
-		if oldConsumer != p.Movements[partition].DstMemberID {
-			//Logger.Printf("Partition movement DstMemberID %s was not equal to the oldConsumer ID %s", p.Movements[partition].DstMemberID, oldConsumer)
-		}
+		// if oldConsumer != p.Movements[partition].DstMemberID {
+		// 	//Logger.Printf("Partition movement DstMemberID %s was not equal to the oldConsumer ID %s", p.Movements[partition].DstMemberID, oldConsumer)
+		// }
 		oldConsumer = p.Movements[partition].SrcMemberID
 	}
 
@@ -1205,9 +1205,9 @@ func (p *partitionMovements) movePartition(partition topicPartitionAssignment, o
 	if _, exists := p.Movements[partition]; exists {
 		// this partition has previously moved
 		existingPair := p.removeMovementRecordOfPartition(partition)
-		if existingPair.DstMemberID != oldConsumer {
-			//Logger.Printf("Existing pair DstMemberID %s was not equal to the oldConsumer ID %s", existingPair.DstMemberID, oldConsumer)
-		}
+		// if existingPair.DstMemberID != oldConsumer {
+		// 	//Logger.Printf("Existing pair DstMemberID %s was not equal to the oldConsumer ID %s", existingPair.DstMemberID, oldConsumer)
+		// }
 		if existingPair.SrcMemberID != newConsumer {
 			// the partition is not moving back to its previous consumer
 			p.addPartitionMovementRecord(partition, consumerPair{
