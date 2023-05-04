@@ -1122,7 +1122,6 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 	}
 
 	balancer, _ := findGroupBalancer(strategy, cg.config.GroupBalancers)
-
 	if memberAssignments != nil {
 		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV0, 0, 1)
 

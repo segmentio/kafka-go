@@ -29,7 +29,7 @@ type GroupMemberAssignments map[string]map[string][]int
 
 // GroupBalancer encapsulates the client side rebalancing logic.
 type GroupBalancer interface {
-	// ProtocolName of the GroupBalancer.
+	// ProtocolName of the GroupBalance
 	ProtocolName() string
 
 	// UserData provides the GroupBalancer an opportunity to embed custom
@@ -37,11 +37,11 @@ type GroupBalancer interface {
 	//
 	// Will be used by JoinGroup to begin the consumer group handshake.
 	//
-	// See https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-JoinGroupRequest .
+	// See https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-JoinGroupRequest
 	UserData(memberID string, topics map[string][]int32, generationID int32) ([]byte, error)
 
 	// DefineMemberships returns which members will be consuming
-	// which topic partitions.
+	// which topic partitions
 	AssignGroups(members []GroupMember, partitions []Partition) GroupMemberAssignments
 }
 

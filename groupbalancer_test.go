@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-// func TestRandom(t *testing.T) {
-// 	panic("kdvfnvjfnmfckdvnfjkv gf bghb hgb kgmbmtkmb kytmbnynmky nm")
-// }
-
 func TestFindMembersByTopic(t *testing.T) {
 	a1 := GroupMember{
 		ID:     "a",
