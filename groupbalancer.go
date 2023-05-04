@@ -29,7 +29,7 @@ type GroupMemberAssignments map[string]map[string][]int
 
 // GroupBalancer encapsulates the client side rebalancing logic.
 type GroupBalancer interface {
-	// ProtocolName of the GroupBalance
+	// ProtocolName of the GroupBalancer
 	ProtocolName() string
 
 	// UserData provides the GroupBalancer an opportunity to embed custom
@@ -43,25 +43,6 @@ type GroupBalancer interface {
 	// DefineMemberships returns which members will be consuming
 	// which topic partitions
 	AssignGroups(members []GroupMember, partitions []Partition) GroupMemberAssignments
-}
-
-type int32Slice []int32
-
-func (s int32Slice) Len() int {
-	return len(s)
-}
-
-func (s int32Slice) Less(i, j int) bool {
-	return s[i] < s[j]
-}
-
-func (s int32Slice) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
-
-// To sort in reverse order.
-func (s int32Slice) Reverse() sort.Interface {
-	return sort.Reverse(s)
 }
 
 // RangeGroupBalancer groups consumers by partition

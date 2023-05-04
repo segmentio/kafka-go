@@ -808,8 +808,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	cg.withLogger(func(log Logger) {
 		log.Printf("Joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
 	})
+
 	// sync group
-	//may be we could do findstrategy here
+	//may be we could do findstrategy here and avoid modifying func signature
 	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments, strategy)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
