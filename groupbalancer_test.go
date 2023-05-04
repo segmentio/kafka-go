@@ -2986,7 +2986,6 @@ func Test_stickyBalanceStrategy_Plan_NewSubscription(t *testing.T) {
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
 }
 
-// passed test
 func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChanges(t *testing.T) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
