@@ -379,7 +379,6 @@ func (s StickyGroupBalancer) UserData(memberID string, topics map[string][]int32
 		Topics:     topics,
 		Generation: generationID,
 	}).bytes(), nil
-	//deal with nil error
 }
 
 func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions []Partition) GroupMemberAssignments {
@@ -579,8 +578,11 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 		for generation := range consumers {
 			generations = append(generations, generation)
 		}
-		//sort.Sort(sort.Reverse(sort.IntSlice(generations)))
-		sort.Sort(sort.Reverse(int32Slice(generations)))
+		// sort.Sort(sort.Reverse(sort.IntSlice(generations)))
+		// sort.Sort(sort.Reverse(int32Slice(generations)))
+		sort.Slice(generations[:], func(i, j int) bool {
+			return generations[i] > generations[j]
+		})
 		consumer := consumers[generations[0]]
 		if _, exists := currentAssignment[consumer]; !exists {
 			currentAssignment[consumer] = []topicPartitionAssignment{partition}

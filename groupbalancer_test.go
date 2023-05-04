@@ -1897,18 +1897,14 @@ func Test_stickyBalanceStrategy_Plan(t *testing.T) {
 
 			plan := s.AssignGroups(tt.args.members, tt.args.topics)
 			//plan returns an error in sarama which is passed below
-			verifyPlanIsBalancedAndSticky(t, s, tt.args.members, plan, nil)
+			verifyPlanIsBalancedAndSticky(t, s, tt.args.members, plan)
 			verifyFullyBalanced(t, plan)
 		})
 	}
 }
 
-func verifyPlanIsBalancedAndSticky(t *testing.T, s *StickyGroupBalancer, members []GroupMember, plan GroupMemberAssignments, err error) {
+func verifyPlanIsBalancedAndSticky(t *testing.T, s *StickyGroupBalancer, members []GroupMember, plan GroupMemberAssignments) {
 	t.Helper()
-	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
-		return
-	}
 	if !s.movements.isSticky() {
 		t.Error("stickyBalanceStrategy.Plan() not sticky")
 		return
@@ -2104,7 +2100,7 @@ func Test_stickyBalanceStrategy_Plan_KIP54_ExampleOne(t *testing.T) {
 	topics := newPartitions(2, "topic1", "topic2", "topic3")
 	plan1 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 	verifyFullyBalanced(t, plan1)
 	//consumersbyId =
 	membersByID := make(map[string]GroupMember)
@@ -2198,7 +2194,7 @@ func Test_stickyBalanceStrategy_Plan_KIP54_ExampleOne(t *testing.T) {
 	// }
 	plan2 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 	verifyFullyBalanced(t, plan2)
 }
 
@@ -2255,7 +2251,7 @@ func Test_stickyBalanceStrategy_Plan_KIP54_ExampleTwo(t *testing.T) {
 
 	plan1 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 	if len(plan1["consumer1"]["topic1"]) != 1 || len(plan1["consumer2"]["topic2"]) != 2 || len(plan1["consumer3"]["topic3"]) != 3 {
 		t.Error("Incorrect distribution of topic partition assignments")
 	}
@@ -2291,7 +2287,7 @@ func Test_stickyBalanceStrategy_Plan_KIP54_ExampleTwo(t *testing.T) {
 	// }
 	plan2 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 	verifyFullyBalanced(t, plan2)
 	if len(plan2["consumer2"]["topic1"]) != 1 || len(plan2["consumer2"]["topic2"]) != 2 || len(plan2["consumer3"]["topic3"]) != 3 {
 		t.Error("Incorrect distribution of topic partition assignments")
@@ -2336,7 +2332,7 @@ func Test_stickyBalanceStrategy_Plan_KIP54_ExampleThree(t *testing.T) {
 	}
 	plan1 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 
 	// PLAN 2
 	//var indexofmembertobedeleted int
@@ -2391,7 +2387,7 @@ func Test_stickyBalanceStrategy_Plan_KIP54_ExampleThree(t *testing.T) {
 	// }
 	plan2 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 	verifyFullyBalanced(t, plan2)
 }
 
@@ -2424,7 +2420,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	}
 	plan1 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 
 	// PLAN 2
 	// members["consumer1"] = ConsumerGroupMemberMetadata{
@@ -2473,7 +2469,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 
 	plan2 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 
 	// PLAN 3
 	// delete(members, "consumer1")
@@ -2522,7 +2518,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	members = append(members[:indexofmembertobedeleted], members[indexofmembertobedeleted+1:]...)
 	plan3 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan3, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan3)
 }
 
 func Test_stickyBalanceStrategy_Plan_PoorRoundRobinAssignmentScenario(t *testing.T) {
@@ -2591,7 +2587,7 @@ func Test_stickyBalanceStrategy_Plan_PoorRoundRobinAssignmentScenario(t *testing
 	}
 	plan := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan)
 }
 
 func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
@@ -2627,7 +2623,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 	}
 	plan1 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 	verifyFullyBalanced(t, plan1)
 
 	// PLAN 2
@@ -2671,7 +2667,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 
 	plan2 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 	verifyFullyBalanced(t, plan2)
 
 	// // PLAN 3
@@ -2709,7 +2705,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 	//or just do topics = topics[3:]
 	plan3 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan3, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan3)
 	verifyFullyBalanced(t, plan3)
 }
 
@@ -2805,14 +2801,14 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerAdded(t *testin
 
 	plan1 := s.AssignGroups(members, topics)
 	//nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 
 	// add a new consumer
 	//members["consumer10"] = ConsumerGroupMemberMetadata{Topics: []string{"topic1"}}
 	members = append(members, GroupMember{ID: "consumer10", Topics: []string{"topic1"}})
 	plan2 := s.AssignGroups(members, topics)
 	// nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 }
 
 func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
@@ -2842,7 +2838,7 @@ func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
 
 	plan1 := s.AssignGroups(members, topics)
 	// nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 
 	// PLAN 2
 	// for i := 0; i < 9; i++ {
@@ -2874,7 +2870,7 @@ func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
 
 	plan2 := s.AssignGroups(members, topics)
 	// nil is err returned from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 }
 
 func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving(t *testing.T) {
@@ -2906,7 +2902,7 @@ func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving
 
 	plan1 := s.AssignGroups(members, topics)
 	//nil is err from plan
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 
 	// for i := 0; i < 200; i++ {
 	// 	members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
@@ -2933,7 +2929,7 @@ func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving
 
 	plan2 := s.AssignGroups(members, topics)
 	//nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 }
 
 func Test_stickyBalanceStrategy_Plan_NewSubscription(t *testing.T) {
@@ -2979,7 +2975,7 @@ func Test_stickyBalanceStrategy_Plan_NewSubscription(t *testing.T) {
 	}
 	plan2 := s.AssignGroups(members, topics)
 	//nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 }
 
 func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChanges(t *testing.T) {
@@ -3018,7 +3014,7 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChang
 		s := &StickyGroupBalancer{}
 		plan := s.AssignGroups(members, partitionsPerTopic)
 		//nil is err
-		verifyPlanIsBalancedAndSticky(t, s, members, plan, nil)
+		verifyPlanIsBalancedAndSticky(t, s, members, plan)
 
 		// PLAN 2
 		membersPlan2 := []GroupMember{}
@@ -3048,7 +3044,7 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChang
 
 		plan2 := s.AssignGroups(membersPlan2, partitionsPerTopic)
 		//nil is err
-		verifyPlanIsBalancedAndSticky(t, s, membersPlan2, plan2, nil)
+		verifyPlanIsBalancedAndSticky(t, s, membersPlan2, plan2)
 	}
 }
 
@@ -3104,7 +3100,7 @@ func Test_stickyBalanceStrategy_Plan_MoveExistingAssignments(t *testing.T) {
 
 	plan := s.AssignGroups(members, topics)
 	//nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan)
 }
 
 func Test_stickyBalanceStrategy_Plan_Stickiness(t *testing.T) {
@@ -3121,7 +3117,7 @@ func Test_stickyBalanceStrategy_Plan_Stickiness(t *testing.T) {
 
 	plan1 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 
 	// PLAN 2
 	// remove the potential group leader
@@ -3149,7 +3145,7 @@ func Test_stickyBalanceStrategy_Plan_Stickiness(t *testing.T) {
 
 	plan2 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 }
 
 func Test_stickyBalanceStrategy_Plan_AssignmentUpdatedForDeletedTopic(t *testing.T) {
@@ -3178,7 +3174,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentUpdatedForDeletedTopic(t *testing
 
 	plan := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan)
 	verifyFullyBalanced(t, plan)
 	if (len(plan["consumer1"]["topic1"]) + len(plan["consumer1"]["topic3"])) != 101 {
 		t.Error("Incorrect number of partitions assigned")
@@ -3203,7 +3199,7 @@ func Test_stickyBalanceStrategy_Plan_NoExceptionRaisedWhenOnlySubscribedTopicDel
 	}
 	plan1 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 
 	// PLAN 2
 	// members["consumer1"] = ConsumerGroupMemberMetadata{
@@ -3233,7 +3229,7 @@ func Test_stickyBalanceStrategy_Plan_NoExceptionRaisedWhenOnlySubscribedTopicDel
 		return
 	}
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 }
 
 func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testing.T) {
@@ -3273,7 +3269,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 	}
 	plan1 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 	verifyFullyBalanced(t, plan1)
 
 	// PLAN 2
@@ -3308,7 +3304,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 	plan2 := s.AssignGroups(members, topics)
 	t.Logf("members after calling assign groups : %v", members)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 	verifyFullyBalanced(t, plan2)
 	if len(intersection(plan1["consumer1"]["topic1"], plan2["consumer1"]["topic1"])) != 2 {
 		t.Errorf("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment,plan1:%v,\tplan2: %v \t members :%v", plan1, plan2, members)
@@ -3351,7 +3347,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 
 	plan3 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan3, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan3)
 	verifyFullyBalanced(t, plan3)
 }
 
@@ -3392,7 +3388,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 	}
 	plan1 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 	verifyFullyBalanced(t, plan1)
 
 	// PLAN 2
@@ -3417,7 +3413,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 
 	plan2 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 	verifyFullyBalanced(t, plan2)
 	if len(intersection(plan1["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
@@ -3468,7 +3464,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 	members[0].UserData = encodeSubscriberPlanWithGeneration(t, topics32222, 2)
 	plan3 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan3, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan3)
 	verifyFullyBalanced(t, plan3)
 }
 
@@ -3522,7 +3518,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithConflictingPreviousGeneration
 
 	plan := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan)
 	verifyFullyBalanced(t, plan)
 }
 
@@ -3561,7 +3557,7 @@ func Test_stickyBalanceStrategy_Plan_SchemaBackwardCompatibility(t *testing.T) {
 
 	plan := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan)
 	verifyFullyBalanced(t, plan)
 }
 func encodeSubscriberPlanWithOldSchema(t *testing.T, assignments map[string][]int32) []byte {
@@ -3693,7 +3689,7 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testi
 
 	plan1 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan1, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1)
 
 	for i := 0; i < 20; i++ {
 		topics := make([]string, 20)
@@ -3720,5 +3716,5 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testi
 	members = append(members[:10], members[11:]...)
 	plan2 := s.AssignGroups(members, topics)
 	// nil is err
-	verifyPlanIsBalancedAndSticky(t, s, members, plan2, nil)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 }
