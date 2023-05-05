@@ -357,7 +357,7 @@ func (s StickyGroupBalancer) ProtocolName() string {
 }
 
 func (s StickyGroupBalancer) UserData(memberID string, topics map[string][]int32, generationID int32) ([]byte, error) {
-	return (&StickyAssignorUserDataV2{
+	return (&StickyAssignorUserDataV0{
 		Topics:     topics,
 		Generation: generationID,
 	}).bytes(), nil
@@ -564,7 +564,7 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 
 // Deserialize topic partition assignment data to aid with creation of a sticky assignment.
 func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUserData, error) {
-	var userDataV2 = &StickyAssignorUserDataV2{}
+	var userDataV2 = &StickyAssignorUserDataV0{}
 	b := bytes.NewBuffer(userDataBytes)
 
 	if b.Len() == 0 {

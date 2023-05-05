@@ -707,7 +707,7 @@ func Test_deserializeTopicPartitionAssignment(t *testing.T) {
 		{
 			name: "Nil userdata bytes",
 			args: args{},
-			want: &StickyAssignorUserDataV2{},
+			want: &StickyAssignorUserDataV0{},
 		},
 		{
 			name: "Non-empty invalid userdata bytes",
@@ -730,7 +730,7 @@ func Test_deserializeTopicPartitionAssignment(t *testing.T) {
 					0xff,
 				},
 			},
-			want: &StickyAssignorUserDataV2{
+			want: &StickyAssignorUserDataV0{
 				Topics:     map[string][]int32{"t06": {0, 4}},
 				Generation: -1,
 				topicPartitions: []topicPartitionAssignment{
@@ -1992,7 +1992,7 @@ func encodeSubscriberPlan(t *testing.T, assignments map[string][]int32) []byte {
 }
 
 func encodeSubscriberPlanWithGeneration(t *testing.T, assignments map[string][]int32, generation int32) []byte {
-	userDataBytes := (&StickyAssignorUserDataV2{
+	userDataBytes := (&StickyAssignorUserDataV0{
 		Topics: assignments,
 	}).bytes()
 	return userDataBytes
@@ -3100,7 +3100,7 @@ func Test_stickyBalanceStrategy_Plan_SchemaBackwardCompatibility(t *testing.T) {
 	verifyFullyBalanced(t, plan)
 }
 func encodeSubscriberPlanWithOldSchema(t *testing.T, assignments map[string][]int32) []byte {
-	userDataBytes := (&StickyAssignorUserDataV2{
+	userDataBytes := (&StickyAssignorUserDataV0{
 		Topics: assignments,
 	}).bytes()
 	return userDataBytes
