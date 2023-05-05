@@ -7,7 +7,7 @@ import (
 	"hash"
 
 	"github.com/segmentio/kafka-go/sasl"
-	"github.com/xdg/scram"
+	"github.com/xdg-go/scram"
 )
 
 // Algorithm determines the hash function used by SCRAM to protect the user's
