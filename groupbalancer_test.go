@@ -721,7 +721,7 @@ func Test_deserializeTopicPartitionAssignment(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Valid v1 userdata bytes",
+			name: "Valid v0 userdata bytes",
 			args: args{
 				userDataBytes: []byte{
 					0x00, 0x00, 0x00, 0x01, 0x00, 0x03, 0x74, 0x30,
@@ -3168,8 +3168,8 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testi
 		}
 		consumerid := fmt.Sprintf("consumer%d", i)
 		topics32 := make(map[string][]int32)
-		ttopics := plan1[consumerid]
-		for topic, partitions := range ttopics {
+		topicPartitions := plan1[consumerid]
+		for topic, partitions := range topicPartitions {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
