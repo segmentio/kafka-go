@@ -32,19 +32,19 @@ type Response struct {
 	_              struct{}         `kafka:"min=v1,max=v1,tag"`
 	ThrottleTimeMs int32            `kafka:"min=v0,max=v1"`
 	ErrorCode      int16            `kafka:"min=v0,max=v1"`
-	ErrorMessage   string           `kafka:"min=v0,max=v1,nullable"`
+	ErrorMessage   string           `kafka:"min=v0,max=v0,nullable|min=v1,max=v1,nullable,compact"`
 	Entries        []ResponseQuotas `kafka:"min=v0,max=v1"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.DescribeClientQuotas }
 
 type Entity struct {
-	EntityType string `kafka:"min=v0,max=v1"`
-	EntityName string `kafka:"min=v0,max=v1,nullable"`
+	EntityType string `kafka:"min=v0,max=v0|min=v1,max=v1,compact"`
+	EntityName string `kafka:"min=v0,max=v0,nullable|min=v1,max=v1,nullable,compact"`
 }
 
 type Value struct {
-	Key   string  `kafka:"min=v0,max=v1"`
+	Key   string  `kafka:"min=v0,max=v0|min=v1,max=v1,compact"`
 	Value float64 `kafka:"min=v0,max=v1"`
 }
 

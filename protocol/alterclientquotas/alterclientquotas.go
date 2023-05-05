@@ -27,12 +27,12 @@ type Entry struct {
 }
 
 type Entity struct {
-	EntityType string `kafka:"min=v0,max=v1"`
-	EntityName string `kafka:"min=v0,max=v1,nullable"`
+	EntityType string `kafka:"min=v0,max=v0|min=v1,max=v1,compact"`
+	EntityName string `kafka:"min=v0,max=v0,nullable|min=v1,max=v1,nullable,compact"`
 }
 
 type Ops struct {
-	Key    string  `kafka:"min=v0,max=v1"`
+	Key    string  `kafka:"min=v0,max=v0|min=v1,max=v1,compact"`
 	Value  float64 `kafka:"min=v0,max=v1"`
 	Remove bool    `kafka:"min=v0,max=v1"`
 }
