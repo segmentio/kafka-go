@@ -7,6 +7,9 @@ func init() {
 }
 
 type Request struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_          struct{}    `kafka:"min=v1,max=v1,tag"`
 	Components []Component `kafka:"min=v0,max=v1"`
 	Strict     bool        `kafka:"min=v0,max=v1"`
 }
@@ -24,6 +27,9 @@ type Component struct {
 }
 
 type Response struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_              struct{}         `kafka:"min=v1,max=v1,tag"`
 	ThrottleTimeMs int32            `kafka:"min=v0,max=v1"`
 	ErrorCode      int16            `kafka:"min=v0,max=v1"`
 	ErrorMessage   string           `kafka:"min=v0,max=v1,nullable"`

@@ -8,8 +8,11 @@ func init() {
 
 // Detailed API definition: https://kafka.apache.org/protocol#The_Messages_AlterClientQuotas
 type Request struct {
-	Entries      []Entry `kafka:"min=v0,max=v1"`
-	ValidateOnly bool    `kafka:"min=v0,max=v1"`
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_            struct{} `kafka:"min=v1,max=v1,tag"`
+	Entries      []Entry  `kafka:"min=v0,max=v1"`
+	ValidateOnly bool     `kafka:"min=v0,max=v1"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.AlterClientQuotas }
@@ -35,6 +38,9 @@ type Ops struct {
 }
 
 type Response struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_              struct{}         `kafka:"min=v1,max=v1,tag"`
 	ThrottleTimeMs int32            `kafka:"min=v0,max=v1"`
 	Results        []ResponseQuotas `kafka:"min=v0,max=v1"`
 }
