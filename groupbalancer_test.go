@@ -746,16 +746,15 @@ func Test_deserializeTopicPartitionAssignment(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := deserializeTopicPartitionAssignment(tt.args.userDataBytes)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("deserializeTopicPartitionAssignment() error = %v, wantErr %v", err, tt.wantErr)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := deserializeTopicPartitionAssignment(test.args.userDataBytes)
+			if (err != nil) != test.wantErr {
+				t.Errorf("deserializeTopicPartitionAssignment() error = %v, wantErr %v", err, test.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("deserializeTopicPartitionAssignment() = %v, want %v", got, tt.want)
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("deserializeTopicPartitionAssignment() = %v, want %v", got, test.want)
 			}
 		})
 	}
@@ -898,17 +897,16 @@ func Test_prepopulateCurrentAssignments(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			_, gotPrevAssignments, err := prepopulateCurrentAssignments(tt.args.members)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, gotPrevAssignments, err := prepopulateCurrentAssignments(test.args.members)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("prepopulateCurrentAssignments() error = %v, wantErr %v", err, tt.wantErr)
+			if (err != nil) != test.wantErr {
+				t.Errorf("prepopulateCurrentAssignments() error = %v, wantErr %v", err, test.wantErr)
 			}
 
-			if !reflect.DeepEqual(gotPrevAssignments, tt.wantPrevAssignments) {
-				t.Errorf("deserializeTopicPartitionAssignment() prevAssignments = %v, here want %v", gotPrevAssignments, tt.wantPrevAssignments)
+			if !reflect.DeepEqual(gotPrevAssignments, test.wantPrevAssignments) {
+				t.Errorf("deserializeTopicPartitionAssignment() prevAssignments = %v, here want %v", gotPrevAssignments, test.wantPrevAssignments)
 			}
 		})
 	}
@@ -1029,11 +1027,10 @@ func Test_areSubscriptionsIdentical(t *testing.T) {
 			want: false,
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			if got := areSubscriptionsIdentical(tt.args.partition2AllPotentialConsumers, tt.args.consumer2AllPotentialPartitions); got != tt.want {
-				t.Errorf("areSubscriptionsIdentical() = %v, want %v", got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := areSubscriptionsIdentical(test.args.partition2AllPotentialConsumers, test.args.consumer2AllPotentialPartitions); got != test.want {
+				t.Errorf("areSubscriptionsIdentical() = %v, want %v", got, test.want)
 			}
 		})
 	}
@@ -1086,11 +1083,10 @@ func Test_sortMemberIDsByPartitionAssignments(t *testing.T) {
 			want: []string{"c1", "c2", "c3"},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			if got := sortMemberIDsByPartitionAssignments(tt.args.assignments); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("sortMemberIDsByPartitionAssignments() = %v, want %v", got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sortMemberIDsByPartitionAssignments(test.args.assignments); !reflect.DeepEqual(got, test.want) {
+				t.Errorf("sortMemberIDsByPartitionAssignments() = %v, want %v", got, test.want)
 			}
 		})
 	}
@@ -1197,12 +1193,11 @@ func Test_sortPartitions(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			got := sortPartitions(tt.args.currentAssignment, tt.args.partitionsWithADifferentPreviousAssignment, tt.args.isFreshAssignment, tt.args.partition2AllPotentialConsumers, tt.args.consumer2AllPotentialPartitions)
-			if tt.want != nil && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("sortPartitions() = %v, want %v", got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := sortPartitions(test.args.currentAssignment, test.args.partitionsWithADifferentPreviousAssignment, test.args.isFreshAssignment, test.args.partition2AllPotentialConsumers, test.args.consumer2AllPotentialPartitions)
+			if test.want != nil && !reflect.DeepEqual(got, test.want) {
+				t.Errorf("sortPartitions() = %v, want %v", got, test.want)
 			}
 		})
 	}
@@ -1271,11 +1266,10 @@ func Test_filterAssignedPartitions(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			if got := filterAssignedPartitions(tt.args.currentAssignment, tt.args.partition2AllPotentialConsumers); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("filterAssignedPartitions() = %v, want %v", got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := filterAssignedPartitions(test.args.currentAssignment, test.args.partition2AllPotentialConsumers); !reflect.DeepEqual(got, test.want) {
+				t.Errorf("filterAssignedPartitions() = %v, want %v", got, test.want)
 			}
 		})
 	}
@@ -1373,11 +1367,10 @@ func Test_canConsumerParticipateInReassignment(t *testing.T) {
 			want: true,
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			if got := canConsumerParticipateInReassignment(tt.args.memberID, tt.args.currentAssignment, tt.args.consumer2AllPotentialPartitions, tt.args.partition2AllPotentialConsumers); got != tt.want {
-				t.Errorf("canConsumerParticipateInReassignment() = %v, want %v", got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := canConsumerParticipateInReassignment(test.args.memberID, test.args.currentAssignment, test.args.consumer2AllPotentialPartitions, test.args.partition2AllPotentialConsumers); got != test.want {
+				t.Errorf("canConsumerParticipateInReassignment() = %v, want %v", got, test.want)
 			}
 		})
 	}
@@ -1447,11 +1440,10 @@ func Test_removeTopicPartitionFromMemberAssignments(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			if got := removeTopicPartitionFromMemberAssignments(tt.args.assignments, tt.args.topic); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("removeTopicPartitionFromMemberAssignments() = %v, want %v", got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := removeTopicPartitionFromMemberAssignments(test.args.assignments, test.args.topic); !reflect.DeepEqual(got, test.want) {
+				t.Errorf("removeTopicPartitionFromMemberAssignments() = %v, want %v", got, test.want)
 			}
 		})
 	}
@@ -1566,17 +1558,16 @@ func Test_assignPartition(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			if got := assignPartition(tt.args.partition, tt.args.sortedCurrentSubscriptions, tt.args.currentAssignment, tt.args.consumer2AllPotentialPartitions, tt.args.currentPartitionConsumer); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("assignPartition() = %v, want %v", got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := assignPartition(test.args.partition, test.args.sortedCurrentSubscriptions, test.args.currentAssignment, test.args.consumer2AllPotentialPartitions, test.args.currentPartitionConsumer); !reflect.DeepEqual(got, test.want) {
+				t.Errorf("assignPartition() = %v, want %v", got, test.want)
 			}
-			if !reflect.DeepEqual(tt.args.currentAssignment, tt.wantCurrentAssignment) {
-				t.Errorf("assignPartition() currentAssignment = %v, want %v", tt.args.currentAssignment, tt.wantCurrentAssignment)
+			if !reflect.DeepEqual(test.args.currentAssignment, test.wantCurrentAssignment) {
+				t.Errorf("assignPartition() currentAssignment = %v, want %v", test.args.currentAssignment, test.wantCurrentAssignment)
 			}
-			if !reflect.DeepEqual(tt.args.currentPartitionConsumer, tt.wantCurrentPartitionConsumer) {
-				t.Errorf("assignPartition() currentPartitionConsumer = %v, want %v", tt.args.currentPartitionConsumer, tt.wantCurrentPartitionConsumer)
+			if !reflect.DeepEqual(test.args.currentPartitionConsumer, test.wantCurrentPartitionConsumer) {
+				t.Errorf("assignPartition() currentPartitionConsumer = %v, want %v", test.args.currentPartitionConsumer, test.wantCurrentPartitionConsumer)
 			}
 		})
 	}
@@ -1774,10 +1765,6 @@ func Test_stickyBalanceStrategy_Plan(t *testing.T) {
 						Topics: []string{"topic1", "topic2"},
 					},
 				},
-				// topics: map[string][]int32{
-				// 	"topic1": {0, 1, 2},
-				// 	"topic2": {0, 1, 2},
-				// },
 				topics: newPartitions(3, "topic1", "topic2"),
 			},
 		},
@@ -1857,14 +1844,12 @@ func Test_stickyBalanceStrategy_Plan(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			s := &StickyGroupBalancer{}
 
-			plan := s.AssignGroups(tt.args.members, tt.args.topics)
-			//plan returns an error in sarama which is passed below
-			verifyPlanIsBalancedAndSticky(t, s, tt.args.members, plan)
+			plan := s.AssignGroups(test.args.members, test.args.topics)
+			verifyPlanIsBalancedAndSticky(t, s, test.args.members, plan)
 			verifyFullyBalanced(t, plan)
 		})
 	}
@@ -2179,7 +2164,6 @@ func Test_stickyBalanceStrategy_Plan_KIP54_ExampleThree(t *testing.T) {
 			Topics: topicNames,
 		},
 	}
-
 	topics := []Partition{
 		{
 			Topic: "topic1",
@@ -2253,7 +2237,6 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 			Topics: []string{"topic"},
 		},
 	}
-
 	topics := []Partition{
 		{
 			Topic: "topic",
@@ -2275,8 +2258,8 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	var consumer2 GroupMember
 	for _, member := range members {
 		topics32 := make(map[string][]int32)
-		ttopics := plan1[member.ID]
-		for topic, partitions := range ttopics {
+		topics := plan1[member.ID]
+		for topic, partitions := range topics {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
@@ -2290,8 +2273,8 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	}
 	if consumer2.ID != "" {
 		topics32 := make(map[string][]int32)
-		ttopics := plan1["consumer2"]
-		for topic, partitions := range ttopics {
+		topics := plan1["consumer2"]
+		for topic, partitions := range topics {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
@@ -2318,8 +2301,8 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 			continue
 		}
 		topics32 := make(map[string][]int32)
-		ttopics := plan1[member.ID]
-		for topic, partitions := range ttopics {
+		topics := plan1[member.ID]
+		for topic, partitions := range topics {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
@@ -2334,8 +2317,8 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	}
 	if consumer3.ID != "" {
 		topics32 := make(map[string][]int32)
-		ttopics := plan1["consumer2"]
-		for topic, partitions := range ttopics {
+		topics := plan1["consumer2"]
+		for topic, partitions := range topics {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
@@ -2448,8 +2431,8 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 	// PLAN 2
 	for _, member := range members {
 		topics32 := make(map[string][]int32)
-		ttopics := plan1[member.ID]
-		for topic, partitions := range ttopics {
+		topics := plan1[member.ID]
+		for topic, partitions := range topics {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
@@ -2482,8 +2465,8 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 	// PLAN 3
 	for _, member := range members {
 		topics32 := make(map[string][]int32)
-		ttopics := plan1[member.ID]
-		for topic, partitions := range ttopics {
+		topics := plan1[member.ID]
+		for topic, partitions := range topics {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
@@ -2560,8 +2543,8 @@ func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
 			indexofmembertobedeleted = ind
 		}
 		topics32 := make(map[string][]int32)
-		ttopics := plan1[member.ID]
-		for topic, partitions := range ttopics {
+		topics := plan1[member.ID]
+		for topic, partitions := range topics {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
@@ -2694,8 +2677,8 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChang
 			sort.Strings(sub)
 			consumerId := fmt.Sprintf("consumer%d", i)
 			topics32 := make(map[string][]int32)
-			ttopics := plan[consumerId]
-			for topic, partitions := range ttopics {
+			topics := plan[consumerId]
+			for topic, partitions := range topics {
 				partitions32 := make([]int32, len(partitions))
 				for i := range partitions {
 					partitions32[i] = int32(partitions[i])
@@ -2765,8 +2748,8 @@ func Test_stickyBalanceStrategy_Plan_Stickiness(t *testing.T) {
 	for i := 2; i <= 4; i++ {
 		consumerId := fmt.Sprintf("consumer%d", i)
 		topics32 := make(map[string][]int32)
-		ttopics := plan1[consumerId]
-		for topic, partitions := range ttopics {
+		topics := plan1[consumerId]
+		for topic, partitions := range topics {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
@@ -2824,8 +2807,8 @@ func Test_stickyBalanceStrategy_Plan_NoExceptionRaisedWhenOnlySubscribedTopicDel
 	// PLAN 2
 	consumerId := "consumer1"
 	topics32 := make(map[string][]int32)
-	ttopics := plan1[consumerId]
-	for topic, partitions := range ttopics {
+	topicPartitions := plan1[consumerId]
+	for topic, partitions := range topicPartitions {
 		partitions32 := make([]int32, len(partitions))
 		for i := range partitions {
 			partitions32[i] = int32(partitions[i])
@@ -2886,24 +2869,19 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 	// PLAN 2
 	for ind, member := range members {
 		topics32 := make(map[string][]int32)
-		ttopics := plan1[member.ID]
-		for topic, partitions := range ttopics {
+		topicPartitions := plan1[member.ID]
+		for topic, partitions := range topicPartitions {
 			partitions32 := make([]int32, len(partitions))
 			for i := range partitions {
 				partitions32[i] = int32(partitions[i])
 			}
 			topics32[topic] = partitions32
 		}
-		t.Logf("before member : %v \t topics32 : %v\t Userdata : %v", member, topics32, member.UserData)
 		member.UserData = encodeSubscriberPlanWithGeneration(t, topics32, 1)
-		t.Logf("after member : %v \t topics32 : %v\t Userdata : %v", member, topics32, member.UserData)
 		members[ind] = member
 	}
-	t.Logf("members before calling delete : %v", members)
 	members = members[:2]
-	t.Logf("members before calling assign groups : %v", members)
 	plan2 := s.AssignGroups(members, topics)
-	t.Logf("members after calling assign groups : %v", members)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2)
 	verifyFullyBalanced(t, plan2)
 	if len(intersection(plan1["consumer1"]["topic1"], plan2["consumer1"]["topic1"])) != 2 {
@@ -2916,8 +2894,8 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 	// PLAN 3
 	members = members[1:]
 	topics32 := make(map[string][]int32)
-	ttopics := plan2["consumer2"]
-	for topic, partitions := range ttopics {
+	topicPartitions := plan2["consumer2"]
+	for topic, partitions := range topicPartitions {
 		partitions32 := make([]int32, len(partitions))
 		for i := range partitions {
 			partitions32[i] = int32(partitions[i])
@@ -2982,8 +2960,8 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 	members = members[1:]
 	members = members[:1]
 	topics32 := make(map[string][]int32)
-	ttopics := plan1["consumer2"]
-	for topic, partitions := range ttopics {
+	topicPartitions := plan1["consumer2"]
+	for topic, partitions := range topicPartitions {
 		partitions32 := make([]int32, len(partitions))
 		for i := range partitions {
 			partitions32[i] = int32(partitions[i])
@@ -3000,35 +2978,35 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 	}
 
 	// PLAN 3
-	topics322 := make(map[string][]int32)
-	tttopics := plan1["consumer1"]
-	for topic, partitions := range tttopics {
+	topics2 := make(map[string][]int32)
+	topicPartitions2 := plan1["consumer1"]
+	for topic, partitions := range topicPartitions2 {
 		partitions32 := make([]int32, len(partitions))
 		for i := range partitions {
 			partitions32[i] = int32(partitions[i])
 		}
-		topics322[topic] = partitions32
+		topics2[topic] = partitions32
 	}
-	members = append(members, GroupMember{ID: "consumer1", Topics: []string{"topic1"}, UserData: encodeSubscriberPlanWithGeneration(t, topics322, 1)})
-	topics3222 := make(map[string][]int32)
-	ttttopics := plan1["consumer3"]
-	for topic, partitions := range ttttopics {
+	members = append(members, GroupMember{ID: "consumer1", Topics: []string{"topic1"}, UserData: encodeSubscriberPlanWithGeneration(t, topics2, 1)})
+	topics3 := make(map[string][]int32)
+	topicPartitions3 := plan1["consumer3"]
+	for topic, partitions := range topicPartitions3 {
 		partitions32 := make([]int32, len(partitions))
 		for i := range partitions {
 			partitions32[i] = int32(partitions[i])
 		}
-		topics3222[topic] = partitions32
+		topics3[topic] = partitions32
 	}
-	topics32222 := make(map[string][]int32)
-	tttttopics := plan2["consumer2"]
-	for topic, partitions := range tttttopics {
+	topics4 := make(map[string][]int32)
+	topicPartitions4 := plan2["consumer2"]
+	for topic, partitions := range topicPartitions4 {
 		partitions32 := make([]int32, len(partitions))
 		for i := range partitions {
 			partitions32[i] = int32(partitions[i])
 		}
-		topics32222[topic] = partitions32
+		topics4[topic] = partitions32
 	}
-	members[0].UserData = encodeSubscriberPlanWithGeneration(t, topics32222, 2)
+	members[0].UserData = encodeSubscriberPlanWithGeneration(t, topics4, 2)
 	plan3 := s.AssignGroups(members, topics)
 	// nil is err
 	verifyPlanIsBalancedAndSticky(t, s, members, plan3)
@@ -3071,39 +3049,6 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithConflictingPreviousGeneration
 	plan := s.AssignGroups(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan)
 	verifyFullyBalanced(t, plan)
-}
-
-func Test_stickyBalanceStrategy_Plan_SchemaBackwardCompatibility(t *testing.T) {
-	s := &StickyGroupBalancer{}
-
-	topics := []Partition{
-		{
-			Topic: "topic1",
-			ID:    0,
-		},
-		{
-			Topic: "topic1",
-			ID:    1,
-		},
-		{
-			Topic: "topic1",
-			ID:    2,
-		},
-	}
-	members := []GroupMember{}
-	members = append(members, GroupMember{ID: "consumer1", Topics: []string{"topic1"}, UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": {0, 2}}, 1)})
-	members = append(members, GroupMember{ID: "consumer2", Topics: []string{"topic1"}, UserData: encodeSubscriberPlanWithOldSchema(t, map[string][]int32{"topic1": {1}})})
-	members = append(members, GroupMember{ID: "consumer3", Topics: []string{"topic1"}})
-
-	plan := s.AssignGroups(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan)
-	verifyFullyBalanced(t, plan)
-}
-func encodeSubscriberPlanWithOldSchema(t *testing.T, assignments map[string][]int32) []byte {
-	userDataBytes := (&StickyAssignorUserDataV0{
-		Topics: assignments,
-	}).bytes()
-	return userDataBytes
 }
 
 func Test_sortPartitionsByPotentialConsumerAssignments(t *testing.T) {
