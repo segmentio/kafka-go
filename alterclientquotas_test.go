@@ -52,7 +52,7 @@ func TestClientAlterClientQuotas(t *testing.T) {
 		Throttle: 0,
 		Entries: []AlterClientQuotaResponseQuotas{
 			{
-				ErrorCode: 0,
+				Error: makeError(0, ""),
 				Entities: []AlterClientQuotaEntity{
 					{
 						EntityName: entityName,
@@ -80,8 +80,8 @@ func TestClientAlterClientQuotas(t *testing.T) {
 	}
 
 	expectedDescribeResp := DescribeClientQuotasResponse{
-		Throttle:  0,
-		ErrorCode: 0,
+		Throttle: 0,
+		Error:    makeError(0, ""),
 		Entries: []DescribeClientQuotasResponseQuotas{
 			{
 				Entities: []DescribeClientQuotasEntity{

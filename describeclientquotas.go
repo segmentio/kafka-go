@@ -40,11 +40,9 @@ type DescribeClientQuotasResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration `kafka:"min=v0,max=v1"`
 
-	// The error code, or `0` if the quota description succeeded.
-	ErrorCode int16 `kafka:"min=v0,max=v1"`
-
-	// The error message, or `null` if the quota description succeeded.
-	ErrorMessage string `kafka:"min=v0,max=v1,nullable"`
+	// Error is set to a non-nil value including the code and message if a top-level
+	// error was encountered when doing the update.
+	Error error
 
 	// List of describe client quota responses.
 	Entries []DescribeClientQuotasResponseQuotas `kafka:"min=v0,max=v1"`

@@ -50,11 +50,9 @@ type AlterClientQuotaOps struct {
 }
 
 type AlterClientQuotaResponseQuotas struct {
-	// The error code, or `0` if the quota alteration succeeded.
-	ErrorCode int16
-
-	// The error message, or `nil` if the quota alteration succeeded.
-	ErrorMessage string
+	// Error is set to a non-nil value including the code and message if a top-level
+	// error was encountered when doing the update.
+	Error error
 
 	// The altered quota entities.
 	Entities []AlterClientQuotaEntity
@@ -120,9 +118,8 @@ func (c *Client) AlterClientQuotas(ctx context.Context, req *AlterClientQuotasRe
 		}
 
 		responseEntries[responseEntryIdx] = AlterClientQuotaResponseQuotas{
-			ErrorCode:    responseEntry.ErrorCode,
-			ErrorMessage: responseEntry.ErrorMessage,
-			Entities:     responseEntities,
+			Error:    makeError(responseEntry.ErrorCode, responseEntry.ErrorMessage),
+			Entities: responseEntities,
 		}
 	}
 	ret := &AlterClientQuotasResponse{
