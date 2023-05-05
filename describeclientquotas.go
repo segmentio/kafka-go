@@ -16,60 +16,60 @@ type DescribeClientQuotasRequest struct {
 	Addr net.Addr
 
 	// List of quota components to describe.
-	Components []DescribeClientQuotasRequestComponent `kafka:"min=v0,max=v1"`
+	Components []DescribeClientQuotasRequestComponent
 
 	// Whether the match is strict, i.e. should exclude entities with
 	// unspecified entity types.
-	Strict bool `kafka:"min=v0,max=v1"`
+	Strict bool
 }
 
 type DescribeClientQuotasRequestComponent struct {
 	// The entity type that the filter component applies to.
-	EntityType string `kafka:"min=v0,max=v1"`
+	EntityType string
 
 	// How to match the entity (0 = exact name, 1 = default name,
 	// 2 = any specified name).
-	MatchType int8 `kafka:"min=v0,max=v1"`
+	MatchType int8
 
 	// The string to match against, or null if unused for the match type.
-	Match string `kafka:"min=v0,max=v1,nullable"`
+	Match string
 }
 
 // DescribeClientQuotasReesponse represents a response from a kafka broker to a describe client quota request.
 type DescribeClientQuotasResponse struct {
 	// The amount of time that the broker throttled the request.
-	Throttle time.Duration `kafka:"min=v0,max=v1"`
+	Throttle time.Duration
 
 	// Error is set to a non-nil value including the code and message if a top-level
 	// error was encountered when doing the update.
 	Error error
 
 	// List of describe client quota responses.
-	Entries []DescribeClientQuotasResponseQuotas `kafka:"min=v0,max=v1"`
+	Entries []DescribeClientQuotasResponseQuotas
 }
 
 type DescribeClientQuotasEntity struct {
 	// The quota entity type.
-	EntityType string `kafka:"min=v0,max=v1"`
+	EntityType string
 
 	// The name of the quota entity, or null if the default.
-	EntityName string `kafka:"min=v0,max=v1,nullable"`
+	EntityName string
 }
 
 type DescribeClientQuotasValue struct {
 	// The quota configuration key.
-	Key string `kafka:"min=v0,max=v1"`
+	Key string
 
 	// The quota configuration value.
-	Value float64 `kafka:"min=v0,max=v1"`
+	Value float64
 }
 
 type DescribeClientQuotasResponseQuotas struct {
 	// List of client quota entities and their descriptions.
-	Entities []DescribeClientQuotasEntity `kafka:"min=v0,max=v1"`
+	Entities []DescribeClientQuotasEntity
 
 	// The client quota configuration values.
-	Values []DescribeClientQuotasValue `kafka:"min=v0,max=v1"`
+	Values []DescribeClientQuotasValue
 }
 
 // DescribeClientQuotas sends a describe client quotas request to a kafka broker and returns
