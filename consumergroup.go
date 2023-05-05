@@ -808,7 +808,6 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	})
 
 	// sync group
-	//may be we could do findstrategy here and avoid modifying func signature
 	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments, strategy)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
@@ -1134,10 +1133,9 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 				topics32[topic] = partitions32
 			}
 			var userDataBytes []byte
-			if balancer.ProtocolName() == "sticky" {
+			if balancer.ProtocolName() == StickyBalancerProtocolName {
 				var stickyBalancer StickyGroupBalancer
 				userDataBytes, _ = stickyBalancer.UserData(memberID, topics32, generationID)
-				// see if we can encode userdata here itself without having to call balancer.Userdata, that would avoid changing UserData()meth signatures and passing strategy var over join and sync group func calls
 			}
 			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
 				MemberID: memberID,
