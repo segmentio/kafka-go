@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"container/heap"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -581,7 +580,7 @@ func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUs
 		return nil, err
 	}
 	if remain != 0 {
-		return nil, errors.New(fmt.Sprintf("expected 0 remain, got %d bytes remaining", remain))
+		return nil, fmt.Errorf("expected 0 remain, got %d bytes remaining", remain)
 	}
 	return userDataV0, nil
 
