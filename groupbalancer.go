@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"container/heap"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -521,7 +522,6 @@ func prepopulateCurrentAssignments(members []GroupMember) (map[string][]topicPar
 					if _, generationExists := consumers[consumerUserData.generation()]; generationExists {
 						// same partition is assigned to two consumers during the same rebalance.
 						// log a warning and skip this record
-						//Logger.Printf("Topic %s Partition %d is assigned to multiple consumers following sticky assignment generation %d", partition.Topic, partition.Partition, consumerUserData.generation())
 						log.Printf("Topic %s Partition %d is assigned to multiple consumers following sticky assignment generation %d", partition.Topic, partition.Partition, consumerUserData.generation())
 						continue
 					} else {
@@ -581,7 +581,7 @@ func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUs
 		return nil, err
 	}
 	if remain != 0 {
-		return nil, errors.New("expected 0 remain, got some bytes remaining")
+		return nil, errors.New(fmt.Sprintf("expected 0 remain, got %d bytes remaining", remain))
 	}
 	return userDataV0, nil
 
