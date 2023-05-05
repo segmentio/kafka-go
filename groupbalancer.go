@@ -360,7 +360,7 @@ type StickyGroupBalancer struct {
 }
 
 func (s StickyGroupBalancer) ProtocolName() string {
-	return "sticky"
+	return StickyBalancerProtocolName
 }
 
 func (s StickyGroupBalancer) UserData(memberID string, topics map[string][]int32, generationID int32) ([]byte, error) {
