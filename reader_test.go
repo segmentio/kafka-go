@@ -855,6 +855,12 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 1,
 			function:   testConsumerGroupSimple,
 		},
+
+		{
+			scenario:   "Reading N messages from topic",
+			partitions: 1,
+			function:   testReaderFetchMessages,
+		},
 	}
 
 	for _, test := range tests {
@@ -1981,4 +1987,47 @@ func testReaderTopicRecreated(t *testing.T, ctx context.Context, r *Reader) {
 	// expect an error, since the offset should now be out of range
 	_, err = r.ReadMessage(ctx)
 	require.ErrorIs(t, err, OffsetOutOfRange)
+}
+
+func testReaderFetchMessages(t *testing.T, ctx context.Context, r *Reader) {
+	n := 3
+
+	// add 5 messages to the topic
+	prepareReader(t, ctx, r, makeTestSequence(5)...)
+
+	// fetch 3 messages
+	n1 := 3
+	mList, err := r.FetchMessages(ctx, n, time.Millisecond*10)
+	require.NoError(t, err)
+	if length := len(mList); length != n1 {
+		t.Errorf("bad message list length: got %d, want %d", length, n1)
+	}
+
+	// commit messages (moving the offset from 0 -> 3)
+	if err := r.CommitMessages(ctx, mList...); err != nil {
+		t.Errorf("bad commit message: %v", err)
+	}
+	require.NoError(t, err)
+	offsets := getOffsets(t, r.config)
+	if expected := map[int]int64{0: mList[n1-1].Offset + 1}; !reflect.DeepEqual(expected, offsets) {
+		t.Errorf("expected %v; got %v", expected, offsets)
+	}
+
+	// fetch least 2 messages
+	n2 := 2
+	mList, err = r.FetchMessages(ctx, n, time.Millisecond*10)
+	require.NoError(t, err)
+	if length := len(mList); length != n2 {
+		t.Errorf("bad message list length: got %d, want %d", length, n2)
+	}
+
+	// commit messages (moving the offset from 3 -> 5)
+	if err := r.CommitMessages(ctx, mList...); err != nil {
+		t.Errorf("bad commit message: %v", err)
+	}
+	require.NoError(t, err)
+	offsets = getOffsets(t, r.config)
+	if expected := map[int]int64{0: mList[n2-1].Offset + 1}; !reflect.DeepEqual(expected, offsets) {
+		t.Errorf("expected %v; got %v", expected, offsets)
+	}
 }

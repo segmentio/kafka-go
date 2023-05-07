@@ -814,14 +814,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 	r.activateReadLag()
 
 	for {
-		r.mutex.Lock()
-
-		if !r.closed && r.version == 0 {
-			r.start(r.getTopicPartitionOffset())
-		}
-
-		version := r.version
-		r.mutex.Unlock()
+		version := r.fetchMessageStartAndGetVersion()
 
 		select {
 		case <-ctx.Done():
@@ -836,29 +829,106 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 			}
 
 			if m.version >= version {
-				r.mutex.Lock()
-
-				switch {
-				case m.error != nil:
-				case version == r.version:
-					r.offset = m.message.Offset + 1
-					r.lag = m.watermark - r.offset
-				}
-
-				r.mutex.Unlock()
-
-				if errors.Is(m.error, io.EOF) {
-					// io.EOF is used as a marker to indicate that the stream
-					// has been closed, in case it was received from the inner
-					// reader we don't want to confuse the program and replace
-					// the error with io.ErrUnexpectedEOF.
-					m.error = io.ErrUnexpectedEOF
-				}
-
-				return m.message, m.error
+				return r.fetchMessageProcessReaderMessage(m, version)
 			}
 		}
 	}
+}
+
+// FetchMessages reads and return the next N messages from the r. The method call
+// blocks until a first message becomes available, or an error occurs. The second
+// and next messages are waiting for waitTimeout. If no new messages have appeared
+// during this time, then return what is. The program may also specify a context
+// to asynchronously cancel the blocking operation.
+//
+// The method returns io.EOF to indicate that the reader has been closed.
+//
+// FetchMessages does not commit offsets automatically when using consumer groups.
+// Use CommitMessages to commit the offset.
+func (r *Reader) FetchMessages(ctx context.Context, n int, waitTimeout time.Duration) ([]Message, error) {
+	mList := make([]Message, 0, n)
+	m, err := r.FetchMessage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mList = append(mList, m)
+
+	if n > 1 {
+		timer := time.NewTimer(waitTimeout)
+		defer timer.Stop()
+
+	loop:
+		for {
+			r.activateReadLag()
+
+			for {
+				version := r.fetchMessageStartAndGetVersion()
+
+				timer.Reset(waitTimeout)
+
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+
+				case err := <-r.runError:
+					return nil, err
+
+				case <-timer.C:
+					break loop
+
+				case m, ok := <-r.msgs:
+					if !ok {
+						return nil, io.EOF
+					}
+					if m.version >= version {
+						m, err := r.fetchMessageProcessReaderMessage(m, version)
+						if err != nil {
+							return nil, err
+						}
+						mList = append(mList, m)
+						if len(mList) == n {
+							break loop
+						}
+					}
+				}
+			}
+		}
+	}
+	return mList, nil
+}
+
+func (r *Reader) fetchMessageStartAndGetVersion() int64 {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	if !r.closed && r.version == 0 {
+		r.start(r.getTopicPartitionOffset())
+	}
+
+	return r.version
+}
+
+func (r *Reader) fetchMessageProcessReaderMessage(m readerMessage, version int64) (Message, error) {
+	r.mutex.Lock()
+
+	switch {
+	case m.error != nil:
+	case version == r.version:
+		r.offset = m.message.Offset + 1
+		r.lag = m.watermark - r.offset
+	}
+
+	r.mutex.Unlock()
+
+	if errors.Is(m.error, io.EOF) {
+		// io.EOF is used as a marker to indicate that the stream
+		// has been closed, in case it was received from the inner
+		// reader we don't want to confuse the program and replace
+		// the error with io.ErrUnexpectedEOF.
+		m.error = io.ErrUnexpectedEOF
+	}
+
+	return m.message, m.error
 }
 
 // CommitMessages commits the list of messages passed as argument. The program
