@@ -412,6 +412,7 @@ for i := 0; i < retries; i++ {
     if err != nil {
         log.Fatalf("unexpected error %v", err)
     }
+    break
 }
 
 if err := w.Close(); err != nil {
