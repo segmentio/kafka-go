@@ -454,7 +454,7 @@ func testWriterBatchBytes(t *testing.T) {
 
 	w := newTestWriter(WriterConfig{
 		Topic:        topic,
-		BatchBytes:   48,
+		BatchBytes:   50,
 		BatchTimeout: math.MaxInt32 * time.Second,
 		Balancer:     &RoundRobin{},
 	})
@@ -463,10 +463,10 @@ func testWriterBatchBytes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
-		{Value: []byte("M0")}, // 24 Bytes
-		{Value: []byte("M1")}, // 24 Bytes
-		{Value: []byte("M2")}, // 24 Bytes
-		{Value: []byte("M3")}, // 24 Bytes
+		{Value: []byte("M0")}, // 25 Bytes
+		{Value: []byte("M1")}, // 25 Bytes
+		{Value: []byte("M2")}, // 25 Bytes
+		{Value: []byte("M3")}, // 25 Bytes
 	}...); err != nil {
 		t.Error(err)
 		return
