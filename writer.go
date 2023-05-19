@@ -1216,7 +1216,7 @@ func newWriteBatch(now time.Time, timeout time.Duration) *writeBatch {
 }
 
 func (b *writeBatch) add(msg Message, maxSize int, maxBytes int64) bool {
-	bytes := int64(msg.size())
+	bytes := int64(msg.totalSize())
 
 	if b.size > 0 && (b.bytes+bytes) > maxBytes {
 		return false
