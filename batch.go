@@ -224,7 +224,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 				return
 			},
 			func(r *bufio.Reader, size int, nbytes int) (remain int, err error) {
-				msg.Key, remain, err = readIntoAllocatedBytes(r, size, nbytes, batch.makeValBytes)
+				msg.Value, remain, err = readIntoAllocatedBytes(r, size, nbytes, batch.makeValBytes)
 				return
 			},
 		)
