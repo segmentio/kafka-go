@@ -4,9 +4,85 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
+	"net"
 	"reflect"
+	"strconv"
 	"testing"
 )
+
+func TestConnCreateTopics(t *testing.T) {
+	topic1 := makeTopic()
+	topic2 := makeTopic()
+
+	conn, err := DialContext(context.Background(), "tcp", "localhost:9092")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			t.Fatalf("failed to close connection: %v", err)
+		}
+	}()
+
+	controller, _ := conn.Controller()
+
+	controllerConn, err := Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer controllerConn.Close()
+
+	err = controllerConn.CreateTopics(TopicConfig{
+		Topic:             topic1,
+		NumPartitions:     1,
+		ReplicationFactor: 1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating topic: %s", err.Error())
+	}
+
+	err = controllerConn.CreateTopics(TopicConfig{
+		Topic:             topic1,
+		NumPartitions:     1,
+		ReplicationFactor: 1,
+	})
+
+	// Duplicate topic should not return an error
+	if err != nil {
+		t.Fatalf("unexpected error creating duplicate topic topic: %v", err)
+	}
+
+	err = controllerConn.CreateTopics(
+		TopicConfig{
+			Topic:             topic1,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+		TopicConfig{
+			Topic:             topic2,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+		TopicConfig{
+			Topic:             topic2,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+	)
+
+	if err == nil {
+		t.Fatal("CreateTopics should have returned an error for invalid requests")
+	}
+
+	if !errors.Is(err, InvalidRequest) {
+		t.Fatalf("expected invalid request: %v", err)
+	}
+
+	deleteTopic(t, topic1)
+}
 
 func TestClientCreateTopics(t *testing.T) {
 	const (
@@ -59,7 +135,6 @@ func TestClientCreateTopics(t *testing.T) {
 			},
 		},
 	})
-
 	if err != nil {
 		t.Fatal(err)
 	}

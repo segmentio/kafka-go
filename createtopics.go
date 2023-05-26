@@ -3,7 +3,6 @@ package kafka
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -65,7 +64,6 @@ func (c *Client) CreateTopics(ctx context.Context, req *CreateTopicsRequest) (*C
 		TimeoutMs:    c.timeoutMs(ctx, defaultCreateTopicsTimeout),
 		ValidateOnly: req.ValidateOnly,
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).CreateTopics: %w", err)
 	}
@@ -363,6 +361,9 @@ func (c *Conn) createTopics(request createTopicsRequestV0) (createTopicsResponse
 		return response, err
 	}
 	for _, tr := range response.TopicErrors {
+		if tr.ErrorCode == int16(TopicAlreadyExists) {
+			continue
+		}
 		if tr.ErrorCode != 0 {
 			return response, Error(tr.ErrorCode)
 		}
@@ -385,14 +386,5 @@ func (c *Conn) CreateTopics(topics ...TopicConfig) error {
 	_, err := c.createTopics(createTopicsRequestV0{
 		Topics: requestV0Topics,
 	})
-	if err != nil {
-		if errors.Is(err, TopicAlreadyExists) {
-			// ok
-			return nil
-		}
-
-		return err
-	}
-
-	return nil
+	return err
 }
