@@ -16,10 +16,16 @@ func TestConnCreateTopics(t *testing.T) {
 	topic2 := makeTopic()
 
 	conn, err := DialContext(context.Background(), "tcp", "localhost:9092")
-	defer conn.Close()
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
+
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			t.Fatalf("failed to close connection: %v", err)
+		}
+	}()
 
 	controller, _ := conn.Controller()
 
