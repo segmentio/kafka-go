@@ -75,7 +75,7 @@ func TestConnCreateTopics(t *testing.T) {
 		t.Fatalf("expected invalid request: %v", err)
 	}
 
-	deleteTopic(t, topic1, topic2)
+	deleteTopic(t, topic1)
 }
 
 func TestClientCreateTopics(t *testing.T) {
