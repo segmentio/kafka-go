@@ -225,7 +225,6 @@ r := kafka.NewReader(kafka.ReaderConfig{
     Brokers:   []string{"localhost:9092","localhost:9093", "localhost:9094"},
     Topic:     "topic-A",
     Partition: 0,
-    MinBytes:  10e3, // 10KB
     MaxBytes:  10e6, // 10MB
 })
 r.SetOffset(42)
@@ -256,7 +255,6 @@ r := kafka.NewReader(kafka.ReaderConfig{
     Brokers:   []string{"localhost:9092", "localhost:9093", "localhost:9094"},
     GroupID:   "consumer-group-id",
     Topic:     "topic-A",
-    MinBytes:  10e3, // 10KB
     MaxBytes:  10e6, // 10MB
 })
 
@@ -320,7 +318,6 @@ r := kafka.NewReader(kafka.ReaderConfig{
     Brokers:        []string{"localhost:9092", "localhost:9093", "localhost:9094"},
     GroupID:        "consumer-group-id",
     Topic:          "topic-A",
-    MinBytes:       10e3, // 10KB
     MaxBytes:       10e6, // 10MB
     CommitInterval: time.Second, // flushes commits to Kafka every second
 })
@@ -719,7 +716,6 @@ r := kafka.NewReader(kafka.ReaderConfig{
     Brokers:   []string{"localhost:9092", "localhost:9093", "localhost:9094"},
     Topic:     "my-topic1",
     Partition: 0,
-    MinBytes:  batchSize,
     MaxBytes:  batchSize,
 })
 
