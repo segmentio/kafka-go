@@ -129,7 +129,7 @@ type Writer struct {
 	// producer to block. Setting a higher value will increase memory usage when
 	// the producer is running faster than the brokers can keep up with.
 	//
-	// The default is 100.
+	// The default is 0, disabling blocking.
 	MaxBufferedBatches int
 
 	// Time limit on how often incomplete message batches will be flushed to
@@ -928,6 +928,9 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 type partitionWriter struct {
 	meta  topicPartition
 	queue chan *writeBatch
+	// blockOnQueue provides backpressure for writers which specified a limited
+	// MaxBufferedBatches. Otherwise, it simulates an unlimited buffer.
+	blockOnQueue bool
 
 	mutex     sync.Mutex
 	currBatch *writeBatch
@@ -938,14 +941,15 @@ type partitionWriter struct {
 }
 
 func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
-	queueSize := w.MaxBufferedBatches
-	if queueSize == 0 {
-		queueSize = 100
-	}
 	writer := &partitionWriter{
-		meta:  key,
-		queue: make(chan *writeBatch, queueSize),
-		w:     w,
+		meta: key,
+		w:    w,
+	}
+	if w.MaxBufferedBatches > 0 {
+		writer.queue = make(chan *writeBatch, w.MaxBufferedBatches)
+		writer.blockOnQueue = true
+	} else {
+		writer.queue = make(chan *writeBatch)
 	}
 	w.spawn(writer.writeBatches)
 	return writer
@@ -978,14 +982,14 @@ func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*
 		}
 		if !batch.add(msgs[i], batchSize, batchBytes) {
 			batch.trigger()
-			ptw.queue <- batch
+			ptw.queueBatch(batch)
 			ptw.currBatch = nil
 			goto assignMessage
 		}
 
 		if batch.full(batchSize, batchBytes) {
 			batch.trigger()
-			ptw.queue <- batch
+			ptw.queueBatch(batch)
 			ptw.currBatch = nil
 		}
 
@@ -994,6 +998,16 @@ func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*
 		}
 	}
 	return batches
+}
+
+func (ptw *partitionWriter) queueBatch(batch *writeBatch) {
+	if ptw.blockOnQueue {
+		ptw.queue <- batch
+	} else {
+		go func() {
+			ptw.queue <- batch
+		}()
+	}
 }
 
 // ptw.w can be accessed here because this is called with the lock ptw.mutex already held.
@@ -1018,7 +1032,7 @@ func (ptw *partitionWriter) awaitBatch(batch *writeBatch) {
 		// pw.currBatch != batch so we just move on.
 		// Otherwise, we detach the batch from the ptWriter and enqueue it for writing.
 		if ptw.currBatch == batch {
-			ptw.queue <- batch
+			ptw.queueBatch(batch)
 			ptw.currBatch = nil
 		}
 		ptw.mutex.Unlock()
