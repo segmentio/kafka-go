@@ -22,19 +22,28 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 }
 
 type Entry struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_        struct{} `kafka:"min=v1,max=v1,tag"`
 	Entities []Entity `kafka:"min=v0,max=v1"`
 	Ops      []Ops    `kafka:"min=v0,max=v1"`
 }
 
 type Entity struct {
-	EntityType string `kafka:"min=v0,max=v0|min=v1,max=v1,compact"`
-	EntityName string `kafka:"min=v0,max=v0,nullable|min=v1,max=v1,nullable,compact"`
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_          struct{} `kafka:"min=v1,max=v1,tag"`
+	EntityType string   `kafka:"min=v0,max=v0|min=v1,max=v1,compact"`
+	EntityName string   `kafka:"min=v0,max=v0,nullable|min=v1,max=v1,nullable,compact"`
 }
 
 type Ops struct {
-	Key    string  `kafka:"min=v0,max=v0|min=v1,max=v1,compact"`
-	Value  float64 `kafka:"min=v0,max=v1"`
-	Remove bool    `kafka:"min=v0,max=v1"`
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_      struct{} `kafka:"min=v1,max=v1,tag"`
+	Key    string   `kafka:"min=v0,max=v0|min=v1,max=v1,compact"`
+	Value  float64  `kafka:"min=v0,max=v1"`
+	Remove bool     `kafka:"min=v0,max=v1"`
 }
 
 type Response struct {
@@ -48,6 +57,9 @@ type Response struct {
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.AlterClientQuotas }
 
 type ResponseQuotas struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_            struct{} `kafka:"min=v1,max=v1,tag"`
 	ErrorCode    int16    `kafka:"min=v0,max=v1"`
 	ErrorMessage string   `kafka:"min=v0,max=v1,nullable"`
 	Entities     []Entity `kafka:"min=v0,max=v1"`
