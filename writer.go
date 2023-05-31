@@ -600,9 +600,12 @@ func (w *Writer) Close() error {
 //
 // The context passed as first argument may also be used to asynchronously
 // cancel the operation. Note that in this case there are no guarantees made on
-// whether messages were written to kafka. The program should assume that the
-// whole batch failed and re-write the messages later (which could then cause
-// duplicates).
+// whether messages were written to kafka, they might also still be written
+// after this method has already returned, therefore it is important to not
+// modify byte slices of passed messages if WriteMessages returned early due
+// to a canceled context.
+// The program should assume that the whole batch failed and re-write the
+// messages later (which could then cause duplicates).
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	if w.Addr == nil {
 		return errors.New("kafka.(*Writer).WriteMessages: cannot create a kafka writer with a nil address")
