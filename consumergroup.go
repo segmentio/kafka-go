@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+var colorPurple string = "\033[35m"
+
 // ErrGroupClosed is returned by ConsumerGroup.Next when the group has already
 // been closed.
 var ErrGroupClosed = errors.New("consumer group is closed")
@@ -163,6 +165,11 @@ type ConsumerGroupConfig struct {
 	// connect is a function for dialing the coordinator.  This is provided for
 	// unit testing to mock broker connections.
 	connect func(dialer *Dialer, brokers ...string) (coordinator, error)
+
+	// if common balancer is cooperative, default is false.
+	isCooperative bool
+
+	generationID int32
 }
 
 // Validate method validates ConsumerGroupConfig properties and sets relevant
@@ -255,7 +262,6 @@ func (config *ConsumerGroupConfig) Validate() error {
 	if config.connect == nil {
 		config.connect = makeConnect(*config)
 	}
-
 	return nil
 }
 
@@ -343,13 +349,16 @@ type Generation struct {
 // terminate.
 func (g *Generation) close() {
 	g.lock.Lock()
+	fmt.Println("locked")
 	if !g.closed {
 		close(g.done)
 		g.closed = true
+		fmt.Println("closed")
 	}
 	// determine whether any go routines are running that we need to wait for.
 	// waiting needs to happen outside of the critical section.
 	r := g.routines
+	fmt.Println("go routines are", r)
 	g.lock.Unlock()
 
 	// NOTE: r will be zero if no go routines were ever launched.  no need to
@@ -399,8 +408,10 @@ func (g *Generation) Start(fn func(ctx context.Context)) {
 		// different from close() in that it doesn't wait for all go routines in
 		// the generation to exit.
 		if !g.closed {
+			fmt.Println("in start of gen from/after heartbeatloop exited, closing generation")
 			close(g.done)
 			g.closed = true
+			fmt.Println("gen closed now")
 		}
 		g.routines--
 		// if this was the last go routine in the generation, close the joined
@@ -409,6 +420,7 @@ func (g *Generation) Start(fn func(ctx context.Context)) {
 			close(g.joined)
 		}
 		g.lock.Unlock()
+		fmt.Println("exited rey")
 	}()
 }
 
@@ -454,7 +466,9 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 			l.Printf("committed offsets for group %s: \n%s", g.GroupID, strings.Join(report, "\n"))
 		})
 	}
-
+	fmt.Println("error in genoffsetcommit ", err)
+	fmt.Println("genid is ", g.ID)
+	fmt.Println("g.conn", g.conn)
 	return err
 }
 
@@ -462,6 +476,7 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 // interval.  It exits if it ever encounters an error, which would signal the
 // end of the generation.
 func (g *Generation) heartbeatLoop(interval time.Duration) {
+	fmt.Println("in nextgeneration : in heartbeatloop")
 	g.Start(func(ctx context.Context) {
 		g.log(func(l Logger) {
 			l.Printf("started heartbeat for group, %v [%v]", g.GroupID, interval)
@@ -484,6 +499,12 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 					MemberID:     g.MemberID,
 				})
 				if err != nil {
+					fmt.Println("heartbeat resp error", err)
+					// heartbeat resp error [27] Rebalance In Progress: the coordinator has begun rebalancing the group, the client should rejoin the group
+					if errors.Is(err, UnknownTopicOrPartition) {
+						//rejoin
+
+					}
 					return
 				}
 			}
@@ -656,6 +677,9 @@ func NewConsumerGroup(config ConsumerGroupConfig) (*ConsumerGroup, error) {
 		errs:   make(chan error),
 		done:   make(chan struct{}),
 	}
+	cg.withLogger(func(log Logger) {
+		log.Printf(string(colorPurple), "******** consumer group config : %v **********", cg.config)
+	})
 	cg.wg.Add(1)
 	go func() {
 		cg.run()
@@ -674,9 +698,16 @@ type ConsumerGroup struct {
 	next   chan *Generation
 	errs   chan error
 
-	closeOnce sync.Once
-	wg        sync.WaitGroup
-	done      chan struct{}
+	closeOnce         sync.Once
+	wg                sync.WaitGroup
+	done              chan struct{}
+	userData          []byte
+	isCoperative      bool
+	isfirstgeneration bool
+	generation        Generation
+	nowAssigned       map[string][]int32
+	lastAssigned      map[string][]int32
+	torevoke          bool
 }
 
 // Close terminates the current generation by causing this member to leave and
@@ -719,9 +750,11 @@ func (cg *ConsumerGroup) run() {
 	// will be constant for the lifetime of this group.
 	var memberID string
 	var err error
+	cg.isfirstgeneration = true
 	for {
+		fmt.Println("startign next generation/rebalance")
 		memberID, err = cg.nextGeneration(memberID)
-
+		fmt.Println("err in nextgen", err)
 		// backoff will be set if this go routine should sleep before continuing
 		// to the next generation.  it will be non-nil in the case of an error
 		// joining or syncing the group.
@@ -730,6 +763,7 @@ func (cg *ConsumerGroup) run() {
 		switch {
 		case err == nil:
 			// no error...the previous generation finished normally.
+			fmt.Println("in cg run: no error after nextgeneration")
 			continue
 
 		case errors.Is(err, ErrGroupClosed):
@@ -743,6 +777,7 @@ func (cg *ConsumerGroup) run() {
 			// to join the group will then be subject to the rebalance
 			// timeout, so the broker will be responsible for throttling
 			// this loop.
+			fmt.Println("in cg run: rebalanceInprogress")
 
 		default:
 			// leave the group and report the error if we had gotten far
@@ -763,6 +798,7 @@ func (cg *ConsumerGroup) run() {
 		}
 		// backoff if needed, being sure to exit cleanly if the CG is done.
 		if backoff != nil {
+			fmt.Println("in cg run: going to select backoff/cg.done")
 			select {
 			case <-cg.done:
 				// exit cleanly if the group is closed.
@@ -780,13 +816,18 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// re-connect in certain cases, but that shouldn't be an issue given that
 	// rebalances are relatively infrequent under normal operating
 	// conditions.
+	fmt.Println("inside nextgeneration")
 	conn, err := cg.coordinator()
+
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
 		})
 		return memberID, err // a prior memberID may still be valid, so don't return ""
 	}
+	fmt.Println("before, cg.generation", cg.generation)
+	cg.generation.conn = conn
+	fmt.Println("aftwe,cg.generation", cg.generation)
 	defer conn.Close()
 
 	var generationID int32
@@ -795,7 +836,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	// join group.  this will join the group and prepare assignments if our
 	// consumer is elected leader.  it may also change or assign the member ID.
-	memberID, generationID, groupAssignments, err = cg.joinGroup(conn, memberID)
+	memberID, generationID, groupAssignments, strategy, err := cg.joinGroup(conn, memberID)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
@@ -805,18 +846,52 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	cg.withLogger(func(log Logger) {
 		log.Printf("Joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
 	})
+	cg.withLogger(func(log Logger) {
+		log.Printf(string(colorPurple), "******Joined group %s as member %s in generation %d******", cg.config.ID, memberID, generationID)
+	})
+	fmt.Println("hi there! after joingroup, asignments", groupAssignments)
 
 	// sync group
-	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments)
+	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments, strategy)
+	fmt.Println("hi there! after syncgroup, asignments", assignments)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to sync group %s: %v", cg.config.ID, err)
 		})
 		return memberID, err
 	}
-
+	cg.withLogger(func(log Logger) {
+		log.Printf(string(colorPurple), "******** received assignments after sync group : %v **********", assignments)
+	})
 	// fetch initial offsets.
 	var offsets map[string]map[int]int64
+	cg.lastAssigned = make(map[string][]int32)
+	for k, v := range cg.nowAssigned {
+		cg.lastAssigned[k] = v
+	}
+	//cg.lastAssigned = cg.nowAssigned
+	cg.nowAssigned = make(map[string][]int32)
+	//cg.nowAssigned = assignments
+	for k, v := range assignments {
+		cg.nowAssigned[k] = v
+	}
+	fmt.Println("lastassigned nowassigned checking", cg.lastAssigned, cg.nowAssigned)
+	toRejoin := false
+	cg.torevoke = false
+	for topic := range cg.lastAssigned {
+		for _, partition := range cg.lastAssigned[topic] {
+			if !isInList32(cg.nowAssigned[topic], partition) {
+				toRejoin = true
+				cg.torevoke = true
+				break
+			}
+		}
+	}
+	fmt.Println("rejoin", toRejoin)
+	fmt.Println("torevoke", cg.torevoke)
+	fmt.Println("lastassigned", cg.lastAssigned)
+	fmt.Println("nowassigned ", cg.nowAssigned)
+	fmt.Println("rejoin true/fasle", toRejoin)
 	offsets, err = cg.fetchOffsets(conn, assignments)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
@@ -838,17 +913,25 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		log:             cg.withLogger,
 		logError:        cg.withErrorLogger,
 	}
-
+	fmt.Println("gen", gen)
+	fmt.Println("before2, cg.generation", cg.generation)
+	fmt.Println("gen print before", &gen)
+	cg.generation = gen
+	fmt.Println("after2, cg.generation", cg.generation)
 	// spawn all of the go routines required to facilitate this generation.  if
 	// any of these functions exit, then the generation is determined to be
 	// complete.
+
+	fmt.Println("in nextgeneration : going to satrt heartbeat")
 	gen.heartbeatLoop(cg.config.HeartbeatInterval)
 	if cg.config.WatchPartitionChanges {
 		for _, topic := range cg.config.Topics {
 			gen.partitionWatcher(cg.config.PartitionWatchInterval, topic)
 		}
 	}
-
+	fmt.Println("started heartbeat loop as go routine")
+	fmt.Println("proceeding with other things(select) now")
+	fmt.Println("gen print", &gen)
 	// make this generation available for retrieval.  if the CG is closed before
 	// we can send it on the channel, exit.  that case is required b/c the next
 	// channel is unbuffered.  if the caller to Next has already bailed because
@@ -856,20 +939,40 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	select {
 	case <-cg.done:
 		gen.close()
+		fmt.Println("hello cg closed")
 		return memberID, ErrGroupClosed // ErrGroupClosed will trigger leave logic.
 	case cg.next <- &gen:
-	}
+		if strategy == "sticky" {
+			cg.config.isCooperative = true
+			fmt.Println("just initialized nextgen, checking rejoin", toRejoin)
+			if toRejoin {
+				fmt.Println("")
+				close(gen.done)
+				gen.closed = true
+				fmt.Println("closing gen manuallly to rejoin")
+			}
+		}
+		fmt.Println("pushing gen obj into cg.next , this is read in reader.run(cg)")
 
+	}
+	fmt.Println("onto next select, waiting for generation to complete or cg to close, this resp comes from either after heartbeat(gen.close)")
 	// wait for generation to complete.  if the CG is closed before the
 	// generation is finished, exit and leave the group.
 	select {
 	case <-cg.done:
 		gen.close()
+		fmt.Println("leave logic")
 		return memberID, ErrGroupClosed // ErrGroupClosed will trigger leave logic.
 	case <-gen.done:
 		// time for next generation!  make sure all the current go routines exit
 		// before continuing onward.
+		fmt.Println("here what i am doing")
+		fmt.Println("closing gen")
+		fmt.Println("wait for next rebalance")
 		gen.close()
+		cg.isfirstgeneration = false
+		fmt.Println("in select gen is closed , onto next egneration")
+		fmt.Println("hello there, returning")
 		return memberID, nil
 	}
 }
@@ -925,16 +1028,16 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 // the leader.  Otherwise, GroupMemberAssignments will be nil.
 //
 // Possible kafka error codes returned:
-//  * GroupLoadInProgress:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * InconsistentGroupProtocol:
-//  * InvalidSessionTimeout:
-//  * GroupAuthorizationFailed:
-func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
+//   - GroupLoadInProgress:
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - InconsistentGroupProtocol:
+//   - InvalidSessionTimeout:
+//   - GroupAuthorizationFailed:
+func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, string, error) {
 	request, err := cg.makeJoinGroupRequestV1(memberID)
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, nil, "", err
 	}
 
 	response, err := conn.joinGroup(request)
@@ -942,21 +1045,33 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		err = Error(response.ErrorCode)
 	}
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, nil, "", err
 	}
 
 	memberID = response.MemberID
 	generationID := response.GenerationID
+	strategy := response.GroupProtocol
 
 	cg.withLogger(func(l Logger) {
 		l.Printf("joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
+		l.Printf("*******joingroupresponse : %v", response)
+	})
+	cg.withLogger(func(l Logger) {
+		l.Printf("joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
+		l.Printf("*******in joingroup: joingroupresponse : %v", response)
 	})
 
 	var assignments GroupMemberAssignments
 	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
+		cg.withLogger(func(log Logger) {
+			log.Printf(string(colorPurple), "******** in joingroup I AM LEADER: %v **********", memberID)
+		})
+		cg.withLogger(func(log Logger) {
+			log.Printf(string(colorPurple), "******** in joingroup calling assigntopicpartitions: %v **********", memberID)
+		})
 		v, err := cg.assignTopicPartitions(conn, response)
 		if err != nil {
-			return memberID, 0, nil, err
+			return memberID, 0, nil, "", err
 		}
 		assignments = v
 
@@ -967,13 +1082,20 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 				}
 			}
 		})
+		cg.withLogger(func(log Logger) {
+			for memberID, assignment := range assignments {
+				for topic, partitions := range assignment {
+					log.Printf(string(colorPurple), "assigned member/topic/partitions %v/%v/%v", memberID, topic, partitions)
+				}
+			}
+		})
 	}
 
 	cg.withLogger(func(l Logger) {
 		l.Printf("joinGroup succeeded for response, %v.  generationID=%v, memberID=%v", cg.config.ID, response.GenerationID, response.MemberID)
 	})
 
-	return memberID, generationID, assignments, nil
+	return memberID, generationID, assignments, strategy, nil
 }
 
 // makeJoinGroupRequestV1 handles the logic of constructing a joinGroup
@@ -986,11 +1108,19 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 		RebalanceTimeout: int32(cg.config.RebalanceTimeout / time.Millisecond),
 		ProtocolType:     defaultProtocolType,
 	}
-
+	cg.withLogger(func(log Logger) {
+		log.Printf(string(colorPurple), "******** before: in makeJoinGroupRequestv1 request: %v **********", request)
+	})
 	for _, balancer := range cg.config.GroupBalancers {
-		userData, err := balancer.UserData()
+		userData, err := balancer.UserData("", make(map[string][]int32), 0)
 		if err != nil {
 			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
+		}
+		if balancer.ProtocolName() == "sticky" {
+			userData = cg.userData
+			cg.withLogger(func(log Logger) {
+				log.Printf(string(colorPurple), "******** in makejoingoupreq protocolname sticky userdata :%v", userData)
+			})
 		}
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName: balancer.ProtocolName(),
@@ -1001,7 +1131,9 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 			}.bytes(),
 		})
 	}
-
+	cg.withLogger(func(log Logger) {
+		log.Printf(string(colorPurple), "******** after in makeJoinGroupRequestv1 request: %v **********", request)
+	})
 	return request, nil
 }
 
@@ -1065,6 +1197,9 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 			UserData: metadata.UserData,
 		})
 	}
+	cg.withLogger(func(log Logger) {
+		log.Printf(string(colorPurple), "******** in makemembermetadata, members : %v **********", members)
+	})
 	return members, nil
 }
 
@@ -1073,13 +1208,13 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 // Readers subscriptions topic => partitions
 //
 // Possible kafka error codes returned:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * IllegalGeneration:
-//  * RebalanceInProgress:
-//  * GroupAuthorizationFailed:
-func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
-	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments)
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - IllegalGeneration:
+//   - RebalanceInProgress:
+//   - GroupAuthorizationFailed:
+func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments, strategy string) (map[string][]int32, error) {
+	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments, strategy)
 	response, err := conn.syncGroup(request)
 	if err == nil && response.ErrorCode != 0 {
 		err = Error(response.ErrorCode)
@@ -1103,17 +1238,40 @@ func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generation
 	cg.withLogger(func(l Logger) {
 		l.Printf("sync group finished for group, %v", cg.config.ID)
 	})
-
+	cg.userData = assignments.UserData
+	cg.withLogger(func(l Logger) {
+		l.Printf(string(colorPurple), "in sync group appending user data to consumer group cg.userdata, %v", cg.userData)
+	})
 	return assignments.Topics, nil
 }
 
-func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID int32, memberAssignments GroupMemberAssignments) syncGroupRequestV0 {
+func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID int32, memberAssignments GroupMemberAssignments, strategy string) syncGroupRequestV0 {
 	request := syncGroupRequestV0{
 		GroupID:      cg.config.ID,
 		GenerationID: generationID,
 		MemberID:     memberID,
 	}
 
+	balancer, _ := findGroupBalancer(strategy, cg.config.GroupBalancers)
+	// if !ok {
+	// 	// NOTE : this shouldn't happen in practice...the broker should not
+	// 	//        return successfully from joinGroup unless all members support
+	// 	//        at least one common protocol.
+	// 	return nil, fmt.Errorf("unable to find selected balancer, %v, for group, %v", group.GroupProtocol, cg.config.ID)
+	// }
+	//torevoke := false
+	// 	if memberAssignments != nil {
+	// 			for memberID, topics := range memberAssignments {
+	// 			topics32 := make(map[string][]int32)
+	// 			for topic, partitions := range topics {
+	// 				partitions32 := make([]int32, len(partitions))
+	// 				for i := range partitions {
+	// 					partitions32[i] = int32(partitions[i])
+	// 				}
+	// 				topics32[topic] = partitions32
+	// 			}
+	// 	}
+	// }
 	if memberAssignments != nil {
 		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV0, 0, 1)
 
@@ -1126,11 +1284,32 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 				}
 				topics32[topic] = partitions32
 			}
+			// if a member has partitions to be revoked set torevoke to true
+			var userDataBytes []byte
+			if balancer.ProtocolName() == "sticky" {
+				var stickyBalancer StickyGroupBalancer
+				userDataBytes, _ = stickyBalancer.UserData(memberID, topics32, generationID)
+				// here
+				// if err != nil {
+				// 	return nil, err
+				// }
+				// userDataBytes,_ = encode(&StickyAssignorUserDataV1{
+				// 	Topics:     topics32,
+				// 	Generation: generationID,
+				// }, nil)
+				cg.withLogger(func(log Logger) {
+					log.Printf(string(colorPurple), "******** in makesyncgroupreq protocolname sticky userdata before topics32: %v **********", topics32)
+					log.Printf(string(colorPurple), "******** in makesyncgroupreq protocolname sticky userdata after : %v **********", userDataBytes)
+					log.Printf(string(colorPurple), "******** in makesyncgroupreq protocolname sticky userdata with NIL topics32: %v **********", nil)
+
+				})
+			}
 			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
 				MemberID: memberID,
 				MemberAssignments: groupAssignment{
-					Version: 1,
-					Topics:  topics32,
+					Version:  1,
+					Topics:   topics32,
+					UserData: userDataBytes,
 				}.bytes(),
 			})
 		}
