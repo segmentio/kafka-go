@@ -423,11 +423,13 @@ func (r *Reader) commitLoop2(ctx context.Context, cg *ConsumerGroup) {
 func (r *Reader) run(cg *ConsumerGroup) {
 	defer close(r.done)
 	defer cg.Close()
-
 	r.withLogger(func(l Logger) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
+	ctx, cancel := context.WithCancel(context.Background())
+	r.cancel()
+	r.cancel = cancel
 	for {
 		// Limit the number of attempts at waiting for the next
 		// consumer generation.
@@ -461,21 +463,38 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.stats.rebalances.observe(1)
 
-		r.subscribe(gen.Assignments)
-
-		gen.Start(func(ctx context.Context) {
-			r.commitLoop(ctx, gen)
-		})
-		gen.Start(func(ctx context.Context) {
-			// wait for the generation to end and then unsubscribe.
-			select {
-			case <-ctx.Done():
-				// continue to next generation
-			case <-r.stctx.Done():
-				// this will be the last loop because the reader is closed.
+		if cg.isCooperative {
+			if cg.isfirstgeneration || !cg.torevoke {
+				go func() {
+					r.subscribe2(ctx, cg, gen.Assignments)
+					fmt.Println("is not first gneeration or there are some new assigned partitions")
+				}()
 			}
-			r.unsubscribe()
-		})
+			if cg.isfirstgeneration {
+				// gen.Start(func(ctx context.Context) {
+				// 	r.commitLoop(ctx, gen)
+				// })
+				go func() {
+					r.commitLoop2(r.stctx, cg)
+				}()
+			}
+		} else {
+			r.subscribe(gen.Assignments)
+
+			gen.Start(func(ctx context.Context) {
+				r.commitLoop(ctx, gen)
+			})
+			gen.Start(func(ctx context.Context) {
+				// wait for the generation to end and then unsubscribe.
+				select {
+				case <-ctx.Done():
+					// continue to next generation
+				case <-r.stctx.Done():
+					// this will be the last loop because the reader is closed.
+				}
+				r.unsubscribe()
+			})
+		}
 	}
 }
 
@@ -483,82 +502,82 @@ func (r *Reader) run(cg *ConsumerGroup) {
 // handshake to join the Reader to the consumer group.
 //
 // This function is responsible for closing the consumer group upon exit.
-func (r *Reader) run2(cg *ConsumerGroup) {
-	defer close(r.done)
-	defer cg.Close()
+// func (r *Reader) run2(cg *ConsumerGroup) {
+// 	defer close(r.done)
+// 	defer cg.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+// 	ctx, cancel := context.WithCancel(context.Background())
 
-	r.cancel = cancel
+// 	r.cancel = cancel
 
-	r.withLogger(func(l Logger) {
-		l.Printf("***entering loop for consumer group, %v\n", r.config.GroupID)
-	})
+// 	r.withLogger(func(l Logger) {
+// 		l.Printf("***entering loop for consumer group, %v\n", r.config.GroupID)
+// 	})
 
-	for {
-		// Limit the number of attempts at waiting for the next
-		// consumer generation.
-		var err error
-		var gen *Generation
-		for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
-			fmt.Println("dancing here")
-			gen, err = cg.Next(r.stctx)
-			fmt.Println("dance done")
-			if err == nil {
-				break
-			}
-			if errors.Is(err, r.stctx.Err()) {
-				return
-			}
-			r.stats.errors.observe(1)
-			r.withErrorLogger(func(l Logger) {
-				l.Printf("%v", err)
-			})
-			// Continue with next attempt...
-		}
-		if err != nil {
-			// All attempts have failed.
-			select {
-			case r.runError <- err:
-				// If somebody's receiving on the runError, let
-				// them know the error occurred.
-			default:
-				// Otherwise, don't block to allow healing.
-			}
-			continue
-		}
+// 	for {
+// 		// Limit the number of attempts at waiting for the next
+// 		// consumer generation.
+// 		var err error
+// 		var gen *Generation
+// 		for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
+// 			fmt.Println("dancing here")
+// 			gen, err = cg.Next(r.stctx)
+// 			fmt.Println("dance done")
+// 			if err == nil {
+// 				break
+// 			}
+// 			if errors.Is(err, r.stctx.Err()) {
+// 				return
+// 			}
+// 			r.stats.errors.observe(1)
+// 			r.withErrorLogger(func(l Logger) {
+// 				l.Printf("%v", err)
+// 			})
+// 			// Continue with next attempt...
+// 		}
+// 		if err != nil {
+// 			// All attempts have failed.
+// 			select {
+// 			case r.runError <- err:
+// 				// If somebody's receiving on the runError, let
+// 				// them know the error occurred.
+// 			default:
+// 				// Otherwise, don't block to allow healing.
+// 			}
+// 			continue
+// 		}
 
-		r.stats.rebalances.observe(1)
-		fmt.Println("***rebalance done")
-		//some changes here
-		if cg.isfirstgeneration || !cg.torevoke {
-			go func() {
-				r.subscribe2(ctx, cg, gen.Assignments)
-				fmt.Println("is not first gneeration")
-			}()
-		}
-		//use select channel here
-		if cg.isfirstgeneration {
-			// gen.Start(func(ctx context.Context) {
-			// 	r.commitLoop(ctx, gen)
-			// })
-			go func() {
-				r.commitLoop2(r.stctx, cg)
-			}()
-		}
-		// gen.Start(func(ctx context.Context) {
-		// 	// wait for the generation to end and then unsubscribe.
-		// 	select {
-		// 	case <-ctx.Done():
-		// 		// continue to next generation
-		// 	case <-r.stctx.Done():
-		// 		// this will be the last loop because the reader is closed.
-		// 	}
-		// 	r.unsubscribe()
-		// })
-	}
-	fmt.Println("hereherhehrehrheh")
-}
+// 		r.stats.rebalances.observe(1)
+// 		fmt.Println("***rebalance done")
+// 		//some changes here
+// 		if cg.isfirstgeneration || !cg.torevoke {
+// 			go func() {
+// 				r.subscribe2(ctx, cg, gen.Assignments)
+// 				fmt.Println("is not first gneeration")
+// 			}()
+// 		}
+// 		//use select channel here
+// 		if cg.isfirstgeneration {
+// 			// gen.Start(func(ctx context.Context) {
+// 			// 	r.commitLoop(ctx, gen)
+// 			// })
+// 			go func() {
+// 				r.commitLoop2(r.stctx, cg)
+// 			}()
+// 		}
+// 		// gen.Start(func(ctx context.Context) {
+// 		// 	// wait for the generation to end and then unsubscribe.
+// 		// 	select {
+// 		// 	case <-ctx.Done():
+// 		// 		// continue to next generation
+// 		// 	case <-r.stctx.Done():
+// 		// 		// this will be the last loop because the reader is closed.
+// 		// 	}
+// 		// 	r.unsubscribe()
+// 		// })
+// 	}
+// 	fmt.Println("hereherhehrehrheh")
+// }
 
 // ReaderConfig is a configuration object used to create new instances of
 // Reader.
@@ -733,8 +752,6 @@ type ReaderConfig struct {
 	// This flag is being added to retain backwards-compatibility, so it will be
 	// removed in a future version of kafka-go.
 	OffsetOutOfRangeError bool
-
-	IsCooperative bool
 }
 
 // Validate method validates ReaderConfig properties.
@@ -850,10 +867,11 @@ func NewReader(config ReaderConfig) *Reader {
 				RangeGroupBalancer{},
 				RoundRobinGroupBalancer{},
 			}
-		} else {
-			//this is cooperative, will add other config logic later
-			config.IsCooperative = true
-		}
+		} // else {
+		// 	//this is cooperative, will add other config logic later
+		// 	config.IsCooperative = true
+		//}
+		// have to set this iscooperative when finding common balancer for all consumer members
 	}
 
 	if config.Dialer == nil {
@@ -953,17 +971,19 @@ func NewReader(config ReaderConfig) *Reader {
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
-			isCooperative:          r.config.IsCooperative,
+			// isCooperative:          r.config.IsCooperative,
 		})
 		if err != nil {
 			panic(err)
 		}
-		if r.config.IsCooperative {
-			fmt.Println("in new reader going with r.run2(cg)")
-			go r.run2(cg)
-		} else {
-			go r.run(cg)
-		}
+		//we might have to use same run, lets try to use diff path after nextgen depending ont the consumer config for iscooperative
+		// lets try using same run, and in that ty to create different paths
+		// if r.config.IsCooperative {
+		// 	fmt.Println("in new reader going with r.run2(cg)")
+		// 	go r.run2(cg)
+		// } else {
+		go r.run(cg)
+		//}
 	}
 
 	return r
@@ -1786,9 +1806,33 @@ func (r *reader) run2(ctx context.Context, cg *ConsumerGroup, topic string, topi
 				conn.Close()
 				return
 			}
-			fmt.Println("isinlist ", isInList32(cg.nowAssigned[topic], int32(topicPartition)))
-			if !isInList32(cg.nowAssigned[topic], int32(topicPartition)) {
-				return
+			// fmt.Println("isinlist ", isInList32(cg.nowAssigned[topic], int32(topicPartition)))
+			if !cg.revokedone {
+				cg.currentAssignment.lock.RLock()
+				// torevoke := !isInList32(cg.nowAssigned[topic], int32(topicPartition))
+				fmt.Println("read lock for partition", topicPartition)
+				torevoke := !isInList32(cg.currentAssignment.Assignments[topic], int32(topicPartition))
+				fmt.Println("unlock readlock", topicPartition)
+				cg.currentAssignment.lock.RUnlock()
+				if torevoke {
+					fmt.Println("here in read trying to revoke")
+					//revokedone := false
+					// for {
+					select {
+					case cg.revoked <- topicPartition:
+						//revokedone = true
+						fmt.Println("revoked write: this partition is no longer assigned to this consumer member, closing the readloop")
+					default:
+						fmt.Println("blocked rn in read for partition", topicPartition)
+					}
+					// if revokedone {
+					// 	break
+					// }
+					// }
+					conn.Close()
+
+					return
+				}
 			}
 			offset, err = r.read(ctx, offset, conn)
 			switch {

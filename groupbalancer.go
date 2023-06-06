@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	StickyBalancerProtocolName       = "sticky"
-	RangeBalancerProtocolName        = "range"
-	RoundRobinBalancerProtocolName   = "roundrobin"
-	RackAffinityBalancerProtocolName = "rack-affinity"
+	StickyBalancerProtocolName            = "sticky"
+	CooperativeStickyBalancerProtocolName = "cooperative-sticky"
+	RangeBalancerProtocolName             = "range"
+	RoundRobinBalancerProtocolName        = "roundrobin"
+	RackAffinityBalancerProtocolName      = "rack-affinity"
 )
 
 // GroupMember describes a single participant in a consumer group.
@@ -356,10 +357,14 @@ func findGroupBalancer(protocolName string, balancers []GroupBalancer) (GroupBal
 }
 
 type StickyGroupBalancer struct {
-	movements partitionMovements
+	movements     partitionMovements
+	IsCooperative bool
 }
 
 func (s StickyGroupBalancer) ProtocolName() string {
+	if s.IsCooperative {
+		return CooperativeStickyBalancerProtocolName
+	}
 	return StickyBalancerProtocolName
 }
 
@@ -490,27 +495,30 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 			}
 		}
 	}
-	torevoke := false
-	groupAssignments2 := GroupMemberAssignments{}
-	for memberID, assignments := range lastassigned {
-		if len(assignments) == 0 {
-			groupAssignments2[memberID] = make(map[string][]int)
-		} else {
-			for _, assignment := range assignments {
-				if isInList(groupAssignments[memberID][assignment.Topic], int(assignment.Partition)) {
-					if _, ok := groupAssignments2[memberID]; !ok {
-						groupAssignments2[memberID] = make(map[string][]int, 1)
+	if s.IsCooperative {
+		torevoke := false
+		groupAssignments2 := GroupMemberAssignments{}
+		for memberID, assignments := range lastassigned {
+			if len(assignments) == 0 {
+				groupAssignments2[memberID] = make(map[string][]int)
+			} else {
+				for _, assignment := range assignments {
+					if isInList(groupAssignments[memberID][assignment.Topic], int(assignment.Partition)) {
+						if _, ok := groupAssignments2[memberID]; !ok {
+							groupAssignments2[memberID] = make(map[string][]int, 1)
+						}
+						groupAssignments2[memberID][assignment.Topic] = append(groupAssignments2[memberID][assignment.Topic], int(assignment.Partition))
+					} else {
+						torevoke = true
 					}
-					groupAssignments2[memberID][assignment.Topic] = append(groupAssignments2[memberID][assignment.Topic], int(assignment.Partition))
-				} else {
-					torevoke = true
 				}
 			}
 		}
-	}
-	if torevoke {
-		fmt.Println("returning torevoke , groupassignemnts, groupassignments2", groupAssignments, groupAssignments2)
-		return groupAssignments2
+		if torevoke {
+			fmt.Println("returning torevoke , groupassignemnts, groupassignments2", groupAssignments, groupAssignments2)
+			fmt.Println("revoking partitions")
+			return groupAssignments2
+		}
 	}
 	return groupAssignments
 }

@@ -167,9 +167,9 @@ type ConsumerGroupConfig struct {
 	connect func(dialer *Dialer, brokers ...string) (coordinator, error)
 
 	// if common balancer is cooperative, default is false.
-	isCooperative bool
+	// isCooperative bool
 
-	generationID int32
+	// generationID int32
 }
 
 // Validate method validates ConsumerGroupConfig properties and sets relevant
@@ -262,6 +262,7 @@ func (config *ConsumerGroupConfig) Validate() error {
 	if config.connect == nil {
 		config.connect = makeConnect(*config)
 	}
+
 	return nil
 }
 
@@ -501,10 +502,10 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 				if err != nil {
 					fmt.Println("heartbeat resp error", err)
 					// heartbeat resp error [27] Rebalance In Progress: the coordinator has begun rebalancing the group, the client should rejoin the group
-					if errors.Is(err, UnknownTopicOrPartition) {
-						//rejoin
+					// if errors.Is(err, UnknownTopicOrPartition) {
+					// 	//rejoin
 
-					}
+					// }
 					return
 				}
 			}
@@ -698,16 +699,25 @@ type ConsumerGroup struct {
 	next   chan *Generation
 	errs   chan error
 
-	closeOnce         sync.Once
-	wg                sync.WaitGroup
-	done              chan struct{}
-	userData          []byte
-	isCoperative      bool
+	closeOnce     sync.Once
+	wg            sync.WaitGroup
+	done          chan struct{}
+	userData      []byte
+	isCooperative bool
+	// try to remove this
 	isfirstgeneration bool
 	generation        Generation
 	nowAssigned       map[string][]int32
 	lastAssigned      map[string][]int32
 	torevoke          bool
+	revoked           chan int
+	currentAssignment CurrentAssignment
+	revokedone        bool
+}
+
+type CurrentAssignment struct {
+	Assignments map[string][]int32
+	lock        sync.RWMutex
 }
 
 // Close terminates the current generation by causing this member to leave and
@@ -754,6 +764,7 @@ func (cg *ConsumerGroup) run() {
 	for {
 		fmt.Println("startign next generation/rebalance")
 		memberID, err = cg.nextGeneration(memberID)
+
 		fmt.Println("err in nextgen", err)
 		// backoff will be set if this go routine should sleep before continuing
 		// to the next generation.  it will be non-nil in the case of an error
@@ -826,6 +837,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err // a prior memberID may still be valid, so don't return ""
 	}
 	fmt.Println("before, cg.generation", cg.generation)
+	// only if cooperative?
 	cg.generation.conn = conn
 	fmt.Println("aftwe,cg.generation", cg.generation)
 	defer conn.Close()
@@ -842,6 +854,12 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
 		})
 		return memberID, err
+	}
+	if strategy == CooperativeStickyBalancerProtocolName {
+		cg.isCooperative = true
+		fmt.Println("choosen common balancer is cooperative")
+	} else {
+		cg.isCooperative = false
 	}
 	cg.withLogger(func(log Logger) {
 		log.Printf("Joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
@@ -865,33 +883,51 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	})
 	// fetch initial offsets.
 	var offsets map[string]map[int]int64
-	cg.lastAssigned = make(map[string][]int32)
-	for k, v := range cg.nowAssigned {
-		cg.lastAssigned[k] = v
-	}
-	//cg.lastAssigned = cg.nowAssigned
-	cg.nowAssigned = make(map[string][]int32)
-	//cg.nowAssigned = assignments
-	for k, v := range assignments {
-		cg.nowAssigned[k] = v
-	}
-	fmt.Println("lastassigned nowassigned checking", cg.lastAssigned, cg.nowAssigned)
-	toRejoin := false
-	cg.torevoke = false
-	for topic := range cg.lastAssigned {
-		for _, partition := range cg.lastAssigned[topic] {
-			if !isInList32(cg.nowAssigned[topic], partition) {
-				toRejoin = true
-				cg.torevoke = true
-				break
+	noofpartitionstorevoke := 0
+	cg.revokedone = true
+	if cg.isCooperative {
+		fmt.Println("cg is cooperative and now we are checking if revoke is necessary")
+		cg.lastAssigned = make(map[string][]int32)
+
+		for k, v := range cg.nowAssigned {
+			cg.lastAssigned[k] = v
+		}
+		cg.revoked = make(chan int, len(cg.lastAssigned))
+		//cg.lastAssigned = cg.nowAssigned
+		cg.nowAssigned = make(map[string][]int32)
+		//cg.nowAssigned = assignments
+		for k, v := range assignments {
+			cg.nowAssigned[k] = v
+		}
+
+		fmt.Println("lastassigned nowassigned checking", cg.lastAssigned, cg.nowAssigned)
+		// toRejoin := false
+		cg.torevoke = false
+		for topic := range cg.lastAssigned {
+			for _, partition := range cg.lastAssigned[topic] {
+				if !isInList32(cg.nowAssigned[topic], partition) {
+					// toRejoin = true
+					cg.torevoke = true
+					noofpartitionstorevoke = noofpartitionstorevoke + 1
+					//break
+				}
 			}
 		}
+		if cg.torevoke {
+			cg.currentAssignment.lock.Lock()
+			cg.currentAssignment.Assignments = make(map[string][]int32)
+			for k, v := range assignments {
+				cg.currentAssignment.Assignments[k] = v
+			}
+			cg.currentAssignment.lock.Unlock()
+			cg.revokedone = false
+		}
+		// fmt.Println("rejoin", toRejoin)
+		fmt.Println("torevoke", cg.torevoke)
+		fmt.Println("lastassigned", cg.lastAssigned)
+		fmt.Println("nowassigned ", cg.nowAssigned)
+		// fmt.Println("rejoin true/fasle", toRejoin)
 	}
-	fmt.Println("rejoin", toRejoin)
-	fmt.Println("torevoke", cg.torevoke)
-	fmt.Println("lastassigned", cg.lastAssigned)
-	fmt.Println("nowassigned ", cg.nowAssigned)
-	fmt.Println("rejoin true/fasle", toRejoin)
 	offsets, err = cg.fetchOffsets(conn, assignments)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
@@ -916,6 +952,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	fmt.Println("gen", gen)
 	fmt.Println("before2, cg.generation", cg.generation)
 	fmt.Println("gen print before", &gen)
+	// see lock related info here
 	cg.generation = gen
 	fmt.Println("after2, cg.generation", cg.generation)
 	// spawn all of the go routines required to facilitate this generation.  if
@@ -942,13 +979,45 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		fmt.Println("hello cg closed")
 		return memberID, ErrGroupClosed // ErrGroupClosed will trigger leave logic.
 	case cg.next <- &gen:
-		if strategy == "sticky" {
-			cg.config.isCooperative = true
-			fmt.Println("just initialized nextgen, checking rejoin", toRejoin)
-			if toRejoin {
-				fmt.Println("")
+		// if strategy == "sticky" {
+		// 	cg.config.isCooperative = true
+		// 	fmt.Println("just initialized nextgen, checking rejoin", toRejoin)
+		// 	if toRejoin {
+		// 		fmt.Println("")
+		// 		close(gen.done)
+		// 		gen.closed = true
+		// 		fmt.Println("closing gen manuallly to rejoin")
+		// 	}
+		// }
+		if cg.isCooperative {
+			if cg.torevoke {
+				fmt.Println("just initialized nextgen, checking rejoin", cg.torevoke)
+				fmt.Println("noofpartitionstorevoke", noofpartitionstorevoke)
+				for i := 1; i <= noofpartitionstorevoke; i++ {
+					fmt.Println("in forloopi", i)
+					//revoked := false
+					//var revokedone bool = false
+					//for {
+					select {
+					case revoked := <-cg.revoked:
+						fmt.Println("revoked partition", revoked)
+						//revokedone = true
+						// default:
+						// 	fmt.Println("blocked right now ")
+					}
+					fmt.Println("revoked 1", i)
+					// if revokedone {
+					// 	break
+					// }
+					//}
+				}
+			}
+			cg.revokedone = true
+			fmt.Println("breaking from revoke")
+			if cg.torevoke {
 				close(gen.done)
 				gen.closed = true
+				fmt.Println("hello revoke done, gen closed")
 				fmt.Println("closing gen manuallly to rejoin")
 			}
 		}
@@ -1116,7 +1185,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 		if err != nil {
 			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
 		}
-		if balancer.ProtocolName() == "sticky" {
+		if balancer.ProtocolName() == StickyBalancerProtocolName || balancer.ProtocolName() == CooperativeStickyBalancerProtocolName {
 			userData = cg.userData
 			cg.withLogger(func(log Logger) {
 				log.Printf(string(colorPurple), "******** in makejoingoupreq protocolname sticky userdata :%v", userData)
@@ -1286,7 +1355,7 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 			}
 			// if a member has partitions to be revoked set torevoke to true
 			var userDataBytes []byte
-			if balancer.ProtocolName() == "sticky" {
+			if balancer.ProtocolName() == StickyBalancerProtocolName || balancer.ProtocolName() == CooperativeStickyBalancerProtocolName {
 				var stickyBalancer StickyGroupBalancer
 				userDataBytes, _ = stickyBalancer.UserData(memberID, topics32, generationID)
 				// here
