@@ -142,7 +142,7 @@ func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
 	})
 }
 
-func (r *Reader) subscribe2(ctx context.Context, cg *ConsumerGroup, assignedAssignments map[string][]PartitionAssignment) {
+func (r *Reader) subscribeV2(ctx context.Context, cg *ConsumerGroup, assignedAssignments map[string][]PartitionAssignment) {
 	offsets := make(map[topicPartition]int64)
 	for topic, assignments := range assignedAssignments {
 		for _, assignment := range assignments {
@@ -155,7 +155,7 @@ func (r *Reader) subscribe2(ctx context.Context, cg *ConsumerGroup, assignedAssi
 	}
 
 	r.mutex.Lock()
-	r.start2(ctx, cg, offsets)
+	r.startV2(ctx, cg, offsets)
 	r.mutex.Unlock()
 
 	r.withLogger(func(l Logger) {
@@ -268,7 +268,7 @@ func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 	}
 }
 
-func (r *Reader) commitLoopImmediate2(ctx context.Context, cg *ConsumerGroup) {
+func (r *Reader) commitLoopImmediateV2(ctx context.Context, cg *ConsumerGroup) {
 	offsets := offsetStash{}
 
 	for {
@@ -345,7 +345,7 @@ func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 	}
 }
 
-func (r *Reader) commitLoopInterval2(ctx context.Context, cg *ConsumerGroup) {
+func (r *Reader) commitLoopIntervalV2(ctx context.Context, cg *ConsumerGroup) {
 	ticker := time.NewTicker(r.config.CommitInterval)
 	defer ticker.Stop()
 
@@ -401,7 +401,7 @@ func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 	}
 }
 
-func (r *Reader) commitLoop2(ctx context.Context, cg *ConsumerGroup) {
+func (r *Reader) commitLoopV2(ctx context.Context, cg *ConsumerGroup) {
 	r.withLogger(func(l Logger) {
 		l.Printf("started commit for group %s\n", r.config.GroupID)
 	})
@@ -410,9 +410,9 @@ func (r *Reader) commitLoop2(ctx context.Context, cg *ConsumerGroup) {
 	})
 
 	if r.useSyncCommits() {
-		r.commitLoopImmediate2(ctx, cg)
+		r.commitLoopImmediateV2(ctx, cg)
 	} else {
-		r.commitLoopInterval2(ctx, cg)
+		r.commitLoopIntervalV2(ctx, cg)
 	}
 }
 
@@ -466,16 +466,12 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		if cg.isCooperative {
 			if cg.isfirstgeneration || !cg.torevoke {
 				go func() {
-					r.subscribe2(ctx, cg, gen.Assignments)
-					fmt.Println("is not first gneeration or there are some new assigned partitions")
+					r.subscribeV2(ctx, cg, gen.Assignments)
 				}()
 			}
 			if cg.isfirstgeneration {
-				// gen.Start(func(ctx context.Context) {
-				// 	r.commitLoop(ctx, gen)
-				// })
 				go func() {
-					r.commitLoop2(r.stctx, cg)
+					r.commitLoopV2(r.stctx, cg)
 				}()
 			}
 		} else {
@@ -497,87 +493,6 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		}
 	}
 }
-
-// run provides the main consumer group management loop.  Each iteration performs the
-// handshake to join the Reader to the consumer group.
-//
-// This function is responsible for closing the consumer group upon exit.
-// func (r *Reader) run2(cg *ConsumerGroup) {
-// 	defer close(r.done)
-// 	defer cg.Close()
-
-// 	ctx, cancel := context.WithCancel(context.Background())
-
-// 	r.cancel = cancel
-
-// 	r.withLogger(func(l Logger) {
-// 		l.Printf("***entering loop for consumer group, %v\n", r.config.GroupID)
-// 	})
-
-// 	for {
-// 		// Limit the number of attempts at waiting for the next
-// 		// consumer generation.
-// 		var err error
-// 		var gen *Generation
-// 		for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
-// 			fmt.Println("dancing here")
-// 			gen, err = cg.Next(r.stctx)
-// 			fmt.Println("dance done")
-// 			if err == nil {
-// 				break
-// 			}
-// 			if errors.Is(err, r.stctx.Err()) {
-// 				return
-// 			}
-// 			r.stats.errors.observe(1)
-// 			r.withErrorLogger(func(l Logger) {
-// 				l.Printf("%v", err)
-// 			})
-// 			// Continue with next attempt...
-// 		}
-// 		if err != nil {
-// 			// All attempts have failed.
-// 			select {
-// 			case r.runError <- err:
-// 				// If somebody's receiving on the runError, let
-// 				// them know the error occurred.
-// 			default:
-// 				// Otherwise, don't block to allow healing.
-// 			}
-// 			continue
-// 		}
-
-// 		r.stats.rebalances.observe(1)
-// 		fmt.Println("***rebalance done")
-// 		//some changes here
-// 		if cg.isfirstgeneration || !cg.torevoke {
-// 			go func() {
-// 				r.subscribe2(ctx, cg, gen.Assignments)
-// 				fmt.Println("is not first gneeration")
-// 			}()
-// 		}
-// 		//use select channel here
-// 		if cg.isfirstgeneration {
-// 			// gen.Start(func(ctx context.Context) {
-// 			// 	r.commitLoop(ctx, gen)
-// 			// })
-// 			go func() {
-// 				r.commitLoop2(r.stctx, cg)
-// 			}()
-// 		}
-// 		// gen.Start(func(ctx context.Context) {
-// 		// 	// wait for the generation to end and then unsubscribe.
-// 		// 	select {
-// 		// 	case <-ctx.Done():
-// 		// 		// continue to next generation
-// 		// 	case <-r.stctx.Done():
-// 		// 		// this will be the last loop because the reader is closed.
-// 		// 	}
-// 		// 	r.unsubscribe()
-// 		// })
-// 	}
-// 	fmt.Println("hereherhehrehrheh")
-// }
 
 // ReaderConfig is a configuration object used to create new instances of
 // Reader.
@@ -867,11 +782,7 @@ func NewReader(config ReaderConfig) *Reader {
 				RangeGroupBalancer{},
 				RoundRobinGroupBalancer{},
 			}
-		} // else {
-		// 	//this is cooperative, will add other config logic later
-		// 	config.IsCooperative = true
-		//}
-		// have to set this iscooperative when finding common balancer for all consumer members
+		}
 	}
 
 	if config.Dialer == nil {
@@ -971,19 +882,11 @@ func NewReader(config ReaderConfig) *Reader {
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
-			// isCooperative:          r.config.IsCooperative,
 		})
 		if err != nil {
 			panic(err)
 		}
-		//we might have to use same run, lets try to use diff path after nextgen depending ont the consumer config for iscooperative
-		// lets try using same run, and in that ty to create different paths
-		// if r.config.IsCooperative {
-		// 	fmt.Println("in new reader going with r.run2(cg)")
-		// 	go r.run2(cg)
-		// } else {
 		go r.run(cg)
-		//}
 	}
 
 	return r
@@ -1463,27 +1366,15 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 	}
 }
 
-func (r *Reader) start2(ctx context.Context, cg *ConsumerGroup, offsetsByPartition map[topicPartition]int64) {
+func (r *Reader) startV2(ctx context.Context, cg *ConsumerGroup, offsetsByPartition map[topicPartition]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
 		return
 	}
 
-	// select {
-	// case <-ctx.Done():
-	// 	// Context is canceled, handle the cancellation
-	// 	ctx, cancel := context.WithCancel(context.Background())
-
-	// 	r.cancel() // always cancel the previous reader
-	// 	r.cancel = cancel
-
-	// default:
-	// 	// Context is not canceled, continue the work
-	// }
-
-	//update this outside this func near context may be
+	//check version usage and update this outside this func near context may be
 	r.version++
-	fmt.Println("here adding")
+
 	r.join.Add(len(offsetsByPartition))
 	for key, offset := range offsetsByPartition {
 		go func(ctx context.Context, key topicPartition, offset int64, join *sync.WaitGroup) {
@@ -1510,10 +1401,9 @@ func (r *Reader) start2(ctx context.Context, cg *ConsumerGroup, offsetsByPartiti
 
 				// backwards-compatibility flags
 				offsetOutOfRangeError: r.config.OffsetOutOfRangeError,
-			}).run2(ctx, cg, key.topic, int(key.partition), offset)
+			}).runV2(ctx, cg, key.topic, int(key.partition), offset)
 		}(ctx, key, offset, &r.join)
 	}
-	fmt.Println("returing from start")
 }
 
 // A reader reads messages from kafka and produces them on its channels, it's
@@ -1734,7 +1624,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 	}
 }
 
-func (r *reader) run2(ctx context.Context, cg *ConsumerGroup, topic string, topicPartition int, offset int64) {
+func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, topicPartition int, offset int64) {
 	// This is the reader's main loop, it only ends if the context is canceled
 	// and will keep attempting to reader messages otherwise.
 	//
@@ -1744,7 +1634,6 @@ func (r *reader) run2(ctx context.Context, cg *ConsumerGroup, topic string, topi
 	// be surfaced to the program.
 	// If the reader wasn't retrying then the program would block indefinitely
 	// on a Read call after reading the first error.
-	fmt.Println("hello in reader.run, topic, topicpartition", topic, topicPartition)
 	for attempt := 0; true; attempt++ {
 		if attempt != 0 {
 			if !sleep(ctx, backoff(attempt, r.backoffDelayMin, r.backoffDelayMax)) {
@@ -1801,37 +1690,23 @@ func (r *reader) run2(ctx context.Context, cg *ConsumerGroup, topic string, topi
 		errcount := 0
 	readLoop:
 		for {
-			fmt.Println("in readloop")
 			if !sleep(ctx, backoff(errcount, r.backoffDelayMin, r.backoffDelayMax)) {
 				conn.Close()
 				return
 			}
-			// fmt.Println("isinlist ", isInList32(cg.nowAssigned[topic], int32(topicPartition)))
 			if !cg.revokedone {
 				cg.currentAssignment.lock.RLock()
-				// torevoke := !isInList32(cg.nowAssigned[topic], int32(topicPartition))
-				fmt.Println("read lock for partition", topicPartition)
 				torevoke := !isInList32(cg.currentAssignment.Assignments[topic], int32(topicPartition))
-				fmt.Println("unlock readlock", topicPartition)
 				cg.currentAssignment.lock.RUnlock()
 				if torevoke {
-					fmt.Println("here in read trying to revoke")
-					//revokedone := false
-					// for {
 					select {
 					case cg.revoked <- topicPartition:
-						//revokedone = true
-						fmt.Println("revoked write: this partition is no longer assigned to this consumer member, closing the readloop")
-					default:
-						fmt.Println("blocked rn in read for partition", topicPartition)
+						r.withErrorLogger(func(log Logger) {
+							log.Printf(" this topic:%s, partition: %d is no longer assigned to this consumer member, revoking it", topic, topicPartition)
+						})
+						conn.Close()
+						return
 					}
-					// if revokedone {
-					// 	break
-					// }
-					// }
-					conn.Close()
-
-					return
 				}
 			}
 			offset, err = r.read(ctx, offset, conn)

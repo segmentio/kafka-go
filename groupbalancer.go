@@ -399,14 +399,12 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 	// determine if we're dealing with a completely fresh assignment, or if there's existing assignment state
 	isFreshAssignment := len(currentAssignment) == 0
 
-	// for coperative
-	//var lastassigned map[string][]topicPartitionAssignment
+	// for computing partitions to revoke incase of cooperative
 	lastassigned := make(map[string][]topicPartitionAssignment)
 	for key, value := range currentAssignment {
 		lastassigned[key] = make([]topicPartitionAssignment, len(value))
 		copy(lastassigned[key], value)
 	}
-	fmt.Println("lastassigned last assigned", lastassigned)
 
 	// create a mapping of all current topic partitions and the consumers that can be assigned to them
 	partition2AllPotentialConsumers := make(map[topicPartitionAssignment][]string)
@@ -497,17 +495,17 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 	}
 	if s.IsCooperative {
 		torevoke := false
-		groupAssignments2 := GroupMemberAssignments{}
+		adjustedGroupAssignments := GroupMemberAssignments{}
 		for memberID, assignments := range lastassigned {
 			if len(assignments) == 0 {
-				groupAssignments2[memberID] = make(map[string][]int)
+				adjustedGroupAssignments[memberID] = make(map[string][]int)
 			} else {
 				for _, assignment := range assignments {
 					if isInList(groupAssignments[memberID][assignment.Topic], int(assignment.Partition)) {
-						if _, ok := groupAssignments2[memberID]; !ok {
-							groupAssignments2[memberID] = make(map[string][]int, 1)
+						if _, ok := adjustedGroupAssignments[memberID]; !ok {
+							adjustedGroupAssignments[memberID] = make(map[string][]int, 1)
 						}
-						groupAssignments2[memberID][assignment.Topic] = append(groupAssignments2[memberID][assignment.Topic], int(assignment.Partition))
+						adjustedGroupAssignments[memberID][assignment.Topic] = append(adjustedGroupAssignments[memberID][assignment.Topic], int(assignment.Partition))
 					} else {
 						torevoke = true
 					}
@@ -515,9 +513,7 @@ func (s StickyGroupBalancer) AssignGroups(members []GroupMember, topicPartitions
 			}
 		}
 		if torevoke {
-			fmt.Println("returning torevoke , groupassignemnts, groupassignments2", groupAssignments, groupAssignments2)
-			fmt.Println("revoking partitions")
-			return groupAssignments2
+			return adjustedGroupAssignments
 		}
 	}
 	return groupAssignments
@@ -1312,3 +1308,5 @@ func isInList32(list []int32, element int32) bool {
 	}
 	return false
 }
+
+// type CooperativeStickyGroupBalancer struct{}
