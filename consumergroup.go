@@ -921,7 +921,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 			if cg.torevoke {
 				for i := 1; i <= noofpartitionstorevoke; i++ {
 					select {
-					case _ = <-cg.revoked:
+					case <-cg.revoked:
 					}
 					fmt.Println("revoked 1", i)
 				}
