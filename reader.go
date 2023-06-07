@@ -1699,14 +1699,12 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 				torevoke := !isInList32(cg.currentAssignment.Assignments[topic], int32(topicPartition))
 				cg.currentAssignment.lock.RUnlock()
 				if torevoke {
-					select {
-					case cg.revoked <- topicPartition:
-						r.withErrorLogger(func(log Logger) {
-							log.Printf(" this topic:%s, partition: %d is no longer assigned to this consumer member, revoking it", topic, topicPartition)
-						})
-						conn.Close()
-						return
-					}
+					cg.revoked <- topicPartition
+					r.withErrorLogger(func(log Logger) {
+						log.Printf(" this topic:%s, partition: %d is no longer assigned to this consumer member, revoking it", topic, topicPartition)
+					})
+					conn.Close()
+					return
 				}
 			}
 			offset, err = r.read(ctx, offset, conn)

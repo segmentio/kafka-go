@@ -920,9 +920,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		if cg.isCooperative {
 			if cg.torevoke {
 				for i := 1; i <= noofpartitionstorevoke; i++ {
-					select {
-					case <-cg.revoked:
-					}
+					<-cg.revoked
 				}
 				cg.revokedone = true
 				close(gen.done)
