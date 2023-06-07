@@ -427,9 +427,9 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	r.cancel()
-	r.cancel = cancel
+	// ctx, cancel := context.WithCancel(context.Background())
+	// r.cancel()
+	// r.cancel = cancel
 	for {
 		// Limit the number of attempts at waiting for the next
 		// consumer generation.
@@ -466,7 +466,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		if cg.isCooperative {
 			if cg.isfirstgeneration || !cg.torevoke {
 				go func() {
-					r.subscribeV2(ctx, cg, gen.Assignments)
+					r.subscribeV2(r.stctx, cg, gen.Assignments)
 				}()
 			}
 			if cg.isfirstgeneration {
