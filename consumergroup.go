@@ -803,7 +803,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err // a prior memberID may still be valid, so don't return ""
 	}
 
-	cg.generation.conn = conn
+	// cg.generation.conn = conn
 	defer conn.Close()
 
 	var generationID int32
