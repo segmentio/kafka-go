@@ -679,7 +679,7 @@ type ConsumerGroup struct {
 	userData          []byte
 	isCooperative     bool
 	isfirstgeneration bool
-	generation        Generation
+	generation        *Generation
 	lastAssigned      map[string][]int32
 	torevoke          bool
 	revoked           chan int
@@ -896,7 +896,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		logError:        cg.withErrorLogger,
 	}
 
-	cg.generation = gen
+	cg.generation = &gen
 
 	// spawn all of the go routines required to facilitate this generation.  if
 	// any of these functions exit, then the generation is determined to be
