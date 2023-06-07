@@ -923,7 +923,6 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 					select {
 					case <-cg.revoked:
 					}
-					fmt.Println("revoked 1", i)
 				}
 				cg.revokedone = true
 				close(gen.done)
