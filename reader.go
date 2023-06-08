@@ -422,17 +422,6 @@ func (r *Reader) commitLoopV2(ctx context.Context, cg *ConsumerGroup) {
 // This function is responsible for closing the consumer group upon exit.
 func (r *Reader) run(cg *ConsumerGroup) {
 	defer close(r.done)
-	if cg.isCooperative {
-		defer r.unsubscribe()
-		// defer r.Close()
-		defer func() {
-			if err := r.Close(); err != nil {
-				r.withErrorLogger(func(l Logger) {
-					l.Printf("Error closing reader:%v", err)
-				})
-			}
-		}()
-	}
 	defer cg.Close()
 
 	r.withLogger(func(l Logger) {
