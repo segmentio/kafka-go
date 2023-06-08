@@ -423,6 +423,17 @@ func (r *Reader) commitLoopV2(ctx context.Context, cg *ConsumerGroup) {
 func (r *Reader) run(cg *ConsumerGroup) {
 	defer close(r.done)
 	defer cg.Close()
+	if cg.isCooperative {
+		defer r.unsubscribe()
+		// defer r.Close()
+		defer func() {
+			if err := r.Close(); err != nil {
+				r.withErrorLogger(func(l Logger) {
+					l.Printf("Error closing reader:%v", err)
+				})
+			}
+		}()
+	}
 	r.withLogger(func(l Logger) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
