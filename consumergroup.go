@@ -1028,7 +1028,11 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	if err != nil {
 		return "", 0, nil, "", err
 	}
-
+	cg.withLogger(func(log Logger) {
+		log.Printf("connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+		// decide if to return
+		// return
+	})
 	response, err := conn.joinGroup(request)
 	if err == nil && response.ErrorCode != 0 {
 		err = Error(response.ErrorCode)
