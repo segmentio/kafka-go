@@ -685,6 +685,7 @@ type ConsumerGroup struct {
 	revoked           chan int
 	currentAssignment CurrentAssignment
 	revokedone        bool
+	conn              coordinator
 }
 
 type CurrentAssignment struct {
@@ -733,6 +734,17 @@ func (cg *ConsumerGroup) run() {
 	var memberID string
 	var err error
 	cg.isfirstgeneration = true
+	conn, err := cg.coordinator()
+
+	if err != nil {
+		cg.withErrorLogger(func(log Logger) {
+			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+		})
+		//return memberID, err // a prior memberID may still be valid, so don't return ""
+	}
+
+	// cg.generation.conn = conn
+	defer conn.Close()
 	for {
 		memberID, err = cg.nextGeneration(memberID)
 
@@ -794,17 +806,17 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// re-connect in certain cases, but that shouldn't be an issue given that
 	// rebalances are relatively infrequent under normal operating
 	// conditions.
-	conn, err := cg.coordinator()
+	// conn, err := cg.coordinator()
 
-	if err != nil {
-		cg.withErrorLogger(func(log Logger) {
-			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-		})
-		return memberID, err // a prior memberID may still be valid, so don't return ""
-	}
+	// if err != nil {
+	// 	cg.withErrorLogger(func(log Logger) {
+	// 		log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+	// 	})
+	// 	return memberID, err // a prior memberID may still be valid, so don't return ""
+	// }
 
-	// cg.generation.conn = conn
-	defer conn.Close()
+	// // cg.generation.conn = conn
+	// defer conn.Close()
 
 	var generationID int32
 	var groupAssignments GroupMemberAssignments
