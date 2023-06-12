@@ -745,9 +745,10 @@ func (cg *ConsumerGroup) run() {
 	}
 	if conn != nil {
 		cg.conn = conn
+		defer conn.Close()
 	}
 	// cg.generation.conn = conn
-	defer conn.Close()
+
 	for {
 		memberID, err = cg.nextGeneration(memberID)
 
