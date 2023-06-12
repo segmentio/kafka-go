@@ -734,29 +734,31 @@ func (cg *ConsumerGroup) run() {
 	var memberID string
 	var err error
 	cg.isfirstgeneration = true
-	conn, err := cg.coordinator()
+	// conn, err := cg.coordinator()
 
-	if err != nil {
-		cg.withErrorLogger(func(log Logger) {
-			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-			// decide if to return
-			// return
-		})
-		//return memberID, err // a prior memberID may still be valid, so don't return ""
-	}
-	if conn != nil {
-		cg.conn = conn
-		defer conn.Close()
-	}
+	// if err != nil {
+	// 	cg.withErrorLogger(func(log Logger) {
+	// 		log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+	// 		// decide if to return
+	// 		// return
+	// 	})
+	// 	//return memberID, err // a prior memberID may still be valid, so don't return ""
+	// }
+	// if conn != nil {
+	// 	cg.conn = conn
+	// 	defer conn.Close()
+	// }
 	// cg.generation.conn = conn
 
 	for {
 		//fmt.Println("cg.conn", cg.conn)
-		cg.withLogger(func(log Logger) {
-			log.Printf(" connection to consumer group coordinator for group %s: %v", cg.config.ID, cg.conn)
-			// decide if to return
-			// return
-		})
+		// cg.withLogger(func(log Logger) {
+		// 	log.Printf(" connection to consumer group coordinator for group %s: %v", cg.config.ID, cg.conn)
+		// 	// decide if to return
+		// 	// return
+		// })
+		// conn, err := cg.coordinator()
+
 		memberID, err = cg.nextGeneration(memberID)
 
 		// backoff will be set if this go routine should sleep before continuing
@@ -817,14 +819,17 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// re-connect in certain cases, but that shouldn't be an issue given that
 	// rebalances are relatively infrequent under normal operating
 	// conditions.
-	// conn, err := cg.coordinator()
+	if cg.isfirstgeneration || cg.conn == nil {
+		conn, err := cg.coordinator()
 
-	// if err != nil {
-	// 	cg.withErrorLogger(func(log Logger) {
-	// 		log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-	// 	})
-	// 	return memberID, err // a prior memberID may still be valid, so don't return ""
-	// }
+		if err != nil {
+			cg.withErrorLogger(func(log Logger) {
+				log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+			})
+			return memberID, err // a prior memberID may still be valid, so don't return ""
+		}
+		cg.conn = conn
+	}
 
 	// // cg.generation.conn = conn
 	// defer conn.Close()
