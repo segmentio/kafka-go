@@ -824,7 +824,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	// join group.  this will join the group and prepare assignments if our
 	// consumer is elected leader.  it may also change or assign the member ID.
-	memberID, generationID, groupAssignments, strategy, err := cg.joinGroup(conn, memberID)
+	memberID, generationID, groupAssignments, strategy, err := cg.joinGroup(cg.conn, memberID)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
@@ -844,7 +844,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	})
 
 	// sync group
-	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments, strategy)
+	assignments, err = cg.syncGroup(cg.conn, memberID, generationID, groupAssignments, strategy)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to sync group %s: %v", cg.config.ID, err)
@@ -886,7 +886,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	// fetch initial offsets.
 	var offsets map[string]map[int]int64
-	offsets, err = cg.fetchOffsets(conn, assignments)
+	offsets, err = cg.fetchOffsets(cg.conn, assignments)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to fetch offsets for group %s: %v", cg.config.ID, err)
@@ -900,7 +900,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		GroupID:         cg.config.ID,
 		MemberID:        memberID,
 		Assignments:     cg.makeAssignments(assignments, offsets),
-		conn:            conn,
+		conn:            cg.conn,
 		done:            make(chan struct{}),
 		joined:          make(chan struct{}),
 		retentionMillis: int64(cg.config.RetentionTime / time.Millisecond),
