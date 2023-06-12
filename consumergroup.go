@@ -739,10 +739,13 @@ func (cg *ConsumerGroup) run() {
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+			// decide if to return
 		})
 		//return memberID, err // a prior memberID may still be valid, so don't return ""
 	}
-
+	if conn != nil {
+		cg.conn = conn
+	}
 	// cg.generation.conn = conn
 	defer conn.Close()
 	for {
