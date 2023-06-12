@@ -740,6 +740,7 @@ func (cg *ConsumerGroup) run() {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
 			// decide if to return
+			return
 		})
 		//return memberID, err // a prior memberID may still be valid, so don't return ""
 	}
@@ -750,6 +751,7 @@ func (cg *ConsumerGroup) run() {
 	// cg.generation.conn = conn
 
 	for {
+		fmt.Println("cg.conn", cg.conn)
 		memberID, err = cg.nextGeneration(memberID)
 
 		// backoff will be set if this go routine should sleep before continuing
