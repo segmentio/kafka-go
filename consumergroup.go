@@ -956,8 +956,16 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 					<-cg.revoked
 				}
 				cg.revokedone = true
-				close(gen.done)
-				gen.closed = true
+				gen.lock.Lock()
+				if !gen.closed {
+					close(gen.done)
+					gen.closed = true
+				}
+				// determine whether any go routines are running that we need to wait for.
+				// waiting needs to happen outside of the critical section.
+				gen.lock.Unlock()
+				// close(gen.done)
+				// gen.closed = true
 			}
 		}
 	}
