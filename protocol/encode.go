@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -129,6 +130,10 @@ func (e *encoder) encodeInt64(v value) {
 	e.writeInt64(v.int64())
 }
 
+func (e *encoder) encodeFloat64(v value) {
+	e.writeFloat64(v.float64())
+}
+
 func (e *encoder) encodeString(v value) {
 	e.writeString(v.string())
 }
@@ -227,6 +232,11 @@ func (e *encoder) writeInt32(i int32) {
 
 func (e *encoder) writeInt64(i int64) {
 	writeInt64(e.buffer[:8], i)
+	e.Write(e.buffer[:8])
+}
+
+func (e *encoder) writeFloat64(f float64) {
+	writeFloat64(e.buffer[:8], f)
 	e.Write(e.buffer[:8])
 }
 
@@ -378,6 +388,8 @@ func encodeFuncOf(typ reflect.Type, version int16, flexible bool, tag structTag)
 		return (*encoder).encodeInt32
 	case reflect.Int64:
 		return (*encoder).encodeInt64
+	case reflect.Float64:
+		return (*encoder).encodeFloat64
 	case reflect.String:
 		return stringEncodeFuncOf(flexible, tag)
 	case reflect.Struct:
@@ -528,6 +540,10 @@ func writeInt32(b []byte, i int32) {
 
 func writeInt64(b []byte, i int64) {
 	binary.BigEndian.PutUint64(b, uint64(i))
+}
+
+func writeFloat64(b []byte, f float64) {
+	binary.BigEndian.PutUint64(b, math.Float64bits(f))
 }
 
 func Marshal(version int16, value interface{}) ([]byte, error) {
