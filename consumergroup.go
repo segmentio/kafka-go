@@ -961,7 +961,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err
 	}
 	if cg.isfirstgeneration {
-		conn, err := cg.coordinator()
+		conn2, err := cg.coordinator()
 
 		if err != nil {
 			cg.withErrorLogger(func(log Logger) {
@@ -969,7 +969,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 			})
 			panic(err) // a prior memberID may still be valid, so don't return ""
 		}
-		cg.conn = conn
+		cg.conn = conn2
 	}
 
 	// create the generation.
