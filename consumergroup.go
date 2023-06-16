@@ -464,6 +464,7 @@ func (g *Generation) CommitOffsetsV2(offsets map[string]map[int]int64, conn coor
 	if len(offsets) == 0 {
 		return nil
 	}
+	fmt.Println("in commitoffsetsv2, conn", conn)
 
 	topics := make([]offsetCommitRequestV2Topic, 0, len(offsets))
 	for topic, partitions := range offsets {
@@ -500,6 +501,7 @@ func (g *Generation) CommitOffsetsV2(offsets map[string]map[int]int64, conn coor
 			l.Printf("committed offsets for group %s: \n%s", g.GroupID, strings.Join(report, "\n"))
 		})
 	}
+	fmt.Println("err here", err)
 	return err
 }
 
@@ -879,7 +881,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	// // cg.generation.conn = conn
 	defer conn.Close()
-
+	cg.withLogger(func(log Logger) {
+		log.Printf("conn1 : %v", conn)
+	})
 	var generationID int32
 	var groupAssignments GroupMemberAssignments
 	var assignments map[string][]int32
@@ -969,7 +973,13 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 			})
 			panic(err) // a prior memberID may still be valid, so don't return ""
 		}
+		cg.withLogger(func(log Logger) {
+			log.Printf("conn2 : %v", conn2)
+		})
 		cg.conn = conn2
+		cg.withLogger(func(log Logger) {
+			log.Printf("cgconn2 : %v", cg.conn)
+		})
 	}
 
 	// create the generation.
