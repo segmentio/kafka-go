@@ -960,6 +960,17 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		})
 		return memberID, err
 	}
+	if cg.isfirstgeneration {
+		conn, err := cg.coordinator()
+
+		if err != nil {
+			cg.withErrorLogger(func(log Logger) {
+				log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+			})
+			panic(err) // a prior memberID may still be valid, so don't return ""
+		}
+		cg.conn = conn
+	}
 
 	// create the generation.
 	gen := Generation{

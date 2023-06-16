@@ -887,15 +887,7 @@ func NewReader(config ReaderConfig) *Reader {
 		if err != nil {
 			panic(err)
 		}
-		conn, err := cg.coordinator()
 
-		if err != nil {
-			cg.withErrorLogger(func(log Logger) {
-				log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-			})
-			panic(err) // a prior memberID may still be valid, so don't return ""
-		}
-		cg.conn = conn
 		go r.run(cg)
 	}
 
