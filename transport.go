@@ -1128,6 +1128,35 @@ func (g *connGroup) releaseConn(c *conn) bool {
 	return true
 }
 
+func performTLSHandshake(ctx context.Context, conn *tls.Conn, deadline time.Time) error {
+	// Handshake requires both read and write deadlines to be set or risks indefinite blocking.
+	err := conn.SetDeadline(deadline)
+	if err != nil {
+		return fmt.Errorf("failed to set connection deadline before TLS handshake: %w", err)
+	}
+
+	errch := make(chan error, 1)
+
+	go func() {
+		defer close(errch)
+		errch <- conn.Handshake()
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = conn.Close()
+		err = ctx.Err()
+		<-errch
+	case err = <-errch:
+	}
+
+	if err != nil {
+		return fmt.Errorf("%w during TLS handshake", err)
+	}
+
+	return nil
+}
+
 func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	deadline := time.Now().Add(g.pool.dialTimeout)
 
@@ -1172,12 +1201,12 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	}()
 
 	if tlsConfig := g.pool.tls; tlsConfig != nil {
-		if tlsConfig.ServerName == "" {
-			host, _ := splitHostPort(netAddr.String())
-			tlsConfig = tlsConfig.Clone()
-			tlsConfig.ServerName = host
+		var tlsConn net.Conn
+		tlsConn, err = dialTLS(ctx, netConn, tlsConfig, netAddr, deadline)
+		if err != nil {
+			return nil, err
 		}
-		netConn = tls.Client(netConn, tlsConfig)
+		netConn = tlsConn
 	}
 
 	pc := protocol.NewConn(netConn, g.pool.clientID)
@@ -1295,7 +1324,6 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 				// data over the wire since there's no protocol info).
 				return SASLAuthenticationFailed
 			}
-
 			return err
 		}
 
