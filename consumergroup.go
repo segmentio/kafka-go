@@ -886,11 +886,11 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	// join group.  this will join the group and prepare assignments if our
 	// consumer is elected leader.  it may also change or assign the member ID.
-	cg.withLogger(func(log Logger) {
-		log.Printf("in nextgen,connection to consumer group coordinator for group %s: %v", cg.config.ID, cg.conn)
-		// decide if to return
-		// return
-	})
+	// cg.withLogger(func(log Logger) {
+	// 	log.Printf("in nextgen,connection to consumer group coordinator for group %s: %v", cg.config.ID, cg.conn)
+	// 	// decide if to return
+	// 	// return
+	// })
 	memberID, generationID, groupAssignments, strategy, err := cg.joinGroup(conn, memberID)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
@@ -1092,11 +1092,11 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	if err != nil {
 		return "", 0, nil, "", err
 	}
-	cg.withLogger(func(log Logger) {
-		log.Printf("connection to consumer group coordinator for group %s: %v", cg.config.ID, cg.conn, conn)
-		// decide if to return
-		// return
-	})
+	// cg.withLogger(func(log Logger) {
+	// 	log.Printf("connection to consumer group coordinator for group %s: %v", cg.config.ID, cg.conn, conn)
+	// 	// decide if to return
+	// 	// return
+	// })
 	response, err := conn.joinGroup(request)
 	if err == nil && response.ErrorCode != 0 {
 		err = Error(response.ErrorCode)
