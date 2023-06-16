@@ -457,6 +457,52 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 	return err
 }
 
+// CommitOffsets commits the provided topic+partition+offset combos to the
+// consumer group coordinator.  This can be used to reset the consumer to
+// explicit offsets.
+func (g *Generation) CommitOffsetsV2(offsets map[string]map[int]int64, conn coordinator) error {
+	if len(offsets) == 0 {
+		return nil
+	}
+
+	topics := make([]offsetCommitRequestV2Topic, 0, len(offsets))
+	for topic, partitions := range offsets {
+		t := offsetCommitRequestV2Topic{Topic: topic}
+		for partition, offset := range partitions {
+			t.Partitions = append(t.Partitions, offsetCommitRequestV2Partition{
+				Partition: int32(partition),
+				Offset:    offset,
+			})
+		}
+		topics = append(topics, t)
+	}
+
+	request := offsetCommitRequestV2{
+		GroupID:       g.GroupID,
+		GenerationID:  g.ID,
+		MemberID:      g.MemberID,
+		RetentionTime: g.retentionMillis,
+		Topics:        topics,
+	}
+
+	// _, err := g.conn.offsetCommit(request)
+	_, err := conn.offsetCommit(request)
+	if err == nil {
+		// if logging is enabled, print out the partitions that were committed.
+		g.log(func(l Logger) {
+			var report []string
+			for _, t := range request.Topics {
+				report = append(report, fmt.Sprintf("\ttopic: %s", t.Topic))
+				for _, p := range t.Partitions {
+					report = append(report, fmt.Sprintf("\t\tpartition %d: %d", p.Partition, p.Offset))
+				}
+			}
+			l.Printf("committed offsets for group %s: \n%s", g.GroupID, strings.Join(report, "\n"))
+		})
+	}
+	return err
+}
+
 // heartbeatLoop checks in with the consumer group coordinator at the provided
 // interval.  It exits if it ever encounters an error, which would signal the
 // end of the generation.
@@ -819,20 +865,20 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// re-connect in certain cases, but that shouldn't be an issue given that
 	// rebalances are relatively infrequent under normal operating
 	// conditions.
-	if cg.isfirstgeneration || cg.conn == nil {
-		conn, err := cg.coordinator()
+	// if cg.isfirstgeneration || cg.conn == nil {
+	conn, err := cg.coordinator()
 
-		if err != nil {
-			cg.withErrorLogger(func(log Logger) {
-				log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-			})
-			return memberID, err // a prior memberID may still be valid, so don't return ""
-		}
-		cg.conn = conn
+	if err != nil {
+		cg.withErrorLogger(func(log Logger) {
+			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+		})
+		return memberID, err // a prior memberID may still be valid, so don't return ""
 	}
+	// 	cg.conn = conn
+	// }
 
 	// // cg.generation.conn = conn
-	// defer conn.Close()
+	defer conn.Close()
 
 	var generationID int32
 	var groupAssignments GroupMemberAssignments
@@ -845,7 +891,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		// decide if to return
 		// return
 	})
-	memberID, generationID, groupAssignments, strategy, err := cg.joinGroup(cg.conn, memberID)
+	memberID, generationID, groupAssignments, strategy, err := cg.joinGroup(conn, memberID)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
@@ -865,7 +911,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	})
 
 	// sync group
-	assignments, err = cg.syncGroup(cg.conn, memberID, generationID, groupAssignments, strategy)
+	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments, strategy)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to sync group %s: %v", cg.config.ID, err)
@@ -907,7 +953,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	// fetch initial offsets.
 	var offsets map[string]map[int]int64
-	offsets, err = cg.fetchOffsets(cg.conn, assignments)
+	offsets, err = cg.fetchOffsets(conn, assignments)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to fetch offsets for group %s: %v", cg.config.ID, err)
@@ -921,7 +967,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		GroupID:         cg.config.ID,
 		MemberID:        memberID,
 		Assignments:     cg.makeAssignments(assignments, offsets),
-		conn:            cg.conn,
+		conn:            conn,
 		done:            make(chan struct{}),
 		joined:          make(chan struct{}),
 		retentionMillis: int64(cg.config.RetentionTime / time.Millisecond),

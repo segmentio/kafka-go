@@ -199,7 +199,7 @@ func (r *Reader) commitOffsetsWithRetry2(cg *ConsumerGroup, offsetStash offsetSt
 			}
 		}
 
-		if err = cg.generation.CommitOffsets(offsetStash); err == nil {
+		if err = cg.generation.CommitOffsetsV2(offsetStash, cg.conn); err == nil {
 			return
 		}
 	}
@@ -887,6 +887,15 @@ func NewReader(config ReaderConfig) *Reader {
 		if err != nil {
 			panic(err)
 		}
+		conn, err := cg.coordinator()
+
+		if err != nil {
+			cg.withErrorLogger(func(log Logger) {
+				log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+			})
+			panic(err) // a prior memberID may still be valid, so don't return ""
+		}
+		cg.conn = conn
 		go r.run(cg)
 	}
 
@@ -1705,6 +1714,7 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 						log.Printf(" this topic:%s, partition: %d is no longer assigned to this consumer member, revoking it", topic, topicPartition)
 					})
 					conn.Close()
+					// here
 					return
 				}
 			}
