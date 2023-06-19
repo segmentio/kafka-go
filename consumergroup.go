@@ -736,7 +736,7 @@ type ConsumerGroup struct {
 	revokedone        bool
 	conn              coordinator
 	idleConnTimeout   time.Duration
-	idleConnDeadline  time.Duration
+	idleConnDeadline  time.Time
 }
 
 type CurrentAssignment struct {

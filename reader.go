@@ -442,7 +442,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
-	var idleConnDeadline time.Time
+	// var idleConnDeadline time.Time
 
 	// ctx, cancel := context.WithCancel(context.Background())
 	// r.cancel()
