@@ -935,7 +935,7 @@ func NewReader(config ReaderConfig) *Reader {
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
-			idleConnTimeout:        r.config.IdleConnTimeout,
+			IdleConnTimeout:        r.config.IdleConnTimeout,
 		})
 		if err != nil {
 			panic(err)

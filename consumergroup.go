@@ -163,6 +163,11 @@ type ConsumerGroupConfig struct {
 	// connect is a function for dialing the coordinator.  This is provided for
 	// unit testing to mock broker connections.
 	connect func(dialer *Dialer, brokers ...string) (coordinator, error)
+
+	// Connections that were idle for this duration will not be reused.
+	//
+	// Defaults to 9 minutes.
+	IdleConnTimeout time.Duration
 }
 
 // Validate method validates ConsumerGroupConfig properties and sets relevant
@@ -254,6 +259,10 @@ func (config *ConsumerGroupConfig) Validate() error {
 
 	if config.connect == nil {
 		config.connect = makeConnect(*config)
+	}
+
+	if config.IdleConnTimeout == 0 {
+		config.IdleConnTimeout = 9 * time.Minute
 	}
 
 	return nil
@@ -699,10 +708,11 @@ func NewConsumerGroup(config ConsumerGroupConfig) (*ConsumerGroup, error) {
 	}
 
 	cg := &ConsumerGroup{
-		config: config,
-		next:   make(chan *Generation),
-		errs:   make(chan error),
-		done:   make(chan struct{}),
+		config:          config,
+		next:            make(chan *Generation),
+		errs:            make(chan error),
+		done:            make(chan struct{}),
+		idleConnTimeout: config.IdleConnTimeout,
 	}
 	cg.wg.Add(1)
 	go func() {
