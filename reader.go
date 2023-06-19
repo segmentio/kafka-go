@@ -447,28 +447,28 @@ func (r *Reader) run(cg *ConsumerGroup) {
 	// ctx, cancel := context.WithCancel(context.Background())
 	// r.cancel()
 	// r.cancel = cancel
-	if cg.isfirstgeneration || cg.conn == nil {
-		conn2, err := cg.coordinator()
+	// if cg.isfirstgeneration || cg.conn == nil {
+	conn2, err := cg.coordinator()
 
-		if err != nil {
-			cg.withErrorLogger(func(log Logger) {
-				log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-			})
-			panic(err) // a prior memberID may still be valid, so don't return ""
-		}
-		cg.withLogger(func(log Logger) {
-			log.Printf("conn2 : %v", conn2)
+	if err != nil {
+		cg.withErrorLogger(func(log Logger) {
+			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
 		})
-		cg.conn = conn2
-		cg.withLogger(func(log Logger) {
-			log.Printf("cgconn2 : %v", cg.conn)
-		})
-		defer func() {
-			if cg.conn != nil {
-				cg.conn.Close()
-			}
-		}()
+		panic(err) // a prior memberID may still be valid, so don't return ""
 	}
+	cg.withLogger(func(log Logger) {
+		log.Printf("conn2 : %v", conn2)
+	})
+	cg.conn = conn2
+	cg.withLogger(func(log Logger) {
+		log.Printf("cgconn2 : %v", cg.conn)
+	})
+	defer func() {
+		if cg.conn != nil {
+			cg.conn.Close()
+		}
+	}()
+	// }
 	for {
 		// Limit the number of attempts at waiting for the next
 		// consumer generation.
