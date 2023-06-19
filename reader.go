@@ -198,20 +198,25 @@ func (r *Reader) commitOffsetsWithRetry2(cg *ConsumerGroup, offsetStash offsetSt
 				return
 			}
 		}
-		if cg.conn != nil && time.Now().After(cg.idleConnDeadline) {
-			cg.conn.Close()
-			if cg.isfirstgeneration || cg.conn == nil {
-				conn2, err := cg.coordinator()
-				if err != nil {
-					cg.withErrorLogger(func(log Logger) {
-						log.Printf("Unable to establish new connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-					})
-					panic(err) // a prior memberID may still be valid, so don't return ""
+		if time.Now().After(cg.idleConnDeadline) {
+			cg.lock.Lock()
+			if cg.conn != nil {
+				cg.conn.Close()
+				if cg.isfirstgeneration || cg.conn == nil {
+					conn2, err := cg.coordinator()
+					if err != nil {
+						cg.withErrorLogger(func(log Logger) {
+							log.Printf("Unable to establish new connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+						})
+						panic(err) // a prior memberID may still be valid, so don't return ""
+					}
+					cg.conn = conn2
 				}
-				cg.conn = conn2
 			}
+			cg.lock.Unlock()
 		}
 
+		// here?
 		if err = cg.generation.CommitOffsetsV2(offsetStash, cg.conn); err == nil {
 			return
 		}
@@ -464,9 +469,11 @@ func (r *Reader) run(cg *ConsumerGroup) {
 	// 	log.Printf("cgconn2 : %v", cg.conn)
 	// })
 	defer func() {
+		cg.lock.Lock()
 		if cg.conn != nil {
 			cg.conn.Close()
 		}
+		cg.lock.Unlock()
 	}()
 	// }
 	for {

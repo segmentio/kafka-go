@@ -747,6 +747,7 @@ type ConsumerGroup struct {
 	conn              coordinator
 	idleConnTimeout   time.Duration
 	idleConnDeadline  time.Time
+	lock              sync.RWMutex
 }
 
 type CurrentAssignment struct {
@@ -978,6 +979,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err
 	}
 	if cg.isfirstgeneration {
+		cg.lock.Lock()
 		conn2, err := cg.coordinator()
 
 		if err != nil {
@@ -993,6 +995,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		cg.withLogger(func(log Logger) {
 			log.Printf("cgconn2 : %v", cg.conn)
 		})
+		cg.lock.Unlock()
 	}
 
 	// create the generation.
