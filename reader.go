@@ -198,10 +198,24 @@ func (r *Reader) commitOffsetsWithRetry2(cg *ConsumerGroup, offsetStash offsetSt
 				return
 			}
 		}
+		if cg.conn != nil && time.Now().After(cg.idleConnDeadline) {
+			cg.conn.Close()
+			if cg.isfirstgeneration || cg.conn == nil {
+				conn2, err := cg.coordinator()
+				if err != nil {
+					cg.withErrorLogger(func(log Logger) {
+						log.Printf("Unable to establish new connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+					})
+					panic(err) // a prior memberID may still be valid, so don't return ""
+				}
+				cg.conn = conn2
+			}
+		}
 
 		if err = cg.generation.CommitOffsetsV2(offsetStash, cg.conn); err == nil {
 			return
 		}
+		cg.idleConnDeadline = time.Now().Add(cg.idleConnTimeout)
 	}
 
 	return // err will not be nil
@@ -428,6 +442,8 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
+	var idleConnDeadline time.Time
+
 	// ctx, cancel := context.WithCancel(context.Background())
 	// r.cancel()
 	// r.cancel = cancel
@@ -436,6 +452,29 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		// consumer generation.
 		var err error
 		var gen *Generation
+		if cg.isfirstgeneration || cg.conn == nil {
+			conn2, err := cg.coordinator()
+
+			if err != nil {
+				cg.withErrorLogger(func(log Logger) {
+					log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+				})
+				panic(err) // a prior memberID may still be valid, so don't return ""
+			}
+			cg.withLogger(func(log Logger) {
+				log.Printf("conn2 : %v", conn2)
+			})
+			cg.conn = conn2
+			cg.withLogger(func(log Logger) {
+				log.Printf("cgconn2 : %v", cg.conn)
+			})
+			defer func() {
+				if cg.conn != nil {
+					cg.conn.Close()
+				}
+			}()
+		}
+
 		for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
 			gen, err = cg.Next(r.stctx)
 			if err == nil {
@@ -668,6 +707,11 @@ type ReaderConfig struct {
 	// This flag is being added to retain backwards-compatibility, so it will be
 	// removed in a future version of kafka-go.
 	OffsetOutOfRangeError bool
+
+	// Connections that were idle for this duration will not be reused.
+	//
+	// Defaults to 9 minutes.
+	IdleConnTimeout time.Duration
 }
 
 // Validate method validates ReaderConfig properties.
@@ -710,6 +754,10 @@ func (config *ReaderConfig) Validate() error {
 
 	if config.ReadBackoffMin < 0 {
 		return fmt.Errorf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin)
+	}
+
+	if config.IdleConnTimeout == 0 {
+		config.IdleConnTimeout = 9 * time.Minute
 	}
 
 	return nil
@@ -830,6 +878,10 @@ func NewReader(config ReaderConfig) *Reader {
 		config.MaxAttempts = 3
 	}
 
+	if config.IdleConnTimeout == 0 {
+		config.IdleConnTimeout = 9 * time.Minute
+	}
+
 	// when configured as a consumer group; stats should report a partition of -1
 	readerStatsPartition := config.Partition
 	if config.GroupID != "" {
@@ -883,6 +935,7 @@ func NewReader(config ReaderConfig) *Reader {
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
+			idleConnTimeout:        r.config.IdleConnTimeout,
 		})
 		if err != nil {
 			panic(err)

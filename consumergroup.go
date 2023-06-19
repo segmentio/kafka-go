@@ -487,6 +487,7 @@ func (g *Generation) CommitOffsetsV2(offsets map[string]map[int]int64, conn coor
 	}
 
 	// _, err := g.conn.offsetCommit(request)
+
 	_, err := conn.offsetCommit(request)
 	if err == nil {
 		// if logging is enabled, print out the partitions that were committed.
@@ -734,6 +735,8 @@ type ConsumerGroup struct {
 	currentAssignment CurrentAssignment
 	revokedone        bool
 	conn              coordinator
+	idleConnTimeout   time.Duration
+	idleConnDeadline  time.Duration
 }
 
 type CurrentAssignment struct {
@@ -964,23 +967,23 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		})
 		return memberID, err
 	}
-	if cg.isfirstgeneration {
-		conn2, err := cg.coordinator()
+	// if cg.isfirstgeneration || cg.conn == nil {
+	// 	conn2, err := cg.coordinator()
 
-		if err != nil {
-			cg.withErrorLogger(func(log Logger) {
-				log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-			})
-			panic(err) // a prior memberID may still be valid, so don't return ""
-		}
-		cg.withLogger(func(log Logger) {
-			log.Printf("conn2 : %v", conn2)
-		})
-		cg.conn = conn2
-		cg.withLogger(func(log Logger) {
-			log.Printf("cgconn2 : %v", cg.conn)
-		})
-	}
+	// 	if err != nil {
+	// 		cg.withErrorLogger(func(log Logger) {
+	// 			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+	// 		})
+	// 		panic(err) // a prior memberID may still be valid, so don't return ""
+	// 	}
+	// 	cg.withLogger(func(log Logger) {
+	// 		log.Printf("conn2 : %v", conn2)
+	// 	})
+	// 	cg.conn = conn2
+	// 	cg.withLogger(func(log Logger) {
+	// 		log.Printf("cgconn2 : %v", cg.conn)
+	// 	})
+	// }
 
 	// create the generation.
 	gen := Generation{
