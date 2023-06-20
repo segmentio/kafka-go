@@ -208,7 +208,7 @@ func (r *Reader) commitOffsetsWithRetry2(cg *ConsumerGroup, offsetStash offsetSt
 						cg.withErrorLogger(func(log Logger) {
 							log.Printf("Unable to establish new connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
 						})
-						panic(err) // a prior memberID may still be valid, so don't return ""
+						panic(err)
 					}
 					cg.conn = conn2
 				}
@@ -216,7 +216,6 @@ func (r *Reader) commitOffsetsWithRetry2(cg *ConsumerGroup, offsetStash offsetSt
 			cg.lock.Unlock()
 		}
 
-		// here?
 		if err = cg.generation.CommitOffsetsV2(offsetStash, cg.conn); err == nil {
 			return
 		}
@@ -447,27 +446,6 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
 	})
 
-	// var idleConnDeadline time.Time
-
-	// ctx, cancel := context.WithCancel(context.Background())
-	// r.cancel()
-	// r.cancel = cancel
-	// if cg.isfirstgeneration || cg.conn == nil {
-	// conn2, err := cg.coordinator()
-
-	// if err != nil {
-	// 	cg.withErrorLogger(func(log Logger) {
-	// 		log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-	// 	})
-	// 	panic(err)
-	// }
-	// cg.withLogger(func(log Logger) {
-	// 	log.Printf("conn2 : %v", conn2)
-	// })
-	// cg.conn = conn2
-	// cg.withLogger(func(log Logger) {
-	// 	log.Printf("cgconn2 : %v", cg.conn)
-	// })
 	defer func() {
 		cg.lock.Lock()
 		if cg.conn != nil {
@@ -475,13 +453,12 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		}
 		cg.lock.Unlock()
 	}()
-	// }
+
 	for {
 		// Limit the number of attempts at waiting for the next
 		// consumer generation.
 		var err error
 		var gen *Generation
-
 		for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
 			gen, err = cg.Next(r.stctx)
 			if err == nil {
@@ -947,7 +924,6 @@ func NewReader(config ReaderConfig) *Reader {
 		if err != nil {
 			panic(err)
 		}
-
 		go r.run(cg)
 	}
 
@@ -1434,7 +1410,6 @@ func (r *Reader) startV2(ctx context.Context, cg *ConsumerGroup, offsetsByPartit
 		return
 	}
 
-	//check version usage and update this outside this func near context may be
 	r.version++
 
 	r.join.Add(len(offsetsByPartition))
