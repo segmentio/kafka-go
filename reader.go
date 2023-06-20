@@ -203,6 +203,10 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 			log.Printf("before : deadline passed?: %v", time.Now().After(cg.idleConnDeadline))
 		})
 		if time.Now().After(cg.idleConnDeadline) {
+			cg.withLogger(func(log Logger) {
+				log.Printf("resetting cg.conn ")
+
+			})
 			cg.lock.Lock()
 			if cg.conn != nil {
 				if cg.isfirstgeneration || cg.conn == nil {
@@ -213,8 +217,14 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 						})
 						panic(err)
 					}
+					cg.withLogger(func(log Logger) {
+						log.Printf("cg.conn before: %v", cg.conn)
+					})
 					cg.conn.Close()
 					cg.conn = conn2
+					cg.withLogger(func(log Logger) {
+						log.Printf("cg.conn after: %v", cg.conn)
+					})
 				}
 			}
 			cg.lock.Unlock()
