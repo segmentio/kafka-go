@@ -199,7 +199,7 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 			}
 		}
 		cg.withLogger(func(log Logger) {
-			log.Printf("before : idleconndeadline : %v", cg.idleconnDeadline)
+			log.Printf("before : idleconndeadline : %v", cg.idleConnDeadline)
 			log.Printf("before : deadline passed?: %v", time.Now().After(cg.idleConnDeadline))
 		})
 		if time.Now().After(cg.idleConnDeadline) {
@@ -228,7 +228,7 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 			cg.withLogger(func(log Logger) {
 				log.Printf("commit error: %v", err)
 				log.Printf("idleconntimeout : %v", cg.idleConnTimeout)
-				log.Printf("idleconndeadline : %v", cg.idleconnDeadline)
+				log.Printf("idleconndeadline : %v", cg.idleConnDeadline)
 			})
 
 		}
