@@ -220,7 +220,7 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 			cg.idleConnDeadline = time.Now().Add(cg.idleConnTimeout)
 			return
 		}
-		cg.idleConnDeadline = time.Now().Add(cg.idleConnTimeout)
+		// cg.idleConnDeadline = time.Now().Add(cg.idleConnTimeout)
 	}
 
 	return // err will not be nil
