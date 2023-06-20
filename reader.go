@@ -514,7 +514,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		if cg.isCooperative {
 			if cg.isfirstgeneration || !cg.torevoke {
 				go func() {
-					r.subscribeV2(r.stctx, cg, cg.newAssigned)
+					r.subscribeV2(r.stctx, cg, gen.Assignments)
 				}()
 			}
 			if cg.isfirstgeneration {
