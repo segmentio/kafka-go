@@ -201,7 +201,6 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 		if time.Now().After(cg.idleConnDeadline) {
 			cg.lock.Lock()
 			if cg.conn != nil {
-				cg.conn.Close()
 				if cg.isfirstgeneration || cg.conn == nil {
 					conn2, err := cg.coordinator()
 					if err != nil {
@@ -210,6 +209,7 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 						})
 						panic(err)
 					}
+					cg.conn.Close()
 					cg.conn = conn2
 				}
 			}
@@ -217,6 +217,7 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 		}
 
 		if err = cg.generation.CommitOffsetsV2(offsetStash, cg.conn); err == nil {
+			cg.idleConnDeadline = time.Now().Add(cg.idleConnTimeout)
 			return
 		}
 		cg.idleConnDeadline = time.Now().Add(cg.idleConnTimeout)
