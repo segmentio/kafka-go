@@ -745,6 +745,7 @@ type ConsumerGroup struct {
 	idleConnTimeout   time.Duration
 	idleConnDeadline  time.Time
 	lock              sync.RWMutex
+	newAssigned       map[string][]int32
 }
 
 type CurrentAssignment struct {
@@ -929,6 +930,21 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		if noofpartitionstorevoke != 0 {
 			cg.torevoke = true
 			cg.revokedone = false
+		} else {
+			cg.newAssigned = make(map[string][]int32)
+
+			// assigned := false
+			for topic := range cg.currentAssignment.Assignments {
+				for topic, partitions := range cg.currentAssignment.Assignments {
+					for _, partition := range partitions {
+						if !isInList32(cg.lastAssigned[topic], partition) {
+							//noofpartitionstorevoke = noofpartitionstorevoke + 1
+							// assigned = true
+							cg.newAssigned[topic] = append(cg.newAssigned[topic], partition)
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -1110,7 +1126,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		cg.withLogger(func(l Logger) {
 			for memberID, assignment := range assignments {
 				for topic, partitions := range assignment {
-					l.Printf("assigned member/topic/partitions %v/%v/%v", memberID, topic, partitions)
+					l.Printf("new assigned member/topic/partitions %v/%v/%v", memberID, topic, partitions)
 				}
 			}
 		})
