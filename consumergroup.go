@@ -746,6 +746,7 @@ type ConsumerGroup struct {
 	idleConnDeadline  time.Time
 	lock              sync.RWMutex
 	newAssigned       map[string][]int32
+	assigned          bool
 }
 
 type CurrentAssignment struct {
@@ -882,6 +883,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	}
 	if strategy == CooperativeStickyBalancerProtocolName {
 		cg.isCooperative = true
+		cg.assigned = false
 		cg.withLogger(func(log Logger) {
 			log.Printf("Group balancing strategy %s is cooperative", strategy)
 		})
@@ -934,14 +936,14 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 			cg.newAssigned = make(map[string][]int32)
 
 			// assigned := false
-			for topic := range cg.currentAssignment.Assignments {
-				for topic, partitions := range cg.currentAssignment.Assignments {
-					for _, partition := range partitions {
-						if !isInList32(cg.lastAssigned[topic], partition) {
-							//noofpartitionstorevoke = noofpartitionstorevoke + 1
-							// assigned = true
-							cg.newAssigned[topic] = append(cg.newAssigned[topic], partition)
-						}
+			//for topic := range cg.currentAssignment.Assignments {
+			for topic, partitions := range cg.currentAssignment.Assignments {
+				for _, partition := range partitions {
+					if !isInList32(cg.lastAssigned[topic], partition) {
+						//noofpartitionstorevoke = noofpartitionstorevoke + 1
+						// assigned = true
+						cg.newAssigned[topic] = append(cg.newAssigned[topic], partition)
+						cg.assigned = true
 					}
 				}
 			}
@@ -970,7 +972,19 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		cg.conn = conn2
 		cg.lock.Unlock()
 	}
-
+	assignments2 := make(map[string][]int32)
+	if cg.isCooperative {
+		if cg.assigned {
+			for topic, partitions := range assignments {
+				for _, partition := range partitions {
+					if isInList32(cg.newAssigned[topic], partition) {
+						assignments2[topic] = append(assignments2[topic], partition)
+					}
+				}
+			}
+			assignments = assignments2
+		}
+	}
 	// create the generation.
 	gen := Generation{
 		ID:              generationID,
