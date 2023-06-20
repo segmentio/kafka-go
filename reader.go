@@ -186,7 +186,7 @@ func (r *Reader) commitOffsetsWithRetry(gen *Generation, offsetStash offsetStash
 	return // err will not be nil
 }
 
-func (r *Reader) commitOffsetsWithRetry2(cg *ConsumerGroup, offsetStash offsetStash, retries int) (err error) {
+func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetStash, retries int) (err error) {
 	const (
 		backoffDelayMin = 100 * time.Millisecond
 		backoffDelayMax = 5 * time.Second
@@ -306,7 +306,7 @@ func (r *Reader) commitLoopImmediateV2(ctx context.Context, cg *ConsumerGroup) {
 					hasCommits = false
 				}
 			}
-			err := r.commitOffsetsWithRetry2(cg, offsets, defaultCommitRetries)
+			err := r.commitOffsetsWithRetryV2(cg, offsets, defaultCommitRetries)
 			for _, errch := range errchs {
 				// NOTE : this will be a buffered channel and will not block.
 				errch <- err
@@ -315,7 +315,7 @@ func (r *Reader) commitLoopImmediateV2(ctx context.Context, cg *ConsumerGroup) {
 
 		case req := <-r.commits:
 			offsets.merge(req.commits)
-			req.errch <- r.commitOffsetsWithRetry2(cg, offsets, defaultCommitRetries)
+			req.errch <- r.commitOffsetsWithRetryV2(cg, offsets, defaultCommitRetries)
 			offsets.reset()
 		}
 	}
@@ -372,7 +372,7 @@ func (r *Reader) commitLoopIntervalV2(ctx context.Context, cg *ConsumerGroup) {
 	offsets := offsetStash{}
 
 	commit := func() {
-		if err := r.commitOffsetsWithRetry2(cg, offsets, defaultCommitRetries); err != nil {
+		if err := r.commitOffsetsWithRetryV2(cg, offsets, defaultCommitRetries); err != nil {
 			r.withErrorLogger(func(l Logger) { l.Printf("%v", err) })
 		} else {
 			offsets.reset()
