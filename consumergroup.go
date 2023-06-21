@@ -904,6 +904,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	noofpartitionstorevoke := 0
 	cg.revokedone = true
+	// here
 	if cg.isCooperative {
 		cg.lastAssigned = make(map[string][]int32)
 
