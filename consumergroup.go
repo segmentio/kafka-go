@@ -165,7 +165,6 @@ type ConsumerGroupConfig struct {
 	connect func(dialer *Dialer, brokers ...string) (coordinator, error)
 
 	// Connections that were idle for this duration will not be reused.
-	//
 	// Defaults to 9 minutes.
 	IdleConnTimeout time.Duration
 }
@@ -865,9 +864,6 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err // a prior memberID may still be valid, so don't return ""
 	}
 	defer conn.Close()
-	cg.withLogger(func(log Logger) {
-		log.Printf("conn1 : %v", conn)
-	})
 	var generationID int32
 	var groupAssignments GroupMemberAssignments
 	var assignments map[string][]int32
@@ -934,14 +930,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 			cg.revokedone = false
 		} else {
 			cg.newAssigned = make(map[string][]int32)
-
-			// assigned := false
-			//for topic := range cg.currentAssignment.Assignments {
 			for topic, partitions := range cg.currentAssignment.Assignments {
 				for _, partition := range partitions {
 					if !isInList32(cg.lastAssigned[topic], partition) {
-						//noofpartitionstorevoke = noofpartitionstorevoke + 1
-						// assigned = true
 						cg.newAssigned[topic] = append(cg.newAssigned[topic], partition)
 						cg.assigned = true
 					}
@@ -1004,7 +995,6 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// spawn all of the go routines required to facilitate this generation.  if
 	// any of these functions exit, then the generation is determined to be
 	// complete.
-
 	gen.heartbeatLoop(cg.config.HeartbeatInterval)
 	if cg.config.WatchPartitionChanges {
 		for _, topic := range cg.config.Topics {
@@ -1035,6 +1025,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 			}
 		}
 	}
+
 	// wait for generation to complete.  if the CG is closed before the
 	// generation is finished, exit and leave the group.
 	select {
@@ -1140,7 +1131,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		cg.withLogger(func(l Logger) {
 			for memberID, assignment := range assignments {
 				for topic, partitions := range assignment {
-					l.Printf("new assigned member/topic/partitions %v/%v/%v", memberID, topic, partitions)
+					l.Printf("assigned member/topic/partitions %v/%v/%v", memberID, topic, partitions)
 				}
 			}
 		})
@@ -1163,6 +1154,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 		RebalanceTimeout: int32(cg.config.RebalanceTimeout / time.Millisecond),
 		ProtocolType:     defaultProtocolType,
 	}
+
 	for _, balancer := range cg.config.GroupBalancers {
 		userData, err := balancer.UserData("", make(map[string][]int32), 0)
 		if err != nil {
@@ -1282,6 +1274,7 @@ func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generation
 	cg.withLogger(func(l Logger) {
 		l.Printf("sync group finished for group, %v", cg.config.ID)
 	})
+
 	cg.userData = assignments.UserData
 	return assignments.Topics, nil
 }
@@ -1313,6 +1306,7 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 				var stickyBalancer StickyGroupBalancer
 				userDataBytes, _ = stickyBalancer.UserData(memberID, topics32, generationID)
 			}
+
 			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
 				MemberID: memberID,
 				MemberAssignments: groupAssignment{
