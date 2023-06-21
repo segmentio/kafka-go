@@ -512,7 +512,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		r.stats.rebalances.observe(1)
 
 		if cg.isCooperative {
-			if cg.isfirstgeneration || !cg.torevoke {
+			if cg.isfirstgeneration || (!cg.torevoke && cg.assigned) {
 				// go func() {
 				r.subscribeV2(r.stctx, cg, gen.Assignments)
 				// }()
