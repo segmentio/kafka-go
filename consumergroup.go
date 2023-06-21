@@ -963,19 +963,18 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		cg.conn = conn2
 		cg.lock.Unlock()
 	}
-	assignments2 := make(map[string][]int32)
-	if cg.isCooperative {
-		if cg.assigned {
-			for topic, partitions := range assignments {
-				for _, partition := range partitions {
-					if isInList32(cg.newAssigned[topic], partition) {
-						assignments2[topic] = append(assignments2[topic], partition)
-					}
+	adjustedAssignments := make(map[string][]int32)
+	if cg.isCooperative && cg.assigned {
+		for topic, partitions := range assignments {
+			for _, partition := range partitions {
+				if isInList32(cg.newAssigned[topic], partition) {
+					adjustedAssignments[topic] = append(adjustedAssignments[topic], partition)
 				}
 			}
-			assignments = assignments2
 		}
+		assignments = adjustedAssignments
 	}
+
 	// create the generation.
 	gen := Generation{
 		ID:              generationID,
@@ -1036,7 +1035,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		// time for next generation!  make sure all the current go routines exit
 		// before continuing onward.
 		gen.close()
-		cg.isfirstgeneration = false
+		if cg.isfirstgeneration {
+			cg.isfirstgeneration = false
+		}
 		return memberID, nil
 	}
 }

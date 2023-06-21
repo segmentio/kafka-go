@@ -513,9 +513,9 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		if cg.isCooperative {
 			if cg.isfirstgeneration || !cg.torevoke {
-				go func() {
-					r.subscribeV2(r.stctx, cg, gen.Assignments)
-				}()
+				// go func() {
+				r.subscribeV2(r.stctx, cg, gen.Assignments)
+				// }()
 			}
 			if cg.isfirstgeneration {
 				go func() {
@@ -764,8 +764,8 @@ func (config *ReaderConfig) Validate() error {
 		return fmt.Errorf("ReadBackoffMin out of bounds: %d", config.ReadBackoffMin)
 	}
 
-	if config.IdleConnTimeout == 0 {
-		config.IdleConnTimeout = 9 * time.Minute
+	if config.IdleConnTimeout < 0 {
+		return fmt.Errorf("IdleConnTimeout out of bounds: %d", config.IdleConnTimeout)
 	}
 
 	return nil
@@ -1765,7 +1765,6 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 						log.Printf(" this topic:%s, partition: %d is no longer assigned to this consumer member, revoking it", topic, topicPartition)
 					})
 					conn.Close()
-					// here
 					return
 				}
 			}
