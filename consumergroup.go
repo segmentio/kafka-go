@@ -856,6 +856,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// re-connect in certain cases, but that shouldn't be an issue given that
 	// rebalances are relatively infrequent under normal operating
 	// conditions.
+	cg.withLogger(func(log Logger) {
+		log.Printf("Rebalance in progress, starting next generation")
+	})
 	conn, err := cg.coordinator()
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
@@ -929,6 +932,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		if noofpartitionstorevoke != 0 {
 			cg.torevoke = true
 			cg.revokedone = false
+			cg.withLogger(func(log Logger) {
+				log.Printf("incremental rebalance,step1: revoke, no of partitions to revoke: %v, need to rejoin", noofpartitionstorevoke)
+			})
 		} else {
 			cg.newAssigned = make(map[string][]int32)
 			for topic, partitions := range cg.currentAssignment.Assignments {
@@ -936,6 +942,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 					if !isInList32(cg.lastAssigned[topic], partition) {
 						cg.newAssigned[topic] = append(cg.newAssigned[topic], partition)
 						cg.assigned = true
+						cg.withLogger(func(log Logger) {
+							log.Printf("incremental rebalance,step2: assigned new partitions")
+						})
 					}
 				}
 			}
