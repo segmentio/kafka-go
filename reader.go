@@ -1043,7 +1043,9 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 			if !ok {
 				return Message{}, io.EOF
 			}
-
+			r.withLogger(func(log Logger) {
+				log.Printf("version m , r ", m.version, r.version)
+			})
 			if m.version >= version {
 				r.mutex.Lock()
 
@@ -1755,6 +1757,9 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 				conn.Close()
 				return
 			}
+			r.withLogger(func(log Logger) {
+				log.Printf("hello there, in read loop, topic:%s, partition: %d ", topic, topicPartition)
+			})
 			if !cg.revokedone {
 				cg.currentAssignment.lock.RLock()
 				torevoke := !isInList32(cg.currentAssignment.Assignments[topic], int32(topicPartition))
