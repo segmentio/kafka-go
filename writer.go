@@ -624,7 +624,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	batchBytes := w.batchBytes()
 
 	for i := range msgs {
-		n := int64(msgs[i].size())
+		n := int64(msgs[i].totalSize())
 		if n > batchBytes {
 			// This error is left for backward compatibility with historical
 			// behavior, but it can yield O(N^2) behaviors. The expectations
@@ -1219,7 +1219,7 @@ func newWriteBatch(now time.Time, timeout time.Duration) *writeBatch {
 }
 
 func (b *writeBatch) add(msg Message, maxSize int, maxBytes int64) bool {
-	bytes := int64(msg.size())
+	bytes := int64(msg.totalSize())
 
 	if b.size > 0 && (b.bytes+bytes) > maxBytes {
 		return false

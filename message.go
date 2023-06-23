@@ -49,6 +49,17 @@ func (msg *Message) size() int32 {
 	return 4 + 1 + 1 + sizeofBytes(msg.Key) + sizeofBytes(msg.Value) + timestampSize
 }
 
+func (msg *Message) headerSize() int {
+	return varArrayLen(len(msg.Headers), func(i int) int {
+		h := &msg.Headers[i]
+		return varStringLen(h.Key) + varBytesLen(h.Value)
+	})
+}
+
+func (msg *Message) totalSize() int32 {
+	return int32(msg.headerSize()) + msg.size()
+}
+
 type message struct {
 	CRC        int32
 	MagicByte  int8
