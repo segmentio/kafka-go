@@ -1045,9 +1045,9 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 			if !ok {
 				return Message{}, io.EOF
 			}
-			r.withLogger(func(log Logger) {
-				log.Printf("version m , r ", m.version, r.version)
-			})
+			// r.withLogger(func(log Logger) {
+			// 	log.Printf("version m , r ", m.version, r.version)
+			// })
 			if m.version >= version {
 				r.mutex.Lock()
 
@@ -1069,6 +1069,10 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 				}
 
 				return m.message, m.error
+			} else {
+				r.withLogger(func(log Logger) {
+					log.Printf("version is greater version m , r ", m.version, r.version)
+				})
 			}
 		}
 	}
@@ -1439,6 +1443,9 @@ func (r *Reader) startV2(ctx context.Context, cg *ConsumerGroup, offsetsByPartit
 	}
 
 	r.version++
+	cg.lock.Lock()
+	cg.readerversion = r.version
+	cg.lock.Unlock()
 
 	r.join.Add(len(offsetsByPartition))
 	for key, offset := range offsetsByPartition {
@@ -1494,6 +1501,7 @@ type reader struct {
 	maxAttempts      int
 
 	offsetOutOfRangeError bool
+	// updatedVersion
 }
 
 type readerMessage struct {
@@ -1775,6 +1783,14 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 					return
 				}
 			}
+			cg.lock.RLock()
+			if cg.readerversion != r.version {
+				r.withLogger(func(log Logger) {
+					log.Printf(" updating version for reader of topic:%s, partition: %v, cg.version: %v, r.version: %v", topic, topicPartition, cg.readerVersion, r.version)
+				})
+				r.version = cg.readerversion
+			}
+			cg.lock.RUnlock()
 			offset, err = r.read(ctx, offset, conn)
 			if err != nil {
 				r.withLogger(func(log Logger) {
