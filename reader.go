@@ -1827,7 +1827,7 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 			// 	})
 			// 	r.version = cg.readerVersion
 			// }
-			cg.lock.RUnlock()
+			//cg.lock.RUnlock()
 			offset, err = r.read(ctx, offset, conn)
 			if err != nil {
 				r.withLogger(func(log Logger) {
