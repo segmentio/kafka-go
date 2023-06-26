@@ -1047,12 +1047,18 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 
 		case m, ok := <-r.msgs:
 			if !ok {
+				r.withLogger(func(log Logger) {
+					log.Printf("debugging s1, in fetch, err in batch.ReadMessage, m %v", m)
+				})
 				return Message{}, io.EOF
 			}
 			// r.withLogger(func(log Logger) {
 			// 	log.Printf("version m , r ", m.version, r.version)
 			// })
 			if m.version >= version {
+				r.withLogger(func(log Logger) {
+					log.Printf("working w1, in fetch somehow fetching worked", m)
+				})
 				r.mutex.Lock()
 
 				switch {
@@ -1078,27 +1084,30 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 					log.Printf("version is greater version m , r, msg: ", m.version, r.version, m)
 				})
 
-				// trying to avoid if any msgs lost due to version check
-				r.mutex.Lock()
+				r.withLogger(func(log Logger) {
+					log.Printf("debugging s1, in fetch, err due to version for msg m:", m)
+				})
+				// // trying to avoid if any msgs lost due to version check
+				// r.mutex.Lock()
 
-				switch {
-				case m.error != nil:
-				default:
-					r.offset = m.message.Offset + 1
-					r.lag = m.watermark - r.offset
-				}
+				// switch {
+				// case m.error != nil:
+				// default:
+				// 	r.offset = m.message.Offset + 1
+				// 	r.lag = m.watermark - r.offset
+				// }
 
-				r.mutex.Unlock()
+				// r.mutex.Unlock()
 
-				if errors.Is(m.error, io.EOF) {
-					// io.EOF is used as a marker to indicate that the stream
-					// has been closed, in case it was received from the inner
-					// reader we don't want to confuse the program and replace
-					// the error with io.ErrUnexpectedEOF.
-					m.error = io.ErrUnexpectedEOF
-				}
+				// if errors.Is(m.error, io.EOF) {
+				// 	// io.EOF is used as a marker to indicate that the stream
+				// 	// has been closed, in case it was received from the inner
+				// 	// reader we don't want to confuse the program and replace
+				// 	// the error with io.ErrUnexpectedEOF.
+				// 	m.error = io.ErrUnexpectedEOF
+				// }
 
-				return m.message, m.error
+				// return m.message, m.error
 
 			}
 		}
@@ -1810,18 +1819,19 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 					return
 				}
 			}
-			cg.lock.RLock()
-			if cg.readerVersion != r.version {
-				r.withLogger(func(log Logger) {
-					log.Printf(" updating version for reader of topic:%s, partition: %v, cg.version: %v, r.version: %v", topic, topicPartition, cg.readerVersion, r.version)
-				})
-				r.version = cg.readerVersion
-			}
+			// todo here
+			// cg.lock.RLock()
+			// if cg.readerVersion != r.version {
+			// 	r.withLogger(func(log Logger) {
+			// 		log.Printf("debugging s1, updating version for reader of topic:%s, partition: %v, cg.version: %v, r.version: %v", topic, topicPartition, cg.readerVersion, r.version)
+			// 	})
+			// 	r.version = cg.readerVersion
+			// }
 			cg.lock.RUnlock()
 			offset, err = r.read(ctx, offset, conn)
 			if err != nil {
 				r.withLogger(func(log Logger) {
-					log.Printf("hi,in read loop, topic:%s, partition: %d, offset %v, error %v ", topic, topicPartition, offset, err)
+					log.Printf("debugging s1,in read loop, topic:%s, partition: %d, offset %v, error %v ", topic, topicPartition, offset, err)
 				})
 			}
 			switch {
@@ -2013,6 +2023,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 
 		if msg, err = batch.ReadMessage(); err != nil {
 			batch.Close()
+			r.withLogger(func(log Logger) {
+				log.Printf("debugging s1, in read, err in batch.ReadMessage", err)
+			})
 			break
 		}
 
@@ -2022,6 +2035,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 
 		if err = r.sendMessage(ctx, msg, highWaterMark); err != nil {
 			batch.Close()
+			r.withLogger(func(log Logger) {
+				log.Printf("debugging s1, in read, err in s.sendMessage", err)
+			})
 			break
 		}
 
