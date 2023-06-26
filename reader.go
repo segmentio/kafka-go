@@ -90,7 +90,8 @@ type Reader struct {
 	stctx context.Context
 	// reader stats are all made of atomic values, no need for synchronization.
 	// Use a pointer to ensure 64-bit alignment of the values.
-	stats *readerStats
+	stats         *readerStats
+	isCooperative bool
 }
 
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
@@ -514,6 +515,9 @@ func (r *Reader) run(cg *ConsumerGroup) {
 			log.Printf("in reader, rebalance observed")
 		})
 		if cg.isCooperative {
+			if !r.isCooperative {
+				r.isCooperative = true
+			}
 			if cg.isfirstgeneration || (!cg.torevoke && cg.assigned) {
 				// go func() {
 				r.subscribeV2(r.stctx, cg, gen.Assignments)
@@ -1069,10 +1073,33 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 				}
 
 				return m.message, m.error
-			} else {
+			} else if r.isCooperative {
 				r.withLogger(func(log Logger) {
-					log.Printf("version is greater version m , r ", m.version, r.version)
+					log.Printf("version is greater version m , r, msg: ", m.version, r.version, m)
 				})
+
+				// trying to avoid if any msgs lost due to version check
+				r.mutex.Lock()
+
+				switch {
+				case m.error != nil:
+				default:
+					r.offset = m.message.Offset + 1
+					r.lag = m.watermark - r.offset
+				}
+
+				r.mutex.Unlock()
+
+				if errors.Is(m.error, io.EOF) {
+					// io.EOF is used as a marker to indicate that the stream
+					// has been closed, in case it was received from the inner
+					// reader we don't want to confuse the program and replace
+					// the error with io.ErrUnexpectedEOF.
+					m.error = io.ErrUnexpectedEOF
+				}
+
+				return m.message, m.error
+
 			}
 		}
 	}
