@@ -1444,7 +1444,7 @@ func (r *Reader) startV2(ctx context.Context, cg *ConsumerGroup, offsetsByPartit
 
 	r.version++
 	cg.lock.Lock()
-	cg.readerversion = r.version
+	cg.readerVersion = r.version
 	cg.lock.Unlock()
 
 	r.join.Add(len(offsetsByPartition))
@@ -1784,11 +1784,11 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 				}
 			}
 			cg.lock.RLock()
-			if cg.readerversion != r.version {
+			if cg.readerVersion != r.version {
 				r.withLogger(func(log Logger) {
 					log.Printf(" updating version for reader of topic:%s, partition: %v, cg.version: %v, r.version: %v", topic, topicPartition, cg.readerVersion, r.version)
 				})
-				r.version = cg.readerversion
+				r.version = cg.readerVersion
 			}
 			cg.lock.RUnlock()
 			offset, err = r.read(ctx, offset, conn)
