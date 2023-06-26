@@ -510,7 +510,9 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		}
 
 		r.stats.rebalances.observe(1)
-
+		r.withLogger(func(log Logger) {
+			log.Printf("in reader, rebalance observed")
+		})
 		if cg.isCooperative {
 			if cg.isfirstgeneration || (!cg.torevoke && cg.assigned) {
 				// go func() {
@@ -1774,6 +1776,11 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 				}
 			}
 			offset, err = r.read(ctx, offset, conn)
+			if err != nil {
+				r.withLogger(func(log Logger) {
+					log.Printf("hi,in read loop, topic:%s, partition: %d, offset %v, error %v ", topic, topicPartition, offset, err)
+				})
+			}
 			switch {
 			case err == nil:
 				errcount = 0
