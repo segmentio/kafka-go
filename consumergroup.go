@@ -746,7 +746,7 @@ type ConsumerGroup struct {
 	lock              sync.RWMutex
 	newAssigned       map[string][]int32
 	assigned          bool
-	readerVersion     int
+	readerVersion     int64
 }
 
 type CurrentAssignment struct {
