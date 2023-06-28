@@ -643,7 +643,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			return err
 		}
 
-		numPartitions, err := w.partitions(ctx, topic)
+		numPartitions, err := w.Partitions(ctx, topic)
 		if err != nil {
 			return err
 		}
@@ -736,7 +736,7 @@ func (w *Writer) produce(key topicPartition, batch *writeBatch) (*ProduceRespons
 	})
 }
 
-func (w *Writer) partitions(ctx context.Context, topic string) (int, error) {
+func (w *Writer) Partitions(ctx context.Context, topic string) (int, error) {
 	client := w.client(w.readTimeout())
 	// Here we use the transport directly as an optimization to avoid the
 	// construction of temporary request and response objects made by the
