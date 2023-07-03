@@ -472,7 +472,6 @@ func (g *Generation) CommitOffsetsV2(offsets map[string]map[int]int64, conn coor
 	if len(offsets) == 0 {
 		return nil
 	}
-	fmt.Println("in commitoffsetsv2, conn", conn)
 
 	topics := make([]offsetCommitRequestV2Topic, 0, len(offsets))
 	for topic, partitions := range offsets {
@@ -857,9 +856,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// re-connect in certain cases, but that shouldn't be an issue given that
 	// rebalances are relatively infrequent under normal operating
 	// conditions.
-	cg.withLogger(func(log Logger) {
-		log.Printf("Rebalance in progress, starting next generation")
-	})
+
 	conn, err := cg.coordinator()
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
@@ -868,6 +865,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err // a prior memberID may still be valid, so don't return ""
 	}
 	defer conn.Close()
+
 	var generationID int32
 	var groupAssignments GroupMemberAssignments
 	var assignments map[string][]int32
@@ -908,7 +906,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	noofpartitionstorevoke := 0
 	cg.revokedone = true
-	// here
+
 	if cg.isCooperative {
 		cg.lastAssigned = make(map[string][]int32)
 
@@ -967,7 +965,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 		if err != nil {
 			cg.withErrorLogger(func(log Logger) {
-				log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+				log.Printf("first gen: Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
 			})
 			panic(err)
 		}
@@ -984,6 +982,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 			}
 		}
 		assignments = adjustedAssignments
+		cg.withLogger(func(log Logger) {
+			log.Printf("incremental rebalance,step2: newly assigned partitions:", assignments)
+		})
 	}
 
 	// create the generation.

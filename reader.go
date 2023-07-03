@@ -1803,9 +1803,6 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 				conn.Close()
 				return
 			}
-			r.withLogger(func(log Logger) {
-				log.Printf("hello there, in read loop, topic:%s, partition: %d ", topic, topicPartition)
-			})
 			if !cg.revokedone {
 				cg.currentAssignment.lock.RLock()
 				torevoke := !isInList32(cg.currentAssignment.Assignments[topic], int32(topicPartition))
@@ -1822,17 +1819,12 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 			cg.lock.RLock()
 			if cg.readerVersion != r.version {
 				r.withLogger(func(log Logger) {
-					log.Printf("debugging s1, updating version for reader of topic:%s, partition: %v, cg.version: %v, r.version: %v", topic, topicPartition, cg.readerVersion, r.version)
+					log.Printf("debugging s1, updating reader version for topic:%s, partition: %v, cg.version: %v, r.version: %v", topic, topicPartition, cg.readerVersion, r.version)
 				})
 				r.version = cg.readerVersion
 			}
 			cg.lock.RUnlock()
 			offset, err = r.read(ctx, offset, conn)
-			if err != nil {
-				r.withLogger(func(log Logger) {
-					log.Printf("debugging s1,in read loop, topic:%s, partition: %d, offset %v, error %v ", topic, topicPartition, offset, err)
-				})
-			}
 			switch {
 			case err == nil:
 				errcount = 0
