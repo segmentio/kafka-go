@@ -1047,18 +1047,9 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 
 		case m, ok := <-r.msgs:
 			if !ok {
-				r.withLogger(func(log Logger) {
-					log.Printf("debugging s1, in fetch, err in batch.ReadMessage, m %v", m)
-				})
 				return Message{}, io.EOF
 			}
-			// r.withLogger(func(log Logger) {
-			// 	log.Printf("version m , r ", m.version, r.version)
-			// })
 			if m.version >= version {
-				r.withLogger(func(log Logger) {
-					log.Printf("working w1, in fetch somehow fetching worked", m)
-				})
 				r.mutex.Lock()
 
 				switch {
@@ -1080,14 +1071,14 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 
 				return m.message, m.error
 			} else if r.isCooperative {
-				r.withLogger(func(log Logger) {
-					log.Printf("version is greater version m , r, msg: ", m.version, r.version, m)
-				})
+				// r.withLogger(func(log Logger) {
+				// 	log.Printf("version is greater version m , r, msg: ", m.version, r.version, m.message)
+				// })
 
-				r.withLogger(func(log Logger) {
-					log.Printf("debugging s1, in fetch, err due to version for msg m:", m)
-				})
-				// trying to avoid if any msgs lost due to version check
+				// trying to avoid if any msgs lost due to version check for cooperative consumer
+				//todo:
+				// check if we are causing any duplication
+				// check for any lost msgs
 				r.mutex.Lock()
 
 				switch {
