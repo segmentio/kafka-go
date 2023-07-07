@@ -941,11 +941,14 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 					if !isInList32(cg.lastAssigned[topic], partition) {
 						cg.newAssigned[topic] = append(cg.newAssigned[topic], partition)
 						cg.assigned = true
-						cg.withLogger(func(log Logger) {
-							log.Printf("incremental rebalance,step2: assigned new partitions")
-						})
+
 					}
 				}
+			}
+			if cg.assigned {
+				cg.withLogger(func(log Logger) {
+					log.Printf("incremental rebalance,step2: assigned new partitions")
+				})
 			}
 		}
 	}
@@ -983,7 +986,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		}
 		assignments = adjustedAssignments
 		cg.withLogger(func(log Logger) {
-			log.Printf("incremental rebalance,step2: newly assigned partitions:", assignments)
+			log.Printf("incremental rebalance,step2: newly assigned partitions are:", assignments)
 		})
 	}
 

@@ -201,10 +201,10 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 		}
 
 		if time.Now().After(cg.idleConnDeadline) {
-			cg.withLogger(func(log Logger) {
-				log.Printf("resetting cg.conn ")
+			// cg.withLogger(func(log Logger) {
+			// 	log.Printf("resetting cg.conn ")
 
-			})
+			// })
 			cg.lock.Lock()
 			if cg.conn != nil {
 				// if cg.isfirstgeneration || cg.conn == nil
@@ -495,9 +495,9 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		}
 
 		r.stats.rebalances.observe(1)
-		r.withLogger(func(log Logger) {
-			log.Printf("in reader, rebalance observed")
-		})
+		// r.withLogger(func(log Logger) {
+		// 	log.Printf("in reader, rebalance observed")
+		// })
 		if cg.isCooperative {
 			if !r.isCooperative {
 				r.isCooperative = true
@@ -1793,9 +1793,9 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 			}
 			cg.lock.RLock()
 			if cg.readerVersion != r.version {
-				r.withLogger(func(log Logger) {
-					log.Printf("debugging s1, updating reader version for topic:%s, partition: %v, cg.version: %v, r.version: %v", topic, topicPartition, cg.readerVersion, r.version)
-				})
+				// r.withLogger(func(log Logger) {
+				// 	log.Printf("debugging s1, updating reader version for topic:%s, partition: %v, cg.version: %v, r.version: %v", topic, topicPartition, cg.readerVersion, r.version)
+				// })
 				r.version = cg.readerVersion
 			}
 			cg.lock.RUnlock()
@@ -1989,9 +1989,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 
 		if msg, err = batch.ReadMessage(); err != nil {
 			batch.Close()
-			r.withLogger(func(log Logger) {
-				log.Printf("debugging s1, in read, err in batch.ReadMessage", err)
-			})
+			// r.withLogger(func(log Logger) {
+			// 	log.Printf("debugging s1, in read, err in batch.ReadMessage", err)
+			// })
 			break
 		}
 
@@ -2001,9 +2001,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 
 		if err = r.sendMessage(ctx, msg, highWaterMark); err != nil {
 			batch.Close()
-			r.withLogger(func(log Logger) {
-				log.Printf("debugging s1, in read, err in s.sendMessage", err)
-			})
+			// r.withLogger(func(log Logger) {
+			// 	log.Printf("debugging s1, in read, err in s.sendMessage", err)
+			// })
 			break
 		}
 
