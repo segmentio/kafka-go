@@ -63,6 +63,8 @@ func (v value) int32() int32 { return *(*int32)(v.ptr) }
 
 func (v value) int64() int64 { return *(*int64)(v.ptr) }
 
+func (v value) float64() float64 { return *(*float64)(v.ptr) }
+
 func (v value) string() string { return *(*string)(v.ptr) }
 
 func (v value) bytes() []byte { return *(*[]byte)(v.ptr) }
@@ -91,6 +93,8 @@ func (v value) setInt16(i int16) { *(*int16)(v.ptr) = i }
 func (v value) setInt32(i int32) { *(*int32)(v.ptr) = i }
 
 func (v value) setInt64(i int64) { *(*int64)(v.ptr) = i }
+
+func (v value) setFloat64(f float64) { *(*float64)(v.ptr) = f }
 
 func (v value) setString(s string) { *(*string)(v.ptr) = s }
 
