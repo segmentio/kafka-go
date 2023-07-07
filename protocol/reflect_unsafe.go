@@ -94,7 +94,7 @@ func (v value) setInt32(i int32) { *(*int32)(v.ptr) = i }
 
 func (v value) setInt64(i int64) { *(*int64)(v.ptr) = i }
 
-func (v value) setFloat64(f float64) { *(*float64)(v.ptr) = i }
+func (v value) setFloat64(f float64) { *(*float64)(v.ptr) = f }
 
 func (v value) setString(s string) { *(*string)(v.ptr) = s }
 
