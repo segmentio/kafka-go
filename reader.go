@@ -192,7 +192,6 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 		backoffDelayMin = 100 * time.Millisecond
 		backoffDelayMax = 5 * time.Second
 	)
-	conn_reset := 0
 	for attempt := 0; attempt < retries; attempt++ {
 		if attempt != 0 {
 			if !sleep(r.stctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
