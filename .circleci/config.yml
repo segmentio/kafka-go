@@ -52,6 +52,9 @@ jobs:
         name: Test kafka-go
         command: go test -race -cover ./...
     - run:
+        name: Test kafka-go unsafe
+        command: go test -tags=unsafe -race -cover ./...
+    - run:
         name: Test kafka-go/sasl/aws_msk_iam
         working_directory: ./sasl/aws_msk_iam
         command: go test -race -cover ./...
