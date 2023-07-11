@@ -518,20 +518,6 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		// 	log.Printf("in reader, rebalance observed")
 		// })
 		if cg.isCooperative {
-			cg.lock.Lock()
-			if cg.conn != nil || cg.isfirstgeneration {
-				conn2, err := cg.coordinator()
-				if err != nil {
-					cg.withErrorLogger(func(log Logger) {
-						log.Printf("Unable to establish new connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-					})
-					panic(err)
-				}
-
-				cg.conn.Close()
-				cg.conn = conn2
-			}
-			cg.lock.Unlock()
 			if !r.isCooperative {
 				r.isCooperative = true
 			}
