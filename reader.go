@@ -230,6 +230,9 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 		r.withLogger(func(l Logger) {
 			l.Printf("dlogs: error after commit offsetsv2", err)
 		})
+		r.withLogger(func(l Logger) {
+			l.Printf("dlogs: error after commit offsetsv2 err.Error", err.Error())
+		})
 		// else if err.Error() == "use of closed network connection" {
 		// 	// broker closed connection (not because of timeout)
 		// 	cg.withLogger(func(log Logger) {
