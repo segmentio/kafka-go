@@ -200,10 +200,10 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 		}
 
 		if time.Now().After(cg.idleConnDeadline) {
-			// cg.withLogger(func(log Logger) {
-			// 	log.Printf("resetting cg.conn ")
+			cg.withLogger(func(log Logger) {
+				log.Printf("dlogs: resetting cg.conn due to timeout")
 
-			// })
+			})
 			cg.lock.Lock()
 			if cg.conn != nil {
 				// if cg.isfirstgeneration || cg.conn == nil
@@ -227,6 +227,9 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 			cg.idleConnDeadline = time.Now().Add(cg.idleConnTimeout)
 			return
 		}
+		r.withLogger(func(l Logger) {
+			l.Printf("dlogs: error after commit offsetsv2", err)
+		})
 		// else if err.Error() == "use of closed network connection" {
 		// 	// broker closed connection (not because of timeout)
 		// 	cg.withLogger(func(log Logger) {
@@ -335,6 +338,9 @@ func (r *Reader) commitLoopImmediateV2(ctx context.Context, cg *ConsumerGroup) {
 				}
 			}
 			err := r.commitOffsetsWithRetryV2(cg, offsets, defaultCommitRetries)
+			r.withLogger(func(l Logger) {
+				l.Printf("dlogs: error here after commit offsets retry : ", err)
+			})
 			for _, errch := range errchs {
 				// NOTE : this will be a buffered channel and will not block.
 				errch <- err
@@ -403,7 +409,16 @@ func (r *Reader) commitLoopIntervalV2(ctx context.Context, cg *ConsumerGroup) {
 		if err := r.commitOffsetsWithRetryV2(cg, offsets, defaultCommitRetries); err != nil {
 			r.withErrorLogger(func(l Logger) { l.Printf("%v", err) })
 		} else {
+			r.withLogger(func(l Logger) {
+				l.Printf("dlogs: err in commitloopinterbalv2: ", err)
+			})
+			r.withLogger(func(l Logger) {
+				l.Printf("dlogs: offsets before reset", offsets)
+			})
 			offsets.reset()
+			r.withLogger(func(l Logger) {
+				l.Printf("dlogs: offsets after reset", offsets)
+			})
 		}
 	}
 
@@ -496,6 +511,9 @@ func (r *Reader) run(cg *ConsumerGroup) {
 				return
 			}
 			r.stats.errors.observe(1)
+			r.withLogger(func(l Logger) {
+				l.Printf("dlogs: Rebalance observed")
+			})
 			r.withErrorLogger(func(l Logger) {
 				l.Printf("%v", err)
 			})
@@ -1749,6 +1767,9 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 		})
 
 		conn, start, err := r.initialize(ctx, offset)
+		r.withLogger(func(l Logger) {
+			l.Printf("dlogs: conn from initialize", conn)
+		})
 		if err != nil {
 			if errors.Is(err, OffsetOutOfRange) {
 				if r.offsetOutOfRangeError {
@@ -1856,7 +1877,9 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 				r.withErrorLogger(func(log Logger) {
 					log.Printf("failed to read from current broker for partition %d of %s at offset %d: %v", r.partition, r.topic, toHumanOffset(offset), err)
 				})
-
+				r.withLogger(func(l Logger) {
+					l.Printf("dlogs: not leader for partition")
+				})
 				conn.Close()
 
 				// The next call to .initialize will re-establish a connection to the proper
@@ -1912,6 +1935,9 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 				// imported.  This is a fatal error b/c the reader cannot
 				// proceed.
 				r.sendError(ctx, err)
+				r.withLogger(func(l Logger) {
+					l.Printf("dlogs: unknown error", err)
+				})
 				break readLoop
 
 			default:
@@ -2008,9 +2034,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 
 		if msg, err = batch.ReadMessage(); err != nil {
 			batch.Close()
-			// r.withLogger(func(log Logger) {
-			// 	log.Printf("debugging s1, in read, err in batch.ReadMessage", err)
-			// })
+			r.withLogger(func(log Logger) {
+				log.Printf("dlogs, in read, err in batch.ReadMessage", err)
+			})
 			break
 		}
 
