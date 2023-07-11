@@ -1767,9 +1767,6 @@ func (r *reader) runV2(ctx context.Context, cg *ConsumerGroup, topic string, top
 		})
 
 		conn, start, err := r.initialize(ctx, offset)
-		r.withLogger(func(l Logger) {
-			l.Printf("dlogs: conn from initialize", conn)
-		})
 		if err != nil {
 			if errors.Is(err, OffsetOutOfRange) {
 				if r.offsetOutOfRangeError {
