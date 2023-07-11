@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"sort"
 	"strconv"
 	"sync"
@@ -226,13 +227,33 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 		if err = cg.generation.CommitOffsetsV2(offsetStash, cg.conn); err == nil {
 			cg.idleConnDeadline = time.Now().Add(cg.idleConnTimeout)
 			return
+		} else {
+			r.withLogger(func(l Logger) {
+				l.Printf("dlogs: error after commit offsetsv2", err)
+			})
+			netOpError, ok := err.(*net.OpError)
+			if ok && netOpError.Err.Error() == "use of closed network connection" {
+				// broker closed connection (not because of timeout)
+				cg.withLogger(func(log Logger) {
+					log.Printf("connection reset, connection closed by broker", err)
+				})
+				cg.lock.Lock()
+				if cg.conn != nil {
+					conn2, err := cg.coordinator()
+					if err != nil {
+						cg.withErrorLogger(func(log Logger) {
+							log.Printf("Unable to establish new connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+						})
+						panic(err)
+					}
+					// cg.conn.Close() // already closed by broker
+					cg.conn = conn2
+					//should we reseet timeout too?
+				}
+				cg.lock.Unlock()
+			}
 		}
-		r.withLogger(func(l Logger) {
-			l.Printf("dlogs: error after commit offsetsv2", err)
-		})
-		r.withLogger(func(l Logger) {
-			l.Printf("dlogs: error after commit offsetsv2 err.Error", err.Error())
-		})
+
 		// else if err.Error() == "use of closed network connection" {
 		// 	// broker closed connection (not because of timeout)
 		// 	cg.withLogger(func(log Logger) {
