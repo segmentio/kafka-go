@@ -962,19 +962,19 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		})
 		return memberID, err
 	}
-	if cg.isfirstgeneration {
-		cg.lock.Lock()
-		conn2, err := cg.coordinator()
+	// if cg.isfirstgeneration {
+	// 	cg.lock.Lock()
+	// 	conn2, err := cg.coordinator()
 
-		if err != nil {
-			cg.withErrorLogger(func(log Logger) {
-				log.Printf("first gen: Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
-			})
-			panic(err)
-		}
-		cg.conn = conn2
-		cg.lock.Unlock()
-	}
+	// 	if err != nil {
+	// 		cg.withErrorLogger(func(log Logger) {
+	// 			log.Printf("first gen: Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+	// 		})
+	// 		panic(err)
+	// 	}
+	// 	cg.conn = conn2
+	// 	cg.lock.Unlock()
+	// }
 	adjustedAssignments := make(map[string][]int32)
 	if cg.isCooperative && cg.assigned {
 		for topic, partitions := range assignments {
