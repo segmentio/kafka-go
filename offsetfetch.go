@@ -81,10 +81,20 @@ func (c *Client) OffsetFetch(ctx context.Context, req *OffsetFetchRequest) (*Off
 		})
 	}
 
-	m, err := c.roundTrip(ctx, req.Addr, &offsetfetch.Request{
-		GroupID: req.GroupID,
-		Topics:  topics,
-	})
+	var offsetFetchReq *offsetfetch.Request
+
+	if len(req.Topics) < 1 {
+		offsetFetchReq = &offsetfetch.Request{
+			GroupID: req.GroupID,
+		}
+	} else {
+		offsetFetchReq = &offsetfetch.Request{
+			GroupID: req.GroupID,
+			Topics:  topics,
+		}
+	}
+
+	m, err := c.roundTrip(ctx, req.Addr, offsetFetchReq)
 
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).OffsetFetch: %w", err)
