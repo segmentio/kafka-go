@@ -75,12 +75,12 @@ func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 	prepareReader(t, ctx, r2, makeTestSequence(numMsgs)...)
 
 	for i := 0; i < numMsgs/2; i++ {
-		if _, err := r1.FetchMessage(ctx); err != nil {
+		if _, err := r1.ReadMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for i := 0; i < numMsgs/2; i++ {
-		if _, err := r2.FetchMessage(ctx); err != nil {
+		if _, err := r2.ReadMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -128,12 +128,12 @@ func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
 	prepareReader(t, ctx, r2, makeTestSequence(numMsgs)...)
 
 	for i := 0; i < numMsgs/2; i++ {
-		if _, err := r1.FetchMessage(ctx); err != nil {
+		if _, err := r1.ReadMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for i := 0; i < numMsgs/2; i++ {
-		if _, err := r2.FetchMessage(ctx); err != nil {
+		if _, err := r2.ReadMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
