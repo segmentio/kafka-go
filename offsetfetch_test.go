@@ -148,7 +148,7 @@ func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
 	}
 
 	topicOffsets, err := client.OffsetFetch(ctx, &OffsetFetchRequest{GroupID: "cg", Topics: map[string][]int{
-		topic1: {1},
+		topic1: {0},
 	}})
 
 	if err != nil {
