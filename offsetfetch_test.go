@@ -102,7 +102,7 @@ func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	topic1 := makeTopic()
-	createTopic(t, topic1, 3)
+	createTopic(t, topic1, 1)
 	defer deleteTopic(t, topic1)
 	consumeGroup := makeGroupID()
 	numMsgs := 50
@@ -120,7 +120,7 @@ func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
 	defer r1.Close()
 	prepareReader(t, ctx, r1, makeTestSequence(numMsgs)...)
 	topic2 := makeTopic()
-	client, shutdown := newLocalClientWithTopic(topic2, 3)
+	client, shutdown := newLocalClientWithTopic(topic2, 1)
 	defer deleteTopic(t, topic2)
 	defer shutdown()
 	r2 := NewReader(ReaderConfig{
@@ -149,7 +149,7 @@ func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
 	}
 
 	topicOffsets, err := client.OffsetFetch(ctx, &OffsetFetchRequest{GroupID: "cg", Topics: map[string][]int{
-		topic1: {1},
+		topic1: {0},
 	}})
 
 	if err != nil {
