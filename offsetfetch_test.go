@@ -101,44 +101,52 @@ func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 
 func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	topic1 := "t1"
-	topic2 := "t2"
-	consumeGroup := "cg"
+	topic1 := makeTopic()
+	createTopic(t, topic1, 1)
+	defer deleteTopic(t, topic1)
+	consumeGroup := makeGroupID()
 	numMsgs := 50
 	defer cancel()
 	r1 := NewReader(ReaderConfig{
-		Brokers:  []string{"localhost:9092"},
-		Topic:    topic1,
-		GroupID:  consumeGroup,
-		MinBytes: 1,
-		MaxBytes: 100,
-		MaxWait:  100 * time.Millisecond,
+		Brokers:           []string{"localhost:9092"},
+		Topic:             topic1,
+		GroupID:           consumeGroup,
+		HeartbeatInterval: 2 * time.Second,
+		RebalanceTimeout:  2 * time.Second,
+		RetentionTime:     time.Hour,
+		MinBytes:          1,
+		MaxBytes:          1e6,
 	})
 	defer r1.Close()
 	prepareReader(t, ctx, r1, makeTestSequence(numMsgs)...)
+	client, topic2, shutdown := newLocalClientAndTopic()
+	defer deleteTopic(t, topic2)
+	defer shutdown()
 	r2 := NewReader(ReaderConfig{
-		Brokers:  []string{"localhost:9092"},
-		Topic:    topic2,
-		GroupID:  consumeGroup,
-		MinBytes: 1,
-		MaxBytes: 100,
-		MaxWait:  100 * time.Millisecond,
+		Brokers:           []string{"localhost:9092"},
+		Topic:             topic2,
+		GroupID:           r1.config.GroupID,
+		HeartbeatInterval: r1.config.HeartbeatInterval,
+		SessionTimeout:    r1.config.SessionTimeout,
+		RetentionTime:     r1.config.RetentionTime,
+		MinBytes:          r1.config.MinBytes,
+		MaxBytes:          r1.config.MaxBytes,
+		Logger:            r1.config.Logger,
 	})
 	defer r2.Close()
 	prepareReader(t, ctx, r2, makeTestSequence(numMsgs)...)
 
 	for i := 0; i < numMsgs/2; i++ {
-		if _, err := r1.ReadMessage(ctx); err != nil {
+		if _, err := r1.FetchMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for i := 0; i < numMsgs/2; i++ {
-		if _, err := r2.ReadMessage(ctx); err != nil {
+		if _, err := r2.FetchMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	client := Client{Addr: TCP("localhost:9092")}
 	topicOffsets, err := client.OffsetFetch(ctx, &OffsetFetchRequest{GroupID: "cg", Topics: map[string][]int{
 		topic1: {1},
 	}})
