@@ -231,6 +231,25 @@ func (r *Reader) commitOffsetsWithRetryV2(cg *ConsumerGroup, offsetStash offsetS
 			r.withLogger(func(l Logger) {
 				l.Printf("dlogs: error after commit offsetsv2", err)
 			})
+			if errors.Is(err, NotCoordinatorForGroup) {
+				cg.withLogger(func(log Logger) {
+					log.Printf("connection reset, coordinator updated", err)
+				})
+				cg.lock.Lock()
+				if cg.conn != nil {
+					conn2, err := cg.coordinator()
+					if err != nil {
+						cg.withErrorLogger(func(log Logger) {
+							log.Printf("Unable to establish new connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
+						})
+						panic(err)
+					}
+					// cg.conn.Close() // already closed by broker
+					cg.conn = conn2
+					//should we reseet timeout too?
+				}
+				cg.lock.Unlock()
+			}
 			// netOpError, ok := err.(*net.OpError)
 			var netOpError *net.OpError
 			if errors.As(err, &netOpError) {
