@@ -84,6 +84,11 @@ func (c *Client) OffsetFetch(ctx context.Context, req *OffsetFetchRequest) (*Off
 	var offsetFetchReq *offsetfetch.Request
 
 	if len(req.Topics) < 1 {
+		// Kafka version 0.10.2.x and above allow null Topics map for OffsetFetch API
+		// which will return the result for all topics with the desired consumer group:
+		// https://kafka.apache.org/0102/protocol.html#The_Messages_OffsetFetch
+		// For Kafka version below 0.10.2.x this call will result in an error
+
 		offsetFetchReq = &offsetfetch.Request{
 			GroupID: req.GroupID,
 		}

@@ -48,9 +48,11 @@ func TestOffsetFetchResponseV1(t *testing.T) {
 
 func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	topic1 := "t1"
-	topic2 := "t2"
-	consumeGroup := "cg"
+	topic1 := makeTopic()
+	defer deleteTopic(t, topic1)
+	topic2 := makeTopic()
+	defer deleteTopic(t, topic2)
+	consumeGroup := makeGroupID()
 	numMsgs := 50
 	defer cancel()
 	r1 := NewReader(ReaderConfig{
@@ -74,19 +76,33 @@ func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 	defer r2.Close()
 	prepareReader(t, ctx, r2, makeTestSequence(numMsgs)...)
 
-	for i := 0; i < numMsgs/2; i++ {
+	for i := 0; i < numMsgs; i++ {
 		if _, err := r1.ReadMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for i := 0; i < numMsgs/2; i++ {
+	for i := 0; i < numMsgs; i++ {
 		if _, err := r2.ReadMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	client := Client{Addr: TCP("localhost:9092")}
-	topicOffsets, err := client.OffsetFetch(ctx, &OffsetFetchRequest{GroupID: "cg"})
+
+	apiVersions, err := client.ApiVersions(ctx, &ApiVersionsRequest{Addr: TCP("localhost:9092")})
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	for _, apiVersion := range apiVersions.ApiKeys {
+		if apiVersion.ApiKey == 9 && apiVersion.MaxVersion < 2 {
+			// skipping this test for clusters not supporting version >= 2 of OffsetFetch API
+			t.SkipNow()
+		}
+	}
+
+	topicOffsets, err := client.OffsetFetch(ctx, &OffsetFetchRequest{GroupID: consumeGroup})
 
 	if err != nil {
 		t.Error(err)
@@ -101,9 +117,11 @@ func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 
 func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	topic1 := "t1"
-	topic2 := "t2"
-	consumeGroup := "cg"
+	topic1 := makeTopic()
+	defer deleteTopic(t, topic1)
+	topic2 := makeTopic()
+	defer deleteTopic(t, topic2)
+	consumeGroup := makeGroupID()
 	numMsgs := 50
 	defer cancel()
 	r1 := NewReader(ReaderConfig{
@@ -127,19 +145,19 @@ func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
 	defer r2.Close()
 	prepareReader(t, ctx, r2, makeTestSequence(numMsgs)...)
 
-	for i := 0; i < numMsgs/2; i++ {
+	for i := 0; i < numMsgs; i++ {
 		if _, err := r1.ReadMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for i := 0; i < numMsgs/2; i++ {
+	for i := 0; i < numMsgs; i++ {
 		if _, err := r2.ReadMessage(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	client := Client{Addr: TCP("localhost:9092")}
-	topicOffsets, err := client.OffsetFetch(ctx, &OffsetFetchRequest{GroupID: "cg", Topics: map[string][]int{
+	topicOffsets, err := client.OffsetFetch(ctx, &OffsetFetchRequest{GroupID: consumeGroup, Topics: map[string][]int{
 		topic1: {0},
 	}})
 
