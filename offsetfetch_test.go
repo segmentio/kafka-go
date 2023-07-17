@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 func TestOffsetFetchResponseV1(t *testing.T) {
@@ -47,6 +49,10 @@ func TestOffsetFetchResponseV1(t *testing.T) {
 }
 
 func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
+	if !ktesting.KafkaIsAtLeast("0.10.2.0") {
+		t.Logf("Test %s is not applicable for kafka versions below 0.10.2.0", t.Name())
+		t.SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	topic1 := makeTopic()
 	defer deleteTopic(t, topic1)
@@ -88,20 +94,6 @@ func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 	}
 
 	client := Client{Addr: TCP("localhost:9092")}
-
-	apiVersions, err := client.ApiVersions(ctx, &ApiVersionsRequest{Addr: TCP("localhost:9092")})
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-
-	for _, apiVersion := range apiVersions.ApiKeys {
-		if apiVersion.ApiKey == 9 && apiVersion.MaxVersion < 2 {
-			// skipping this test for clusters not supporting version >= 2 of OffsetFetch API
-			t.Logf("Test %s is not supported for OffsetFetch API versions below 2", t.Name())
-			t.SkipNow()
-		}
-	}
 
 	topicOffsets, err := client.OffsetFetch(ctx, &OffsetFetchRequest{GroupID: consumeGroup})
 
