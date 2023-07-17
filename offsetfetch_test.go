@@ -98,6 +98,7 @@ func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 	for _, apiVersion := range apiVersions.ApiKeys {
 		if apiVersion.ApiKey == 9 && apiVersion.MaxVersion < 2 {
 			// skipping this test for clusters not supporting version >= 2 of OffsetFetch API
+			t.Logf("Test %s is not supported for OffsetFetch API versions below 2", t.Name())
 			t.SkipNow()
 		}
 	}
@@ -113,6 +114,7 @@ func TestOffsetFetchRequestWithNoTopic(t *testing.T) {
 		t.Error(err)
 		t.FailNow()
 	}
+
 }
 
 func TestOffsetFetchRequestWithOneTopic(t *testing.T) {
