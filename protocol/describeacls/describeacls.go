@@ -41,7 +41,7 @@ type Response struct {
 	Resources      []Resource `kafka:"min=v0,max=v3"`
 }
 
-func (r *Response) ApiKey() protocol.ApiKey { return protocol.CreateAcls }
+func (r *Response) ApiKey() protocol.ApiKey { return protocol.DescribeAcls }
 
 type Resource struct {
 	ResourceType int8          `kafka:"min=v0,max=v3"`
