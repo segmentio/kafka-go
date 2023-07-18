@@ -14,7 +14,7 @@ type Request struct {
 	Filters []ACLFilters `kafka:"min=v0,max=v3"`
 }
 
-func (r *Request) ApiKey() protocol.ApiKey { return protocol.CreateAcls }
+func (r *Request) ApiKey() protocol.ApiKey { return protocol.DescribeAcls }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	return cluster.Brokers[cluster.Controller], nil

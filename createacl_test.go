@@ -16,29 +16,27 @@ func TestClientCreateACLs(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	var ACLs = []ACLEntry{
-		{
-			Principal:           "User:alice",
-			PermissionType:      ACLPermissionTypeAllow,
-			Operation:           ACLOperationTypeRead,
-			ResourceType:        ResourceTypeTopic,
-			ResourcePatternType: PatternTypeLiteral,
-			ResourceName:        "fake-topic-for-alice",
-			Host:                "*",
-		},
-		{
-			Principal:           "User:bob",
-			PermissionType:      ACLPermissionTypeAllow,
-			Operation:           ACLOperationTypeRead,
-			ResourceType:        ResourceTypeGroup,
-			ResourcePatternType: PatternTypeLiteral,
-			ResourceName:        "fake-group-for-bob",
-			Host:                "*",
-		},
-	}
-
 	createRes, err := client.CreateACLs(context.Background(), &CreateACLsRequest{
-		ACLs: ACLs,
+		ACLs: []ACLEntry{
+			{
+				Principal:           "User:alice",
+				PermissionType:      ACLPermissionTypeAllow,
+				Operation:           ACLOperationTypeRead,
+				ResourceType:        ResourceTypeTopic,
+				ResourcePatternType: PatternTypeLiteral,
+				ResourceName:        "fake-topic-for-alice",
+				Host:                "*",
+			},
+			{
+				Principal:           "User:bob",
+				PermissionType:      ACLPermissionTypeAllow,
+				Operation:           ACLOperationTypeRead,
+				ResourceType:        ResourceTypeGroup,
+				ResourcePatternType: PatternTypeLiteral,
+				ResourceName:        "fake-group-for-bob",
+				Host:                "*",
+			},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
