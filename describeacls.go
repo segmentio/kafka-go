@@ -49,6 +49,7 @@ type DescribeACLsResponse struct {
 type ACLResource struct {
 	ResourceType ResourceType
 	ResourceName string
+	PatternType  PatternType
 	ACLs         []ACLDescription
 }
 
@@ -99,6 +100,7 @@ func (c *Client) DescribeACLs(ctx context.Context, req *DescribeACLsRequest) (*D
 		resources[resourceIdx] = ACLResource{
 			ResourceType: ResourceType(respResource.ResourceType),
 			ResourceName: respResource.ResourceName,
+			PatternType:  PatternType(respResource.PatternType),
 			ACLs:         descriptions,
 		}
 	}
