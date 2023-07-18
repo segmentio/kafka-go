@@ -73,6 +73,7 @@ func TestClientCreateDescribeACLs(t *testing.T) {
 						Host:           "*",
 						Operation:      ACLOperationTypeRead,
 						PermissionType: ACLPermissionTypeAllow,
+						PatternType:    ResourceTypeLiteral,
 					},
 				},
 			},
