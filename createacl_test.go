@@ -67,13 +67,13 @@ func TestClientCreateDescribeACLs(t *testing.T) {
 			{
 				ResourceType: ResourceTypeTopic,
 				ResourceName: "fake-topic-for-alice",
+				PatternType:  PatternTypeLiteral,
 				ACLs: []ACLDescription{
 					{
 						Principal:      "User:alice",
 						Host:           "*",
 						Operation:      ACLOperationTypeRead,
 						PermissionType: ACLPermissionTypeAllow,
-						PatternType:    ResourceTypeLiteral,
 					},
 				},
 			},
