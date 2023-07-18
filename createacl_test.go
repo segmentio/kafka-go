@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestClientCreateACLs(t *testing.T) {
+func TestClientCreateDescribeACLs(t *testing.T) {
 	if !ktesting.KafkaIsAtLeast("2.0.1") {
 		return
 	}
