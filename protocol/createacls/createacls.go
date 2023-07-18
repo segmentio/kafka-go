@@ -25,7 +25,7 @@ type RequestACLs struct {
 	ResourceName        string `kafka:"min=v0,max=v1|min=v2,max=v2,compact"`
 	ResourcePatternType int8   `kafka:"min=v1,max=v2"`
 	Principal           string `kafka:"min=v0,max=v1|min=v2,max=v2,compact"`
-	Host                string `kafka:"min=v0,max=v2|min=v2,max=v2,compact`
+	Host                string `kafka:"min=v0,max=v2|min=v2,max=v2,compact"`
 	Operation           int8   `kafka:"min=v0,max=v2"`
 	PermissionType      int8   `kafka:"min=v0,max=v2"`
 }
