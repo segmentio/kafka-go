@@ -15,8 +15,8 @@ type DescribeACLsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	// List of filters to filter ACLs on.
-	Filters []ACLFilter
+	// Filter to filter ACLs on.
+	Filter ACLFilter
 }
 
 type ACLFilter struct {
@@ -58,22 +58,16 @@ type ACLDescription struct {
 }
 
 func (c *Client) DescribeACLs(ctx context.Context, req *DescribeACLsRequest) (*DescribeACLsResponse, error) {
-	filters := make([]describeacls.ACLFilters, len(req.Filters))
-
-	for filterIdx, filter := range req.Filters {
-		filters[filterIdx] = describeacls.ACLFilters{
-			ResourceTypeFilter:        int8(filter.ResourceTypeFilter),
-			ResourceNameFilter:        filter.ResourceNameFilter,
-			ResourcePatternTypeFilter: int8(filter.ResourcePatternTypeFilter),
-			PrincipalFilter:           filter.PrincipalFilter,
-			HostFilter:                filter.HostFilter,
-			Operation:                 int8(filter.Operation),
-			PermissionType:            int8(filter.PermissionType),
-		}
-	}
-
 	m, err := c.roundTrip(ctx, req.Addr, &describeacls.Request{
-		Filters: filters,
+		Filter: describeacls.ACLFilter{
+			ResourceTypeFilter:        int8(req.Filter.ResourceTypeFilter),
+			ResourceNameFilter:        req.Filter.ResourceNameFilter,
+			ResourcePatternTypeFilter: int8(req.Filter.ResourcePatternTypeFilter),
+			PrincipalFilter:           req.Filter.PrincipalFilter,
+			HostFilter:                req.Filter.HostFilter,
+			Operation:                 int8(req.Filter.Operation),
+			PermissionType:            int8(req.Filter.PermissionType),
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).DescribeACLs: %w", err)

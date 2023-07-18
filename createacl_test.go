@@ -49,13 +49,11 @@ func TestClientCreateDescribeACLs(t *testing.T) {
 	}
 
 	describeResp, err := client.DescribeACLs(context.Background(), &DescribeACLsRequest{
-		Filters: []ACLFilter{
-			{
-				ResourceTypeFilter:        ResourceTypeTopic,
-				ResourcePatternTypeFilter: PatternTypeLiteral,
-				Operation:                 ACLOperationTypeRead,
-				PermissionType:            ACLPermissionTypeAllow,
-			},
+		Filter: ACLFilter{
+			ResourceTypeFilter:        ResourceTypeTopic,
+			ResourcePatternTypeFilter: PatternTypeLiteral,
+			Operation:                 ACLOperationTypeRead,
+			PermissionType:            ACLPermissionTypeAllow,
 		},
 	})
 	if err != nil {

@@ -11,7 +11,7 @@ type Request struct {
 	// messages.
 	_ struct{} `kafka:"min=v2,max=v3,tag"`
 
-	Filters []ACLFilters `kafka:"min=v0,max=v3"`
+	Filter ACLFilter `kafka:"min=v0,max=v3"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.DescribeAcls }
@@ -20,7 +20,7 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	return cluster.Brokers[cluster.Controller], nil
 }
 
-type ACLFilters struct {
+type ACLFilter struct {
 	// We need at least one tagged field to indicate that v2+ uses "flexible"
 	// messages.
 	_ struct{} `kafka:"min=v2,max=v3,tag"`
