@@ -37,9 +37,6 @@ type DescribeACLsResponse struct {
 
 	// Error that occurred while attempting to describe
 	// the ACLs.
-	//
-	// The errors contain the kafka error code. Programs may use the standard
-	// errors.Is function to test the error against kafka error codes.
 	Error error
 
 	// ACL resources returned from the describe request.
