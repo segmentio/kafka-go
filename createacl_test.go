@@ -52,7 +52,7 @@ func TestClientCreateACLs(t *testing.T) {
 
 	describeResp, err := client.DescribeACLs(context.Background(), &DescribeACLsRequest{
 		Filters: []ACLFilter{
-			ACLFilter{
+			{
 				ResourceTypeFilter: ResourceTypeTopic,
 			},
 		},
@@ -65,11 +65,11 @@ func TestClientCreateACLs(t *testing.T) {
 		Throttle: 0,
 		Error:    makeError(0, ""),
 		Resources: []ACLResource{
-			ACLResource{
+			{
 				ResourceType: ResourceTypeTopic,
 				ResourceName: "fake-topic-for-alice",
 				ACLs: []ACLDescription{
-					ACLDescription{
+					{
 						Principal:      "User:alice",
 						Host:           "*",
 						Operation:      ACLOperationTypeRead,
