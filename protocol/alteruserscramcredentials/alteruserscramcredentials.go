@@ -11,8 +11,8 @@ type Request struct {
 	// messages.
 	_ struct{} `kafka:"min=v0,max=v0,tag"`
 
-	Deletions  []RequestUserScramCredentialDeletions  `kafka:"min=v0,max=v0"`
-	Upsertions []RequestUserScramCredentialUpsertions `kafka:"min=v0,max=v0"`
+	Deletions  []RequestUserScramCredentialsDeletion  `kafka:"min=v0,max=v0"`
+	Upsertions []RequestUserScramCredentialsUpsertion `kafka:"min=v0,max=v0"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.AlterUserScramCredentials }
@@ -21,7 +21,7 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	return cluster.Brokers[cluster.Controller], nil
 }
 
-type RequestUserScramCredentialsDeletions struct {
+type RequestUserScramCredentialsDeletion struct {
 	// We need at least one tagged field to indicate that v2+ uses "flexible"
 	// messages.
 	_ struct{} `kafka:"min=v0,max=v0,tag"`
@@ -30,7 +30,7 @@ type RequestUserScramCredentialsDeletions struct {
 	Mechanism int8   `kafka:"min=v0,max=v0"`
 }
 
-type RequestUserScramCredentialsUpsertions struct {
+type RequestUserScramCredentialsUpsertion struct {
 	// We need at least one tagged field to indicate that v2+ uses "flexible"
 	// messages.
 	_ struct{} `kafka:"min=v0,max=v0,tag"`
