@@ -36,7 +36,7 @@ type DescribeUserScramCredentialsResponse struct {
 	// errors.Is function to test the error against kafka error codes.
 	Error error
 
-	// List of describeed user scram credentials.
+	// List of described user scram credentials.
 	Results []DescribeUserScramCredentialsResponseResult
 }
 
