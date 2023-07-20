@@ -80,7 +80,7 @@ func TestAlterUserScramCredentials(t *testing.T) {
 
 	deleteRes, err := client.AlterUserScramCredentials(context.Background(), &AlterUserScramCredentialsRequest{
 		Deletions: []UserScramCredentialsDeletion{
-			UserScramCredentialsDeletion{
+			{
 				Name:      "alice",
 				Mechanism: ScramMechanismSha512,
 			},
