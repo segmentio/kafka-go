@@ -57,10 +57,10 @@ type AlterUserScramCredentialsResponse struct {
 	Errors []error
 
 	// List of altered user scram credentials.
-	Results []AlterUserScramCredentialsResponseUsers
+	Results []AlterUserScramCredentialsResponseUser
 }
 
-type AlterUserScramCredentialsResponseUsers struct {
+type AlterUserScramCredentialsResponseUser struct {
 	User string
 }
 
@@ -96,11 +96,11 @@ func (c *Client) AlterUserScramCredentials(ctx context.Context, req *AlterUserSc
 	}
 
 	res := m.(*alteruserscramcredentials.Response)
-	responseEntries := make([]AlterUserScramCredentialsResponseUsers, len(res.Results))
+	responseEntries := make([]AlterUserScramCredentialsResponseUser, len(res.Results))
 	responseErrors := make([]error, len(res.Results))
 
 	for responseIdx, responseResult := range res.Results {
-		responseEntries[responseIdx] = AlterUserScramCredentialsResponseUsers{
+		responseEntries[responseIdx] = AlterUserScramCredentialsResponseUser{
 			User: responseResult.User,
 		}
 		responseErrors[responseIdx] = makeError(responseResult.ErrorCode, responseResult.ErrorMessage)

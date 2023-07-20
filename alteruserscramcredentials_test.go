@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAlterUserScramCredentials(t *testing.T) {
@@ -16,7 +17,7 @@ func TestAlterUserScramCredentials(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	res, err := client.AlterUserScramCredentials(context.Background(), &AlterUserScramCredentialsRequest{
+	createRes, err := client.AlterUserScramCredentials(context.Background(), &AlterUserScramCredentialsRequest{
 		Upsertions: []UserScramCredentialsUpsertion{
 			UserScramCredentialsUpsertion{
 				Name:           "alice",
@@ -32,17 +33,48 @@ func TestAlterUserScramCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, err := range res.Errors {
+	for _, err := range createRes.Errors {
 		if err != nil {
 			t.Error(err)
 		}
 	}
 
-	if len(res.Results) != 1 {
-		t.Fatalf("expected 1 result; got %d", len(res.Results))
+	if len(createRes.Results) != 1 {
+		t.Fatalf("expected 1 createResult; got %d", len(createRes.Results))
 	}
 
-	if res.Results[0].User != "alice" {
-		t.Fatalf("expected result with user alice, got %s", res.Results[0].User)
+	if createRes.Results[0].User != "alice" {
+		t.Fatalf("expected createResult with user alice, got %s", createRes.Results[0].User)
 	}
+
+	describeRes, err := client.DescribeUserScramCredentials(context.Background(), &DescribeUserScramCredentialsRequest{
+		Users: []UserScramCredentialsUser{
+			UserScramCredentialsUser{
+				Name: "alice",
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := DescribeUserScramCredentialsResponse{
+		Throttle: makeDuration(0),
+		Error:    makeError(0, ""),
+		Results: []DescribeUserScramCredentialsResponseResult{
+			DescribeUserScramCredentialsResponseResult{
+				User: "alice",
+				CredentialInfos: []DescribeUserScramCredentialsCredentialInfo{
+					DescribeUserScramCredentialsCredentialInfo{
+						Mechanism:  ScramMechanismSha512,
+						Iterations: 15000,
+					},
+				},
+				Error: makeError(0, ""),
+			},
+		},
+	}
+
+	assert.Equal(t, expected, *describeRes)
 }
