@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
@@ -117,7 +118,7 @@ func TestAlterUserScramCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if describeDeletionRes.Error != makeError(0, "") {
+	if !errors.Is(describeDeletionRes.Error, makeError(0, "")) {
 		t.Fatalf("didn't expect a top level error on describe results after deletion, got %v", describeDeletionRes.Error)
 	}
 
@@ -133,5 +134,9 @@ func TestAlterUserScramCredentials(t *testing.T) {
 
 	if len(result.CredentialInfos) != 0 {
 		t.Fatalf("didn't expect describeResult credential infos, got %v", result.CredentialInfos)
+	}
+
+	if !errors.Is(result.Error, ResourceNotFound) {
+		t.Fatalf("expected describeResult resourcenotfound error, got %s", result.Error)
 	}
 }
