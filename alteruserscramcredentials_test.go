@@ -47,7 +47,7 @@ func TestAlterUserScramCredentials(t *testing.T) {
 		t.Fatalf("expected createResult with user alice, got %s", createRes.Results[0].User)
 	}
 
-	describeRes, err := client.DescribeUserScramCredentials(context.Background(), &DescribeUserScramCredentialsRequest{
+	describeCreationRes, err := client.DescribeUserScramCredentials(context.Background(), &DescribeUserScramCredentialsRequest{
 		Users: []UserScramCredentialsUser{
 			{
 				Name: "alice",
@@ -59,7 +59,7 @@ func TestAlterUserScramCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := DescribeUserScramCredentialsResponse{
+	expectedCreation := DescribeUserScramCredentialsResponse{
 		Throttle: makeDuration(0),
 		Error:    makeError(0, ""),
 		Results: []DescribeUserScramCredentialsResponseResult{
@@ -76,5 +76,62 @@ func TestAlterUserScramCredentials(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expected, *describeRes)
+	assert.Equal(t, expectedCreation, *describeCreationRes)
+
+	deleteRes, err := client.AlterUserScramCredentials(context.Background(), &AlterUserScramCredentialsRequest{
+		Deletions: []UserScramCredentialsDeletion{
+			UserScramCredentialsDeletion{
+				Name:      "alice",
+				Mechanism: ScramMechanismSha512,
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, err := range deleteRes.Errors {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	if len(deleteRes.Results) != 1 {
+		t.Fatalf("expected 1 deleteResult; got %d", len(deleteRes.Results))
+	}
+
+	if deleteRes.Results[0].User != "alice" {
+		t.Fatalf("expected deleteResult with user alice, got %s", deleteRes.Results[0].User)
+	}
+
+	describeDeletionRes, err := client.DescribeUserScramCredentials(context.Background(), &DescribeUserScramCredentialsRequest{
+		Users: []UserScramCredentialsUser{
+			{
+				Name: "alice",
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if describeDeletionRes.Error != makeError(0, "") {
+		t.Fatalf("didn't expect a top level error on describe results after deletion, got %v", describeDeletionRes.Error)
+	}
+
+	if len(describeDeletionRes.Results) != 1 {
+		t.Fatalf("expected one describe results after deletion, got %d describe results", len(describeDeletionRes.Results))
+	}
+
+	result := describeDeletionRes.Results[0]
+
+	if result.User != "alice" {
+		t.Fatalf("expected describeResult with user alice, got %s", result.User)
+	}
+
+	if len(result.CredentialInfos) != 0 {
+		t.Fatalf("didn't expect describeResult credential infos, got %v", result.CredentialInfos)
+	}
 }
