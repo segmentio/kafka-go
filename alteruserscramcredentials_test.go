@@ -19,7 +19,7 @@ func TestAlterUserScramCredentials(t *testing.T) {
 
 	createRes, err := client.AlterUserScramCredentials(context.Background(), &AlterUserScramCredentialsRequest{
 		Upsertions: []UserScramCredentialsUpsertion{
-			UserScramCredentialsUpsertion{
+			{
 				Name:           "alice",
 				Mechanism:      ScramMechanismSha512,
 				Iterations:     15000,
@@ -49,7 +49,7 @@ func TestAlterUserScramCredentials(t *testing.T) {
 
 	describeRes, err := client.DescribeUserScramCredentials(context.Background(), &DescribeUserScramCredentialsRequest{
 		Users: []UserScramCredentialsUser{
-			UserScramCredentialsUser{
+			{
 				Name: "alice",
 			},
 		},
@@ -63,10 +63,10 @@ func TestAlterUserScramCredentials(t *testing.T) {
 		Throttle: makeDuration(0),
 		Error:    makeError(0, ""),
 		Results: []DescribeUserScramCredentialsResponseResult{
-			DescribeUserScramCredentialsResponseResult{
+			{
 				User: "alice",
 				CredentialInfos: []DescribeUserScramCredentialsCredentialInfo{
-					DescribeUserScramCredentialsCredentialInfo{
+					{
 						Mechanism:  ScramMechanismSha512,
 						Iterations: 15000,
 					},
