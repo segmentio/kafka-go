@@ -9,7 +9,6 @@ import (
 
 const (
 	v0 = 0
-	v1 = 1
 )
 
 func TestDescribeUserScramCredentialsRequest(t *testing.T) {
