@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestClientCreateACLs(t *testing.T) {
+func TestClientDescribeACLs(t *testing.T) {
 	if !ktesting.KafkaIsAtLeast("2.0.1") {
 		return
 	}
@@ -49,4 +50,38 @@ func TestClientCreateACLs(t *testing.T) {
 			t.Error(err)
 		}
 	}
+
+	describeResp, err := client.DescribeACLs(context.Background(), &DescribeACLsRequest{
+		Filter: ACLFilter{
+			ResourceTypeFilter:        ResourceTypeTopic,
+			ResourcePatternTypeFilter: PatternTypeLiteral,
+			Operation:                 ACLOperationTypeRead,
+			PermissionType:            ACLPermissionTypeAllow,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedDescribeResp := DescribeACLsResponse{
+		Throttle: 0,
+		Error:    makeError(0, ""),
+		Resources: []ACLResource{
+			{
+				ResourceType: ResourceTypeTopic,
+				ResourceName: topic,
+				PatternType:  PatternTypeLiteral,
+				ACLs: []ACLDescription{
+					{
+						Principal:      "User:alice",
+						Host:           "*",
+						Operation:      ACLOperationTypeRead,
+						PermissionType: ACLPermissionTypeAllow,
+					},
+				},
+			},
+		},
+	}
+
+	assert.Equal(t, expectedDescribeResp, *describeResp)
 }
