@@ -54,6 +54,7 @@ func TestClientDescribeACLs(t *testing.T) {
 	describeResp, err := client.DescribeACLs(context.Background(), &DescribeACLsRequest{
 		Filter: ACLFilter{
 			ResourceTypeFilter:        ResourceTypeTopic,
+			ResourceNameFilter:        topic,
 			ResourcePatternTypeFilter: PatternTypeLiteral,
 			Operation:                 ACLOperationTypeRead,
 			PermissionType:            ACLPermissionTypeAllow,
