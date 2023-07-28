@@ -20,8 +20,9 @@ type DescribeACLsRequest struct {
 }
 
 type ACLFilter struct {
-	ResourceTypeFilter        ResourceType
-	ResourceNameFilter        string
+	ResourceTypeFilter ResourceType
+	ResourceNameFilter string
+	// ResourcePatternTypeFilter was added in v1 and is not available prior to that.
 	ResourcePatternTypeFilter PatternType
 	PrincipalFilter           string
 	HostFilter                string
