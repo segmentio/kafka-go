@@ -38,7 +38,7 @@ type UserScramCredentialsDeletion struct {
 type UserScramCredentialsUpsertion struct {
 	Name           string
 	Mechanism      ScramMechanism
-	Iterations     int32
+	Iterations     int
 	Salt           []byte
 	SaltedPassword []byte
 }

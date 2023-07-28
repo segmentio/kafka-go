@@ -48,7 +48,7 @@ type DescribeUserScramCredentialsResponseResult struct {
 
 type DescribeUserScramCredentialsCredentialInfo struct {
 	Mechanism  ScramMechanism
-	Iterations int32
+	Iterations int
 }
 
 // DescribeUserScramCredentials sends a user scram credentials describe request to a kafka broker and returns
