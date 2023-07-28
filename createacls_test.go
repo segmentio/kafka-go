@@ -15,7 +15,10 @@ func TestClientCreateACLs(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	res, err := client.CreateACLs(context.Background(), &CreateACLsRequest{
+	topic := makeTopic()
+	group := makeGroupID()
+
+	createRes, err := client.CreateACLs(context.Background(), &CreateACLsRequest{
 		ACLs: []ACLEntry{
 			{
 				Principal:           "User:alice",
@@ -23,7 +26,7 @@ func TestClientCreateACLs(t *testing.T) {
 				Operation:           ACLOperationTypeRead,
 				ResourceType:        ResourceTypeTopic,
 				ResourcePatternType: PatternTypeLiteral,
-				ResourceName:        "fake-topic-for-alice",
+				ResourceName:        topic,
 				Host:                "*",
 			},
 			{
@@ -32,7 +35,7 @@ func TestClientCreateACLs(t *testing.T) {
 				Operation:           ACLOperationTypeRead,
 				ResourceType:        ResourceTypeGroup,
 				ResourcePatternType: PatternTypeLiteral,
-				ResourceName:        "fake-group-for-bob",
+				ResourceName:        group,
 				Host:                "*",
 			},
 		},
@@ -41,7 +44,7 @@ func TestClientCreateACLs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, err := range res.Errors {
+	for _, err := range createRes.Errors {
 		if err != nil {
 			t.Error(err)
 		}
