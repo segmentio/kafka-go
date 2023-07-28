@@ -49,19 +49,13 @@ type AlterUserScramCredentialsResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration
 
-	// List of errors that occurred while attempting to alter
-	// the user scram credentials.
-	//
-	// The errors contain the kafka error code. Programs may use the standard
-	// errors.Is function to test the error against kafka error codes.
-	Errors []error
-
 	// List of altered user scram credentials.
 	Results []AlterUserScramCredentialsResponseUser
 }
 
 type AlterUserScramCredentialsResponseUser struct {
-	User string
+	User  string
+	Error error
 }
 
 // AlterUserScramCredentials sends user scram credentials alteration request to a kafka broker and returns
@@ -81,7 +75,7 @@ func (c *Client) AlterUserScramCredentials(ctx context.Context, req *AlterUserSc
 		upsertions[upsertionIdx] = alteruserscramcredentials.RequestUserScramCredentialsUpsertion{
 			Name:           upsertion.Name,
 			Mechanism:      int8(upsertion.Mechanism),
-			Iterations:     upsertion.Iterations,
+			Iterations:     int32(upsertion.Iterations),
 			Salt:           upsertion.Salt,
 			SaltedPassword: upsertion.SaltedPassword,
 		}
@@ -97,17 +91,15 @@ func (c *Client) AlterUserScramCredentials(ctx context.Context, req *AlterUserSc
 
 	res := m.(*alteruserscramcredentials.Response)
 	responseEntries := make([]AlterUserScramCredentialsResponseUser, len(res.Results))
-	responseErrors := make([]error, len(res.Results))
 
 	for responseIdx, responseResult := range res.Results {
 		responseEntries[responseIdx] = AlterUserScramCredentialsResponseUser{
-			User: responseResult.User,
+			User:  responseResult.User,
+			Error: makeError(responseResult.ErrorCode, responseResult.ErrorMessage),
 		}
-		responseErrors[responseIdx] = makeError(responseResult.ErrorCode, responseResult.ErrorMessage)
 	}
 	ret := &AlterUserScramCredentialsResponse{
 		Throttle: makeDuration(res.ThrottleTimeMs),
-		Errors:   responseErrors,
 		Results:  responseEntries,
 	}
 

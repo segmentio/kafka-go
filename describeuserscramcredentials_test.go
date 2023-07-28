@@ -36,18 +36,16 @@ func TestDescribeUserScramCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, err := range createRes.Errors {
-		if err != nil {
-			t.Error(err)
-		}
-	}
-
 	if len(createRes.Results) != 1 {
 		t.Fatalf("expected 1 createResult; got %d", len(createRes.Results))
 	}
 
 	if createRes.Results[0].User != name {
 		t.Fatalf("expected createResult with user: %s, got %s", name, createRes.Results[0].User)
+	}
+
+	if createRes.Results[0].Error != nil {
+		t.Fatalf("didn't expect an error in createResult, got %v", createRes.Results[0].Error)
 	}
 
 	describeCreationRes, err := client.DescribeUserScramCredentials(context.Background(), &DescribeUserScramCredentialsRequest{
@@ -94,18 +92,16 @@ func TestDescribeUserScramCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, err := range deleteRes.Errors {
-		if err != nil {
-			t.Error(err)
-		}
-	}
-
 	if len(deleteRes.Results) != 1 {
 		t.Fatalf("expected 1 deleteResult; got %d", len(deleteRes.Results))
 	}
 
 	if deleteRes.Results[0].User != name {
 		t.Fatalf("expected deleteResult with user: %s, got %s", name, deleteRes.Results[0].User)
+	}
+
+	if deleteRes.Results[0].Error != nil {
+		t.Fatalf("didn't expect an error in deleteResult, got %v", deleteRes.Results[0].Error)
 	}
 
 	describeDeletionRes, err := client.DescribeUserScramCredentials(context.Background(), &DescribeUserScramCredentialsRequest{

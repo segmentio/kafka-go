@@ -78,7 +78,7 @@ func (c *Client) DescribeUserScramCredentials(ctx context.Context, req *Describe
 		for credentialInfoIdx, credentialInfo := range responseResult.CredentialInfos {
 			credentialInfos[credentialInfoIdx] = DescribeUserScramCredentialsCredentialInfo{
 				Mechanism:  ScramMechanism(credentialInfo.Mechanism),
-				Iterations: credentialInfo.Iterations,
+				Iterations: int(credentialInfo.Iterations),
 			}
 		}
 		responseResults[responseIdx] = DescribeUserScramCredentialsResponseResult{
