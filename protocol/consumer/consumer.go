@@ -38,7 +38,7 @@ func (s *Subscription) FromBytes(b []byte) error {
 	}
 	version := readInt16(b[0:2])
 	err := protocol.Unmarshal(b, version, s)
-	if err != nil && version == 1 && errors.Is(err, io.ErrUnexpectedEOF) {
+	if err != nil && version >= 1 && errors.Is(err, io.ErrUnexpectedEOF) {
 		var sub subscriptionBackwardsCompat
 		if err = sub.FromBytes(b); err != nil {
 			return err
