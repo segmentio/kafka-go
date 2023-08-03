@@ -50,7 +50,7 @@ func TestSubscription(t *testing.T) {
 }
 
 func TestInvalidVersion1(t *testing.T) {
-	groupMemberMetadataBad := []byte{
+	groupMemberMetadataV1MissingOwnedPartitions := []byte{
 		0, 1, // Version
 		0, 0, 0, 2, // Topic array length
 		0, 3, 'o', 'n', 'e', // Topic one
@@ -59,7 +59,7 @@ func TestInvalidVersion1(t *testing.T) {
 	}
 
 	var s consumer.Subscription
-	err := s.FromBytes(groupMemberMetadataBad)
+	err := s.FromBytes(groupMemberMetadataV1MissingOwnedPartitions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,10 +69,10 @@ func TestInvalidVersion1(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(s.Topics, []string{"one", "two"}) {
-		t.Fatalf("expected topics to be one [one two] got: %v", s.Topics)
+		t.Fatalf("expected topics to be [one two] got: %v", s.Topics)
 	}
 
 	if !bytes.Equal(s.UserData, []byte{0x01, 0x02, 0x03}) {
-		t.Fatalf(`expected user datea to be one [1 2 3] got: %v`, s.UserData)
+		t.Fatalf(`expected user data to be [1 2 3] got: %v`, s.UserData)
 	}
 }

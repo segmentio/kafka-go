@@ -199,7 +199,6 @@ func (t joinGroupRequestGroupProtocolV1) size() int32 {
 }
 
 func (t joinGroupRequestGroupProtocolV1) writeTo(wb *writeBuffer) {
-	fmt.Println("writing", t.ProtocolName, t.ProtocolName)
 	wb.writeString(t.ProtocolName)
 	wb.writeBytes(t.ProtocolMetadata)
 }

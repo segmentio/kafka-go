@@ -131,7 +131,7 @@ func TestSaramaCompatibility(t *testing.T) {
 		//
 		// See consumer_group_members_test.go
 		//
-		groupMemberMetadataBad = []byte{
+		groupMemberMetadataV1MissingOwnedPartitions = []byte{
 			0, 1, // Version
 			0, 0, 0, 2, // Topic array length
 			0, 3, 'o', 'n', 'e', // Topic one
@@ -156,9 +156,9 @@ func TestSaramaCompatibility(t *testing.T) {
 		}
 	)
 
-	t.Run("verify metadata bad", func(t *testing.T) {
+	t.Run("verify metadata v1 missing OwnedPartitions", func(t *testing.T) {
 		var item consumer.Subscription
-		err := item.FromBytes(groupMemberMetadataBad)
+		err := item.FromBytes(groupMemberMetadataV1MissingOwnedPartitions)
 		if err != nil {
 			t.Fatalf("bad err: %v", err)
 		}

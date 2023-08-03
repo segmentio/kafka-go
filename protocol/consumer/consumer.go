@@ -26,7 +26,7 @@ type subscriptionBackwardsCompat struct {
 }
 
 func (s *subscriptionBackwardsCompat) FromBytes(b []byte) error {
-	// This type is only inteneded to maintain backwards compatibility with
+	// This type is only intended to maintain backwards compatibility with
 	// this library and support other clients in the wild sending
 	// version 1 supscription data without OwnedPartitionsy
 	return protocol.Unmarshal(b, 1, s)
