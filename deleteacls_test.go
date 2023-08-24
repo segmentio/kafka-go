@@ -88,4 +88,25 @@ func TestClientDeleteACLs(t *testing.T) {
 	}
 
 	assert.Equal(t, expectedDeleteResp, *deleteResp)
+
+	describeResp, err := client.DescribeACLs(context.Background(), &DescribeACLsRequest{
+		Filter: ACLFilter{
+			ResourceTypeFilter:        ResourceTypeTopic,
+			ResourceNameFilter:        topic,
+			ResourcePatternTypeFilter: PatternTypeLiteral,
+			Operation:                 ACLOperationTypeRead,
+			PermissionType:            ACLPermissionTypeAllow,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedDescribeResp := DescribeACLsResponse{
+		Throttle:  0,
+		Error:     makeError(0, ""),
+		Resources: []ACLResource{},
+	}
+
+	assert.Equal(t, expectedDescribeResp, *describeResp)
 }
