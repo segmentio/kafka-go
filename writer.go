@@ -922,73 +922,38 @@ func (w *Writer) chooseTopic(msg Message) (string, error) {
 }
 
 type batchQueue struct {
-	queue []*writeBatch
-
-	// Pointers are used here to make `go vet` happy, and avoid copying mutexes.
-	// It may be better to revert these to non-pointers and avoid the copies in
-	// a different way.
-	mutex *sync.Mutex
-	cond  *sync.Cond
-
+	queue  chan *writeBatch
 	closed bool
 }
 
 func (b *batchQueue) Put(batch *writeBatch) bool {
-	b.cond.L.Lock()
-	defer b.cond.L.Unlock()
-	defer b.cond.Broadcast()
-
 	if b.closed {
 		return false
 	}
-	b.queue = append(b.queue, batch)
+	b.queue <- batch
 	return true
 }
 
 func (b *batchQueue) Get() *writeBatch {
-	b.cond.L.Lock()
-	defer b.cond.L.Unlock()
-
-	for len(b.queue) == 0 && !b.closed {
-		b.cond.Wait()
-	}
-
-	if len(b.queue) == 0 {
-		return nil
-	}
-
-	batch := b.queue[0]
-	b.queue[0] = nil
-	b.queue = b.queue[1:]
-
-	return batch
+	return <-b.queue
 }
 
 func (b *batchQueue) Close() {
-	b.cond.L.Lock()
-	defer b.cond.L.Unlock()
-	defer b.cond.Broadcast()
-
 	b.closed = true
+	close(b.queue)
 }
 
-func newBatchQueue(initialSize int) batchQueue {
-	bq := batchQueue{
-		queue: make([]*writeBatch, 0, initialSize),
-		mutex: &sync.Mutex{},
-		cond:  &sync.Cond{},
+func newBatchQueue(initialSize int) *batchQueue {
+	return &batchQueue{
+		queue: make(chan *writeBatch, initialSize),
 	}
-
-	bq.cond.L = bq.mutex
-
-	return bq
 }
 
 // partitionWriter is a writer for a topic-partion pair. It maintains messaging order
 // across batches of messages.
 type partitionWriter struct {
 	meta  topicPartition
-	queue batchQueue
+	queue *batchQueue
 
 	mutex     sync.Mutex
 	currBatch *writeBatch
@@ -1009,9 +974,7 @@ func newPartitionWriter(w *Writer, key topicPartition) *partitionWriter {
 }
 
 func (ptw *partitionWriter) writeBatches() {
-	for {
-		batch := ptw.queue.Get()
-
+	for batch := range ptw.queue.queue {
 		// The only time we can return nil is when the queue is closed
 		// and empty. If the queue is closed that means
 		// the Writer is closed so once we're here it's time to exit.
