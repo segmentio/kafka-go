@@ -207,13 +207,7 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 	e.writeInt32(-1)                   // base sequence                       | 53 +4
 	e.writeInt32(0)                    // placeholder for numRecords          | 57 +4
 
-	var compressor io.WriteCloser
-	if compression := rs.Attributes.Compression(); compression != 0 {
-		if codec := compression.Codec(); codec != nil {
-			compressor = codec.NewWriter(buffer)
-			e.writer = compressor
-		}
-	}
+	// apacker - removed compression of the record set to test writing pre-compressed data
 
 	currentTimestamp := timestamp(time.Now())
 	lastOffsetDelta := int32(0)
