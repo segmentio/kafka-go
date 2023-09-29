@@ -267,6 +267,8 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 		err = rs.writeToVersion1(buffer, bufferOffset+4)
 	case 2:
 		err = rs.writeToVersion2(buffer, bufferOffset+4)
+	case 3:
+		err = rs.writePreCompressed(buffer, bufferOffset+4)
 	default:
 		err = fmt.Errorf("unsupported record set version %d", rs.Version)
 	}
