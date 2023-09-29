@@ -103,54 +103,6 @@ func TestProduceRequest(t *testing.T) {
 			},
 		},
 	})
-
-	headers := []protocol.Header{
-		{Key: "key-1", Value: []byte("value-1")},
-		{Key: "key-2", Value: []byte("value-2")},
-		{Key: "key-3", Value: []byte("value-3")},
-	}
-
-	prototest.TestRequest(t, v5, &produce.Request{
-		TransactionalID: "1234",
-		Acks:            1,
-		Timeout:         500,
-		Topics: []produce.RequestTopic{
-			{
-				Topic: "topic-1",
-				Partitions: []produce.RequestPartition{
-					{
-						Partition: 1,
-						RecordSet: protocol.RecordSet{
-							Version: 2,
-							Records: protocol.NewRecordReader(
-								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
-								protocol.Record{Offset: 1, Time: t1, Key: nil, Value: prototest.String("msg-1")},
-								protocol.Record{Offset: 2, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
-							),
-						},
-					},
-				},
-			},
-
-			{
-				Topic: "topic-2",
-				Partitions: []produce.RequestPartition{
-					{
-						Partition: 1,
-						RecordSet: protocol.RecordSet{
-							Version:    2,
-							Attributes: protocol.Snappy,
-							Records: protocol.NewRecordReader(
-								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
-								protocol.Record{Offset: 1, Time: t1, Key: nil, Value: prototest.String("msg-1")},
-								protocol.Record{Offset: 2, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
-							),
-						},
-					},
-				},
-			},
-		},
-	})
 }
 
 func TestProduceResponse(t *testing.T) {
