@@ -156,6 +156,7 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 				RecordSet: protocol.RecordSet{
 					Attributes: attributes,
 					Records:    req.Records,
+					Version:    int8(req.MessageVersion),
 				},
 			}},
 		}},
