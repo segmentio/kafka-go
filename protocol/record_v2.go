@@ -357,8 +357,8 @@ func (rs *RecordSet) writePreCompressed(buffer *pageBuffer, bufferOffset int64) 
 		length := 1 + // attributes
 			sizeOfVarInt(timestampDelta) +
 			sizeOfVarInt(offsetDelta) +
-			sizeOfVarNullBytesIface(r.Key) +
-			sizeOfVarNullBytesIface(r.Value) +
+			sizeOfUnsignedVarInt(uint64(r.PreEncodedKeylen)) +
+			sizeOfUnsignedVarInt(uint64(r.PreEncodedValueLen)) +
 			sizeOfVarInt(int64(len(r.Headers)))
 
 		for _, h := range r.Headers {
