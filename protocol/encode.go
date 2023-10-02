@@ -340,6 +340,16 @@ func (e *encoder) writeVarNullBytesFrom(b Bytes) error {
 	}
 }
 
+func (e *encoder) writeRawVarNullBytesFrom(b Bytes) error {
+	if b == nil {
+		e.writeVarInt(-1)
+		return nil
+	} else {
+		_, err := io.Copy(e, b)
+		return err
+	}
+}
+
 func (e *encoder) writeVarInt(i int64) {
 	e.writeUnsignedVarInt(uint64((i << 1) ^ (i >> 63)))
 }

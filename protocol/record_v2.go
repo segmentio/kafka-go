@@ -370,11 +370,13 @@ func (rs *RecordSet) writePreCompressed(buffer *pageBuffer, bufferOffset int64) 
 		e.writeVarInt(timestampDelta)
 		e.writeVarInt(offsetDelta)
 
-		if err := e.writeVarNullBytesFrom(r.Key); err != nil {
+		e.writeUnsignedVarInt(uint64(r.PreEncodedKeylen))
+		if err := e.writeRawVarNullBytesFrom(r.Key); err != nil {
 			return err
 		}
 
-		if err := e.writeVarNullBytesFrom(r.Value); err != nil {
+		e.writeUnsignedVarInt(uint64(r.PreEncodedValueLen))
+		if err := e.writeRawVarNullBytesFrom(r.Value); err != nil {
 			return err
 		}
 
