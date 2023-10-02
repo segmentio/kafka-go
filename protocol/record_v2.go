@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log"
 	"time"
 )
 
@@ -339,6 +340,7 @@ func (rs *RecordSet) writePreCompressed(buffer *pageBuffer, bufferOffset int64) 
 	maxTimestamp := int64(0)
 
 	err := forEachRecord(records, func(i int, r *Record) error {
+		log.Printf("kafka-go record: %+v", r)
 		t := timestamp(r.Time)
 		if t == 0 {
 			t = currentTimestamp
