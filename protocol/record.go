@@ -79,6 +79,9 @@ type Record struct {
 	// slice may be reused across calls, the program should use it as an
 	// immutable value.
 	Headers []Header
+
+	PreEncodedKeylen   uint32
+	PreEncodedValueLen uint32
 }
 
 // RecordSet represents a sequence of records in Produce requests and Fetch
