@@ -341,10 +341,6 @@ func (rs *RecordSet) writePreCompressed(buffer *pageBuffer, bufferOffset int64) 
 
 	err := forEachRecord(records, func(i int, r *Record) error {
 		log.Printf("kafka-go record: %+v", r)
-		key, _ := io.ReadAll(r.Key)
-		log.Printf("kafka-go key: %s", key)
-		val, _ := io.ReadAll(r.Value)
-		log.Printf("kafka-go value: %s", val)
 		t := timestamp(r.Time)
 		if t == 0 {
 			t = currentTimestamp
