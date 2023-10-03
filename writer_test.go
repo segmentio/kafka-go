@@ -180,6 +180,14 @@ func TestWriter(t *testing.T) {
 			function: testWriterDefaults,
 		},
 		{
+			scenario: "test default stats values",
+			function: testWriterDefaultStats,
+		},
+		{
+			scenario: "test stats values with override config",
+			function: testWriterOverrideConfigStats,
+		},
+		{
 			scenario: "test write message with writer data",
 			function: testWriteMessageWithWriterData,
 		},
@@ -941,6 +949,84 @@ func testWriterDefaults(t *testing.T) {
 
 	if w.writeBackoffMax() != 1*time.Second {
 		t.Error("Incorrect default max write backoff delay")
+	}
+}
+
+func testWriterDefaultStats(t *testing.T) {
+	w := &Writer{}
+	defer w.Close()
+
+	stats := w.Stats()
+
+	if stats.MaxAttempts == 0 {
+		t.Error("Incorrect default MaxAttempts value")
+	}
+
+	if stats.WriteBackoffMin == 0 {
+		t.Error("Incorrect default WriteBackoffMin value")
+	}
+
+	if stats.WriteBackoffMax == 0 {
+		t.Error("Incorrect default WriteBackoffMax value")
+	}
+
+	if stats.MaxBatchSize == 0 {
+		t.Error("Incorrect default MaxBatchSize value")
+	}
+
+	if stats.BatchTimeout == 0 {
+		t.Error("Incorrect default BatchTimeout value")
+	}
+
+	if stats.ReadTimeout == 0 {
+		t.Error("Incorrect default ReadTimeout value")
+	}
+
+	if stats.WriteTimeout == 0 {
+		t.Error("Incorrect default WriteTimeout value")
+	}
+}
+
+func testWriterOverrideConfigStats(t *testing.T) {
+	w := &Writer{
+		MaxAttempts:     6,
+		WriteBackoffMin: 2,
+		WriteBackoffMax: 4,
+		BatchSize:       1024,
+		BatchTimeout:    16,
+		ReadTimeout:     24,
+		WriteTimeout:    32,
+	}
+	defer w.Close()
+
+	stats := w.Stats()
+
+	if stats.MaxAttempts != 6 {
+		t.Error("Incorrect MaxAttempts value")
+	}
+
+	if stats.WriteBackoffMin != 2 {
+		t.Error("Incorrect WriteBackoffMin value")
+	}
+
+	if stats.WriteBackoffMax != 4 {
+		t.Error("Incorrect WriteBackoffMax value")
+	}
+
+	if stats.MaxBatchSize != 1024 {
+		t.Error("Incorrect MaxBatchSize value")
+	}
+
+	if stats.BatchTimeout != 16 {
+		t.Error("Incorrect BatchTimeout value")
+	}
+
+	if stats.ReadTimeout != 24 {
+		t.Error("Incorrect ReadTimeout value")
+	}
+
+	if stats.WriteTimeout != 32 {
+		t.Error("Incorrect WriteTimeout value")
 	}
 }
 
