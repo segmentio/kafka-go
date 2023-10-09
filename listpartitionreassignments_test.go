@@ -2,8 +2,9 @@ package kafka
 
 import (
 	"context"
-	ktesting "github.com/segmentio/kafka-go/testing"
 	"testing"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 func TestClientListPartitionReassignments(t *testing.T) {

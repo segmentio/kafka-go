@@ -113,17 +113,23 @@ func (c *Client) ListPartitionReassignments(
 }
 
 func intToInt32Array(arr []int) []int32 {
-	var res []int32
-	for _, v := range arr {
-		res = append(res, int32(v))
+	if arr == nil {
+		return nil
+	}
+	res := make([]int32, len(arr))
+	for i := range arr {
+		res[i] = int32(arr[i])
 	}
 	return res
 }
 
 func int32ToIntArray(arr []int32) []int {
-	var res []int
-	for _, v := range arr {
-		res = append(res, int(v))
+	if arr == nil {
+		return nil
+	}
+	res := make([]int, len(arr))
+	for i := range arr {
+		res[i] = int(arr[i])
 	}
 	return res
 }
