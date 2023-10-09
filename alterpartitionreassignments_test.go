@@ -16,23 +16,34 @@ func TestClientAlterPartitionReassignments(t *testing.T) {
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
-	topic := makeTopic()
-	createTopic(t, topic, 2)
-	defer deleteTopic(t, topic)
+	topic1 := makeTopic()
+	topic2 := makeTopic()
+	createTopic(t, topic1, 2)
+	createTopic(t, topic2, 2)
+	defer func() {
+		deleteTopic(t, topic1)
+		deleteTopic(t, topic2)
+	}()
 
 	// Local kafka only has 1 broker, so any partition reassignments are really no-ops.
 	resp, err := client.AlterPartitionReassignments(
 		ctx,
 		&AlterPartitionReassignmentsRequest{
-			Topic: topic,
-			Assignments: []AlterPartitionReassignmentsRequestAssignment{
-				{
-					PartitionID: 0,
-					BrokerIDs:   []int{1},
+			Topics: map[string][]AlterPartitionReassignmentsRequestAssignment{
+				topic1: {
+					{
+						PartitionID: 0,
+						BrokerIDs:   []int{1},
+					},
+					{
+						PartitionID: 1,
+						BrokerIDs:   []int{1},
+					},
 				},
-				{
-					PartitionID: 1,
-					BrokerIDs:   []int{1},
+				topic2: {
+					{
+						PartitionID: 0,
+					},
 				},
 			},
 		},
@@ -48,11 +59,25 @@ func TestClientAlterPartitionReassignments(t *testing.T) {
 			"got", resp.Error,
 		)
 	}
-	if len(resp.PartitionResults) != 2 {
+	if len(resp.Topics) != 2 {
+		t.Error(
+			"Unexpected length of topic results",
+			"expected", 2,
+			"got", len(resp.Topics),
+		)
+	}
+	if len(resp.Topics[topic1]) != 2 {
 		t.Error(
 			"Unexpected length of partition results",
 			"expected", 2,
-			"got", len(resp.PartitionResults),
+			"got", len(resp.Topics[topic1]),
+		)
+	}
+	if len(resp.Topics[topic2]) != 1 {
+		t.Error(
+			"Unexpected length of partition results",
+			"expected", 1,
+			"got", len(resp.Topics[topic2]),
 		)
 	}
 }
