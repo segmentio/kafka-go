@@ -14,7 +14,7 @@ type Request struct {
 	_ struct{} `kafka:"min=v0,max=v0,tag"`
 
 	TimeoutMs int32          `kafka:"min=v0,max=v0"`
-	Topics    []RequestTopic `kafka:"min=v0,max=v0"`
+	Topics    []RequestTopic `kafka:"min=v0,max=v0,nullable"`
 }
 
 type RequestTopic struct {
