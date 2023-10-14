@@ -13,8 +13,12 @@ type AlterPartitionReassignmentsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
 
-	// Mappings of topic names to list of partitions we want to reassign.
-	Topics map[string][]AlterPartitionReassignmentsRequestAssignment
+	// Topic is the name of the topic to alter partitions in. Keep this field empty and use Topic in AlterPartitionReassignmentsRequestAssignment to
+	// reassign to multiple topics.
+	Topic string
+
+	// Assignments is the list of partition reassignments to submit to the API.
+	Assignments []AlterPartitionReassignmentsRequestAssignment
 
 	// Timeout is the amount of time to wait for the request to complete.
 	Timeout time.Duration
@@ -23,6 +27,9 @@ type AlterPartitionReassignmentsRequest struct {
 // AlterPartitionReassignmentsRequestAssignment contains the requested reassignments for a single
 // partition.
 type AlterPartitionReassignmentsRequestAssignment struct {
+	// Topic is the name of the topic to alter partitions in. If empty, the value of Topic in AlterPartitionReassignmentsRequest is used.
+	Topic string
+
 	// PartitionID is the ID of the partition to make the reassignments in.
 	PartitionID int
 
@@ -36,13 +43,16 @@ type AlterPartitionReassignmentsResponse struct {
 	// error was encountered when doing the update.
 	Error error
 
-	// Mappings of topic names to list of reassignment results for each partition.
-	Topics map[string][]AlterPartitionReassignmentsResponsePartitionResult
+	// PartitionResults contains the specific results for each partition.
+	PartitionResults []AlterPartitionReassignmentsResponsePartitionResult
 }
 
 // AlterPartitionReassignmentsResponsePartitionResult contains the detailed result of
 // doing reassignments for a single partition.
 type AlterPartitionReassignmentsResponsePartitionResult struct {
+	// Topic is the topic name.
+	Topic string
+
 	// PartitionID is the ID of the partition that was altered.
 	PartitionID int
 
@@ -55,31 +65,42 @@ func (c *Client) AlterPartitionReassignments(
 	ctx context.Context,
 	req *AlterPartitionReassignmentsRequest,
 ) (*AlterPartitionReassignmentsResponse, error) {
+	apiTopicMap := make(map[string]*alterpartitionreassignments.RequestTopic)
+
+	for _, assignment := range req.Assignments {
+		topic := assignment.Topic
+		if topic == "" {
+			topic = req.Topic
+		}
+
+		apiTopic := apiTopicMap[topic]
+		if apiTopic == nil {
+			apiTopic = &alterpartitionreassignments.RequestTopic{
+				Name: topic,
+			}
+			apiTopicMap[topic] = apiTopic
+		}
+
+		replicas := []int32{}
+		for _, brokerID := range assignment.BrokerIDs {
+			replicas = append(replicas, int32(brokerID))
+		}
+
+		apiTopic.Partitions = append(
+			apiTopic.Partitions,
+			alterpartitionreassignments.RequestPartition{
+				PartitionIndex: int32(assignment.PartitionID),
+				Replicas:       replicas,
+			},
+		)
+	}
+
 	apiReq := &alterpartitionreassignments.Request{
 		TimeoutMs: int32(req.Timeout.Milliseconds()),
 	}
 
-	for topicName, assignments := range req.Topics {
-		apiPartitions := []alterpartitionreassignments.RequestPartition{}
-
-		for _, assignment := range assignments {
-			var replicas []int32
-			for _, brokerID := range assignment.BrokerIDs {
-				replicas = append(replicas, int32(brokerID))
-			}
-
-			apiPartitions = append(
-				apiPartitions,
-				alterpartitionreassignments.RequestPartition{
-					PartitionIndex: int32(assignment.PartitionID),
-					Replicas:       replicas,
-				},
-			)
-		}
-		apiReq.Topics = append(apiReq.Topics, alterpartitionreassignments.RequestTopic{
-			Name:       topicName,
-			Partitions: apiPartitions,
-		})
+	for _, apiTopic := range apiTopicMap {
+		apiReq.Topics = append(apiReq.Topics, *apiTopic)
 	}
 
 	protoResp, err := c.roundTrip(
@@ -93,22 +114,20 @@ func (c *Client) AlterPartitionReassignments(
 	apiResp := protoResp.(*alterpartitionreassignments.Response)
 
 	resp := &AlterPartitionReassignmentsResponse{
-		Error:  makeError(apiResp.ErrorCode, apiResp.ErrorMessage),
-		Topics: make(map[string][]AlterPartitionReassignmentsResponsePartitionResult),
+		Error: makeError(apiResp.ErrorCode, apiResp.ErrorMessage),
 	}
 
 	for _, topicResult := range apiResp.Results {
-		respTopic := []AlterPartitionReassignmentsResponsePartitionResult{}
 		for _, partitionResult := range topicResult.Partitions {
-			respTopic = append(
-				respTopic,
+			resp.PartitionResults = append(
+				resp.PartitionResults,
 				AlterPartitionReassignmentsResponsePartitionResult{
+					Topic:       topicResult.Name,
 					PartitionID: int(partitionResult.PartitionIndex),
 					Error:       makeError(partitionResult.ErrorCode, partitionResult.ErrorMessage),
 				},
 			)
 		}
-		resp.Topics[topicResult.Name] = respTopic
 	}
 
 	return resp, nil
