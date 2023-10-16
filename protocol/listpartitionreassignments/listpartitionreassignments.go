@@ -18,6 +18,10 @@ type Request struct {
 }
 
 type RequestTopic struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_ struct{} `kafka:"min=v0,max=v0,tag"`
+
 	Name             string  `kafka:"min=v0,max=v0"`
 	PartitionIndexes []int32 `kafka:"min=v0,max=v0"`
 }
@@ -42,11 +46,19 @@ type Response struct {
 }
 
 type ResponseTopic struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_ struct{} `kafka:"min=v0,max=v0,tag"`
+
 	Name       string              `kafka:"min=v0,max=v0"`
 	Partitions []ResponsePartition `kafka:"min=v0,max=v0"`
 }
 
 type ResponsePartition struct {
+	// We need at least one tagged field to indicate that this is a "flexible" message
+	// type.
+	_ struct{} `kafka:"min=v0,max=v0,tag"`
+
 	PartitionIndex   int32   `kafka:"min=v0,max=v0"`
 	Replicas         []int32 `kafka:"min=v0,max=v0"`
 	AddingReplicas   []int32 `kafka:"min=v0,max=v0"`
