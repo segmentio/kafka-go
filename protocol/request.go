@@ -120,10 +120,10 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	err := e.err
 
 	if err == nil {
-		log.Printf("Encode err: %v", err)
 		size := packUint32(uint32(b.Size()) - 4)
 		b.WriteAt(size[:], 0)
 		_, err = b.WriteTo(w)
+		log.Printf("Encode write err: %v", err)
 	}
 
 	return err
