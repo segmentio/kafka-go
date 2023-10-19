@@ -103,7 +103,7 @@ type Response struct {
 	ThrottleTimeMs int32           `kafka:"min=v1,max=v8"`
 }
 
-func (r *Response) ApiKey() protocol.ApiKey { return protocol.Produce }
+func (r *Response) ApiKey() protocol.ApiKey { return protocol.RawProduce }
 
 type ResponseTopic struct {
 	Topic      string              `kafka:"min=v0,max=v8"`
