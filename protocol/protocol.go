@@ -105,8 +105,9 @@ const (
 	AlterClientQuotas            ApiKey = 49
 	DescribeUserScramCredentials ApiKey = 50
 	AlterUserScramCredentials    ApiKey = 51
+	RawProduce                   ApiKey = 52
 
-	numApis = 52
+	numApis = 53
 )
 
 var apiNames = [numApis]string{
@@ -162,6 +163,7 @@ var apiNames = [numApis]string{
 	AlterClientQuotas:            "AlterClientQuotas",
 	DescribeUserScramCredentials: "DescribeUserScramCredentials",
 	AlterUserScramCredentials:    "AlterUserScramCredentials",
+	RawProduce:                   "Produce",
 }
 
 type messageType struct {
