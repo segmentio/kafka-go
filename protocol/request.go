@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"io"
+	"log"
 )
 
 func ReadRequest(r io.Reader) (apiVersion int16, correlationID int32, clientID string, msg Message, err error) {
@@ -119,6 +120,7 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	err := e.err
 
 	if err == nil {
+		log.Printf("Encode err: %v", err)
 		size := packUint32(uint32(b.Size()) - 4)
 		b.WriteAt(size[:], 0)
 		_, err = b.WriteTo(w)
