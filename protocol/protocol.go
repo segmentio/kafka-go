@@ -163,7 +163,7 @@ var apiNames = [numApis]string{
 	AlterClientQuotas:            "AlterClientQuotas",
 	DescribeUserScramCredentials: "DescribeUserScramCredentials",
 	AlterUserScramCredentials:    "AlterUserScramCredentials",
-	RawProduce:                   "Produce",
+	RawProduce:                   "RawProduce",
 }
 
 type messageType struct {
