@@ -309,7 +309,11 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (rrs *RawRecordSet) WriteTo(w io.Writer) (int64, error) {
-	return io.Copy(w, rrs.Reader)
+	n, err := io.Copy(w, rrs.Reader)
+	if err != nil {
+		return n, fmt.Errorf("kafka.(*RawRecordSet).WriteTo: %w", err)
+	}
+	return n, err
 }
 
 func makeTime(t int64) time.Time {
