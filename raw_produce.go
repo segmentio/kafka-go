@@ -87,7 +87,7 @@ type RawProduceResponse struct {
 // When the request is configured with RequiredAcks=none, both the response and
 // the error will be nil on success.
 func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*RawProduceResponse, error) {
-	m, err := c.roundTrip(ctx, req.Addr, &rawproduce.Request{
+	m, err := c.roundTrip(ctx, req.Addr, &rawproduce.RawRequest{
 		TransactionalID: req.TransactionalID,
 		Acks:            int16(req.RequiredAcks),
 		Timeout:         c.timeoutMs(ctx, defaultProduceTimeout),
@@ -112,7 +112,7 @@ func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*RawPr
 		return nil, nil
 	}
 
-	res := m.(*rawproduce.Response)
+	res := m.(*rawproduce.RawResponse)
 	if len(res.Topics) == 0 {
 		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", protocol.ErrNoTopic)
 	}

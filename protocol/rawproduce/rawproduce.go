@@ -7,19 +7,19 @@ import (
 )
 
 func init() {
-	protocol.Register(&Request{}, &Response{})
+	protocol.Register(&RawRequest{}, &RawResponse{})
 }
 
-type Request struct {
+type RawRequest struct {
 	TransactionalID string         `kafka:"min=v3,max=v8,nullable"`
 	Acks            int16          `kafka:"min=v0,max=v8"`
 	Timeout         int32          `kafka:"min=v0,max=v8"`
 	Topics          []RequestTopic `kafka:"min=v0,max=v8"`
 }
 
-func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
+func (r *RawRequest) ApiKey() protocol.ApiKey { return protocol.Produce }
 
-func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
+func (r *RawRequest) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	broker := protocol.Broker{ID: -1}
 
 	for i := range r.Topics {
@@ -51,7 +51,7 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	return broker, nil
 }
 
-func (r *Request) Prepare(apiVersion int16) {
+func (r *RawRequest) Prepare(apiVersion int16) {
 	// Determine which version of the message should be used, based on which
 	// version of the Produce API is supported by the server.
 	//
@@ -84,7 +84,7 @@ func (r *Request) Prepare(apiVersion int16) {
 	}
 }
 
-func (r *Request) HasResponse() bool {
+func (r *RawRequest) HasResponse() bool {
 	return r.Acks != 0
 }
 
@@ -98,12 +98,12 @@ type RequestPartition struct {
 	RecordSet protocol.RawRecordSet `kafka:"min=v0,max=v8"`
 }
 
-type Response struct {
+type RawResponse struct {
 	Topics         []ResponseTopic `kafka:"min=v0,max=v8"`
 	ThrottleTimeMs int32           `kafka:"min=v1,max=v8"`
 }
 
-func (r *Response) ApiKey() protocol.ApiKey { return protocol.Produce }
+func (r *RawResponse) ApiKey() protocol.ApiKey { return protocol.Produce }
 
 type ResponseTopic struct {
 	Topic      string              `kafka:"min=v0,max=v8"`
@@ -126,8 +126,8 @@ type ResponseError struct {
 }
 
 var (
-	_ protocol.BrokerMessage   = (*Request)(nil)
-	_ protocol.PreparedMessage = (*Request)(nil)
+	_ protocol.BrokerMessage   = (*RawRequest)(nil)
+	_ protocol.PreparedMessage = (*RawRequest)(nil)
 )
 
 type Error struct {
