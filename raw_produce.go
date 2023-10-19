@@ -105,7 +105,7 @@ func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*RawPr
 	case errors.Is(err, protocol.ErrNoRecord):
 		return new(RawProduceResponse), nil
 	default:
-		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", err)
+		return nil, fmt.Errorf("kafka.(*Client).RawProduce: %w", err)
 	}
 
 	if req.RequiredAcks == RequireNone {
@@ -114,11 +114,11 @@ func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*RawPr
 
 	res := m.(*rawproduce.Response)
 	if len(res.Topics) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", protocol.ErrNoTopic)
+		return nil, fmt.Errorf("kafka.(*Client).RawProduce: %w", protocol.ErrNoTopic)
 	}
 	topic := &res.Topics[0]
 	if len(topic.Partitions) == 0 {
-		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", protocol.ErrNoPartition)
+		return nil, fmt.Errorf("kafka.(*Client).RawProduce: %w", protocol.ErrNoPartition)
 	}
 	partition := &topic.Partitions[0]
 
