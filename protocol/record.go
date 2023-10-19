@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
+	"reflect"
 	"time"
 
 	"github.com/segmentio/kafka-go/compress"
@@ -309,6 +311,7 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (rrs *RawRecordSet) WriteTo(w io.Writer) (int64, error) {
+	log.Printf("Writing to: %s", reflect.TypeOf(w))
 	return io.Copy(w, rrs.Reader)
 }
 
