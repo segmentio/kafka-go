@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"time"
-
 	"github.com/segmentio/kafka-go/protocol"
+	produceAPI "github.com/segmentio/kafka-go/protocol/produce"
 	"github.com/segmentio/kafka-go/protocol/rawproduce"
+	"net"
 )
 
 // RawProduceRequest represents a request sent to a kafka broker to produce records
@@ -40,45 +39,6 @@ type RawProduceRequest struct {
 	RawRecords protocol.RawRecordSet
 }
 
-// RawProduceResponse represents a response from a kafka broker to a produce
-// request.
-type RawProduceResponse struct {
-	// The amount of time that the broker throttled the request.
-	Throttle time.Duration
-
-	// An error that may have occurred while attempting to produce the records.
-	//
-	// The error contains both the kafka error code, and an error message
-	// returned by the kafka broker. Programs may use the standard errors.Is
-	// function to test the error against kafka error codes.
-	Error error
-
-	// Offset of the first record that was written to the topic partition.
-	//
-	// This field will be zero if the kafka broker did not support Produce API
-	// version 3 or above.
-	BaseOffset int64
-
-	// Time at which the broker wrote the records to the topic partition.
-	//
-	// This field will be zero if the kafka broker did not support Produce API
-	// version 2 or above.
-	LogAppendTime time.Time
-
-	// First offset in the topic partition that the records were written to.
-	//
-	// This field will be zero if the kafka broker did not support Produce
-	// API version 5 or above (or if the first offset is zero).
-	LogStartOffset int64
-
-	// If errors occurred writing specific records, they will be reported in
-	// this map.
-	//
-	// This field will always be empty if the kafka broker did not support the
-	// Produce API in version 8 or above.
-	RecordErrors map[int]error
-}
-
 // RawProduce sends a rawproduce request to a kafka broker and returns the response.
 //
 // If the request contained no records, an error wrapping protocol.ErrNoRecord
@@ -86,7 +46,7 @@ type RawProduceResponse struct {
 //
 // When the request is configured with RequiredAcks=none, both the response and
 // the error will be nil on success.
-func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*RawProduceResponse, error) {
+func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*ProduceResponse, error) {
 	m, err := c.roundTrip(ctx, req.Addr, &rawproduce.Request{
 		TransactionalID: req.TransactionalID,
 		Acks:            int16(req.RequiredAcks),
@@ -103,7 +63,7 @@ func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*RawPr
 	switch {
 	case err == nil:
 	case errors.Is(err, protocol.ErrNoRecord):
-		return new(RawProduceResponse), nil
+		return new(ProduceResponse), nil
 	default:
 		return nil, fmt.Errorf("kafka.(*Client).RawProduce: %w", err)
 	}
@@ -112,7 +72,7 @@ func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*RawPr
 		return nil, nil
 	}
 
-	res := m.(*rawproduce.Response)
+	res := m.(*produceAPI.Response)
 	if len(res.Topics) == 0 {
 		return nil, fmt.Errorf("kafka.(*Client).RawProduce: %w", protocol.ErrNoTopic)
 	}
@@ -122,7 +82,7 @@ func (c *Client) RawProduce(ctx context.Context, req *RawProduceRequest) (*RawPr
 	}
 	partition := &topic.Partitions[0]
 
-	ret := &RawProduceResponse{
+	ret := &ProduceResponse{
 		Throttle:       makeDuration(res.ThrottleTimeMs),
 		Error:          makeError(partition.ErrorCode, partition.ErrorMessage),
 		BaseOffset:     partition.BaseOffset,

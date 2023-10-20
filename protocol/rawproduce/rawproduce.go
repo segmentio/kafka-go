@@ -2,12 +2,13 @@ package rawproduce
 
 import (
 	"fmt"
+	"github.com/segmentio/kafka-go/protocol/produce"
 
 	"github.com/segmentio/kafka-go/protocol"
 )
 
 func init() {
-	protocol.Register(&Request{}, &Response{})
+	protocol.Register(&Request{}, &produce.Response{})
 }
 
 type Request struct {
@@ -96,33 +97,6 @@ type RequestTopic struct {
 type RequestPartition struct {
 	Partition int32                 `kafka:"min=v0,max=v8"`
 	RecordSet protocol.RawRecordSet `kafka:"min=v0,max=v8"`
-}
-
-type Response struct {
-	Topics         []ResponseTopic `kafka:"min=v0,max=v8"`
-	ThrottleTimeMs int32           `kafka:"min=v1,max=v8"`
-}
-
-func (r *Response) ApiKey() protocol.ApiKey { return protocol.RawProduce }
-
-type ResponseTopic struct {
-	Topic      string              `kafka:"min=v0,max=v8"`
-	Partitions []ResponsePartition `kafka:"min=v0,max=v8"`
-}
-
-type ResponsePartition struct {
-	Partition      int32           `kafka:"min=v0,max=v8"`
-	ErrorCode      int16           `kafka:"min=v0,max=v8"`
-	BaseOffset     int64           `kafka:"min=v0,max=v8"`
-	LogAppendTime  int64           `kafka:"min=v2,max=v8"`
-	LogStartOffset int64           `kafka:"min=v5,max=v8"`
-	RecordErrors   []ResponseError `kafka:"min=v8,max=v8"`
-	ErrorMessage   string          `kafka:"min=v8,max=v8,nullable"`
-}
-
-type ResponseError struct {
-	BatchIndex             int32  `kafka:"min=v8,max=v8"`
-	BatchIndexErrorMessage string `kafka:"min=v8,max=v8,nullable"`
 }
 
 var (
