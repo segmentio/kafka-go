@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/segmentio/kafka-go/protocol/createacls"
@@ -42,6 +43,42 @@ const (
 	ACLPermissionTypeAllow   ACLPermissionType = 3
 )
 
+func (apt ACLPermissionType) String() string {
+	mapping := map[ACLPermissionType]string{
+		ACLPermissionTypeUnknown: "Unknown",
+		ACLPermissionTypeAny:     "Any",
+		ACLPermissionTypeDeny:    "Deny",
+		ACLPermissionTypeAllow:   "Allow",
+	}
+	s, ok := mapping[apt]
+	if !ok {
+		s = mapping[ACLPermissionTypeUnknown]
+	}
+	return s
+}
+
+// UnmarshalText takes a string representation of the resource type and converts it to an ACLPermissionType.
+func (apt *ACLPermissionType) UnmarshalText(text []byte) error {
+	normalized := strings.ToLower(string(text))
+	mapping := map[string]ACLPermissionType{
+		"unknown": ACLPermissionTypeUnknown,
+		"any":     ACLPermissionTypeAny,
+		"deny":    ACLPermissionTypeDeny,
+		"allow":   ACLPermissionTypeAllow,
+	}
+	parsed, ok := mapping[normalized]
+	if !ok {
+		return fmt.Errorf("cannot parse %s as an ACLPermissionType", normalized)
+	}
+	*apt = parsed
+	return nil
+}
+
+// MarshalText transforms an ACLPermissionType into its string representation.
+func (apt ACLPermissionType) MarshalText() ([]byte, error) {
+	return []byte(apt.String()), nil
+}
+
 type ACLOperationType int8
 
 const (
@@ -59,6 +96,61 @@ const (
 	ACLOperationTypeAlterConfigs    ACLOperationType = 11
 	ACLOperationTypeIdempotentWrite ACLOperationType = 12
 )
+
+func (aot ACLOperationType) String() string {
+	mapping := map[ACLOperationType]string{
+		ACLOperationTypeUnknown:         "Unknown",
+		ACLOperationTypeAny:             "Any",
+		ACLOperationTypeAll:             "All",
+		ACLOperationTypeRead:            "Read",
+		ACLOperationTypeWrite:           "Write",
+		ACLOperationTypeCreate:          "Create",
+		ACLOperationTypeDelete:          "Delete",
+		ACLOperationTypeAlter:           "Alter",
+		ACLOperationTypeDescribe:        "Describe",
+		ACLOperationTypeClusterAction:   "ClusterAction",
+		ACLOperationTypeDescribeConfigs: "DescribeConfigs",
+		ACLOperationTypeAlterConfigs:    "AlterConfigs",
+		ACLOperationTypeIdempotentWrite: "IdempotentWrite",
+	}
+	s, ok := mapping[aot]
+	if !ok {
+		s = mapping[ACLOperationTypeUnknown]
+	}
+	return s
+}
+
+// UnmarshalText takes a string representation of the resource type and converts it to an ACLPermissionType.
+func (aot *ACLOperationType) UnmarshalText(text []byte) error {
+	normalized := strings.ToLower(string(text))
+	mapping := map[string]ACLOperationType{
+		"unknown":         ACLOperationTypeUnknown,
+		"any":             ACLOperationTypeAny,
+		"all":             ACLOperationTypeAll,
+		"read":            ACLOperationTypeRead,
+		"write":           ACLOperationTypeWrite,
+		"create":          ACLOperationTypeCreate,
+		"delete":          ACLOperationTypeDelete,
+		"alter":           ACLOperationTypeAlter,
+		"describe":        ACLOperationTypeDescribe,
+		"clusteraction":   ACLOperationTypeClusterAction,
+		"describeconfigs": ACLOperationTypeDescribeConfigs,
+		"alterconfigs":    ACLOperationTypeAlterConfigs,
+		"idempotentwrite": ACLOperationTypeIdempotentWrite,
+	}
+	parsed, ok := mapping[normalized]
+	if !ok {
+		return fmt.Errorf("cannot parse %s as an ACLOperationType", normalized)
+	}
+	*aot = parsed
+	return nil
+
+}
+
+// MarshalText transforms an ACLOperationType into its string representation.
+func (aot ACLOperationType) MarshalText() ([]byte, error) {
+	return []byte(aot.String()), nil
+}
 
 type ACLEntry struct {
 	ResourceType        ResourceType
