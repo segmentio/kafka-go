@@ -112,7 +112,7 @@ type RecordSet struct {
 	Records RecordReader
 }
 
-// RawRecordSet represents a sequence of records in their raw byte representation.
+// RawRecordSet represents a sequence of records as a raw sequence of pre-encoded record bytes.
 type RawRecordSet struct {
 	// The message version that this record set will be represented as, valid
 	// values are 1, or 2.
@@ -308,6 +308,28 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	return n, nil
 }
 
+// ReadFrom reads the representation of a record set from r into rrs. It re-uses the
+// existing RecordSet.ReadFrom implementation to first read/decode data into a RecordSet,
+// then writes/encodes the RecordSet to a buffer referenced by the RawRecordSet.
+func (rrs *RawRecordSet) ReadFrom(r io.Reader) (int64, error) {
+	rs := &RecordSet{}
+	n, err := rs.ReadFrom(r)
+	if err != nil {
+		return 0, err
+	}
+
+	buf := &bytes.Buffer{}
+	rs.WriteTo(buf)
+	*rrs = RawRecordSet{
+		Version: rs.Version,
+		Reader:  buf,
+	}
+
+	return n, nil
+}
+
+// WriteTo writes the representation of rrs into w. Since rrs is a raw/pre-encoded record set
+// representation, all that is done here is copying bytes from the reader to the writer.
 func (rrs *RawRecordSet) WriteTo(w io.Writer) (int64, error) {
 	return io.Copy(w, rrs.Reader)
 }

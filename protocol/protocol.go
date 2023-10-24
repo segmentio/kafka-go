@@ -54,6 +54,7 @@ func (k ApiKey) apiType() apiType {
 
 const (
 	Produce                      ApiKey = 0
+	RawProduce                   ApiKey = 0
 	Fetch                        ApiKey = 1
 	ListOffsets                  ApiKey = 2
 	Metadata                     ApiKey = 3
@@ -105,7 +106,6 @@ const (
 	AlterClientQuotas            ApiKey = 49
 	DescribeUserScramCredentials ApiKey = 50
 	AlterUserScramCredentials    ApiKey = 51
-	RawProduce                   ApiKey = 0
 
 	numApis = 52
 )
