@@ -68,6 +68,7 @@ func (apt *ACLPermissionType) UnmarshalText(text []byte) error {
 	}
 	parsed, ok := mapping[normalized]
 	if !ok {
+		*apt = ACLPermissionTypeUnknown
 		return fmt.Errorf("cannot parse %s as an ACLPermissionType", normalized)
 	}
 	*apt = parsed
@@ -140,6 +141,7 @@ func (aot *ACLOperationType) UnmarshalText(text []byte) error {
 	}
 	parsed, ok := mapping[normalized]
 	if !ok {
+		*aot = ACLOperationTypeUnknown
 		return fmt.Errorf("cannot parse %s as an ACLOperationType", normalized)
 	}
 	*aot = parsed
