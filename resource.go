@@ -1,5 +1,10 @@
 package kafka
 
+import (
+	"fmt"
+	"strings"
+)
+
 // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/resource/ResourceType.java
 type ResourceType int8
 
@@ -14,6 +19,44 @@ const (
 	ResourceTypeTransactionalID ResourceType = 5
 	ResourceTypeDelegationToken ResourceType = 6
 )
+
+func (rt ResourceType) String() string {
+	mapping := map[ResourceType]string{
+		ResourceTypeUnknown:         "unknown",
+		ResourceTypeAny:             "any",
+		ResourceTypeTopic:           "topic",
+		ResourceTypeGroup:           "group",
+		ResourceTypeCluster:         "cluster",
+		ResourceTypeTransactionalID: "transactionalid",
+		ResourceTypeDelegationToken: "delegationtoken",
+	}
+	s, ok := mapping[rt]
+	if !ok {
+		s = mapping[ResourceTypeUnknown]
+	}
+	return s
+}
+
+func (rt *ResourceType) UnmarshalText(text []byte) error {
+	normalized := strings.ToLower(string(text))
+	mapping := map[string]ResourceType{
+		"unknown":         ResourceTypeUnknown,
+		"any":             ResourceTypeAny,
+		"topic":           ResourceTypeTopic,
+		"group":           ResourceTypeGroup,
+		"broker":          ResourceTypeBroker,
+		"cluster":         ResourceTypeCluster,
+		"transactionalid": ResourceTypeTransactionalID,
+		"delegationtoken": ResourceTypeDelegationToken,
+	}
+	parsed, ok := mapping[normalized]
+	if !ok {
+		*rt = ResourceTypeUnknown
+		return fmt.Errorf("cannot parse %s as a ResourceType", normalized)
+	}
+	*rt = parsed
+	return nil
+}
 
 // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/resource/PatternType.java
 type PatternType int8
