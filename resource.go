@@ -37,6 +37,10 @@ func (rt ResourceType) String() string {
 	return s
 }
 
+func (rt ResourceType) MarshalText() ([]byte, error) {
+	return []byte(rt.String()), nil
+}
+
 func (rt *ResourceType) UnmarshalText(text []byte) error {
 	normalized := strings.ToLower(string(text))
 	mapping := map[string]ResourceType{
@@ -78,3 +82,40 @@ const (
 	// that start with 'foo'.
 	PatternTypePrefixed PatternType = 4
 )
+
+func (pt PatternType) String() string {
+	mapping := map[PatternType]string{
+		PatternTypeUnknown:  "unknown",
+		PatternTypeAny:      "any",
+		PatternTypeMatch:    "match",
+		PatternTypeLiteral:  "literal",
+		PatternTypePrefixed: "prefixed",
+	}
+	s, ok := mapping[pt]
+	if !ok {
+		s = mapping[PatternTypeUnknown]
+	}
+	return s
+}
+
+func (pt PatternType) MarshalText() ([]byte, error) {
+	return []byte(pt.String()), nil
+}
+
+func (pt *PatternType) UnmarshalText(text []byte) error {
+	normalized := strings.ToLower(string(text))
+	mapping := map[string]PatternType{
+		"unknown":  PatternTypeUnknown,
+		"any":      PatternTypeAny,
+		"match":    PatternTypeMatch,
+		"literal":  PatternTypeLiteral,
+		"prefixed": PatternTypePrefixed,
+	}
+	parsed, ok := mapping[normalized]
+	if !ok {
+		*pt = PatternTypeUnknown
+		return fmt.Errorf("cannot parse %s as a PatternType", normalized)
+	}
+	*pt = parsed
+	return nil
+}
