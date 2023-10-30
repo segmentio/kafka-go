@@ -22,10 +22,12 @@ const (
 
 func (rt ResourceType) String() string {
 	mapping := map[ResourceType]string{
-		ResourceTypeUnknown:         "Unknown",
-		ResourceTypeAny:             "Any",
-		ResourceTypeTopic:           "Topic",
-		ResourceTypeGroup:           "Group",
+		ResourceTypeUnknown: "Unknown",
+		ResourceTypeAny:     "Any",
+		ResourceTypeTopic:   "Topic",
+		ResourceTypeGroup:   "Group",
+		// Note that ResourceTypeBroker and ResourceTypeCluster have the same value.
+		// A map cannot have duplicate values so we just use the same value for both.
 		ResourceTypeCluster:         "Cluster",
 		ResourceTypeTransactionalID: "Transactionalid",
 		ResourceTypeDelegationToken: "Delegationtoken",
