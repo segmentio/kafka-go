@@ -57,6 +57,11 @@ func (apt ACLPermissionType) String() string {
 	return s
 }
 
+// MarshalText transforms an ACLPermissionType into its string representation.
+func (apt ACLPermissionType) MarshalText() ([]byte, error) {
+	return []byte(apt.String()), nil
+}
+
 // UnmarshalText takes a string representation of the resource type and converts it to an ACLPermissionType.
 func (apt *ACLPermissionType) UnmarshalText(text []byte) error {
 	normalized := strings.ToLower(string(text))
@@ -73,11 +78,6 @@ func (apt *ACLPermissionType) UnmarshalText(text []byte) error {
 	}
 	*apt = parsed
 	return nil
-}
-
-// MarshalText transforms an ACLPermissionType into its string representation.
-func (apt ACLPermissionType) MarshalText() ([]byte, error) {
-	return []byte(apt.String()), nil
 }
 
 type ACLOperationType int8
@@ -121,6 +121,11 @@ func (aot ACLOperationType) String() string {
 	return s
 }
 
+// MarshalText transforms an ACLOperationType into its string representation.
+func (aot ACLOperationType) MarshalText() ([]byte, error) {
+	return []byte(aot.String()), nil
+}
+
 // UnmarshalText takes a string representation of the resource type and converts it to an ACLPermissionType.
 func (aot *ACLOperationType) UnmarshalText(text []byte) error {
 	normalized := strings.ToLower(string(text))
@@ -147,11 +152,6 @@ func (aot *ACLOperationType) UnmarshalText(text []byte) error {
 	*aot = parsed
 	return nil
 
-}
-
-// MarshalText transforms an ACLOperationType into its string representation.
-func (aot ACLOperationType) MarshalText() ([]byte, error) {
-	return []byte(aot.String()), nil
 }
 
 type ACLEntry struct {
