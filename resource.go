@@ -22,13 +22,13 @@ const (
 
 func (rt ResourceType) String() string {
 	mapping := map[ResourceType]string{
-		ResourceTypeUnknown:         "unknown",
-		ResourceTypeAny:             "any",
-		ResourceTypeTopic:           "topic",
-		ResourceTypeGroup:           "group",
-		ResourceTypeCluster:         "cluster",
-		ResourceTypeTransactionalID: "transactionalid",
-		ResourceTypeDelegationToken: "delegationtoken",
+		ResourceTypeUnknown:         "Unknown",
+		ResourceTypeAny:             "Any",
+		ResourceTypeTopic:           "Topic",
+		ResourceTypeGroup:           "Group",
+		ResourceTypeCluster:         "Cluster",
+		ResourceTypeTransactionalID: "Transactionalid",
+		ResourceTypeDelegationToken: "Delegationtoken",
 	}
 	s, ok := mapping[rt]
 	if !ok {
@@ -85,11 +85,11 @@ const (
 
 func (pt PatternType) String() string {
 	mapping := map[PatternType]string{
-		PatternTypeUnknown:  "unknown",
-		PatternTypeAny:      "any",
-		PatternTypeMatch:    "match",
-		PatternTypeLiteral:  "literal",
-		PatternTypePrefixed: "prefixed",
+		PatternTypeUnknown:  "Unknown",
+		PatternTypeAny:      "Any",
+		PatternTypeMatch:    "Match",
+		PatternTypeLiteral:  "Literal",
+		PatternTypePrefixed: "Prefixed",
 	}
 	s, ok := mapping[pt]
 	if !ok {
