@@ -50,3 +50,37 @@ func TestClientCreateACLs(t *testing.T) {
 		}
 	}
 }
+
+func TestACLPermissionTypeMarshal(t *testing.T) {
+	for i := ACLPermissionTypeUnknown; i <= ACLPermissionTypeAllow; i++ {
+		text, err := i.MarshalText()
+		if err != nil {
+			t.Errorf("couldn't marshal %d to text: %s", i, err)
+		}
+		var got ACLPermissionType
+		err = got.UnmarshalText(text)
+		if err != nil {
+			t.Errorf("couldn't unmarshal %s to ACLPermissionType: %s", text, err)
+		}
+		if got != i {
+			t.Errorf("got %d, want %d", got, i)
+		}
+	}
+}
+
+func TestACLOperationTypeMarshal(t *testing.T) {
+	for i := ACLOperationTypeUnknown; i <= ACLOperationTypeIdempotentWrite; i++ {
+		text, err := i.MarshalText()
+		if err != nil {
+			t.Errorf("couldn't marshal %d to text: %s", i, err)
+		}
+		var got ACLOperationType
+		err = got.UnmarshalText(text)
+		if err != nil {
+			t.Errorf("couldn't unmarshal %s to ACLOperationType: %s", text, err)
+		}
+		if got != i {
+			t.Errorf("got %d, want %d", got, i)
+		}
+	}
+}
