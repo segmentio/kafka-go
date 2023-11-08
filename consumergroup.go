@@ -743,15 +743,11 @@ func (cg *ConsumerGroup) run() {
 			// to join the group will then be subject to the rebalance
 			// timeout, so the broker will be responsible for throttling
 			// this loop.
-
-		default:
-			// leave the group and report the error if we had gotten far
-			// enough so as to have a member ID.  also clear the member id
-			// so we don't attempt to use it again.  in order to avoid
-			// a tight error loop, backoff before the next attempt to join
-			// the group.
-			_ = cg.leaveGroup(memberID)
+		case errors.Is(err, UnknownMemberId):
+			// in case of a UnknownMemberId, reset memberID to empty
 			memberID = ""
+		default:
+			// backoff before the next attempt to join the group.
 			backoff = time.After(cg.config.JoinGroupBackoff)
 		}
 		// ensure that we exit cleanly in case the CG is done and no one is
