@@ -828,7 +828,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 			return Message{}, ctx.Err()
 
 		case err := <-r.runError:
-			return Message{}, err
+			return Message{}, dontExpectEOF(err)
 
 		case m, ok := <-r.msgs:
 			if !ok {
