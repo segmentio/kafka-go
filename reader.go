@@ -1492,6 +1492,13 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	t0 := time.Now()
 	conn.SetReadDeadline(t0.Add(r.maxWait))
 
+	if conn.sessionExpiresAt != nil && t0.After(*conn.sessionExpiresAt) {
+		err := r.dialer.authenticateSASL(ctx, conn)
+		if err != nil {
+			return -1, err
+		}
+	}
+
 	batch := conn.ReadBatchWith(ReadBatchConfig{
 		MinBytes:       r.minBytes,
 		MaxBytes:       r.maxBytes,

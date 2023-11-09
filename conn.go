@@ -65,6 +65,10 @@ type Conn struct {
 	apiVersions atomic.Value // apiVersionMap
 
 	transactionalID *string
+
+	// session expiration if specified in SaslAuthenticate Response
+	// https://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
+	sessionExpiresAt *time.Time
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -1597,21 +1601,21 @@ func (c *Conn) saslHandshake(mechanism string) error {
 // be immediately preceded by a successful saslHandshake.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
-func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
+func (c *Conn) saslAuthenticate(data []byte) ([]byte, int64, error) {
 	// if we sent a v1 handshake, then we must encapsulate the authentication
 	// request in a saslAuthenticateRequest.  otherwise, we read and write raw
 	// bytes.
 	version, err := c.negotiateVersion(saslHandshake, v0, v1)
 	if err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 	if version == v1 {
-		var request = saslAuthenticateRequestV0{Data: data}
-		var response saslAuthenticateResponseV0
+		var request = saslAuthenticateRequestV1{Data: data}
+		var response saslAuthenticateResponseV1
 
 		err := c.writeOperation(
 			func(deadline time.Time, id int32) error {
-				return c.writeRequest(saslAuthenticate, v0, id, request)
+				return c.writeRequest(saslAuthenticate, version, id, request)
 			},
 			func(deadline time.Time, size int) error {
 				return expectZeroSize(func() (remain int, err error) {
@@ -1622,24 +1626,24 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 		if err == nil && response.ErrorCode != 0 {
 			err = Error(response.ErrorCode)
 		}
-		return response.Data, err
+		return response.Data, response.SessionLifetimeMillis, err
 	}
 
 	// fall back to opaque bytes on the wire.  the broker is expecting these if
 	// it just processed a v0 sasl handshake.
 	c.wb.writeInt32(int32(len(data)))
 	if _, err := c.wb.Write(data); err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 	if err := c.wb.Flush(); err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 
 	var respLen int32
 	if _, err := readInt32(&c.rbuf, 4, &respLen); err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 
 	resp, _, err := readNewBytes(&c.rbuf, int(respLen), int(respLen))
-	return resp, err
+	return resp, -1, err
 }

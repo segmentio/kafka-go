@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -317,7 +318,7 @@ func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
 	}
 
 	for completed := false; !completed; {
-		challenge, err := conn.saslAuthenticate(state)
+		challenge, sessionLifetime, err := conn.saslAuthenticate(state)
 		switch {
 		case err == nil:
 		case errors.Is(err, io.EOF):
@@ -332,6 +333,12 @@ func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
 		completed, state, err = sess.Next(ctx, challenge)
 		if err != nil {
 			return fmt.Errorf("SASL authentication process has failed: %w", err)
+		}
+
+		if sessionLifetime > 0 {
+			randomFactor := rand.Float64()*0.05 + 0.9 // add a bit of randomness so that the session expires within 90 to 95% of the sessionLifetime
+			expiry := time.Now().Add(time.Duration(float64(sessionLifetime)*randomFactor) * time.Millisecond)
+			conn.sessionExpiresAt = &expiry
 		}
 	}
 
