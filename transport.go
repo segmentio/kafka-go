@@ -1274,6 +1274,22 @@ func (c *conn) roundTrip(ctx context.Context, pc *protocol.Conn, req Request) (R
 	pprof.SetGoroutineLabels(ctx)
 	defer pprof.SetGoroutineLabels(context.Background())
 
+	// KIP-368
+	var saslSessionDeadline = pc.GetSaslSessionDeadline()
+	if !saslSessionDeadline.IsZero() && time.Now().After(saslSessionDeadline) {
+		host, port, err := splitHostPortNumber(c.address)
+		if err != nil {
+			return nil, err
+		}
+		metadata := &sasl.Metadata{
+			Host: host,
+			Port: port,
+		}
+		if err := authenticateSASL(sasl.WithMetadata(ctx, metadata), pc, c.group.pool.sasl); err != nil {
+			return nil, err
+		}
+	}
+
 	if deadline, hasDeadline := ctx.Deadline(); hasDeadline {
 		pc.SetDeadline(deadline)
 		defer pc.SetDeadline(time.Time{})
@@ -1286,6 +1302,9 @@ func (c *conn) roundTrip(ctx context.Context, pc *protocol.Conn, req Request) (R
 // connection.  If any step fails, this function returns with an error.  A nil
 // error indicates successful authentication.
 func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mechanism) error {
+	// reset the SaslSessionDeadline before authenticating
+	pc.SetSaslSessionDeadline(time.Time{})
+
 	if err := saslHandshakeRoundTrip(pc, mechanism.Name()); err != nil {
 		return err
 	}
@@ -1296,7 +1315,7 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 	}
 
 	for completed := false; !completed; {
-		challenge, err := saslAuthenticateRoundTrip(pc, state)
+		challenge, sessionLifetimeMs, err := saslAuthenticateRoundTrip(pc, state)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				// the broker may communicate a failed exchange by closing the
@@ -1311,6 +1330,12 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 		completed, state, err = sess.Next(ctx, challenge)
 		if err != nil {
 			return err
+		}
+
+		if sessionLifetimeMs > 0 {
+			// set sasl session deadline to %90 of session lifetime
+			var saslSessionDeadline = time.Now().Add(time.Duration(float64(sessionLifetimeMs)*0.9) * time.Millisecond)
+			pc.SetSaslSessionDeadline(saslSessionDeadline)
 		}
 	}
 
@@ -1346,18 +1371,19 @@ func saslHandshakeRoundTrip(pc *protocol.Conn, mechanism string) error {
 // be immediately preceded by a successful saslHandshake.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_SaslAuthenticate
-func saslAuthenticateRoundTrip(pc *protocol.Conn, data []byte) ([]byte, error) {
+func saslAuthenticateRoundTrip(pc *protocol.Conn, data []byte) ([]byte, int64, error) {
 	msg, err := pc.RoundTrip(&saslauthenticate.Request{
 		AuthBytes: data,
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	res := msg.(*saslauthenticate.Response)
 	if res.ErrorCode != 0 {
 		err = makeError(res.ErrorCode, res.ErrorMessage)
 	}
-	return res.AuthBytes, err
+
+	return res.AuthBytes, res.SessionLifetimeMs, err
 }
 
 var _ RoundTripper = (*Transport)(nil)
