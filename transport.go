@@ -1333,9 +1333,10 @@ func authenticateSASL(ctx context.Context, pc *protocol.Conn, mechanism sasl.Mec
 		}
 
 		if sessionLifetimeMs > 0 {
-			// set sasl session deadline to %90 of session lifetime
-			var saslSessionDeadline = time.Now().Add(time.Duration(float64(sessionLifetimeMs)*0.9) * time.Millisecond)
-			pc.SetSaslSessionDeadline(saslSessionDeadline)
+			// set sasl session deadline to a random %80-%90 of session lifetime
+			jitter := 0.10 * rand.New(rand.NewSource(time.Now().UnixNano())).Float64()
+			reducedLifetimeMs := (0.80 + jitter) * float64(sessionLifetimeMs)
+			pc.SetSaslSessionDeadline(time.Now().Add(time.Duration(reducedLifetimeMs) * time.Millisecond))
 		}
 	}
 

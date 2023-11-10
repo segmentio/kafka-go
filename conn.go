@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -1649,8 +1650,10 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 						errorCode = response.ErrorCode
 						authData = response.Data
 						if response.SessionLifetimeMs > 0 {
-							// set sasl session deadline to %90 of session lifetime
-							c.saslSessionDeadline = time.Now().Add(time.Duration(float64(response.SessionLifetimeMs)*0.9) * time.Millisecond)
+							// set sasl session deadline to a random %80-%90 of session lifetime
+							jitter := 0.10 * rand.New(rand.NewSource(time.Now().UnixNano())).Float64()
+							reducedLifetimeMs := (0.80 + jitter) * float64(response.SessionLifetimeMs)
+							c.saslSessionDeadline = time.Now().Add(time.Duration(reducedLifetimeMs) * time.Millisecond)
 						}
 					}
 
