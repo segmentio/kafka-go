@@ -282,19 +282,27 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 
 	conn := NewConnWith(c, connCfg)
 
-	if d.SASLMechanism != nil {
-		host, port, err := splitHostPortNumber(address)
-		if err != nil {
-			return nil, fmt.Errorf("could not determine host/port for SASL authentication: %w", err)
+	conn.saslAuth = func() error {
+		if d.SASLMechanism != nil {
+			host, port, err := splitHostPortNumber(address)
+			if err != nil {
+				return fmt.Errorf("could not determine host/port for SASL authentication: %w", err)
+			}
+			metadata := &sasl.Metadata{
+				Host: host,
+				Port: port,
+			}
+			if err := d.authenticateSASL(sasl.WithMetadata(ctx, metadata), conn); err != nil {
+				_ = conn.Close()
+				return fmt.Errorf("could not successfully authenticate to %s:%d with SASL: %w", host, port, err)
+			}
 		}
-		metadata := &sasl.Metadata{
-			Host: host,
-			Port: port,
-		}
-		if err := d.authenticateSASL(sasl.WithMetadata(ctx, metadata), conn); err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("could not successfully authenticate to %s:%d with SASL: %w", host, port, err)
-		}
+		return nil
+	}
+
+	err = conn.saslAuth()
+	if err != nil {
+		return nil, err
 	}
 
 	return conn, nil
@@ -307,6 +315,9 @@ func (d *Dialer) connect(ctx context.Context, network, address string, connCfg C
 // In case of error, this function *does not* close the connection.  That is the
 // responsibility of the caller.
 func (d *Dialer) authenticateSASL(ctx context.Context, conn *Conn) error {
+	// reset the SaslSessionDeadline before authenticating
+	conn.saslSessionDeadline = time.Time{}
+
 	if err := conn.saslHandshake(d.SASLMechanism.Name()); err != nil {
 		return fmt.Errorf("SASL handshake failed: %w", err)
 	}
