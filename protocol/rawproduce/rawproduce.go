@@ -18,7 +18,7 @@ type Request struct {
 	Topics          []RequestTopic `kafka:"min=v0,max=v8"`
 }
 
-func (r *Request) ApiKey() protocol.ApiKey { return protocol.RawProduce }
+func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	broker := protocol.Broker{ID: -1}

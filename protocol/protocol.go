@@ -54,7 +54,6 @@ func (k ApiKey) apiType() apiType {
 
 const (
 	Produce                      ApiKey = 0
-	RawProduce                   ApiKey = 0
 	Fetch                        ApiKey = 1
 	ListOffsets                  ApiKey = 2
 	Metadata                     ApiKey = 3
