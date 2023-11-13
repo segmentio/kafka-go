@@ -331,6 +331,10 @@ func (rrs *RawRecordSet) ReadFrom(r io.Reader) (int64, error) {
 // WriteTo writes the representation of rrs into w. Since rrs is a raw/pre-encoded record set
 // representation, all that is done here is copying bytes from the reader to the writer.
 func (rrs *RawRecordSet) WriteTo(w io.Writer) (int64, error) {
+	if rrs.Reader == nil {
+		return 0, ErrNoRecord
+	}
+
 	return io.Copy(w, rrs.Reader)
 }
 
