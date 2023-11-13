@@ -2,9 +2,15 @@ package rawproduce
 
 import (
 	"fmt"
+	"github.com/segmentio/kafka-go/protocol/produce"
 
 	"github.com/segmentio/kafka-go/protocol"
 )
+
+func init() {
+	req := &Request{}
+	protocol.RegisterOverride(req, &produce.Response{}, req.TypeKey())
+}
 
 type Request struct {
 	TransactionalID string         `kafka:"min=v3,max=v8,nullable"`
@@ -14,6 +20,8 @@ type Request struct {
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
+
+func (r *Request) TypeKey() int16 { return 0 }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	broker := protocol.Broker{ID: -1}

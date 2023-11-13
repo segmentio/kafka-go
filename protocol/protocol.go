@@ -213,6 +213,29 @@ func Register(req, res Message) {
 	}
 }
 
+type TypedMessage interface {
+	TypeKey() int16
+}
+
+var overrideApiTypes [numApis]map[int16]apiType
+
+func RegisterOverride(req, res Message, key int16) {
+	k1 := req.ApiKey()
+	k2 := req.ApiKey()
+
+	if k1 != k2 {
+		panic(fmt.Sprintf("[%T/%T]: request and response API keys mismatch: %d != %d", req, res, k1, k2))
+	}
+
+	if overrideApiTypes[k1] == nil {
+		overrideApiTypes[k1] = make(map[int16]apiType)
+	}
+	overrideApiTypes[k1][key] = apiType{
+		requests:  typesOf(req),
+		responses: typesOf(res),
+	}
+}
+
 func typesOf(v interface{}) []messageType {
 	return makeTypes(reflect.TypeOf(v).Elem())
 }
