@@ -4,12 +4,7 @@ import (
 	"fmt"
 
 	"github.com/segmentio/kafka-go/protocol"
-	"github.com/segmentio/kafka-go/protocol/produce"
 )
-
-func init() {
-	protocol.Register(&Request{}, &produce.Response{})
-}
 
 type Request struct {
 	TransactionalID string         `kafka:"min=v3,max=v8,nullable"`
