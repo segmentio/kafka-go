@@ -4,6 +4,7 @@ import (
 	"hash"
 	"hash/crc32"
 	"hash/fnv"
+	"math"
 	"math/rand"
 	"sort"
 	"sync"
@@ -52,6 +53,35 @@ func (rr *RoundRobin) balance(partitions []int) int {
 	length := uint32(len(partitions))
 	offset := atomic.AddUint32(&rr.offset, 1) - 1
 	return partitions[offset%length]
+}
+
+// ChunkedRoundRobin is a Balancer implementation that equally distributes messages
+// across all available partitions, but in chunks
+type ChunkedRoundRobin struct {
+	chunkSize int
+
+	mutex   sync.RWMutex
+	counter *uint64
+}
+
+// Balance satisfies the Balancer interface.
+func (rr *ChunkedRoundRobin) Balance(msg Message, partitions ...int) int {
+	rr.mutex.RLock()
+	if rr.counter == nil {
+		var nextToInsert uint64 = math.MaxUint64 // so that first increment overflows it back to 0
+		rr.counter = &nextToInsert
+	}
+	var next = rr.counter
+	rr.mutex.RUnlock()
+
+	// set default chunk size to 1
+	if rr.chunkSize < 1 {
+		rr.chunkSize = 1
+	}
+
+	var choice int
+	choice = (int(atomic.AddUint64(next, 1)) / rr.chunkSize) % len(partitions)
+	return choice
 }
 
 // LeastBytes is a Balancer implementation that routes messages to the partition
@@ -122,7 +152,7 @@ var (
 //
 // The logic to calculate the partition is:
 //
-// 		hasher.Sum32() % len(partitions) => partition
+//	hasher.Sum32() % len(partitions) => partition
 //
 // By default, Hash uses the FNV-1a algorithm.  This is the same algorithm used
 // by the Sarama Producer and ensures that messages produced by kafka-go will
@@ -173,7 +203,7 @@ func (h *Hash) Balance(msg Message, partitions ...int) int {
 //
 // The logic to calculate the partition is:
 //
-//      (int32(hasher.Sum32()) & 0x7fffffff) % len(partitions) => partition
+//	(int32(hasher.Sum32()) & 0x7fffffff) % len(partitions) => partition
 //
 // By default, ReferenceHash uses the FNV-1a algorithm. This is the same algorithm as
 // the Sarama NewReferenceHashPartitioner and ensures that messages produced by kafka-go will
