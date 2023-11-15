@@ -56,39 +56,6 @@ func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	return broker, nil
 }
 
-func (r *Request) Prepare(apiVersion int16) {
-	// Determine which version of the message should be used, based on which
-	// version of the Produce API is supported by the server.
-	//
-	// In version 0.11, kafka gives this error:
-	//
-	//   org.apache.kafka.common.record.InvalidRecordException
-	//   Produce requests with version 3 are only allowed to contain record batches with magic version.
-	//
-	// In version 2.x, kafka refuses the message claiming that the CRC32
-	// checksum is invalid.
-	var recordVersion int8
-
-	if apiVersion < 3 {
-		recordVersion = 1
-	} else {
-		recordVersion = 2
-	}
-
-	for i := range r.Topics {
-		t := &r.Topics[i]
-
-		for j := range t.Partitions {
-			p := &t.Partitions[j]
-
-			// Allow the program to overload the version if really needed.
-			if p.RecordSet.Version == 0 {
-				p.RecordSet.Version = recordVersion
-			}
-		}
-	}
-}
-
 func (r *Request) HasResponse() bool {
 	return r.Acks != 0
 }
@@ -104,8 +71,7 @@ type RequestPartition struct {
 }
 
 var (
-	_ protocol.BrokerMessage   = (*Request)(nil)
-	_ protocol.PreparedMessage = (*Request)(nil)
+	_ protocol.BrokerMessage = (*Request)(nil)
 )
 
 type Error struct {

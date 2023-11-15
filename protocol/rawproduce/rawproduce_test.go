@@ -136,8 +136,7 @@ func NewRawRecordSet(reader protocol.RecordReader, version int8, attr protocol.A
 	rs.WriteTo(buf)
 
 	return protocol.RawRecordSet{
-		Version: version,
-		Reader:  buf,
+		Reader: buf,
 	}
 }
 

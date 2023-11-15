@@ -112,22 +112,6 @@ type RecordSet struct {
 	Records RecordReader
 }
 
-// RawRecordSet represents a sequence of records as a raw sequence of pre-encoded record bytes.
-type RawRecordSet struct {
-	// The message version that this record set will be represented as, valid
-	// values are 1, or 2.
-	//
-	// When reading, this is the value of the highest version used in the
-	// batches that compose the record set.
-	//
-	// When writing, this value dictates the format that the records will be
-	// encoded in.
-	Version int8
-
-	// Reader exposes the raw sequence of record bytes.
-	Reader io.Reader
-}
-
 // bufferedReader is an interface implemented by types like bufio.Reader, which
 // we use to optimize prefix reads by accessing the internal buffer directly
 // through calls to Peek.
@@ -308,6 +292,12 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	return n, nil
 }
 
+// RawRecordSet represents a sequence of records as a raw sequence of pre-encoded record bytes.
+type RawRecordSet struct {
+	// Reader exposes the raw sequence of record bytes.
+	Reader io.Reader
+}
+
 // ReadFrom reads the representation of a record set from r into rrs. It re-uses the
 // existing RecordSet.ReadFrom implementation to first read/decode data into a RecordSet,
 // then writes/encodes the RecordSet to a buffer referenced by the RawRecordSet.
@@ -321,8 +311,7 @@ func (rrs *RawRecordSet) ReadFrom(r io.Reader) (int64, error) {
 	buf := &bytes.Buffer{}
 	rs.WriteTo(buf)
 	*rrs = RawRecordSet{
-		Version: rs.Version,
-		Reader:  buf,
+		Reader: buf,
 	}
 
 	return n, nil

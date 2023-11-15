@@ -23,7 +23,7 @@ func TestClientRawProduce(t *testing.T) {
 			Record{Time: now, Value: NewBytes([]byte(`hello-1`))},
 			Record{Time: now, Value: NewBytes([]byte(`hello-2`))},
 			Record{Time: now, Value: NewBytes([]byte(`hello-3`))},
-		), 2, 0),
+		), 0),
 	})
 
 	if err != nil {
@@ -53,7 +53,7 @@ func TestClientRawProduceCompressed(t *testing.T) {
 			Record{Time: now, Value: NewBytes([]byte(`hello-1`))},
 			Record{Time: now, Value: NewBytes([]byte(`hello-2`))},
 			Record{Time: now, Value: NewBytes([]byte(`hello-3`))},
-		), 2, protocol.Gzip),
+		), protocol.Gzip),
 	})
 
 	if err != nil {
@@ -101,13 +101,12 @@ func TestClientRawProduceEmptyRecords(t *testing.T) {
 	}
 }
 
-func NewRawRecordSet(reader protocol.RecordReader, version int8, attr protocol.Attributes) protocol.RawRecordSet {
-	rs := protocol.RecordSet{Version: version, Attributes: attr, Records: reader}
+func NewRawRecordSet(reader protocol.RecordReader, attr protocol.Attributes) protocol.RawRecordSet {
+	rs := protocol.RecordSet{Version: 2, Attributes: attr, Records: reader}
 	buf := &bytes.Buffer{}
 	rs.WriteTo(buf)
 
 	return protocol.RawRecordSet{
-		Version: version,
-		Reader:  buf,
+		Reader: buf,
 	}
 }
