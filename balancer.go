@@ -56,7 +56,8 @@ func (rr *RoundRobin) balance(partitions []int) int {
 }
 
 // ChunkedRoundRobin is a Balancer implementation that equally distributes messages
-// across all available partitions, but in chunks
+// across all available partitions, but puts greater emphasis on batching by a chunk size
+// within a shorter time period than is possible via the regular RoundRobin Balancer.
 type ChunkedRoundRobin struct {
 	chunkSize int
 
@@ -79,8 +80,7 @@ func (rr *ChunkedRoundRobin) Balance(msg Message, partitions ...int) int {
 		rr.chunkSize = 1
 	}
 
-	var choice int
-	choice = (int(atomic.AddUint64(next, 1)) / rr.chunkSize) % len(partitions)
+	choice := (int(atomic.AddUint64(next, 1)) / rr.chunkSize) % len(partitions)
 	return choice
 }
 
