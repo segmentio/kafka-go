@@ -12,7 +12,7 @@ import (
 )
 
 // RawProduceRequest represents a request sent to a kafka broker to produce records
-// to a topic partition.
+// to a topic partition. The request contains a pre-serialized/raw record set.
 type RawProduceRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
@@ -40,7 +40,7 @@ type RawProduceRequest struct {
 	RawRecords protocol.RawRecordSet
 }
 
-// RawProduce sends a rawproduce request to a kafka broker and returns the response.
+// RawProduce sends a raw produce request to a kafka broker and returns the response.
 //
 // If the request contained no records, an error wrapping protocol.ErrNoRecord
 // is returned.
