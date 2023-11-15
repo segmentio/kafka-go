@@ -21,7 +21,7 @@ func TestRawProduceRequest(t *testing.T) {
 	t1 := t0.Add(1 * time.Millisecond)
 	t2 := t0.Add(2 * time.Millisecond)
 
-	prototest.TestRequest(t, v0, &rawproduce.Request{
+	prototest.TestRequestWithOverride(t, v0, &rawproduce.Request{
 		Acks:    1,
 		Timeout: 500,
 		Topics: []rawproduce.RequestTopic{
@@ -61,7 +61,7 @@ func TestRawProduceRequest(t *testing.T) {
 		},
 	})
 
-	prototest.TestRequest(t, v3, &rawproduce.Request{
+	prototest.TestRequestWithOverride(t, v3, &rawproduce.Request{
 		TransactionalID: "1234",
 		Acks:            1,
 		Timeout:         500,
@@ -94,7 +94,7 @@ func TestRawProduceRequest(t *testing.T) {
 		{Key: "key-3", Value: []byte("value-3")},
 	}
 
-	prototest.TestRequest(t, v5, &rawproduce.Request{
+	prototest.TestRequestWithOverride(t, v5, &rawproduce.Request{
 		TransactionalID: "1234",
 		Acks:            1,
 		Timeout:         500,

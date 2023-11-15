@@ -213,13 +213,21 @@ func Register(req, res Message) {
 	}
 }
 
-type TypedMessage interface {
-	TypeKey() int16
+// OverrideTypeMessage is an interface implemented by messages that which to override the standard
+// request/response types for a given API.
+type OverrideTypeMessage interface {
+	TypeKey() OverrideTypeKey
 }
 
-var overrideApiTypes [numApis]map[int16]apiType
+type OverrideTypeKey int16
 
-func RegisterOverride(req, res Message, key int16) {
+const (
+	RawProduceOverride OverrideTypeKey = 0
+)
+
+var overrideApiTypes [numApis]map[OverrideTypeKey]apiType
+
+func RegisterOverride(req, res Message, key OverrideTypeKey) {
 	k1 := req.ApiKey()
 	k2 := req.ApiKey()
 
@@ -228,7 +236,7 @@ func RegisterOverride(req, res Message, key int16) {
 	}
 
 	if overrideApiTypes[k1] == nil {
-		overrideApiTypes[k1] = make(map[int16]apiType)
+		overrideApiTypes[k1] = make(map[OverrideTypeKey]apiType)
 	}
 	overrideApiTypes[k1][key] = apiType{
 		requests:  typesOf(req),

@@ -8,6 +8,7 @@ import (
 )
 
 func init() {
+	// Register a type override so that raw produce requests will be encoded with the correct type.
 	req := &Request{}
 	protocol.RegisterOverride(req, &produce.Response{}, req.TypeKey())
 }
@@ -21,7 +22,7 @@ type Request struct {
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
 
-func (r *Request) TypeKey() int16 { return 0 }
+func (r *Request) TypeKey() protocol.OverrideTypeKey { return protocol.RawProduceOverride }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	broker := protocol.Broker{ID: -1}
