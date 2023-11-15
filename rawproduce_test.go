@@ -3,9 +3,10 @@ package kafka
 import (
 	"bytes"
 	"context"
-	"github.com/segmentio/kafka-go/protocol"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol"
 )
 
 func TestClientRawProduce(t *testing.T) {
