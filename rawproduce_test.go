@@ -7,9 +7,14 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go/protocol"
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 func TestClientRawProduce(t *testing.T) {
+	// The RawProduce request is only encoded in v2 RecordSet format and will not work against older brokers.
+	if !ktesting.KafkaIsAtLeast("0.11.0") {
+		t.Skip("Skipping because the RawProduce request is not supported by Kafka versions below 0.11.0")
+	}
 	client, topic, shutdown := newLocalClientAndTopic()
 	defer shutdown()
 
