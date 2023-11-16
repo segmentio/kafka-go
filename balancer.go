@@ -75,7 +75,7 @@ func (rr *ChunkedRoundRobin) Balance(msg Message, partitions ...int) int {
 	}
 	var next = rr.counter
 
-	// set default chunk size to 1
+	// set default chunk size to 1.
 	if rr.ChunkSize < 1 {
 		rr.ChunkSize = 1
 	}
