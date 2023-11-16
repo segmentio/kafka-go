@@ -292,15 +292,20 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	return n, nil
 }
 
-// RawRecordSet represents a sequence of records as a raw sequence of pre-encoded record bytes.
+// RawRecordSet represents a record set for a RawProduce request. The record set is
+// represented as a raw sequence of pre-encoded record set bytes.
 type RawRecordSet struct {
-	// Reader exposes the raw sequence of record bytes.
+	// Reader exposes the raw sequence of record set bytes.
 	Reader io.Reader
 }
 
 // ReadFrom reads the representation of a record set from r into rrs. It re-uses the
 // existing RecordSet.ReadFrom implementation to first read/decode data into a RecordSet,
 // then writes/encodes the RecordSet to a buffer referenced by the RawRecordSet.
+//
+// Note: re-using the RecordSet.ReadFrom implementation makes this suboptimal from a
+// performance standpoint as it require an extra copy of the record bytes. Holding off
+// on optimizing, as this code path is only invoked in tests.
 func (rrs *RawRecordSet) ReadFrom(r io.Reader) (int64, error) {
 	rs := &RecordSet{}
 	n, err := rs.ReadFrom(r)
@@ -317,8 +322,8 @@ func (rrs *RawRecordSet) ReadFrom(r io.Reader) (int64, error) {
 	return n, nil
 }
 
-// WriteTo writes the representation of rrs into w. Since rrs is a raw/pre-encoded record set
-// representation, all that is done here is copying bytes from the reader to the writer.
+// WriteTo writes the RawRecordSet to an io.Writer. Since this is a raw record set representation, all that is
+// done here is the copying of bytes from the underlying reader to the specified writer.
 func (rrs *RawRecordSet) WriteTo(w io.Writer) (int64, error) {
 	if rrs.Reader == nil {
 		return 0, ErrNoRecord
