@@ -323,7 +323,7 @@ func (rrs *RawRecordSet) ReadFrom(r io.Reader) (int64, error) {
 }
 
 // WriteTo writes the RawRecordSet to an io.Writer. Since this is a raw record set representation, all that is
-// done here is the copying of bytes from the underlying reader to the specified writer.
+// done here is copying bytes from the underlying reader to the specified writer.
 func (rrs *RawRecordSet) WriteTo(w io.Writer) (int64, error) {
 	if rrs.Reader == nil {
 		return 0, ErrNoRecord
