@@ -473,7 +473,7 @@ func TestChunkedRoundRobin(t *testing.T) {
 	}
 	for label, test := range testCases {
 		t.Run(label, func(t *testing.T) {
-			lb := &ChunkedRoundRobin{chunkSize: test.ChunkSize}
+			lb := &ChunkedRoundRobin{ChunkSize: test.ChunkSize}
 			msg := Message{}
 			var partition int
 			var i int

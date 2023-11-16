@@ -59,7 +59,7 @@ func (rr *RoundRobin) balance(partitions []int) int {
 // across all available partitions, but puts greater emphasis on batching by a chunk size
 // within a shorter time period than is possible via the regular RoundRobin Balancer.
 type ChunkedRoundRobin struct {
-	chunkSize int
+	ChunkSize int
 
 	mutex   sync.RWMutex
 	counter *uint64
@@ -67,20 +67,20 @@ type ChunkedRoundRobin struct {
 
 // Balance satisfies the Balancer interface.
 func (rr *ChunkedRoundRobin) Balance(msg Message, partitions ...int) int {
-	rr.mutex.RLock()
+	rr.mutex.Lock()
+	defer rr.mutex.Unlock()
 	if rr.counter == nil {
 		var nextToInsert uint64 = math.MaxUint64 // so that first increment overflows it back to 0
 		rr.counter = &nextToInsert
 	}
 	var next = rr.counter
-	rr.mutex.RUnlock()
 
 	// set default chunk size to 1
-	if rr.chunkSize < 1 {
-		rr.chunkSize = 1
+	if rr.ChunkSize < 1 {
+		rr.ChunkSize = 1
 	}
 
-	choice := (int(atomic.AddUint64(next, 1)) / rr.chunkSize) % len(partitions)
+	choice := (int(atomic.AddUint64(next, 1)) / rr.ChunkSize) % len(partitions)
 	return choice
 }
 
