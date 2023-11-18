@@ -141,7 +141,7 @@ func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (in
 	return cb(r, sz, n)
 }
 
-func readNewBytes(r *bufio.Reader, sz int, n int) ([]byte, int, error) {
+func readIntoAllocatedBytes(r *bufio.Reader, sz int, n int, makeBytes func(length int) []byte) ([]byte, int, error) {
 	var err error
 	var b []byte
 	var shortRead bool
@@ -163,6 +163,10 @@ func readNewBytes(r *bufio.Reader, sz int, n int) ([]byte, int, error) {
 	}
 
 	return b, sz, err
+}
+
+func readNewBytes(r *bufio.Reader, sz int, n int) ([]byte, int, error) {
+	return readIntoAllocatedBytes(r, sz, n, func(length int) []byte { return make([]byte, length) })
 }
 
 func readArrayLen(r *bufio.Reader, sz int, n *int) (int, error) {
