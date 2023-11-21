@@ -1269,9 +1269,9 @@ func (c *Conn) writeCompressedMessages(codec CompressionCodec, msgs ...Message) 
 
 // SetRequiredAcks sets the number of acknowledges from replicas that the
 // connection requests when producing messages.
-func (c *Conn) SetRequiredAcks(n int) error {
+func (c *Conn) SetRequiredAcks(n RequiredAcks) error {
 	switch n {
-	case -1, 1:
+	case RequireNone, RequireOne, RequireAll:
 		atomic.StoreInt32(&c.requiredAcks, int32(n))
 		return nil
 	default:
