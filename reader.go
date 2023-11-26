@@ -1054,6 +1054,10 @@ func (r *Reader) SetOffset(offset int64) error {
 // The method fails if the unable to connect partition leader, or unable to read the offset
 // given the ts, or if the reader has been closed.
 func (r *Reader) SetOffsetAt(ctx context.Context, t time.Time) error {
+	if r.useConsumerGroup() {
+		return errNotAvailableWithGroup
+	}
+
 	r.mutex.Lock()
 	if r.closed {
 		r.mutex.Unlock()
