@@ -52,7 +52,6 @@ func (rr *RoundRobin) Balance(msg Message, partitions ...int) int {
 }
 
 func (rr *RoundRobin) balance(partitions []int) int {
-
 	if rr.ChunkSize < 1 {
 		rr.ChunkSize = 1
 	}
