@@ -411,3 +411,68 @@ func TestLeastBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestRoundRobin(t *testing.T) {
+	testCases := map[string]struct {
+		Partitions []int
+		ChunkSize  int
+	}{
+		"default - odd partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6},
+		},
+		"negative chunk size - odd partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6},
+			ChunkSize:  -1,
+		},
+		"0 chunk size - odd partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6},
+			ChunkSize:  0,
+		},
+		"5 chunk size - odd partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6},
+			ChunkSize:  5,
+		},
+		"12 chunk size - odd partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6},
+			ChunkSize:  12,
+		},
+		"default - even partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6, 7},
+		},
+		"negative chunk size - even partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6, 7},
+			ChunkSize:  -1,
+		},
+		"0 chunk size - even partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6, 7},
+			ChunkSize:  0,
+		},
+		"5 chunk size - even partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6, 7},
+			ChunkSize:  5,
+		},
+		"12 chunk size - even partition count": {
+			Partitions: []int{0, 1, 2, 3, 4, 5, 6, 7},
+			ChunkSize:  12,
+		},
+	}
+	for label, test := range testCases {
+		t.Run(label, func(t *testing.T) {
+			lb := &RoundRobin{ChunkSize: test.ChunkSize}
+			msg := Message{}
+			var partition int
+			var i int
+			expectedChunkSize := test.ChunkSize
+			if expectedChunkSize < 1 {
+				expectedChunkSize = 1
+			}
+			partitions := test.Partitions
+			for i = 0; i < 50; i++ {
+				partition = lb.Balance(msg, partitions...)
+				if partition != i/expectedChunkSize%len(partitions) {
+					t.Error("Returned partition", partition, "expecting", i/expectedChunkSize%len(partitions))
+				}
+			}
+		})
+	}
+}
