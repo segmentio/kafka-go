@@ -41,7 +41,6 @@ func (f BalancerFunc) Balance(msg Message, partitions ...int) int {
 // This can be used to improve batch sizes.
 type RoundRobin struct {
 	ChunkSize int
-	mutex     sync.RWMutex
 	// Use a 32 bits integer so RoundRobin values don't need to be aligned to
 	// apply atomic increments.
 	counter uint32
@@ -53,15 +52,14 @@ func (rr *RoundRobin) Balance(msg Message, partitions ...int) int {
 }
 
 func (rr *RoundRobin) balance(partitions []int) int {
-	rr.mutex.Lock()
-	defer rr.mutex.Unlock()
 
 	if rr.ChunkSize < 1 {
 		rr.ChunkSize = 1
 	}
 
 	length := len(partitions)
-	offset := int(rr.counter / uint32(rr.ChunkSize))
+	counterNow := atomic.LoadUint32(&rr.counter)
+	offset := int(counterNow / uint32(rr.ChunkSize))
 	atomic.AddUint32(&rr.counter, 1)
 	return partitions[offset%length]
 }
