@@ -413,21 +413,6 @@ func TestLeastBytes(t *testing.T) {
 }
 
 func TestRoundRobin(t *testing.T) {
-	t.Run("test_round_robin", func(t *testing.T) {
-		lb := &RoundRobin{}
-		msg := Message{Key: nil}
-		var partition int
-		var i int
-		for i = 0; i < 50; i++ {
-			partition = lb.Balance(msg, []int{0, 1, 2, 3, 4, 5, 6}...)
-			if partition != i%7 {
-				t.Error("Returned partition", partition, "expecting", i%7)
-			}
-		}
-	})
-}
-
-func TestChunkedRoundRobin(t *testing.T) {
 	testCases := map[string]struct {
 		Partitions []int
 		ChunkSize  int
@@ -473,7 +458,7 @@ func TestChunkedRoundRobin(t *testing.T) {
 	}
 	for label, test := range testCases {
 		t.Run(label, func(t *testing.T) {
-			lb := &ChunkedRoundRobin{ChunkSize: test.ChunkSize}
+			lb := &RoundRobin{ChunkSize: test.ChunkSize}
 			msg := Message{}
 			var partition int
 			var i int

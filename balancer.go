@@ -4,7 +4,6 @@ import (
 	"hash"
 	"hash/crc32"
 	"hash/fnv"
-	"math"
 	"math/rand"
 	"sort"
 	"sync"
@@ -37,11 +36,14 @@ func (f BalancerFunc) Balance(msg Message, partitions ...int) int {
 }
 
 // RoundRobin is an Balancer implementation that equally distributes messages
-// across all available partitions.
+// across all available partitions.  It can take an optional chunk size to send
+// ChunkSize messages to the same partition before moving to the next partition
 type RoundRobin struct {
+	ChunkSize int
+	mutex     sync.RWMutex
 	// Use a 32 bits integer so RoundRobin values don't need to be aligned to
 	// apply atomic increments.
-	offset uint32
+	counter uint32
 }
 
 // Balance satisfies the Balancer interface.
@@ -50,38 +52,17 @@ func (rr *RoundRobin) Balance(msg Message, partitions ...int) int {
 }
 
 func (rr *RoundRobin) balance(partitions []int) int {
-	length := uint32(len(partitions))
-	offset := atomic.AddUint32(&rr.offset, 1) - 1
-	return partitions[offset%length]
-}
-
-// ChunkedRoundRobin is a Balancer implementation that equally distributes messages
-// across all available partitions, but puts greater emphasis on batching by a chunk size
-// within a shorter time period than is possible via the regular RoundRobin Balancer.
-type ChunkedRoundRobin struct {
-	ChunkSize int
-
-	mutex   sync.RWMutex
-	counter *uint64
-}
-
-// Balance satisfies the Balancer interface.
-func (rr *ChunkedRoundRobin) Balance(msg Message, partitions ...int) int {
 	rr.mutex.Lock()
 	defer rr.mutex.Unlock()
-	if rr.counter == nil {
-		var nextToInsert uint64 = math.MaxUint64 // so that first increment overflows it back to 0
-		rr.counter = &nextToInsert
-	}
-	var next = rr.counter
 
-	// set default chunk size to 1.
 	if rr.ChunkSize < 1 {
 		rr.ChunkSize = 1
 	}
 
-	choice := (int(atomic.AddUint64(next, 1)) / rr.ChunkSize) % len(partitions)
-	return choice
+	length := len(partitions)
+	offset := int(rr.counter / uint32(rr.ChunkSize))
+	atomic.AddUint32(&rr.counter, 1)
+	return partitions[offset%length]
 }
 
 // LeastBytes is a Balancer implementation that routes messages to the partition
