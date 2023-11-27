@@ -37,7 +37,8 @@ func (f BalancerFunc) Balance(msg Message, partitions ...int) int {
 
 // RoundRobin is an Balancer implementation that equally distributes messages
 // across all available partitions.  It can take an optional chunk size to send
-// ChunkSize messages to the same partition before moving to the next partition
+// ChunkSize messages to the same partition before moving to the next partition.
+// This can be used to improve batch sizes.
 type RoundRobin struct {
 	ChunkSize int
 	mutex     sync.RWMutex
