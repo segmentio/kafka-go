@@ -229,7 +229,7 @@ var overrideApiTypes [numApis]map[OverrideTypeKey]apiType
 
 func RegisterOverride(req, res Message, key OverrideTypeKey) {
 	k1 := req.ApiKey()
-	k2 := req.ApiKey()
+	k2 := res.ApiKey()
 
 	if k1 != k2 {
 		panic(fmt.Sprintf("[%T/%T]: request and response API keys mismatch: %d != %d", req, res, k1, k2))
