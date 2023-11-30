@@ -213,7 +213,7 @@ func Register(req, res Message) {
 	}
 }
 
-// OverrideTypeMessage is an interface implemented by messages that which to override the standard
+// OverrideTypeMessage is an interface implemented by messages that want to override the standard
 // request/response types for a given API.
 type OverrideTypeMessage interface {
 	TypeKey() OverrideTypeKey
