@@ -1,6 +1,7 @@
 package prototest
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"reflect"
@@ -46,6 +47,13 @@ func loadValue(v reflect.Value) (reset func()) {
 			records := loadRecords(x)
 			resetFunc := func() {
 				f.Set(reflect.ValueOf(protocol.NewRecordReader(makeRecords(records)...)))
+			}
+			resetFunc()
+			resets = append(resets, resetFunc)
+		case io.Reader:
+			buf, _ := io.ReadAll(x)
+			resetFunc := func() {
+				f.Set(reflect.ValueOf(bytes.NewBuffer(buf)))
 			}
 			resetFunc()
 			resets = append(resets, resetFunc)

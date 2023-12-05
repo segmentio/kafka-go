@@ -46,6 +46,39 @@ func TestRequest(t *testing.T, version int16, msg protocol.Message) {
 	})
 }
 
+// TestRequestWithOverride validates requests that have an overridden type. For requests with type overrides, we
+// double-serialize the request to ensure the resulting encoding of the overridden and original type are identical.
+func TestRequestWithOverride(t *testing.T, version int16, msg protocol.Message) {
+	reset := load(msg)
+
+	t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+		b1 := &bytes.Buffer{}
+
+		if err := protocol.WriteRequest(b1, version, 1234, "me", msg); err != nil {
+			t.Fatal(err)
+		}
+
+		reset()
+		t.Logf("\n%s\n", hex.Dump(b1.Bytes()))
+
+		_, _, _, req, err := protocol.ReadRequest(b1)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		b2 := &bytes.Buffer{}
+		if err := protocol.WriteRequest(b2, version, 1234, "me", req); err != nil {
+			t.Fatal(err)
+		}
+
+		if !deepEqual(b1, b2) {
+			t.Errorf("request message mismatch:")
+			t.Logf("expected: %+v", hex.Dump(b1.Bytes()))
+			t.Logf("found:    %+v", hex.Dump(b2.Bytes()))
+		}
+	})
+}
+
 func BenchmarkRequest(b *testing.B, version int16, msg protocol.Message) {
 	reset := load(msg)
 
