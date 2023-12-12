@@ -54,6 +54,14 @@ func (c *Codec) zstdLevel() zstd.EncoderLevel {
 	return zstd.EncoderLevelFromZstd(c.level())
 }
 
+func (c *Codec) windowSize() int {
+	if c.WindowSize != 0 {
+		return c.WindowSize
+	}
+	// TODO: check this default
+	return 8 << 20
+}
+
 var decoderPool sync.Pool // *zstd.Decoder
 
 type reader struct {
@@ -102,6 +110,7 @@ func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 			zstd.WithEncoderLevel(c.zstdLevel()),
 			zstd.WithEncoderConcurrency(1),
 			zstd.WithZeroFrames(true),
+			zstd.WithWindowSize(c.windowSize()),
 		)
 		if err != nil {
 			p.err = err
