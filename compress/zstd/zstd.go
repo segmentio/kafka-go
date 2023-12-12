@@ -16,9 +16,10 @@ type Codec struct {
 	// Default to 3.
 	Level int
 
-	WindowSize int
 	// The window size configured on writers created by the codec.
+	//
 	// Default to 8 << 20.
+	WindowSize int
 
 	encoderPool sync.Pool // *encoder
 }
