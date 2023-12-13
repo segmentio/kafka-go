@@ -63,7 +63,9 @@ func (c *Codec) windowSize() int {
 	if c.WindowSize != 0 {
 		return c.WindowSize
 	}
-	// TODO: check this default
+	// We use the same default as the zstd package. That is not exposed
+	// so we hardcode it here
+	// https://github.com/klauspost/compress/blob/6bf960e5bd5d38ae691c390c245c33e175a27cdb/zstd/encoder_options.go#L40
 	return 8 << 20
 }
 
