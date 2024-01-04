@@ -40,12 +40,12 @@ jobs:
     steps: &steps
     - checkout
     - restore_cache:
-        key: kafka-go-mod-v2-{{ checksum "go.sum" }}-1
+        key: kafka-go-mod-v3-{{ checksum "go.sum" }}-1
     - run:
         name: Download dependencies
         command: go mod download
     - save_cache:
-        key: kafka-go-mod-v2-{{ checksum "go.sum" }}-1
+        key: kafka-go-mod-v3-{{ checksum "go.sum" }}-1
         paths:
         - /go/pkg/mod
     - run:
