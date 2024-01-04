@@ -858,6 +858,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		t.Run(test.scenario, func(t *testing.T) {
 			// It appears that some of the tests depend on all these tests being
 			// run concurrently to pass... this is brittle and should be fixed
@@ -865,8 +866,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 			t.Parallel()
 
 			topic := makeTopic()
-			partitions := test.partitions
-			createTopic(t, topic, partitions)
+			createTopic(t, topic, test.partitions)
 			defer deleteTopic(t, topic)
 
 			groupID := makeGroupID()
@@ -876,7 +876,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 				Topic:             topic,
 				GroupID:           groupID,
 				HeartbeatInterval: 2 * time.Second,
-				CommitInterval:    commitInterval,
+				CommitInterval:    test.commitInterval,
 				RebalanceTimeout:  2 * time.Second,
 				RetentionTime:     time.Hour,
 				MinBytes:          1,
@@ -887,8 +887,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			function := test.function
-			function(t, ctx, r)
+			test.function(t, ctx, r)
 		})
 	}
 }
