@@ -870,7 +870,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 			defer deleteTopic(t, topic)
 
 			groupID := makeGroupID()
-			commitInterval := test.commitInterval
+
 			r := NewReader(ReaderConfig{
 				Brokers:           []string{"localhost:9092"},
 				Topic:             topic,
