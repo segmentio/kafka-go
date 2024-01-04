@@ -865,16 +865,18 @@ func TestReaderConsumerGroup(t *testing.T) {
 			t.Parallel()
 
 			topic := makeTopic()
-			createTopic(t, topic, test.partitions)
+			partitions := test.partitions
+			createTopic(t, topic, partitions)
 			defer deleteTopic(t, topic)
 
 			groupID := makeGroupID()
+			commitInterval := test.commitInterval
 			r := NewReader(ReaderConfig{
 				Brokers:           []string{"localhost:9092"},
 				Topic:             topic,
 				GroupID:           groupID,
 				HeartbeatInterval: 2 * time.Second,
-				CommitInterval:    test.commitInterval,
+				CommitInterval:    commitInterval,
 				RebalanceTimeout:  2 * time.Second,
 				RetentionTime:     time.Hour,
 				MinBytes:          1,
@@ -885,7 +887,8 @@ func TestReaderConsumerGroup(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			test.function(t, ctx, r)
+			function := test.function
+			function(t, ctx, r)
 		})
 	}
 }
