@@ -2,7 +2,7 @@ version: 2
 jobs:
   lint:
     docker:
-      - image: golangci/golangci-lint:v1.45-alpine
+      - image: golangci/golangci-lint:v1.53-alpine
     steps:
       - checkout
       - run: golangci-lint run
