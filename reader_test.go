@@ -934,6 +934,8 @@ func testReaderConsumerGroupVerifyOffsetCommitted(t *testing.T, ctx context.Cont
 		t.Errorf("bad commit message: %v", err)
 	}
 
+	time.Sleep(5 * time.Second)
+
 	offsets := getOffsets(t, r.config)
 	if expected := map[int]int64{0: m.Offset + 1}; !reflect.DeepEqual(expected, offsets) {
 		t.Errorf("expected %v; got %v", expected, offsets)
