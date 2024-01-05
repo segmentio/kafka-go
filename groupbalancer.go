@@ -41,14 +41,15 @@ type GroupBalancer interface {
 // RangeGroupBalancer groups consumers by partition
 //
 // Example: 5 partitions, 2 consumers
-// 		C0: [0, 1, 2]
-// 		C1: [3, 4]
+//
+//	C0: [0, 1, 2]
+//	C1: [3, 4]
 //
 // Example: 6 partitions, 3 consumers
-// 		C0: [0, 1]
-// 		C1: [2, 3]
-// 		C2: [4, 5]
 //
+//	C0: [0, 1]
+//	C1: [2, 3]
+//	C2: [4, 5]
 type RangeGroupBalancer struct{}
 
 func (r RangeGroupBalancer) ProtocolName() string {
@@ -92,14 +93,15 @@ func (r RangeGroupBalancer) AssignGroups(members []GroupMember, topicPartitions 
 // RoundrobinGroupBalancer divides partitions evenly among consumers
 //
 // Example: 5 partitions, 2 consumers
-// 		C0: [0, 2, 4]
-// 		C1: [1, 3]
+//
+//	C0: [0, 2, 4]
+//	C1: [1, 3]
 //
 // Example: 6 partitions, 3 consumers
-// 		C0: [0, 3]
-// 		C1: [1, 4]
-// 		C2: [2, 5]
 //
+//	C0: [0, 3]
+//	C1: [1, 4]
+//	C2: [2, 5]
 type RoundRobinGroupBalancer struct{}
 
 func (r RoundRobinGroupBalancer) ProtocolName() string {

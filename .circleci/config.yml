@@ -2,7 +2,7 @@ version: 2
 jobs:
   lint:
     docker:
-      - image: golangci/golangci-lint:v1.45-alpine
+      - image: golangci/golangci-lint:v1.53-alpine
     steps:
       - checkout
       - run: golangci-lint run
@@ -10,11 +10,11 @@ jobs:
   # The kafka 0.10 tests are maintained as a separate configuration because
   # kafka only supported plain text SASL in this version.
   kafka-010:
-    working_directory: &working_directory /go/src/github.com/segmentio/kafka-go
+    working_directory: &working_directory /home/circleci/src/github.com/segmentio/kafka-go
     environment:
       KAFKA_VERSION: "0.10.1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -40,12 +40,12 @@ jobs:
     steps: &steps
     - checkout
     - restore_cache:
-        key: kafka-go-mod-{{ checksum "go.sum" }}-1
+        key: kafka-go-mod-v3-{{ checksum "go.sum" }}-1
     - run:
         name: Download dependencies
         command: go mod download
     - save_cache:
-        key: kafka-go-mod-{{ checksum "go.sum" }}-1
+        key: kafka-go-mod-v3-{{ checksum "go.sum" }}-1
         paths:
         - /go/pkg/mod
     - run:
@@ -67,7 +67,7 @@ jobs:
     environment:
       KAFKA_VERSION: "0.11.0"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -99,7 +99,7 @@ jobs:
     environment:
       KAFKA_VERSION: "1.0.1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -115,7 +115,7 @@ jobs:
     environment:
       KAFKA_VERSION: "1.1.1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -131,7 +131,7 @@ jobs:
     environment:
       KAFKA_VERSION: "2.0.1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -150,7 +150,7 @@ jobs:
     environment:
       KAFKA_VERSION: "2.1.1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -176,7 +176,7 @@ jobs:
     environment:
       KAFKA_VERSION: "2.2.2"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -193,7 +193,7 @@ jobs:
     environment:
       KAFKA_VERSION: "2.3.1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -221,7 +221,7 @@ jobs:
       # TODO: Figure out why these are happening and fix them (they don't appear to be new).
       KAFKA_SKIP_NETTEST: "1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -249,7 +249,7 @@ jobs:
       # TODO: Figure out why these are happening and fix them (they don't appear to be new).
       KAFKA_SKIP_NETTEST: "1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181
@@ -279,7 +279,7 @@ jobs:
       # TODO: Figure out why these are happening and fix them (they don't appear to be new).
       KAFKA_SKIP_NETTEST: "1"
     docker:
-    - image: circleci/golang
+    - image: cimg/go:1.18
     - image: wurstmeister/zookeeper
       ports:
       - 2181:2181

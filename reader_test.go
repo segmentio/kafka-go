@@ -858,6 +858,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		t.Run(test.scenario, func(t *testing.T) {
 			// It appears that some of the tests depend on all these tests being
 			// run concurrently to pass... this is brittle and should be fixed
@@ -869,6 +870,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 			defer deleteTopic(t, topic)
 
 			groupID := makeGroupID()
+
 			r := NewReader(ReaderConfig{
 				Brokers:           []string{"localhost:9092"},
 				Topic:             topic,
@@ -931,6 +933,8 @@ func testReaderConsumerGroupVerifyOffsetCommitted(t *testing.T, ctx context.Cont
 	if err := r.CommitMessages(ctx, m); err != nil {
 		t.Errorf("bad commit message: %v", err)
 	}
+
+	time.Sleep(5 * time.Second)
 
 	offsets := getOffsets(t, r.config)
 	if expected := map[int]int64{0: m.Offset + 1}; !reflect.DeepEqual(expected, offsets) {
