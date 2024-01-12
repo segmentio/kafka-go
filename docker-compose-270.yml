@@ -12,7 +12,7 @@ services:
 
   kafka:
     container_name: kafka
-    image: bitnami/kafka:2.4.1
+    image: bitnami/kafka:2.7.0
     restart: on-failure:3
     links:
       - zookeeper
