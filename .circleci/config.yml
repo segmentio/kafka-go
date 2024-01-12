@@ -20,8 +20,8 @@ jobs:
         ALLOW_ANONYMOUS_LOGIN: yes
     - image: bitnami/kafka:0.10.2.1
       ports:
-        - 9092:9092
-        - 9093:9093
+      - 9092:9092
+      - 9093:9093
       environment:
         KAFKA_VERSION: "0.10.1"
 
