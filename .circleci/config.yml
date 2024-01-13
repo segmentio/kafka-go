@@ -94,7 +94,7 @@ jobs:
         KAFKA_DELETE_TOPIC_ENABLE: 'true'
         KAFKA_ADVERTISED_HOST_NAME: 'localhost'
         KAFKA_ADVERTISED_PORT: '9092'
-        KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+        KAFKA_ZOOKEEPER_CONNECT: localhost:2181
         KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
         KAFKA_CFG_MESSAGE_MAX_BYTES: '200000000'
 
@@ -109,7 +109,7 @@ jobs:
         - "/bin/bash"
         - "-c"
         # hacking around necessary server.properties
-        - echo -e '\nsasl.enabled.mechanisms=PLAIN,SCRAM-SHA-256,SCRAM-SHA-512\nmessage.max.bytes=200000000\nauto.create.topics.enable=true\nport=9092' >> /opt/bitnami/kafka/config/server.properties; echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_server_jaas.conf; /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram; exec /app-entrypoint.sh /run.sh
+        - echo -e '\nsasl.enabled.mechanisms=PLAIN,SCRAM-SHA-256,SCRAM-SHA-512\nmessage.max.bytes=200000000\nauto.create.topics.enable=true\nport=9092' >> /opt/bitnami/kafka/config/server.properties; echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_server_jaas.conf; /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram; exec /app-entrypoint.sh /run.sh
     steps: *steps
 
   kafka-101:
