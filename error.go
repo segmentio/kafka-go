@@ -119,6 +119,7 @@ const (
 	InconsistentClusterID              Error = 104
 	TransactionalIDNotFound            Error = 105
 	FetchSessionTopicIDError           Error = 106
+	PartitionEoF                       Error = 107
 )
 
 // Error satisfies the error interface.
@@ -377,6 +378,8 @@ func (e Error) Title() string {
 		return "Transactional ID Not Found"
 	case FetchSessionTopicIDError:
 		return "Fetch Session Topic ID Error"
+	case PartitionEoF:
+		return "Partition End of File"
 	}
 	return ""
 }
@@ -586,6 +589,8 @@ func (e Error) Description() string {
 		return "The transactionalId could not be found"
 	case FetchSessionTopicIDError:
 		return "The fetch session encountered inconsistent topic ID usage"
+	case PartitionEoF:
+		return "Consumer reached the end of partition"
 	}
 	return ""
 }
