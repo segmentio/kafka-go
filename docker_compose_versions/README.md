@@ -10,7 +10,7 @@ This document outlines how to create a docker-compose file for a specific Bitnam
 - Sometimes there is a need to understand how the set up is being done. To locate the appropriate Kafka release in the repo [bitnami/containers](https://github.com/bitnami/containers), Go through the [kafka commit history](https://github.com/bitnami/containers/commits/main/bitnami/kafka). 
 - Once a commit is located, Refer README.md, Dockerfile, entrypoint and various init scripts to understand the environment variables to config server.properties mapping conventions. Alternatively, you can spin up the required Kafka image and refer the mapping inside the container.
 - Ensure you follow the Environment variable conventions in your docker-compose. Without proper Environment variables, Kafka cluster cannot start or can start with undesired configs. For example, Since Kafka version 2.3, all server.properties docker-compose Environment configs start with `KAFKA_CFG_<config_with_underscore>`
-- Older versions of Bitnami Kafka (i.e) v0.10, v0.11 until v2.3 have different conventions and limited docker-compose environment variables exposed for configs needed in server.properties
+- Older versions of Bitnami Kafka have different conventions and limited docker-compose environment variables exposed for configs needed in server.properties
 
 
 In kafka-go, for all the test cases to succeed, Kafka cluster should have following server.properties along with a relevant kafka_jaas.conf mentioned in the KAFKA_OPTS. Goal is to ensure that the docker-compose file generates below server.properties.
