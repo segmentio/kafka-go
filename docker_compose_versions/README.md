@@ -48,10 +48,10 @@ zookeeper.connection.timeout.ms=6000
 ```
 
 
-## Various Bitnami Kafka version issues for circleci
+## Various Bitnami Kafka version issues observed in circleci
 
 
-### Kafka versions v101, v111, v201, v211 and v221
+### Kafka v101, v111, v201, v211 and v221
 
 
 In kafka-go repo, all the tests require sasl.enabled.mechanisms as PLAIN,SCRAM-SHA-256,SCRAM-SHA-512 for the Kafka cluster
@@ -73,7 +73,7 @@ NOTE:
 - There is no Bitnami Kafka image for v222 hence testing has been performed on v221
 
 
-### Kafka versions 231
+### Kafka v231
 
 In Bitnami Kafka v2.3, all server.properties docker-compose Environment configs start with `KAFKA_CFG_<config_with_underscore>`. However, it is not picking the custom populated kafka_jaas.conf. 
 
