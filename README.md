@@ -108,7 +108,7 @@ if err := conn.Close(); err != nil {
 ```
 
 ### To Create Topics
-By default kafka has the `auto.create.topics.enable='true'` (`KAFKA_AUTO_CREATE_TOPICS_ENABLE='true'` in the wurstmeister/kafka kafka docker image). If this value is set to `'true'` then topics will be created as a side effect of `kafka.DialLeader` like so:
+By default kafka has the `auto.create.topics.enable='true'` (`KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE='true'` in the bitnami/kafka kafka docker image). If this value is set to `'true'` then topics will be created as a side effect of `kafka.DialLeader` like so:
 ```go
 // to create topics when auto.create.topics.enable='true'
 conn, err := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", "my-topic", 0)
