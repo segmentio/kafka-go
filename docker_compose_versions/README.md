@@ -1,4 +1,4 @@
-failedfailed # Bitnami Kafka
+# Bitnami Kafka
 
 This document outlines how to create a docker-compose file for a specific Bitnami Kafka version 
 
