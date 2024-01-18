@@ -1,14 +1,4 @@
-#
-# References:
-# - https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=0.10.2.1
-# - https://github.com/bitnami/containers/tree/c4240f0525916a418245c7ef46d9534a7a212c92/bitnami/kafka
-#
-# run test cases: 
-# go clean -cache; KAFKA_SKIP_NETTEST=1 KAFKA_VERSION=0.10.2.1 go test -race -cover ./...;
-#
-# NOTE:
-# - Refer https://hub.docker.com/r/bitnami/kafka/tags for the complete list
-#
+# See https://hub.docker.com/r/bitnami/kafka/tags for the complete list.
 version: '3'
 services:
   zookeeper:
@@ -30,7 +20,6 @@ services:
       - 9093:9093
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_CREATE_TOPICS: 'test-writer-0:3:1,test-writer-1:3:1'
       KAFKA_DELETE_TOPIC_ENABLE: 'true'
       KAFKA_ADVERTISED_HOST_NAME: 'localhost'
       KAFKA_ADVERTISED_PORT: '9092'

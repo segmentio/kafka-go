@@ -1,14 +1,4 @@
-#
-# References:
-# - https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=0.11.0
-# - https://github.com/bitnami/containers/tree/7724adf655e4ca9aac69d606d41ad329ef31eeca/bitnami/kafka
-#
-# run test cases: 
-# go clean -cache; KAFKA_SKIP_NETTEST=1 KAFKA_VERSION=0.11.0 go test -race -cover ./...;
-#
-# NOTE:
-# - Refer https://hub.docker.com/r/bitnami/kafka/tags for the complete list
-#
+# See https://hub.docker.com/r/bitnami/kafka/tags for the complete list.
 version: '3'
 services:
   zookeeper:
@@ -21,7 +11,7 @@ services:
       ALLOW_ANONYMOUS_LOGIN: yes
   kafka:
     container_name: kafka
-    image: bitnami/kafka:0.11.0-0-r0
+    image: bitnami/kafka:0.11.0-1-r1
     restart: on-failure:3
     links:
       - zookeeper
@@ -42,5 +32,5 @@ services:
     entrypoint:
       - "/bin/bash"
       - "-c"
-      # hacking around necessary server.properties. 0.11.0 image is not honoring
+      # 0.11.0 image is not honoring some configs required in server.properties
       - echo -e '\nsasl.enabled.mechanisms=PLAIN,SCRAM-SHA-256,SCRAM-SHA-512\nmessage.max.bytes=200000000\nauto.create.topics.enable=true\nport=9092' >> /opt/bitnami/kafka/config/server.properties; echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_server_jaas.conf; /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram; exec /app-entrypoint.sh /run.sh
