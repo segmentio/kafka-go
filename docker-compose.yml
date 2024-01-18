@@ -31,12 +31,10 @@ services:
       KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
       KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
       KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
-
       KAFKA_INTER_BROKER_USER: adminplain
       KAFKA_INTER_BROKER_PASSWORD: admin-secret
       KAFKA_BROKER_USER: adminplain
       KAFKA_BROKER_PASSWORD: admin-secret
-
       ALLOW_PLAINTEXT_LISTENER: yes
     entrypoint:
       - "/bin/bash"
