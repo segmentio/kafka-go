@@ -48,6 +48,20 @@ zookeeper.connection.timeout.ms=6000
 ```
 
 
+## run docker-compose and test cases
+
+run docker-compose
+```
+# docker-compose -f ./docker_compose_versions/docker-compose-<kafka_version>.yml up -d
+```
+
+
+run test cases
+```
+# go clean -cache; KAFKA_SKIP_NETTEST=1 KAFKA_VERSION=<a.b.c> go test -race -cover ./...;
+```
+
+
 ## Various Bitnami Kafka version issues observed in circleci
 
 
