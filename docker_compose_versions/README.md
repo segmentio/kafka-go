@@ -1,15 +1,15 @@
 # Bitnami Kafka
 
-This document outlines how to create a docker-compose file for a specific Bitnami Kafka version 
+This document outlines how to create a docker-compose file for a specific Bitnami Kafka version.
 
 
 ## Steps to create docker-compose
 
-- Refer [docker-hub Bitnami Kafka tags](https://hub.docker.com/r/bitnami/kafka/tags) and sort by NEWEST to locate the image preferred for example: `2.7.0`
-- There is documentation in the (main branch)[https://github.com/bitnami/containers/blob/main/bitnami/kafka/README.md] for environment config setup information. Refer `Notable Changes` section.
-- Sometimes there is a need to understand how the set up is being done. To locate the appropriate Kafka release in the repo [bitnami/containers](https://github.com/bitnami/containers), Go through the [kafka commit history](https://github.com/bitnami/containers/commits/main/bitnami/kafka). 
-- Once a commit is located, Refer README.md, Dockerfile, entrypoint and various init scripts to understand the environment variables to config server.properties mapping conventions. Alternatively, you can spin up the required Kafka image and refer the mapping inside the container.
-- Ensure you follow the Environment variable conventions in your docker-compose. Without proper Environment variables, Kafka cluster cannot start or can start with undesired configs. For example, Since Kafka version 2.3, all server.properties docker-compose Environment configs start with `KAFKA_CFG_<config_with_underscore>`
+- Refer to [docker-hub Bitnami Kafka tags](https://hub.docker.com/r/bitnami/kafka/tags) and sort by NEWEST to locate the image preferred, for example: `2.7.0`
+- There is documentation in the (main branch)[https://github.com/bitnami/containers/blob/main/bitnami/kafka/README.md] for environment config setup information. Refer to the `Notable Changes` section.
+- Sometimes there is a need to understand how the set up is being done. To locate the appropriate Kafka release in the repo [bitnami/containers](https://github.com/bitnami/containers), go through the [kafka commit history](https://github.com/bitnami/containers/commits/main/bitnami/kafka).
+- Once a commit is located, Refer to README.md, Dockerfile, entrypoint and various init scripts to understand the environment variables to config server.properties mapping conventions. Alternatively, you can spin up the required Kafka image and refer the mapping inside the container.
+- Ensure you follow the environment variable conventions in your docker-compose. Without proper environment variables, the Kafka cluster cannot start or can start with undesired configs. For example, Since Kafka version 2.3, all server.properties docker-compose environment configs start with `KAFKA_CFG_<config_with_underscore>`
 - Older versions of Bitnami Kafka have different conventions and limited docker-compose environment variables exposed for configs needed in server.properties
 
 
@@ -68,10 +68,10 @@ run test cases
 ### Kafka v101, v111, v201, v211 and v221
 
 
-In kafka-go repo, all the tests require sasl.enabled.mechanisms as PLAIN,SCRAM-SHA-256,SCRAM-SHA-512 for the Kafka cluster
+In kafka-go repo, all the tests require sasl.enabled.mechanisms as PLAIN,SCRAM-SHA-256,SCRAM-SHA-512 for the Kafka cluster.
 
 
-It has been observed for Kafka v101, v111, v201, v211 and v221 which are used in the circleci for build are having issues with SCRAM.
+It has been observed for Kafka v101, v111, v201, v211 and v221 which are used in the circleci for build have issues with SCRAM.
 
 
 There is no way to override the config sasl.enabled.mechanisms causing Kafka cluster to start up as PLAIN.
@@ -89,10 +89,10 @@ NOTE:
 
 ### Kafka v231
 
-In Bitnami Kafka v2.3, all server.properties docker-compose Environment configs start with `KAFKA_CFG_<config_with_underscore>`. However, it is not picking the custom populated kafka_jaas.conf. 
+In Bitnami Kafka v2.3, all server.properties docker-compose environment configs start with `KAFKA_CFG_<config_with_underscore>`. However, it is not picking the custom populated kafka_jaas.conf.
 
 
-After a lot of debugging, it has been noticed that there aren't enough privileges to create the kafka_jaas.conf. Hence below environment variables need to be added in docker-compose to generate the kafka_jaas.conf. This issue is not noticed after kafka v2.3
+After a lot of debugging, it has been noticed that there aren't enough privileges to create the kafka_jaas.conf. Hence the environment variables below need to be added in docker-compose to generate the kafka_jaas.conf. This issue is not noticed after kafka v2.3
 
 
 ```
@@ -108,7 +108,7 @@ There is a docker-compose file `docker-compose-231.yml` in the folder `kafka-go/
 ## References
 
 
-For user reference, please find the some of the older kafka versions commits from the [kafka commit history](https://github.com/bitnami/containers/commits/main/bitnami/kafka). Kafka versions with no commit history, data is populated with the latest version available for the tag.
+For user reference, please find the some of the older kafka versions commits from the [kafka commit history](https://github.com/bitnami/containers/commits/main/bitnami/kafka). For Kafka versions with no commit history, data is populated with the latest version available for the tag.
 
 
 ### Kafka v010: docker-compose reference: `kafka-go/docker_compose_versions/docker-compose-010.yml`
