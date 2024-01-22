@@ -149,4 +149,3 @@ For user reference, please find the some of the older kafka versions commits fro
 ### Kafka v231: docker-compose reference: `kafka-go/docker_compose_versions/docker-compose-231.yml`
 - [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=2.3.1)
 - [kafka commit](https://github.com/bitnami/containers/tree/ae572036b5281456b0086345fec0bdb74f7cf3a3/bitnami/kafka)
-
