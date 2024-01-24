@@ -11,7 +11,7 @@ services:
       ALLOW_ANONYMOUS_LOGIN: yes
   kafka:
     container_name: kafka
-    image: bitnami/kafka:2.3.1-ol-7-r61
+    image: bitnami/kafka:2.7.0
     restart: on-failure:3
     links:
       - zookeeper
@@ -31,12 +31,9 @@ services:
       KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
       KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
       KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
-      KAFKA_INTER_BROKER_USER: adminplain
-      KAFKA_INTER_BROKER_PASSWORD: admin-secret
-      KAFKA_BROKER_USER: adminplain
-      KAFKA_BROKER_PASSWORD: admin-secret
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_jaas.conf"
       ALLOW_PLAINTEXT_LISTENER: yes
     entrypoint:
       - "/bin/bash"
       - "-c"
-      - /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config "SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]" --entity-type users --entity-name adminscram; exec /entrypoint.sh /run.sh
+      - echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_jaas.conf; /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config "SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]" --entity-type users --entity-name adminscram; exec /entrypoint.sh /run.sh

@@ -9,34 +9,40 @@ jobs:
 
   # The kafka 0.10 tests are maintained as a separate configuration because
   # kafka only supported plain text SASL in this version.
+  # NOTE: Bitnami does not have suport for kafka version 0.10.1.1. Hence we use 0.10.2.1
   kafka-010:
     working_directory: &working_directory /go/src/github.com/segmentio/kafka-go
-    environment:
-      KAFKA_VERSION: "0.10.1"
     docker:
     - image: circleci/golang
-    - image: wurstmeister/zookeeper
+    - image: bitnami/zookeeper:latest
       ports:
       - 2181:2181
-    - image: wurstmeister/kafka:0.10.1.1
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:0.10.2.1
       ports:
       - 9092:9092
       - 9093:9093
       environment:
-        KAFKA_BROKER_ID: '1'
-        KAFKA_CREATE_TOPICS: 'test-writer-0:3:1,test-writer-1:3:1'
+        KAFKA_BROKER_ID: 1
         KAFKA_DELETE_TOPIC_ENABLE: 'true'
         KAFKA_ADVERTISED_HOST_NAME: 'localhost'
         KAFKA_ADVERTISED_PORT: '9092'
-        KAFKA_ZOOKEEPER_CONNECT: 'localhost:2181'
+        KAFKA_ZOOKEEPER_CONNECT: localhost:2181
         KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
         KAFKA_MESSAGE_MAX_BYTES: '200000000'
         KAFKA_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
         KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
-        KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN'
-        KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
-        CUSTOM_INIT_SCRIPT: |-
-          echo -e 'KafkaServer {\norg.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
+        KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
+        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
+        KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_server_jaas.conf"
+        ALLOW_PLAINTEXT_LISTENER: yes
+      entrypoint:
+        - "/bin/bash"
+        - "-c"
+        - echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_server_jaas.conf; /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram; exec /app-entrypoint.sh /start-kafka.sh
+
     steps: &steps
     - checkout
     - restore_cache:
@@ -59,133 +65,37 @@ jobs:
         working_directory: ./sasl/aws_msk_iam
         command: go test -race -cover ./...
 
-  # Starting at version 0.11, the kafka features and configuration remained
-  # mostly stable, so we can use this CI job configuration as template for other
-  # versions as well.
   kafka-011:
     working_directory: *working_directory
     environment:
       KAFKA_VERSION: "0.11.0"
     docker:
     - image: circleci/golang
-    - image: wurstmeister/zookeeper
+    - image: bitnami/zookeeper:latest
       ports:
       - 2181:2181
-    - image: wurstmeister/kafka:2.11-0.11.0.3
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:0.11.0-1-r1
       ports:
       - 9092:9092
       - 9093:9093
-      environment: &environment
-        KAFKA_BROKER_ID: '1'
-        KAFKA_CREATE_TOPICS: 'test-writer-0:3:1,test-writer-1:3:1'
+      environment:
+        KAFKA_BROKER_ID: 1
         KAFKA_DELETE_TOPIC_ENABLE: 'true'
         KAFKA_ADVERTISED_HOST_NAME: 'localhost'
         KAFKA_ADVERTISED_PORT: '9092'
-        KAFKA_ZOOKEEPER_CONNECT: 'localhost:2181'
-        KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-        KAFKA_MESSAGE_MAX_BYTES: '200000000'
+        KAFKA_ZOOKEEPER_CONNECT: localhost:2181
         KAFKA_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
         KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
-        KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
-        KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka_server_jaas.conf"
-        CUSTOM_INIT_SCRIPT: |-
-          apk add libgcc;
-          echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
-          /opt/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
-    steps: *steps
-
-  kafka-101:
-    working_directory: *working_directory
-    environment:
-      KAFKA_VERSION: "1.0.1"
-    docker:
-    - image: circleci/golang
-    - image: wurstmeister/zookeeper
-      ports:
-      - 2181:2181
-    - image: wurstmeister/kafka:2.11-1.0.1
-      ports:
-      - 9092:9092
-      - 9093:9093
-      environment: *environment
-    steps: *steps
-
-  kafka-111:
-    working_directory: *working_directory
-    environment:
-      KAFKA_VERSION: "1.1.1"
-    docker:
-    - image: circleci/golang
-    - image: wurstmeister/zookeeper
-      ports:
-      - 2181:2181
-    - image: wurstmeister/kafka:2.11-1.1.1
-      ports:
-      - 9092:9092
-      - 9093:9093
-      environment: *environment
-    steps: *steps
-
-  kafka-201:
-    working_directory: *working_directory
-    environment:
-      KAFKA_VERSION: "2.0.1"
-    docker:
-    - image: circleci/golang
-    - image: wurstmeister/zookeeper
-      ports:
-      - 2181:2181
-    - image: wurstmeister/kafka:2.12-2.0.1
-      ports:
-      - 9092:9092
-      - 9093:9093
-      environment:
-        <<: *environment
-        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
         KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
-    steps: *steps
-
-  kafka-211:
-    working_directory: *working_directory
-    environment:
-      KAFKA_VERSION: "2.1.1"
-    docker:
-    - image: circleci/golang
-    - image: wurstmeister/zookeeper
-      ports:
-      - 2181:2181
-    - image: wurstmeister/kafka:2.12-2.1.1
-      ports:
-      - 9092:9092
-      - 9093:9093
-      # recently, the base image for some newer versions of kafka switched from
-      # alpine to debian, which causes the "apk add ..." line to fail. The env
-      # map should be used for any versions that fail due to being part of this
-      # migration.
-      environment: &environmentDebian
-        <<: *environment
-        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
-        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
-        CUSTOM_INIT_SCRIPT: |-
-          echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/kafka/config/kafka_server_jaas.conf;
-          /opt/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram
-    steps: *steps
-
-  kafka-222:
-    working_directory: *working_directory
-    environment:
-      KAFKA_VERSION: "2.2.2"
-    docker:
-    - image: circleci/golang
-    - image: wurstmeister/zookeeper
-      ports:
-      - 2181:2181
-    - image: wurstmeister/kafka:2.12-2.2.2
-      ports:
-      - 9092:9092
-      - 9093:9093
-      environment:
-        <<: *environmentDebian
+        KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_server_jaas.conf"
+        ALLOW_PLAINTEXT_LISTENER: "yes"
+      entrypoint:
+        - "/bin/bash"
+        - "-c"
+        # 0.11.0 image is not honoring some configs required in server.properties
+        - echo -e '\nsasl.enabled.mechanisms=PLAIN,SCRAM-SHA-256,SCRAM-SHA-512\nmessage.max.bytes=200000000\nauto.create.topics.enable=true\nport=9092' >> /opt/bitnami/kafka/config/server.properties; echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_server_jaas.conf; /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]' --entity-type users --entity-name adminscram; exec /app-entrypoint.sh /run.sh
     steps: *steps
 
   kafka-231:
@@ -194,15 +104,37 @@ jobs:
       KAFKA_VERSION: "2.3.1"
     docker:
     - image: circleci/golang
-    - image: wurstmeister/zookeeper
+    - image: bitnami/zookeeper:latest
       ports:
       - 2181:2181
-    - image: wurstmeister/kafka:2.12-2.3.1
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:2.3.1-ol-7-r61
       ports:
       - 9092:9092
       - 9093:9093
       environment:
-        <<: *environmentDebian
+        KAFKA_CFG_BROKER_ID: 1
+        KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
+        KAFKA_CFG_ADVERTISED_HOST_NAME: 'localhost'
+        KAFKA_CFG_ADVERTISED_PORT: '9092'
+        KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
+        KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
+        KAFKA_CFG_MESSAGE_MAX_BYTES: '200000000'
+        KAFKA_CFG_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
+        KAFKA_CFG_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
+        KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
+        KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+        KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
+        KAFKA_INTER_BROKER_USER: adminplain
+        KAFKA_INTER_BROKER_PASSWORD: admin-secret
+        KAFKA_BROKER_USER: adminplain
+        KAFKA_BROKER_PASSWORD: admin-secret
+        ALLOW_PLAINTEXT_LISTENER: yes
+      entrypoint:
+        - "/bin/bash"
+        - "-c"
+        - /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config "SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]" --entity-type users --entity-name adminscram; exec /entrypoint.sh /run.sh
     steps: *steps
 
   kafka-241:
@@ -222,15 +154,34 @@ jobs:
       KAFKA_SKIP_NETTEST: "1"
     docker:
     - image: circleci/golang
-    - image: wurstmeister/zookeeper
+    - image: bitnami/zookeeper:latest
       ports:
       - 2181:2181
-    - image: wurstmeister/kafka:2.12-2.4.1
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:2.4.1
       ports:
       - 9092:9092
       - 9093:9093
-      environment:
-        <<: *environmentDebian
+      environment: &environment
+        KAFKA_CFG_BROKER_ID: 1
+        KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
+        KAFKA_CFG_ADVERTISED_HOST_NAME: 'localhost'
+        KAFKA_CFG_ADVERTISED_PORT: '9092'
+        KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
+        KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
+        KAFKA_CFG_MESSAGE_MAX_BYTES: '200000000'
+        KAFKA_CFG_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
+        KAFKA_CFG_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
+        KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
+        KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+        KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
+        KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_jaas.conf"
+        ALLOW_PLAINTEXT_LISTENER: yes
+      entrypoint: &entrypoint
+        - "/bin/bash"
+        - "-c"
+        - echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_jaas.conf; /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config "SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]" --entity-type users --entity-name adminscram; exec /entrypoint.sh /run.sh
     steps: *steps
 
   kafka-260:
@@ -250,23 +201,24 @@ jobs:
       KAFKA_SKIP_NETTEST: "1"
     docker:
     - image: circleci/golang
-    - image: wurstmeister/zookeeper
+    - image: bitnami/zookeeper:latest
       ports:
       - 2181:2181
-    - image: wurstmeister/kafka:2.13-2.6.0
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:2.6.0
       ports:
       - 9092:9092
       - 9093:9093
-      environment:
-        <<: *environment
-        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.authorizer.AclAuthorizer'
-        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
+      environment: *environment
+      entrypoint: *entrypoint
     steps: *steps
 
-  kafka-271:
+  # NOTE: Bitnami does not have suport for kafka version 2.7.1. Hence we use 2.7.0
+  kafka-270:
     working_directory: *working_directory
     environment:
-      KAFKA_VERSION: "2.7.1"
+      KAFKA_VERSION: "2.7.0"
 
       # Need to skip nettest to avoid these kinds of errors:
       #  --- FAIL: TestConn/nettest (17.56s)
@@ -280,17 +232,47 @@ jobs:
       KAFKA_SKIP_NETTEST: "1"
     docker:
     - image: circleci/golang
-    - image: wurstmeister/zookeeper
+    - image: bitnami/zookeeper:latest
       ports:
       - 2181:2181
-    - image: wurstmeister/kafka:2.13-2.7.1
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:2.7.0
       ports:
       - 9092:9092
       - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-281:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "2.8.1"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
       environment:
-        <<: *environment
-        KAFKA_AUTHORIZER_CLASS_NAME: 'kafka.security.authorizer.AclAuthorizer'
-        KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:2.8.1
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
     steps: *steps
 
 workflows:
@@ -300,12 +282,13 @@ workflows:
     - lint
     - kafka-010
     - kafka-011
-    - kafka-101
-    - kafka-111
-    - kafka-201
-    - kafka-211
-    - kafka-222
+    # - kafka-101 # Bitnami image fails for SCRAM. refer kafka-do/docker_compose_versions/README.md 
+    # - kafka-111 # Bitnami image fails for SCRAM. refer kafka-do/docker_compose_versions/README.md
+    # - kafka-201 # Bitnami image fails for SCRAM. refer kafka-do/docker_compose_versions/README.md
+    # - kafka-211 # Bitnami image fails for SCRAM. refer kafka-do/docker_compose_versions/README.md
+    # - kafka-222 # Bitnami v222 not found. v221 Bitnami image fails for SCRAM. refer kafka-do/docker_compose_versions/README.md
     - kafka-231
     - kafka-241
     - kafka-260
-    - kafka-271
+    - kafka-270
+    - kafka-281
