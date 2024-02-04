@@ -150,6 +150,14 @@ type Writer struct {
 	// Defaults to RequireNone.
 	RequiredAcks RequiredAcks
 
+	TransactionalID string
+
+	TransactionTimeout time.Duration
+
+	txMutex         sync.Mutex
+	producerSession *ProducerSession
+	currentTx       *Transaction
+
 	// Setting this flag to true causes the WriteMessages method to never block.
 	// It also means that errors are ignored since the caller will not receive
 	// the returned value. Use this only if you don't care about guarantees of
@@ -607,6 +615,10 @@ func (w *Writer) Close() error {
 // The program should assume that the whole batch failed and re-write the
 // messages later (which could then cause duplicates).
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
+	return w.writeMessages(ctx, nil, msgs...)
+}
+
+func (w *Writer) writeMessages(ctx context.Context, assignments map[topicPartition][]int32, msgs ...Message) error {
 	if w.Addr == nil {
 		return errors.New("kafka.(*Writer).WriteMessages: cannot create a kafka writer with a nil address")
 	}
@@ -620,7 +632,6 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return nil
 	}
 
-	balancer := w.balancer()
 	batchBytes := w.batchBytes()
 
 	for i := range msgs {
@@ -634,33 +645,12 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 			return messageTooLarge(msgs, i)
 		}
 	}
-
-	// We use int32 here to half the memory footprint (compared to using int
-	// on 64 bits architectures). We map lists of the message indexes instead
-	// of the message values for the same reason, int32 is 4 bytes, vs a full
-	// Message value which is 100+ bytes and contains pointers and contributes
-	// to increasing GC work.
-	assignments := make(map[topicPartition][]int32)
-
-	for i, msg := range msgs {
-		topic, err := w.chooseTopic(msg)
+	if assignments == nil {
+		var err error
+		assignments, err = w.generateAssignments(ctx, msgs...)
 		if err != nil {
 			return err
 		}
-
-		numPartitions, err := w.partitions(ctx, topic)
-		if err != nil {
-			return err
-		}
-
-		partition := balancer.Balance(msg, loadCachedPartitions(numPartitions)...)
-
-		key := topicPartition{
-			topic:     topic,
-			partition: int32(partition),
-		}
-
-		assignments[key] = append(assignments[key], int32(i))
 	}
 
 	batches := w.batchMessages(msgs, assignments)
@@ -693,6 +683,115 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		}
 	}
 	return werr
+}
+
+func (w *Writer) generateAssignments(ctx context.Context, msgs ...Message) (map[topicPartition][]int32, error) {
+	balancer := w.balancer()
+
+	// We use int32 here to half the memory footprint (compared to using int
+	// on 64 bits architectures). We map lists of the message indexes instead
+	// of the message values for the same reason, int32 is 4 bytes, vs a full
+	// Message value which is 100+ bytes and contains pointers and contributes
+	// to increasing GC work.
+	assignments := make(map[topicPartition][]int32)
+
+	for i, msg := range msgs {
+		topic, err := w.chooseTopic(msg)
+		if err != nil {
+			return nil, err
+		}
+
+		numPartitions, err := w.partitions(ctx, topic)
+		if err != nil {
+			return nil, err
+		}
+
+		partition := balancer.Balance(msg, loadCachedPartitions(numPartitions)...)
+
+		key := topicPartition{
+			topic:     topic,
+			partition: int32(partition),
+		}
+
+		assignments[key] = append(assignments[key], int32(i))
+	}
+
+	return assignments, nil
+}
+
+func (w *Writer) InitTransactions(ctx context.Context) error {
+	w.txMutex.Lock()
+	defer w.txMutex.Unlock()
+	return w.initTransactions(ctx)
+}
+
+func (w *Writer) initTransactions(ctx context.Context) error {
+	if w.TransactionalID == "" {
+		return errors.New("kafka.(*Writer).InitTransaction: cannot initialize transactions with a TransactionalID")
+	}
+
+	var producerID, producerEpoch int
+
+	if w.producerSession != nil {
+		producerID = w.producerSession.ProducerID
+		producerEpoch = w.producerSession.ProducerEpoch
+	}
+
+	resp, err := w.client(w.writeTimeout()).InitProducerID(ctx, &InitProducerIDRequest{
+		TransactionalID:      w.TransactionalID,
+		TransactionTimeoutMs: int(w.TransactionTimeout.Milliseconds()),
+		ProducerID:           producerID,
+		ProducerEpoch:        producerEpoch,
+	})
+	if err != nil {
+		return err
+	}
+
+	if resp.Error != nil {
+		return resp.Error
+	}
+
+	w.producerSession = resp.Producer
+
+	return nil
+}
+
+var (
+	ErrTxnNotInitialized = errors.New("transactions not initialized")
+	ErrTxnAlreadyStarted = errors.New("there is on ongoing transaction")
+)
+
+func (w *Writer) BeginTxn(ctx context.Context) (*Transaction, error) {
+	// Need to enforce only having a single txn active at a time.
+	w.txMutex.Lock()
+	defer w.txMutex.Unlock()
+
+	if w.currentTx != nil {
+		return nil, ErrTxnAlreadyStarted
+	}
+
+	if w.producerSession == nil {
+		if err := w.initTransactions(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	w.group.Add(1)
+
+	txn := &Transaction{
+		w:               w,
+		producerEpoch:   w.producerSession.ProducerEpoch,
+		producerID:      w.producerSession.ProducerID,
+		transactionalID: w.TransactionalID,
+		done:            make(chan struct{}),
+	}
+
+	go func() {
+		<-txn.done
+		w.group.Done()
+	}()
+
+	return txn, nil
 }
 
 func (w *Writer) batchMessages(messages []Message, assignments map[topicPartition][]int32) map[*writeBatch][]int32 {
