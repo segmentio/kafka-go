@@ -301,8 +301,6 @@ jobs:
       ports:
       - 9092:9092
       - 9093:9093
-
-    steps: *steps
       environment:
         KAFKA_CFG_BROKER_ID: 1
         KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
@@ -322,6 +320,7 @@ jobs:
         - "/bin/bash"
         - "-c"
         - echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_jaas.conf; /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper localhost:2181 --alter --add-config "SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]" --entity-type users --entity-name adminscram; exec /entrypoint.sh /run.sh
+    steps: *steps
 
 workflows:
   version: 2
