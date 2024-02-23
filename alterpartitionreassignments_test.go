@@ -2,8 +2,12 @@ package kafka
 
 import (
 	"context"
+	"net"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/segmentio/kafka-go/protocol/alterpartitionreassignments"
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
@@ -116,4 +120,59 @@ func TestClientAlterPartitionReassignmentsMultiTopics(t *testing.T) {
 			"got", len(resp.PartitionResults),
 		)
 	}
+}
+
+type mockRoundTripper struct {
+	t        *testing.T
+	expected alterpartitionreassignments.Request
+}
+
+var _ RoundTripper = &mockRoundTripper{}
+
+func (m mockRoundTripper) RoundTrip(_ context.Context, _ net.Addr, req Request) (Response, error) {
+	switch msg := req.(type) {
+	case *alterpartitionreassignments.Request:
+		require.Equal(m.t, m.expected, *msg)
+	default:
+		m.t.Error(
+			"Unexpected req type",
+			"expected", "*alterpartitionreassignments.Request",
+			"got", msg,
+		)
+	}
+
+	return &alterpartitionreassignments.Response{}, nil
+}
+
+func TestClientAlterPartitionReassignmentsNilReplicas(t *testing.T) {
+	client := &Client{
+		Addr: TCP("nohost"),
+		Transport: mockRoundTripper{
+			t: t,
+			expected: alterpartitionreassignments.Request{
+				Topics: []alterpartitionreassignments.RequestTopic{
+					{
+						Name: "foobar",
+						Partitions: []alterpartitionreassignments.RequestPartition{
+							{
+								PartitionIndex: 0,
+								Replicas:       nil,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err := client.AlterPartitionReassignments(context.Background(), &AlterPartitionReassignmentsRequest{
+		Assignments: []AlterPartitionReassignmentsRequestAssignment{
+			{
+				Topic:       "foobar",
+				PartitionID: 0,
+				BrokerIDs:   nil,
+			},
+		},
+	})
+	require.NoError(t, err)
 }
