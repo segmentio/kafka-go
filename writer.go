@@ -548,6 +548,34 @@ func (w *Writer) spawn(f func()) {
 	}()
 }
 
+// Flush writes all currently buffered messages to the kafka cluster. This will
+// block until all messages in the batch has been written to kafka, or until the
+// context is canceled.
+func (w *Writer) Flush(ctx context.Context) error {
+	w.mutex.Lock()
+
+	var ch = make(chan chan struct{}, len(w.writers))
+
+	// flush all writers
+	for _, writer := range w.writers {
+		b := writer.flush()
+		ch <- b.done
+	}
+
+	close(ch)
+	w.mutex.Unlock()
+
+	for done := range ch {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
 // Close flushes pending writes, and waits for all writes to complete before
 // returning. Calling Close also prevents new writes from being submitted to
 // the writer, further calls to WriteMessages and the like will fail with
@@ -1184,17 +1212,23 @@ func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
 	batch.complete(err)
 }
 
-func (ptw *partitionWriter) close() {
+func (ptw *partitionWriter) flush() *writeBatch {
 	ptw.mutex.Lock()
 	defer ptw.mutex.Unlock()
 
-	if ptw.currBatch != nil {
-		batch := ptw.currBatch
-		ptw.queue.Put(batch)
-		ptw.currBatch = nil
-		batch.trigger()
+	if ptw.currBatch == nil {
+		return nil
 	}
 
+	batch := ptw.currBatch
+	ptw.queue.Put(batch)
+	ptw.currBatch = nil
+	batch.trigger()
+	return batch
+}
+
+func (ptw *partitionWriter) close() {
+	ptw.flush()
 	ptw.queue.Close()
 }
 
