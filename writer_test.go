@@ -105,7 +105,6 @@ func TestWriter(t *testing.T) {
 			scenario: "closing a writer right after creating it returns promptly with no error",
 			function: testWriterClose,
 		},
-
 		{
 			scenario: "writing 1 message through a writer using round-robin balancing produces 1 message to the first partition",
 			function: testWriterRoundRobin1,
@@ -129,6 +128,10 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "writing a batch of messages",
 			function: testWriterBatchSize,
+		},
+		{
+			scenario: "writing and flushing a batch of messages",
+			function: testsWriterFlush,
 		},
 
 		{
@@ -450,6 +453,67 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 	}
 }
 
+func testsWriterFlush(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	offset, err := readOffset(topic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newTestWriter(WriterConfig{
+		Topic: topic,
+		// Set the batch timeout to a large value to avoid the timeout
+		BatchSize:    1000,
+		BatchBytes:   1000000,
+		BatchTimeout: 1000 * time.Second,
+		Balancer:     &RoundRobin{},
+		Async:        true,
+	})
+	defer w.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := w.WriteMessages(ctx, []Message{
+		{Value: []byte("M0")}, // 25 Bytes
+		{Value: []byte("M1")}, // 25 Bytes
+		{Value: []byte("M2")}, // 25 Bytes
+		{Value: []byte("M3")}, // 25 Bytes
+	}...); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err := w.Flush(ctx); err != nil {
+		t.Errorf("flush error %v", err)
+		return
+	}
+
+	if w.Stats().Writes != 1 {
+		t.Error("didn't create expected batches")
+		return
+	}
+	msgs, err := readPartition(topic, 0, offset)
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+
+	if len(msgs) != 4 {
+		t.Error("bad messages in partition", msgs)
+		return
+	}
+
+	for i, m := range msgs {
+		if string(m.Value) == "M"+strconv.Itoa(i) {
+			continue
+		}
+		t.Error("bad messages in partition", string(m.Value))
+	}
+}
+
 func testWriterBatchBytes(t *testing.T) {
 	topic := makeTopic()
 	createTopic(t, topic, 1)
@@ -471,16 +535,16 @@ func testWriterBatchBytes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := w.WriteMessages(ctx, []Message{
-		{Value: []byte("M0")}, // 25 Bytes
-		{Value: []byte("M1")}, // 25 Bytes
-		{Value: []byte("M2")}, // 25 Bytes
-		{Value: []byte("M3")}, // 25 Bytes
+		{Value: []byte("M0")},
+		{Value: []byte("M1")},
+		{Value: []byte("M2")},
+		{Value: []byte("M3")},
 	}...); err != nil {
 		t.Error(err)
 		return
 	}
 
-	if w.Stats().Writes != 2 {
+	if w.Stats().Writes != 1 {
 		t.Error("didn't create expected batches")
 		return
 	}
