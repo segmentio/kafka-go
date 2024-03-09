@@ -336,6 +336,76 @@ func TestConsumerGroup(t *testing.T) {
 	}
 }
 
+func TestConsumerGroupUnknownMemberIdErr(t *testing.T) {
+	leaveGroupCall := false
+	mc := mockCoordinator{
+		leaveGroupFunc: func(req leaveGroupRequestV0) (leaveGroupResponseV0, error) {
+			leaveGroupCall = true
+			return leaveGroupResponseV0{}, nil
+		},
+	}
+
+	mc.joinGroupFunc = func(req joinGroupRequestV1) (joinGroupResponseV1, error) {
+		return joinGroupResponseV1{
+			GenerationID:  12345,
+			GroupProtocol: "range",
+			LeaderID:      "abc",
+			MemberID:      "abc",
+		}, nil
+	}
+
+	mc.readPartitionsFunc = func(...string) ([]Partition, error) {
+		return []Partition{}, nil
+	}
+
+	mc.syncGroupFunc = func(requestV0 syncGroupRequestV0) (syncGroupResponseV0, error) {
+		return syncGroupResponseV0{ErrorCode: int16(UnknownMemberId)}, nil
+	}
+
+	mc.findCoordinatorFunc = func(requestV0 findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
+		return findCoordinatorResponseV0{
+			Coordinator: findCoordinatorResponseCoordinatorV0{
+				NodeID: 1,
+				Host:   "foo.bar.com",
+				Port:   12345,
+			},
+		}, nil
+	}
+
+	group, err := NewConsumerGroup(ConsumerGroupConfig{
+		ID:                makeGroupID(),
+		Topics:            []string{"test"},
+		Brokers:           []string{"no-such-broker"}, // should not attempt to actually dial anything
+		HeartbeatInterval: 2 * time.Second,
+		RebalanceTimeout:  time.Second,
+		JoinGroupBackoff:  time.Second,
+		RetentionTime:     time.Hour,
+		connect: func(*Dialer, ...string) (coordinator, error) {
+			return mc, nil
+		},
+		Logger: &testKafkaLogger{T: t},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gen, err := group.Next(context.Background())
+	if err == nil {
+		t.Errorf("expected an error")
+	} else if !errors.Is(err, UnknownMemberId) {
+		t.Errorf("got wrong error: %+v", err)
+	}
+	if gen != nil {
+		t.Error("expected a nil consumer group generation")
+	}
+
+	group.Close()
+
+	if leaveGroupCall {
+		t.Error("expected not leave group call because member ID is empty")
+	}
+}
+
 func TestConsumerGroupErrors(t *testing.T) {
 	var left []string
 	var lock sync.Mutex
@@ -346,14 +416,6 @@ func TestConsumerGroupErrors(t *testing.T) {
 			lock.Unlock()
 			return leaveGroupResponseV0{}, nil
 		},
-	}
-	assertLeftGroup := func(t *testing.T, memberID string) {
-		lock.Lock()
-		if !reflect.DeepEqual(left, []string{memberID}) {
-			t.Errorf("expected abc to have left group once, members left: %v", left)
-		}
-		left = left[0:0]
-		lock.Unlock()
 	}
 
 	// NOTE : the mocked behavior is accumulated across the tests, so they are
@@ -491,7 +553,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 				if gen != nil {
 					t.Error("expected a nil consumer group generation")
 				}
-				assertLeftGroup(t, "abc")
+
 			},
 		},
 
@@ -523,7 +585,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 				if gen != nil {
 					t.Error("expected a nil consumer group generation")
 				}
-				assertLeftGroup(t, "abc")
+
 			},
 		},
 
@@ -546,7 +608,48 @@ func TestConsumerGroupErrors(t *testing.T) {
 				if gen != nil {
 					t.Error("expected a nil consumer group generation")
 				}
-				assertLeftGroup(t, "abc")
+
+			},
+		}, {
+			scenario: "fails to join group (UnknownMemberId error code)",
+			prepare: func(mc *mockCoordinator) {
+				mc.joinGroupFunc = func(req joinGroupRequestV1) (joinGroupResponseV1, error) {
+					return joinGroupResponseV1{
+						GenerationID:  12345,
+						GroupProtocol: "range",
+						LeaderID:      "abc",
+						MemberID:      "abc",
+					}, nil
+				}
+				mc.readPartitionsFunc = func(...string) ([]Partition, error) {
+					return []Partition{}, nil
+				}
+
+				mc.syncGroupFunc = func(requestV0 syncGroupRequestV0) (syncGroupResponseV0, error) {
+					return syncGroupResponseV0{ErrorCode: int16(UnknownMemberId)}, nil
+				}
+
+				mc.findCoordinatorFunc = func(requestV0 findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
+					return findCoordinatorResponseV0{
+						Coordinator: findCoordinatorResponseCoordinatorV0{
+							NodeID: 1,
+							Host:   "foo.bar.com",
+							Port:   12345,
+						},
+					}, nil
+				}
+			},
+			function: func(t *testing.T, ctx context.Context, group *ConsumerGroup) {
+				gen, err := group.Next(ctx)
+				if err == nil {
+					t.Errorf("expected an error")
+				} else if !errors.Is(err, UnknownMemberId) {
+					t.Errorf("got wrong error: %+v", err)
+				}
+				if gen != nil {
+					t.Error("expected a nil consumer group generation")
+				}
+
 			},
 		},
 	}
