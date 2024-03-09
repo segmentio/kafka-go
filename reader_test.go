@@ -1982,3 +1982,23 @@ func testReaderTopicRecreated(t *testing.T, ctx context.Context, r *Reader) {
 	_, err = r.ReadMessage(ctx)
 	require.ErrorIs(t, err, OffsetOutOfRange)
 }
+
+func TestFetchMessageRetEOF(t *testing.T) {
+	r := NewReader(ReaderConfig{
+		Brokers:     []string{"localhost:9092"},
+		Dialer:      &Dialer{Timeout: connTO},
+		MaxAttempts: 1,
+		GroupID:     "test",
+		Topic:       makeTopic(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), connTestTO)
+	defer cancel()
+
+	go func() {
+		r.runError <- io.EOF
+	}()
+
+	_, err := r.FetchMessage(ctx)
+
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+}
