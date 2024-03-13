@@ -34,7 +34,7 @@ func (f BalancerFunc) Balance(msg Message, partitions ...int) int {
 	return f(msg, partitions...)
 }
 
-// RoundRobin is an Balancer implementation that equally distributes messages
+// RoundRobin is a Balancer implementation that equally distributes messages
 // across all available partitions.  It can take an optional chunk size to send
 // ChunkSize messages to the same partition before moving to the next partition.
 // This can be used to improve batch sizes.
