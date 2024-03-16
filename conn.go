@@ -64,7 +64,8 @@ type Conn struct {
 	// lazily loaded API versions used by this connection
 	apiVersions atomic.Value // apiVersionMap
 
-	transactionalID *string
+	transactionalID      *string
+	preferredReadReplica *int32
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -751,6 +752,23 @@ func (c *Conn) ReadBatch(minBytes, maxBytes int) *Batch {
 // ReadBatchWith in every way is similar to ReadBatch. ReadBatch is configured
 // with the default values in ReadBatchConfig except for minBytes and maxBytes.
 func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
+	if c.preferredReadReplica != nil && &c.preferredReadReplica != c.broker {
+		brokers, err := c.Brokers()
+		if err != nil {
+			// TODO: should there be an err here?
+			return &Batch{}
+		}
+		for _, broker := range brokers {
+			if broker.ID == &c.preferredReadReplica {
+				// close out connection to broker and connect to new broker
+				if err = c.Close(); err != nil {
+					// TODO: should there be an err here?
+					return &Batch{}
+				}
+			}
+		}
+
+	}
 
 	var adjustedDeadline time.Time
 	var maxFetch = int(c.fetchMaxBytes)
@@ -772,7 +790,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		return &Batch{err: dontExpectEOF(err)}
 	}
 
-	fetchVersion, err := c.negotiateVersion(fetch, v2, v5, v10)
+	fetchVersion, err := c.negotiateVersion(fetch, v2, v5, v10, v11)
 	if err != nil {
 		return &Batch{err: dontExpectEOF(err)}
 	}
@@ -794,6 +812,19 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		// truncated messages.
 		adjustedDeadline = deadline
 		switch fetchVersion {
+		case v11:
+			return c.wb.writeFetchRequestV11(
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				offset,
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
+				timeout,
+				int8(cfg.IsolationLevel),
+				cfg.RackID,
+			)
 		case v10:
 			return c.wb.writeFetchRequestV10(
 				id,
@@ -843,8 +874,11 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var throttle int32
 	var highWaterMark int64
 	var remain int
+	var preferredReadReplica int32
 
 	switch fetchVersion {
+	case v11:
+		throttle, highWaterMark, remain, preferredReadReplica, err = readFetchResponseHeaderV11(&c.rbuf, size)
 	case v10:
 		throttle, highWaterMark, remain, err = readFetchResponseHeaderV10(&c.rbuf, size)
 	case v5:
@@ -855,6 +889,8 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	if errors.Is(err, errShortRead) {
 		err = checkTimeoutErr(adjustedDeadline)
 	}
+
+	c.preferredReadReplica = preferredReadReplica
 
 	var msgs *messageSetReader
 	if err == nil {
