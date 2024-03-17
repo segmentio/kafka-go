@@ -141,7 +141,7 @@ func readBytesWith(r *bufio.Reader, sz int, cb func(*bufio.Reader, int, int) (in
 	return cb(r, sz, n)
 }
 
-// readIntoAllocatedBytes reads n bytes from r into a slice provided by makeBytes, which should should provide a slice with the required length.
+// readIntoAllocatedBytes reads n bytes from r into a slice provided by makeBytes, which should provide a slice with the required length.
 // This slice is then returned, as well as the number of bytes remaining and an error, if any.
 func readIntoAllocatedBytes(r *bufio.Reader, sz int, n int, makeBytes func(length int) []byte) ([]byte, int, error) {
 	var err error
