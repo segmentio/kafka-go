@@ -123,6 +123,11 @@ type ReadBatchConfig struct {
 	// For backward compatibility, when this field is left zero, kafka-go will
 	// infer the max wait from the connection's read deadline.
 	MaxWait time.Duration
+
+	// MakeKeyBytes is used to create a bytes slice for Message.Key with given length.
+	MakeKeyBytes func(length int) []byte
+	// MakeValBytes is used to create a bytes slice for Message.Value with given length.
+	MakeValBytes func(length int) []byte
 }
 
 type IsolationLevel int8
@@ -867,6 +872,14 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	if errors.Is(err, errShortRead) {
 		err = checkTimeoutErr(adjustedDeadline)
 	}
+	makeKeyBytes := cfg.MakeKeyBytes
+	if makeKeyBytes == nil {
+		makeKeyBytes = func(len int) []byte { return make([]byte, len) }
+	}
+	makeValBytes := cfg.MakeValBytes
+	if makeValBytes == nil {
+		makeValBytes = func(len int) []byte { return make([]byte, len) }
+	}
 
 	return &Batch{
 		conn:          c,
@@ -883,6 +896,9 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		// don't accidentally signal that we successfully reached the end of the
 		// batch.
 		err: dontExpectEOF(err),
+
+		makeKeyBytes: makeKeyBytes,
+		makeValBytes: makeValBytes,
 	}
 }
 
