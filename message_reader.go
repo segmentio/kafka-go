@@ -163,7 +163,7 @@ func (r *messageSetReader) readMessageV1(min int64, key readBytesFunc, val readB
 			r.log("Reading with codec=%T", codec)
 		}
 		if codec != nil {
-			fmt.Printf("codec: %s\n", codec)
+			fmt.Printf("codec: %s\n", codec.Name())
 			// discard next four bytes...will be -1 to indicate null key
 			if err = r.discardN(4); err != nil {
 				return
@@ -261,7 +261,7 @@ func (r *messageSetReader) readMessageV2(_ int64, key readBytesFunc, val readByt
 			return
 		}
 		if codec != nil {
-			fmt.Printf("codec: %s\n", codec)
+			fmt.Printf("codec: %s\n", codec.Name())
 			batchRemain := int(r.header.length - 49) // TODO: document this magic number
 			if batchRemain > r.remain {
 				err = errShortRead
