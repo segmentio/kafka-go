@@ -43,6 +43,7 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 
 	if compression := Attributes(attributes).Compression(); compression != 0 {
 		codec := compression.Codec()
+		fmt.Printf("codec: %v\n", codec)
 		if codec == nil {
 			return fmt.Errorf("unsupported compression codec (%d)", compression)
 		}

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"math"
@@ -83,6 +84,7 @@ func (rs *RecordSet) readFromVersion1(d *decoder) error {
 			defer value.Close()
 
 			codec := compression.Codec()
+			fmt.Printf("codec: %v\n", codec)
 			if codec == nil {
 				return Errorf("unsupported compression codec: %d", compression)
 			}
