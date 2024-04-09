@@ -325,6 +325,9 @@ type WriterConfig struct {
 	// ErrorLogger is the logger used to report errors. If nil, the writer falls
 	// back to using Logger instead.
 	ErrorLogger Logger
+
+	// AllowAutoTopicCreation notifies writer to create topic if missing.
+	AllowAutoTopicCreation bool
 }
 
 type topicPartition struct {
@@ -487,22 +490,23 @@ func NewWriter(config WriterConfig) *Writer {
 	}
 
 	w := &Writer{
-		Addr:         TCP(config.Brokers...),
-		Topic:        config.Topic,
-		MaxAttempts:  config.MaxAttempts,
-		BatchSize:    config.BatchSize,
-		Balancer:     config.Balancer,
-		BatchBytes:   int64(config.BatchBytes),
-		BatchTimeout: config.BatchTimeout,
-		ReadTimeout:  config.ReadTimeout,
-		WriteTimeout: config.WriteTimeout,
-		RequiredAcks: RequiredAcks(config.RequiredAcks),
-		Async:        config.Async,
-		Logger:       config.Logger,
-		ErrorLogger:  config.ErrorLogger,
-		Transport:    transport,
-		transport:    transport,
-		writerStats:  stats,
+		Addr:                   TCP(config.Brokers...),
+		Topic:                  config.Topic,
+		MaxAttempts:            config.MaxAttempts,
+		BatchSize:              config.BatchSize,
+		Balancer:               config.Balancer,
+		BatchBytes:             int64(config.BatchBytes),
+		BatchTimeout:           config.BatchTimeout,
+		ReadTimeout:            config.ReadTimeout,
+		WriteTimeout:           config.WriteTimeout,
+		RequiredAcks:           RequiredAcks(config.RequiredAcks),
+		Async:                  config.Async,
+		Logger:                 config.Logger,
+		ErrorLogger:            config.ErrorLogger,
+		Transport:              transport,
+		AllowAutoTopicCreation: config.AllowAutoTopicCreation,
+		transport:              transport,
+		writerStats:            stats,
 	}
 
 	if config.RequiredAcks == 0 {
