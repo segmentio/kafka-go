@@ -467,7 +467,7 @@ func (g *Generation) heartbeatLoop(interval time.Duration) {
 			l.Printf("started heartbeat for group, %v [%v]", g.GroupID, interval)
 		})
 		defer g.log(func(l Logger) {
-			l.Printf("stopped heartbeat for group %s\n", g.GroupID)
+			l.Printf("stopped heartbeat for group %s", g.GroupID)
 		})
 
 		ticker := time.NewTicker(interval)
@@ -1009,7 +1009,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 // their various partitions.
 func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroupResponseV1) (GroupMemberAssignments, error) {
 	cg.withLogger(func(l Logger) {
-		l.Printf("selected as leader for group, %s\n", cg.config.ID)
+		l.Printf("selected as leader for group, %s", cg.config.ID)
 	})
 
 	balancer, ok := findGroupBalancer(group.GroupProtocol, cg.config.GroupBalancers)
