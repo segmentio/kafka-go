@@ -527,7 +527,7 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 				case err == nil, errors.Is(err, UnknownTopicOrPartition):
 					if len(ops) != oParts {
 						g.log(func(l Logger) {
-							l.Printf("Partition changes found, reblancing group: %v.", g.GroupID)
+							l.Printf("Partition changes found, rebalancing group: %v.", g.GroupID)
 						})
 						return
 					}
