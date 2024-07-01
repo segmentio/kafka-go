@@ -780,7 +780,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// re-connect in certain cases, but that shouldn't be an issue given that
 	// rebalances are relatively infrequent under normal operating
 	// conditions.
-	conn, err := cg.coordinator()
+	conn, err := cg.coordinator("-dc3")
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Unable to establish connection to consumer group coordinator for group %s: %v", cg.config.ID, err)
@@ -895,7 +895,7 @@ func makeConnect(config ConsumerGroupConfig) func(dialer *Dialer, brokers ...str
 
 // coordinator establishes a connection to the coordinator for this consumer
 // group.
-func (cg *ConsumerGroup) coordinator() (coordinator, error) {
+func (cg *ConsumerGroup) coordinator(suffixHosts ...string) (coordinator, error) {
 	// NOTE : could try to cache the coordinator to avoid the double connect
 	//        here.  since consumer group balances happen infrequently and are
 	//        an expensive operation, we're not currently optimizing that case
@@ -915,8 +915,11 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	address := net.JoinHostPort(out.Coordinator.Host, strconv.Itoa(int(out.Coordinator.Port)))
+	host := out.Coordinator.Host
+	if len(suffixHosts) > 0 {
+		host = fmt.Sprintf("%s%s", host, suffixHosts[0])
+	}
+	address := net.JoinHostPort(host, strconv.Itoa(int(out.Coordinator.Port)))
 	return cg.config.connect(cg.config.Dialer, address)
 }
 
@@ -925,12 +928,12 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 // the leader.  Otherwise, GroupMemberAssignments will be nil.
 //
 // Possible kafka error codes returned:
-//  * GroupLoadInProgress:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * InconsistentGroupProtocol:
-//  * InvalidSessionTimeout:
-//  * GroupAuthorizationFailed:
+//   - GroupLoadInProgress:
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - InconsistentGroupProtocol:
+//   - InvalidSessionTimeout:
+//   - GroupAuthorizationFailed:
 func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
 	request, err := cg.makeJoinGroupRequestV1(memberID)
 	if err != nil {
@@ -1073,11 +1076,11 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 // Readers subscriptions topic => partitions
 //
 // Possible kafka error codes returned:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * IllegalGeneration:
-//  * RebalanceInProgress:
-//  * GroupAuthorizationFailed:
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - IllegalGeneration:
+//   - RebalanceInProgress:
+//   - GroupAuthorizationFailed:
 func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
 	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments)
 	response, err := conn.syncGroup(request)
