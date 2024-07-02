@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -888,6 +889,49 @@ func TestReaderConsumerGroup(t *testing.T) {
 			test.function(t, ctx, r)
 		})
 	}
+}
+
+func TestAssignmentListener(t *testing.T) {
+	// It appears that some of the tests depend on all these tests being
+	// run concurrently to pass... this is brittle and should be fixed
+	// at some point.
+	t.Parallel()
+
+	topic := makeTopic()
+	createTopic(t, topic, 10)
+	defer deleteTopic(t, topic)
+
+	var lock sync.Mutex
+	assignments := make([][]GroupMemberTopic, 0)
+	groupID := makeGroupID()
+	r := NewReader(ReaderConfig{
+		Brokers:           []string{"localhost:9092"},
+		Topic:             topic,
+		GroupID:           groupID,
+		HeartbeatInterval: 2 * time.Second,
+		CommitInterval:    1 * time.Second,
+		RebalanceTimeout:  2 * time.Second,
+		RetentionTime:     time.Hour,
+		MinBytes:          1,
+		MaxBytes:          1e6,
+		AssignmentListener: func(partitions []GroupMemberTopic) {
+			lock.Lock()
+			defer lock.Unlock()
+			assignments = append(assignments, partitions)
+		},
+	})
+	defer r.Close()
+
+	assert.Eventually(t, func() bool {
+		return reflect.DeepEqual(assignments, [][]GroupMemberTopic{
+			{
+				GroupMemberTopic{
+					Topic:      topic,
+					Partitions: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+				},
+			},
+		})
+	}, 10*time.Second, 100*time.Millisecond)
 }
 
 func testReaderConsumerGroupHandshake(t *testing.T, ctx context.Context, r *Reader) {
