@@ -923,6 +923,8 @@ func TestAssignmentListener(t *testing.T) {
 	defer r.Close()
 
 	assert.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
 		return reflect.DeepEqual(assignments, [][]GroupMemberTopic{
 			{
 				GroupMemberTopic{
