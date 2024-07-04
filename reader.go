@@ -522,6 +522,11 @@ type ReaderConfig struct {
 	// This flag is being added to retain backwards-compatibility, so it will be
 	// removed in a future version of kafka-go.
 	OffsetOutOfRangeError bool
+
+	// MakeKeyBytes is used to create a bytes slice for Message.Key with given length.
+	MakeKeyBytes func(length int) []byte
+	// MakeValBytes is used to create a bytes slice for Message.Value with given length.
+	MakeValBytes func(length int) []byte
 }
 
 // Validate method validates ReaderConfig properties.
@@ -1213,6 +1218,8 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 				stats:            r.stats,
 				isolationLevel:   r.config.IsolationLevel,
 				maxAttempts:      r.config.MaxAttempts,
+				makeKeyBytes:     r.config.MakeKeyBytes,
+				makeValBytes:     r.config.MakeValBytes,
 
 				// backwards-compatibility flags
 				offsetOutOfRangeError: r.config.OffsetOutOfRangeError,
@@ -1242,6 +1249,8 @@ type reader struct {
 	stats            *readerStats
 	isolationLevel   IsolationLevel
 	maxAttempts      int
+	makeKeyBytes     func(length int) []byte
+	makeValBytes     func(length int) []byte
 
 	offsetOutOfRangeError bool
 }
@@ -1498,6 +1507,8 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 		MinBytes:       r.minBytes,
 		MaxBytes:       r.maxBytes,
 		IsolationLevel: r.isolationLevel,
+		MakeKeyBytes:   r.makeKeyBytes,
+		MakeValBytes:   r.makeValBytes,
 	})
 	highWaterMark := batch.HighWaterMark()
 
