@@ -3,18 +3,20 @@ package kafka
 // A commit represents the instruction of publishing an update of the last
 // offset read by a program for a topic and partition.
 type commit struct {
-	topic     string
-	partition int
-	offset    int64
+	topic        string
+	partition    int
+	offset       int64
+	generationId int32
 }
 
 // makeCommit builds a commit value from a message, the resulting commit takes
 // its topic, partition, and offset from the message.
 func makeCommit(msg Message) commit {
 	return commit{
-		topic:     msg.Topic,
-		partition: msg.Partition,
-		offset:    msg.Offset + 1,
+		topic:        msg.Topic,
+		partition:    msg.Partition,
+		offset:       msg.Offset + 1,
+		generationId: msg.GenerationId,
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -791,10 +792,11 @@ func TestExtractTopics(t *testing.T) {
 
 func TestReaderConsumerGroup(t *testing.T) {
 	tests := []struct {
-		scenario       string
-		partitions     int
-		commitInterval time.Duration
-		function       func(*testing.T, context.Context, *Reader)
+		scenario               string
+		partitions             int
+		commitInterval         time.Duration
+		errorOnWrongGeneration bool
+		function               func(*testing.T, context.Context, *Reader)
 	}{
 		{
 			scenario:   "basic handshake",
@@ -855,6 +857,14 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 1,
 			function:   testConsumerGroupSimple,
 		},
+
+		{
+			scenario:               "Do not commit not assigned messages after rebalance",
+			partitions:             2,
+			function:               testReaderConsumerGroupRebalanceDoesNotCommitNotOwnedPartitions,
+			commitInterval:         0,
+			errorOnWrongGeneration: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -870,15 +880,16 @@ func TestReaderConsumerGroup(t *testing.T) {
 
 			groupID := makeGroupID()
 			r := NewReader(ReaderConfig{
-				Brokers:           []string{"localhost:9092"},
-				Topic:             topic,
-				GroupID:           groupID,
-				HeartbeatInterval: 2 * time.Second,
-				CommitInterval:    test.commitInterval,
-				RebalanceTimeout:  2 * time.Second,
-				RetentionTime:     time.Hour,
-				MinBytes:          1,
-				MaxBytes:          1e6,
+				Brokers:                      []string{"localhost:9092"},
+				Topic:                        topic,
+				GroupID:                      groupID,
+				HeartbeatInterval:            2 * time.Second,
+				CommitInterval:               test.commitInterval,
+				RebalanceTimeout:             2 * time.Second,
+				RetentionTime:                time.Hour,
+				MinBytes:                     1,
+				MaxBytes:                     1e6,
+				ErrorOnWrongGenerationCommit: test.errorOnWrongGeneration,
 			})
 			defer r.Close()
 
@@ -1174,6 +1185,126 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 	}
 }
 
+func testReaderConsumerGroupRebalanceDoesNotCommitNotOwnedPartitions(t *testing.T, ctx context.Context, firstReader *Reader) {
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	// write messages across both partitions
+	writer := &Writer{
+		Addr:      TCP(firstReader.config.Brokers...),
+		Topic:     firstReader.config.Topic,
+		Balancer:  &RoundRobin{},
+		BatchSize: 1,
+		Transport: client.Transport,
+	}
+
+	// Write 4 messages and ensure that they go the each one of the partitions
+	messageCount := 4
+	if err := writer.WriteMessages(ctx, makeTestSequence(messageCount)...); err != nil {
+		t.Fatalf("bad write messages: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("bad write err: %v", err)
+	}
+
+	// read all messages for the first reader
+	msgsForFirstReader := make(map[int][]Message, 0)
+	allMessages := make([]Message, 0)
+	totalEvents := 0
+	for i := 0; i < messageCount; i++ {
+		if msg, err := firstReader.FetchMessage(ctx); err != nil {
+			t.Errorf("reader %v expected to read 1 message", i)
+		} else {
+			msgs, ok := msgsForFirstReader[msg.Partition]
+			if !ok {
+				msgs = make([]Message, 0)
+			}
+			msgs = append(msgs, msg)
+			allMessages = append(allMessages, msg)
+			msgsForFirstReader[msg.Partition] = msgs
+			totalEvents++
+		}
+	}
+	require.Equal(t, messageCount, totalEvents)
+
+	// create a second reader
+	secondReader := NewReader(firstReader.config)
+	defer secondReader.Close()
+
+	// wait until the group has 2 members
+	require.Eventually(t, func() bool {
+		resp, err := client.DescribeGroups(
+			ctx,
+			&DescribeGroupsRequest{
+				GroupIDs: []string{firstReader.config.GroupID},
+			},
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, resp)
+		return len(resp.Groups[0].Members) == 2
+	}, 10*time.Second, 100*time.Millisecond, "Group does not have 2 members")
+
+	var partitionAssignedToSecondConsumer int
+	msgsForSecondReader := make([]Message, 0, messageCount)
+	for i := 0; i < messageCount/2; i++ {
+		if msg, err := secondReader.FetchMessage(ctx); err != nil {
+			t.Errorf("reader %v expected to read 1 message", i)
+		} else {
+			msgsForSecondReader = append(msgsForSecondReader, msg)
+			partitionAssignedToSecondConsumer = msg.Partition
+		}
+	}
+	partitionAssignedToFirstConsumer := (partitionAssignedToSecondConsumer + 1) % 2
+
+	// commit all messages for the second reader (no need to wait until commits reach the server
+	// because CommitInterval is set to 0)
+	require.NoError(t, secondReader.CommitMessages(ctx, msgsForSecondReader...))
+
+	// commit all messages the first reader received, we expect an error
+	require.ErrorIs(t, IllegalGeneration, firstReader.CommitMessages(ctx, allMessages...))
+
+	// verify that no offsets have been altered
+	require.Eventually(t, func() bool {
+		resp, err := client.OffsetFetch(ctx, &OffsetFetchRequest{
+			GroupID: firstReader.config.GroupID,
+			Topics:  map[string][]int{firstReader.config.Topic: {partitionAssignedToSecondConsumer}},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+
+		for _, topicOffsets := range resp.Topics {
+			for _, offsetPartition := range topicOffsets {
+				if offsetPartition.Partition == partitionAssignedToSecondConsumer {
+					return msgsForSecondReader[len(msgsForSecondReader)-1].Offset+1 == offsetPartition.CommittedOffset
+				}
+			}
+		}
+		return false
+	}, 5*time.Second, 100*time.Millisecond, "Offsets were altered")
+
+	// we can read the messages again because generation changes
+	// cause uncommitted offsets to be lost
+	totalEvents = 0
+	for i := 0; i < len(msgsForFirstReader); i++ {
+		if msg, err := firstReader.FetchMessage(ctx); err != nil {
+			t.Errorf("reader %v expected to read 1 message", i)
+		} else {
+			msgs, ok := msgsForFirstReader[msg.Partition]
+			if !ok {
+				msgs = make([]Message, 0)
+			}
+			msgs = append(msgs, msg)
+			msgsForFirstReader[msg.Partition] = msgs
+			totalEvents++
+		}
+	}
+	require.Equal(t, 2, totalEvents)
+
+	// commit the messages it can actually commit and verify it works
+	// no need to wait because CommitInterval is 0
+	require.NoError(t, firstReader.CommitMessages(ctx, msgsForFirstReader[partitionAssignedToFirstConsumer][len(msgsForFirstReader[partitionAssignedToFirstConsumer])-1]))
+}
+
 func TestOffsetStash(t *testing.T) {
 	const topic = "topic"
 
@@ -1195,16 +1326,16 @@ func TestOffsetStash(t *testing.T) {
 			Given:    offsetStash{},
 			Messages: []Message{newMessage(0, 0)},
 			Expected: offsetStash{
-				topic: {0: 1},
+				topic: {0: {1, 0}},
 			},
 		},
 		"ignores earlier offsets": {
 			Given: offsetStash{
-				topic: {0: 2},
+				topic: {0: {2, 1}},
 			},
 			Messages: []Message{newMessage(0, 0)},
 			Expected: offsetStash{
-				topic: {0: 2},
+				topic: {0: {2, 1}},
 			},
 		},
 		"uses latest offset": {
@@ -1215,7 +1346,7 @@ func TestOffsetStash(t *testing.T) {
 				newMessage(0, 1),
 			},
 			Expected: offsetStash{
-				topic: {0: 4},
+				topic: {0: {4, 0}},
 			},
 		},
 		"uses latest offset, across multiple topics": {
@@ -1229,8 +1360,8 @@ func TestOffsetStash(t *testing.T) {
 			},
 			Expected: offsetStash{
 				topic: {
-					0: 4,
-					1: 7,
+					0: {4, 0},
+					1: {7, 0},
 				},
 			},
 		},
@@ -1282,10 +1413,11 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 				return offsetCommitResponseV2{}, nil
 			},
 		},
-		done:     make(chan struct{}),
-		log:      func(func(Logger)) {},
-		logError: func(func(Logger)) {},
-		joined:   make(chan struct{}),
+		done:        make(chan struct{}),
+		log:         func(func(Logger)) {},
+		logError:    func(func(Logger)) {},
+		joined:      make(chan struct{}),
+		Assignments: map[string][]PartitionAssignment{"topic": {{0, 1}}},
 	}
 
 	// initialize commits so that the commitLoopImmediate select statement blocks
@@ -1319,52 +1451,111 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 }
 
 func TestCommitOffsetsWithRetry(t *testing.T) {
-	offsets := offsetStash{"topic": {0: 0}}
+	offsets := func() offsetStash {
+		return offsetStash{"topic": {0: {0, 1}}}
+	}
 
 	tests := map[string]struct {
-		Fails       int
-		Invocations int
-		HasError    bool
+		Fails           int
+		Invocations     int
+		HasError        bool
+		Offsets         offsetStash
+		Config          ReaderConfig
+		ExpectedOffsets offsetStash
+		GenerationId    int32
 	}{
 		"happy path": {
-			Invocations: 1,
+			Invocations:     1,
+			Offsets:         offsets(),
+			ExpectedOffsets: offsets(),
+			GenerationId:    1,
 		},
 		"1 retry": {
-			Fails:       1,
-			Invocations: 2,
+			Fails:           1,
+			Invocations:     2,
+			Offsets:         offsets(),
+			ExpectedOffsets: offsets(),
+			GenerationId:    1,
 		},
 		"out of retries": {
-			Fails:       defaultCommitRetries + 1,
-			Invocations: defaultCommitRetries,
-			HasError:    true,
+			Fails:           defaultCommitRetries + 1,
+			Invocations:     defaultCommitRetries,
+			HasError:        true,
+			Offsets:         offsets(),
+			ExpectedOffsets: offsets(),
+			GenerationId:    1,
+		},
+		"illegal generation error only 1 generation": {
+			Fails:           1,
+			Invocations:     1,
+			Offsets:         offsetStash{"topic": {0: {0, 1}, 1: {0, 1}}},
+			ExpectedOffsets: offsetStash{},
+			Config:          ReaderConfig{ErrorOnWrongGenerationCommit: false},
+			GenerationId:    2,
+		},
+		"illegal generation error only 2 generations": {
+			Fails:           1,
+			Invocations:     1,
+			Offsets:         offsetStash{"topic": {0: {0, 1}, 1: {0, 2}}},
+			ExpectedOffsets: offsetStash{"topic": {1: {0, 2}}},
+			Config:          ReaderConfig{ErrorOnWrongGenerationCommit: false},
+			GenerationId:    2,
+		},
+		"illegal generation error only 1 generation - error propagation": {
+			Fails:           1,
+			Invocations:     1,
+			Offsets:         offsetStash{"topic": {0: {0, 1}, 1: {0, 1}}},
+			ExpectedOffsets: offsetStash{},
+			Config:          ReaderConfig{ErrorOnWrongGenerationCommit: true},
+			HasError:        true,
+			GenerationId:    2,
+		},
+		"illegal generation error only 2 generations - error propagation": {
+			Fails:           1,
+			Invocations:     1,
+			Offsets:         offsetStash{"topic": {0: {0, 1}, 1: {0, 2}}},
+			ExpectedOffsets: offsetStash{"topic": {1: {0, 2}}},
+			Config:          ReaderConfig{ErrorOnWrongGenerationCommit: true},
+			HasError:        true,
+			GenerationId:    2,
 		},
 	}
 
 	for label, test := range tests {
 		t.Run(label, func(t *testing.T) {
+			requests := make([]offsetCommitRequestV2, 0)
 			count := 0
 			gen := &Generation{
 				conn: mockCoordinator{
-					offsetCommitFunc: func(offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+					offsetCommitFunc: func(r offsetCommitRequestV2) (offsetCommitResponseV2, error) {
+						requests = append(requests, r)
 						count++
+						if r.GenerationID != test.GenerationId {
+							return offsetCommitResponseV2{}, IllegalGeneration
+						}
 						if count <= test.Fails {
 							return offsetCommitResponseV2{}, io.EOF
 						}
 						return offsetCommitResponseV2{}, nil
 					},
 				},
-				done:     make(chan struct{}),
-				log:      func(func(Logger)) {},
-				logError: func(func(Logger)) {},
+				done:        make(chan struct{}),
+				log:         func(func(Logger)) {},
+				logError:    func(func(Logger)) {},
+				Assignments: map[string][]PartitionAssignment{"topic": {{0, 1}}},
 			}
 
-			r := &Reader{stctx: context.Background()}
-			err := r.commitOffsetsWithRetry(gen, offsets, defaultCommitRetries)
+			r := &Reader{stctx: context.Background(), config: test.Config}
+			err := r.commitOffsetsWithRetry(gen, test.Offsets, defaultCommitRetries)
 			switch {
 			case test.HasError && err == nil:
 				t.Error("bad err: expected not nil; got nil")
 			case !test.HasError && err != nil:
 				t.Errorf("bad err: expected nil; got %v", err)
+			default:
+				if !reflect.DeepEqual(test.ExpectedOffsets, test.Offsets) {
+					t.Errorf("bad expected offsets: expected %+v; got %v", test.ExpectedOffsets, test.Offsets)
+				}
 			}
 		})
 	}
@@ -1559,7 +1750,7 @@ func TestConsumerGroupWithGroupTopicsSingle(t *testing.T) {
 	}
 }
 
-func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
+func TestConsumerGroupWithGroupTopicsMultiple(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

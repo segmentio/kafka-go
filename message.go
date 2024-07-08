@@ -20,6 +20,10 @@ type Message struct {
 	Value         []byte
 	Headers       []Header
 
+	// If the message has been sent by a consumer group, it contains the
+	// generation's id. Value is -1 if not using consumer groups.
+	GenerationId int32
+
 	// This field is used to hold arbitrary data you wish to include, so it
 	// will be available when handle it on the Writer's `Completion` method,
 	// this support the application can do any post operation on each message.

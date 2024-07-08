@@ -416,6 +416,12 @@ func (g *Generation) Start(fn func(ctx context.Context)) {
 // consumer group coordinator.  This can be used to reset the consumer to
 // explicit offsets.
 func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
+	return g.CommitOffsetsForGenID(g.ID, offsets)
+}
+
+// CommitOffsetsForGenID commits the provided topic+partition+offset combos to the
+// consumer group coordinator specifying the given genID.
+func (g *Generation) CommitOffsetsForGenID(genID int32, offsets map[string]map[int]int64) error {
 	if len(offsets) == 0 {
 		return nil
 	}
@@ -434,7 +440,7 @@ func (g *Generation) CommitOffsets(offsets map[string]map[int]int64) error {
 
 	request := offsetCommitRequestV2{
 		GroupID:       g.GroupID,
-		GenerationID:  g.ID,
+		GenerationID:  genID,
 		MemberID:      g.MemberID,
 		RetentionTime: g.retentionMillis,
 		Topics:        topics,
@@ -925,12 +931,12 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 // the leader.  Otherwise, GroupMemberAssignments will be nil.
 //
 // Possible kafka error codes returned:
-//  * GroupLoadInProgress:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * InconsistentGroupProtocol:
-//  * InvalidSessionTimeout:
-//  * GroupAuthorizationFailed:
+//   * GroupLoadInProgress:
+//   * GroupCoordinatorNotAvailable:
+//   * NotCoordinatorForGroup:
+//   * InconsistentGroupProtocol:
+//   * InvalidSessionTimeout:
+//   * GroupAuthorizationFailed:
 func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
 	request, err := cg.makeJoinGroupRequestV1(memberID)
 	if err != nil {
@@ -1073,11 +1079,11 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 // Readers subscriptions topic => partitions
 //
 // Possible kafka error codes returned:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * IllegalGeneration:
-//  * RebalanceInProgress:
-//  * GroupAuthorizationFailed:
+//   * GroupCoordinatorNotAvailable:
+//   * NotCoordinatorForGroup:
+//   * IllegalGeneration:
+//   * RebalanceInProgress:
+//   * GroupAuthorizationFailed:
 func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
 	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments)
 	response, err := conn.syncGroup(request)
