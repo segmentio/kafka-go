@@ -1,8 +1,11 @@
 package kafka
 
 import (
+	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestError(t *testing.T) {
@@ -109,5 +112,17 @@ func TestError(t *testing.T) {
 		if s := err.Description(); len(s) != 0 {
 			t.Error("non-empty description:", s)
 		}
+	})
+
+	t.Run("MessageTooLargeError error.Is satisfaction", func(t *testing.T) {
+		err := MessageSizeTooLarge
+		msg := []Message{
+			{Key: []byte("key"), Value: []byte("value")},
+			{Key: []byte("key"), Value: make([]byte, 1024*1024)},
+		}
+		msgTooLarge := messageTooLarge(msg, 1)
+		assert.False(t, errors.Is(err, msgTooLarge))
+		assert.Equal(t, err.Error(), msgTooLarge.Error())
+		assert.True(t, errors.Is(err, msgTooLarge.ErrorType()))
 	})
 }
