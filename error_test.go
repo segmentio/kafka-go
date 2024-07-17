@@ -117,7 +117,7 @@ func TestError(t *testing.T) {
 		err := MessageSizeTooLarge
 		msg := []Message{
 			{Key: []byte("key"), Value: []byte("value")},
-			{Key: []byte("key"), Value: make([]byte, 1024*1024)},
+			{Key: []byte("key"), Value: make([]byte, 8)},
 		}
 		msgTooLarge := messageTooLarge(msg, 1)
 		assert.NotErrorIs(t, err, msgTooLarge)

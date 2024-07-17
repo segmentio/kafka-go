@@ -656,7 +656,7 @@ func (e MessageTooLargeError) Error() string {
 	return MessageSizeTooLarge.Error()
 }
 
-func (e MessageTooLargeError) Unwrap() Error {
+func (e MessageTooLargeError) Unwrap() error {
 	return MessageSizeTooLarge
 }
 
