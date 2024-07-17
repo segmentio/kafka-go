@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 
@@ -121,8 +120,8 @@ func TestError(t *testing.T) {
 			{Key: []byte("key"), Value: make([]byte, 1024*1024)},
 		}
 		msgTooLarge := messageTooLarge(msg, 1)
-		assert.False(t, errors.Is(err, msgTooLarge))
-		assert.Equal(t, err.Error(), msgTooLarge.Error())
-		assert.True(t, errors.Is(err, msgTooLarge.ErrorType()))
+		assert.NotErrorIs(t, err, msgTooLarge)
+		assert.Contains(t, msgTooLarge.Error(), MessageSizeTooLarge.Error())
+		assert.ErrorIs(t, msgTooLarge, MessageSizeTooLarge)
 	})
 }
