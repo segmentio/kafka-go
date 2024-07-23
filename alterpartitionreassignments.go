@@ -81,7 +81,7 @@ func (c *Client) AlterPartitionReassignments(
 			apiTopicMap[topic] = apiTopic
 		}
 
-		replicas := []int32{}
+		var replicas []int32
 		for _, brokerID := range assignment.BrokerIDs {
 			replicas = append(replicas, int32(brokerID))
 		}
