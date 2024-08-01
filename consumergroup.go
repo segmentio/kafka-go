@@ -1,8 +1,6 @@
 package kafka
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol/consumer"
 )
 
 // ErrGroupClosed is returned by ConsumerGroup.Next when the group has already
@@ -168,7 +168,6 @@ type ConsumerGroupConfig struct {
 // Validate method validates ConsumerGroupConfig properties and sets relevant
 // defaults.
 func (config *ConsumerGroupConfig) Validate() error {
-
 	if len(config.Brokers) == 0 {
 		return errors.New("cannot create a consumer group with an empty list of broker addresses")
 	}
@@ -925,12 +924,12 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 // the leader.  Otherwise, GroupMemberAssignments will be nil.
 //
 // Possible kafka error codes returned:
-//  * GroupLoadInProgress:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * InconsistentGroupProtocol:
-//  * InvalidSessionTimeout:
-//  * GroupAuthorizationFailed:
+//   - GroupLoadInProgress:
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - InconsistentGroupProtocol:
+//   - InvalidSessionTimeout:
+//   - GroupAuthorizationFailed:
 func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
 	request, err := cg.makeJoinGroupRequestV1(memberID)
 	if err != nil {
@@ -951,7 +950,6 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	cg.withLogger(func(l Logger) {
 		l.Printf("joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
 	})
-
 	var assignments GroupMemberAssignments
 	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
 		v, err := cg.assignTopicPartitions(conn, response)
@@ -990,15 +988,19 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupReque
 	for _, balancer := range cg.config.GroupBalancers {
 		userData, err := balancer.UserData()
 		if err != nil {
-			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
+			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata user data for member, %v: %w", balancer.ProtocolName(), err)
+		}
+		pm, err := (&consumer.Subscription{
+			Version:  1,
+			Topics:   cg.config.Topics,
+			UserData: userData,
+		}).Bytes()
+		if err != nil {
+			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata subscription for member, %v: %w", balancer.ProtocolName(), err)
 		}
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
-			ProtocolName: balancer.ProtocolName(),
-			ProtocolMetadata: groupMetadata{
-				Version:  1,
-				Topics:   cg.config.Topics,
-				UserData: userData,
-			}.bytes(),
+			ProtocolName:     balancer.ProtocolName(),
+			ProtocolMetadata: pm,
 		})
 	}
 
@@ -1053,9 +1055,9 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMemberV1) ([]GroupMember, error) {
 	members := make([]GroupMember, 0, len(in))
 	for _, item := range in {
-		metadata := groupMetadata{}
-		reader := bufio.NewReader(bytes.NewReader(item.MemberMetadata))
-		if remain, err := (&metadata).readFrom(reader, len(item.MemberMetadata)); err != nil || remain != 0 {
+		var metadata consumer.Subscription
+		err := metadata.FromBytes(item.MemberMetadata)
+		if err != nil {
 			return nil, fmt.Errorf("unable to read metadata for member, %v: %w", item.MemberID, err)
 		}
 
@@ -1073,13 +1075,16 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 // Readers subscriptions topic => partitions
 //
 // Possible kafka error codes returned:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * IllegalGeneration:
-//  * RebalanceInProgress:
-//  * GroupAuthorizationFailed:
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - IllegalGeneration:
+//   - RebalanceInProgress:
+//   - GroupAuthorizationFailed:
 func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
-	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments)
+	request, err := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments)
+	if err != nil {
+		return nil, err
+	}
 	response, err := conn.syncGroup(request)
 	if err == nil && response.ErrorCode != 0 {
 		err = Error(response.ErrorCode)
@@ -1088,13 +1093,13 @@ func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generation
 		return nil, err
 	}
 
-	assignments := groupAssignment{}
-	reader := bufio.NewReader(bytes.NewReader(response.MemberAssignments))
-	if _, err := (&assignments).readFrom(reader, len(response.MemberAssignments)); err != nil {
+	var assignment consumer.Assignment
+	err = assignment.FromBytes(response.MemberAssignments)
+	if err != nil {
 		return nil, err
 	}
 
-	if len(assignments.Topics) == 0 {
+	if len(assignment.AssignedPartitions) == 0 {
 		cg.withLogger(func(l Logger) {
 			l.Printf("received empty assignments for group, %v as member %s for generation %d", cg.config.ID, memberID, generationID)
 		})
@@ -1104,10 +1109,15 @@ func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generation
 		l.Printf("sync group finished for group, %v", cg.config.ID)
 	})
 
-	return assignments.Topics, nil
+	assignments := make(map[string][]int32, len(assignment.AssignedPartitions))
+	for _, ap := range assignment.AssignedPartitions {
+		assignments[ap.Topic] = ap.Partitions
+	}
+
+	return assignments, nil
 }
 
-func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID int32, memberAssignments GroupMemberAssignments) syncGroupRequestV0 {
+func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID int32, memberAssignments GroupMemberAssignments) (syncGroupRequestV0, error) {
 	request := syncGroupRequestV0{
 		GroupID:      cg.config.ID,
 		GenerationID: generationID,
@@ -1118,20 +1128,27 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 		request.GroupAssignments = make([]syncGroupRequestGroupAssignmentV0, 0, 1)
 
 		for memberID, topics := range memberAssignments {
-			topics32 := make(map[string][]int32)
+			assignedPartitions := make([]consumer.TopicPartition, 0, len(topics))
 			for topic, partitions := range topics {
-				partitions32 := make([]int32, len(partitions))
-				for i := range partitions {
-					partitions32[i] = int32(partitions[i])
+				topic := consumer.TopicPartition{
+					Topic:      topic,
+					Partitions: make([]int32, len(partitions)),
 				}
-				topics32[topic] = partitions32
+				for i := range partitions {
+					topic.Partitions[i] = int32(partitions[i])
+				}
+				assignedPartitions = append(assignedPartitions, topic)
+			}
+			assignments, err := (&consumer.Assignment{
+				Version:            1,
+				AssignedPartitions: assignedPartitions,
+			}).Bytes()
+			if err != nil {
+				return request, err
 			}
 			request.GroupAssignments = append(request.GroupAssignments, syncGroupRequestGroupAssignmentV0{
-				MemberID: memberID,
-				MemberAssignments: groupAssignment{
-					Version: 1,
-					Topics:  topics32,
-				}.bytes(),
+				MemberID:          memberID,
+				MemberAssignments: assignments,
 			})
 		}
 
@@ -1140,7 +1157,7 @@ func (cg *ConsumerGroup) makeSyncGroupRequestV0(memberID string, generationID in
 		})
 	}
 
-	return request
+	return request, nil
 }
 
 func (cg *ConsumerGroup) fetchOffsets(conn coordinator, subs map[string][]int32) (map[string]map[int]int64, error) {

@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -187,43 +186,6 @@ func (c *Client) JoinGroup(ctx context.Context, req *JoinGroupRequest) (*JoinGro
 	}
 
 	return res, nil
-}
-
-type groupMetadata struct {
-	Version  int16
-	Topics   []string
-	UserData []byte
-}
-
-func (t groupMetadata) size() int32 {
-	return sizeofInt16(t.Version) +
-		sizeofStringArray(t.Topics) +
-		sizeofBytes(t.UserData)
-}
-
-func (t groupMetadata) writeTo(wb *writeBuffer) {
-	wb.writeInt16(t.Version)
-	wb.writeStringArray(t.Topics)
-	wb.writeBytes(t.UserData)
-}
-
-func (t groupMetadata) bytes() []byte {
-	buf := bytes.NewBuffer(nil)
-	t.writeTo(&writeBuffer{w: buf})
-	return buf.Bytes()
-}
-
-func (t *groupMetadata) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	if remain, err = readInt16(r, size, &t.Version); err != nil {
-		return
-	}
-	if remain, err = readStringArray(r, remain, &t.Topics); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.UserData); err != nil {
-		return
-	}
-	return
 }
 
 type joinGroupRequestGroupProtocolV1 struct {
