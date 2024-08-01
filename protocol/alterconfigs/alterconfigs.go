@@ -1,6 +1,14 @@
 package alterconfigs
 
-import "github.com/segmentio/kafka-go/protocol"
+import (
+	"strconv"
+
+	"github.com/segmentio/kafka-go/protocol"
+)
+
+const (
+	resourceTypeBroker int8 = 4
+)
 
 func init() {
 	protocol.Register(&Request{}, &Response{})
@@ -15,6 +23,18 @@ type Request struct {
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.AlterConfigs }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
+	// Broker alter config requests must be sent to the associated broker
+	for _, resource := range r.Resources {
+		if resource.ResourceType == resourceTypeBroker {
+			brokerID, err := strconv.Atoi(resource.ResourceName)
+			if err != nil {
+				return protocol.Broker{}, err
+			}
+
+			return cluster.Brokers[int32(brokerID)], nil
+		}
+	}
+
 	return cluster.Brokers[cluster.Controller], nil
 }
 
