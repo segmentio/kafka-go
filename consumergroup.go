@@ -1027,12 +1027,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 
 	topics := extractTopics(members)
 	partitions, err := conn.readPartitions(topics...)
-
-	// it's not a failure if the topic doesn't exist yet.  it results in no
-	// assignments for the topic.  this matches the behavior of the official
-	// clients: java, python, and librdkafka.
-	// a topic watcher can trigger a rebalance when the topic comes into being.
-	if err != nil && !errors.Is(err, UnknownTopicOrPartition) {
+	if err != nil {
 		return nil, err
 	}
 
