@@ -510,10 +510,11 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 		defer ticker.Stop()
 
 		ops, err := g.conn.readPartitions(topic)
-		if err != nil {
+		if err != nil && !errors.Is(err, UnknownTopicOrPartition) {
 			g.logError(func(l Logger) {
 				l.Printf("Problem getting partitions during startup, %v\n, Returning and setting up nextGeneration", err)
 			})
+
 			return
 		}
 		oParts := len(ops)
