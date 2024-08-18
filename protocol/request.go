@@ -77,10 +77,6 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	}
 
 	t := &apiTypes[apiKey]
-	if t == nil {
-		return fmt.Errorf("unsupported api: %s", apiNames[apiKey])
-	}
-
 	if typedMessage, ok := msg.(OverrideTypeMessage); ok {
 		typeKey := typedMessage.TypeKey()
 		overrideType := overrideApiTypes[apiKey][typeKey]
