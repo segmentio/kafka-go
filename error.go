@@ -636,6 +636,7 @@ func coalesceErrors(errs ...error) error {
 	return nil
 }
 
+// MessageTooLargeError is returned when a message is too large to fit within the allowed size.
 type MessageTooLargeError struct {
 	Message   Message
 	Remaining []Message
@@ -653,6 +654,10 @@ func messageTooLarge(msgs []Message, i int) MessageTooLargeError {
 
 func (e MessageTooLargeError) Error() string {
 	return MessageSizeTooLarge.Error()
+}
+
+func (e MessageTooLargeError) Unwrap() error {
+	return MessageSizeTooLarge
 }
 
 func makeError(code int16, message string) error {
