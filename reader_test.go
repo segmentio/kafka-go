@@ -1559,8 +1559,8 @@ func TestConsumerGroupWithGroupTopicsSingle(t *testing.T) {
 	}
 }
 
-func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func TestConsumerGroupWithGroupTopicsMultiple(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	client, shutdown := newLocalClient()
@@ -1587,10 +1587,9 @@ func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
 	}
 	defer w.Close()
 
-	time.Sleep(time.Second)
-
 	msgs := make([]Message, 0, len(conf.GroupTopics))
 	for _, topic := range conf.GroupTopics {
+		waitForTopic(ctx, t, topic)
 		msgs = append(msgs, Message{Topic: topic})
 	}
 	if err := w.WriteMessages(ctx, msgs...); err != nil {
