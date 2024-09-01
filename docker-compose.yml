@@ -6,18 +6,27 @@ services:
     hostname: zookeeper
     image: bitnami/zookeeper:latest
     ports:
-      - 2181:2181
+    - 2181:2181
     environment:
       ALLOW_ANONYMOUS_LOGIN: yes
+    # If you are on arm64 and experiencing issues with the tests (hangs,
+    # connection reset) then try the following in order:
+
+    # - stopping and removing all downloaded container images
+    # - ensuring you have the latest Docker Desktop version
+    # - factory reset your Docker Desktop settings
+
+    # If you are still running into issues please post in #help-infra-seg.
+    platform: linux/amd64
   kafka:
     container_name: kafka
     image: bitnami/kafka:2.3.1-ol-7-r61
     restart: on-failure:3
     links:
-      - zookeeper
+    - zookeeper
     ports:
-      - 9092:9092
-      - 9093:9093
+    - 9092:9092
+    - 9093:9093
     environment:
       KAFKA_CFG_BROKER_ID: 1
       KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
@@ -37,6 +46,10 @@ services:
       KAFKA_BROKER_PASSWORD: admin-secret
       ALLOW_PLAINTEXT_LISTENER: yes
     entrypoint:
-      - "/bin/bash"
-      - "-c"
-      - /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config "SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]" --entity-type users --entity-name adminscram; exec /entrypoint.sh /run.sh
+    - "/bin/bash"
+    - "-c"
+    - /opt/bitnami/kafka/bin/kafka-configs.sh --zookeeper zookeeper:2181 --alter --add-config
+      "SCRAM-SHA-256=[password=admin-secret-256],SCRAM-SHA-512=[password=admin-secret-512]"
+      --entity-type users --entity-name adminscram; exec /entrypoint.sh /run.sh
+    # See platform comment above for amd64/arm64 troubleshooting
+    platform: linux/amd64
