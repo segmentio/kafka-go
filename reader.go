@@ -311,9 +311,6 @@ func (r *Reader) run(cg *ConsumerGroup) {
 						for _, partition := range partitions {
 							assignedPartitions = append(assignedPartitions, partition.ID)
 						}
-						sort.Slice(assignedPartitions, func(i, j int) bool {
-							return assignedPartitions[i] < assignedPartitions[j]
-						})
 						assignments = append(assignments, GroupMemberTopic{
 							Topic:      topic,
 							Partitions: assignedPartitions,

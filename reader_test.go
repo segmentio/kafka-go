@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
@@ -891,7 +892,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 	}
 }
 
-func TestAssignmentListener(t *testing.T) {
+func TestPartitionAssignmentListener(t *testing.T) {
 	// It appears that some of the tests depend on all these tests being
 	// run concurrently to pass... this is brittle and should be fixed
 	// at some point.
@@ -917,6 +918,12 @@ func TestAssignmentListener(t *testing.T) {
 		AssignmentListener: func(partitions []GroupMemberTopic) {
 			lock.Lock()
 			defer lock.Unlock()
+			// we sort the received partitions for easier comparison
+			for _, partition := range partitions {
+				sort.Slice(partition.Partitions, func(i, j int) bool {
+					return partition.Partitions[i] < partition.Partitions[j]
+				})
+			}
 			assignments = append(assignments, partitions)
 		},
 	})
