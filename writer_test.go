@@ -191,6 +191,10 @@ func TestWriter(t *testing.T) {
 			scenario: "test write message with writer data",
 			function: testWriteMessageWithWriterData,
 		},
+		{
+			scenario: "test no new partition writers after close",
+			function: testWriterNoNewPartitionWritersAfterClose,
+		},
 	}
 
 	for _, test := range tests {
@@ -1028,6 +1032,46 @@ func testWriterOverrideConfigStats(t *testing.T) {
 	if stats.WriteTimeout != 32 {
 		t.Error("Incorrect WriteTimeout value")
 	}
+}
+
+func testWriterNoNewPartitionWritersAfterClose(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	topic1 := makeTopic()
+	createTopic(t, topic1, 1)
+	defer deleteTopic(t, topic1)
+
+	w := newTestWriter(WriterConfig{
+		Topic: topic1,
+	})
+	defer w.Close() // try and close anyway after test finished
+
+	// using balancer to close writer right between first mutex is released and second mutex is taken to make map of partition writers
+	w.Balancer = mockBalancerFunc(func(m Message, i ...int) int {
+		go w.Close() // close is blocking so run in goroutine
+		for {        // wait until writer is marked as closed
+			w.mutex.Lock()
+			if w.closed {
+				w.mutex.Unlock()
+				break
+			}
+			w.mutex.Unlock()
+		}
+		return 0
+	})
+
+	msg := Message{Value: []byte("Hello World")} // no topic
+
+	if err := w.WriteMessages(ctx, msg); !errors.Is(err, io.ErrClosedPipe) {
+		t.Errorf("expected error: %v got: %v", io.ErrClosedPipe, err)
+		return
+	}
+}
+
+type mockBalancerFunc func(msg Message, partitions ...int) (partition int)
+
+func (b mockBalancerFunc) Balance(msg Message, partitions ...int) int {
+	return b(msg, partitions...)
 }
 
 type staticBalancer struct {
