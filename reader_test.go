@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -855,6 +856,12 @@ func TestReaderConsumerGroup(t *testing.T) {
 			partitions: 1,
 			function:   testConsumerGroupSimple,
 		},
+
+		{
+			scenario:   "Do not commit not assigned messages after rebalance",
+			partitions: 2,
+			function:   testReaderConsumerGroupRebalanceDoesNotCommitNotOwnedPartitions,
+		},
 	}
 
 	for _, test := range tests {
@@ -1174,6 +1181,144 @@ func testReaderConsumerGroupRebalanceAcrossManyPartitionsAndConsumers(t *testing
 	}
 }
 
+func testReaderConsumerGroupRebalanceDoesNotCommitNotOwnedPartitions(t *testing.T, ctx context.Context, firstReader *Reader) {
+	client, shutdown := newLocalClient()
+	defer shutdown()
+
+	// write messages across both partitions
+	writer := &Writer{
+		Addr:      TCP(firstReader.config.Brokers...),
+		Topic:     firstReader.config.Topic,
+		Balancer:  &RoundRobin{},
+		BatchSize: 1,
+		Transport: client.Transport,
+	}
+	messageCount := 4
+	if err := writer.WriteMessages(ctx, makeTestSequence(messageCount)...); err != nil {
+		t.Fatalf("bad write messages: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("bad write err: %v", err)
+	}
+
+	// read all messages for the first reader
+	msgsForFirstReader := make(map[int][]Message, 0)
+	totalEvents := 0
+	for i := 0; i < messageCount; i++ {
+		if msg, err := firstReader.FetchMessage(ctx); err != nil {
+			t.Errorf("reader %v expected to read 1 message", i)
+		} else {
+			msgs, ok := msgsForFirstReader[msg.Partition]
+			if !ok {
+				msgs = make([]Message, 0)
+			}
+			msgs = append(msgs, msg)
+			msgsForFirstReader[msg.Partition] = msgs
+			totalEvents++
+		}
+	}
+	require.Equal(t, messageCount, totalEvents)
+	secondReader := NewReader(firstReader.config)
+	defer secondReader.Close()
+
+	require.Eventually(t, func() bool {
+		resp, err := client.DescribeGroups(
+			ctx,
+			&DescribeGroupsRequest{
+				GroupIDs: []string{firstReader.config.GroupID},
+			},
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, resp)
+		return len(resp.Groups[0].Members) == 2
+	}, 10*time.Second, 100*time.Millisecond, "Group does not have 2 members")
+
+	var partitionAssignedToSecondConsumer int
+	msgsForSecondReader := make([]Message, 0, messageCount)
+	for i := 0; i < messageCount/2; i++ {
+		if msg, err := secondReader.FetchMessage(ctx); err != nil {
+			t.Errorf("reader %v expected to read 1 message", i)
+		} else {
+			msgsForSecondReader = append(msgsForSecondReader, msg)
+			partitionAssignedToSecondConsumer = msg.Partition
+		}
+	}
+	partitionAssignedToFirstConsumer := (partitionAssignedToSecondConsumer + 1) % 2
+
+	// commit all messages for the second reader and wait until commits reach the server
+	require.NoError(t, secondReader.CommitMessages(ctx, msgsForSecondReader...))
+	require.Eventually(t, func() bool {
+		resp, err := client.OffsetFetch(ctx, &OffsetFetchRequest{
+			GroupID: firstReader.config.GroupID,
+			Topics:  map[string][]int{firstReader.config.Topic: []int{partitionAssignedToSecondConsumer}},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+
+		for _, topicOffsets := range resp.Topics {
+			for _, offsetPartition := range topicOffsets {
+				if offsetPartition.Partition == partitionAssignedToSecondConsumer {
+					return msgsForSecondReader[len(msgsForSecondReader)-1].Offset+1 == offsetPartition.CommittedOffset
+				}
+			}
+		}
+		return false
+	}, 5*time.Second, 100*time.Millisecond, "Offsets were never committed")
+
+	// commit first message for the second reader on the first reader
+	require.NoError(t, firstReader.CommitMessages(ctx, msgsForFirstReader[partitionAssignedToSecondConsumer][0]))
+	require.Eventually(t, func() bool {
+		resp, err := client.OffsetFetch(ctx, &OffsetFetchRequest{
+			GroupID: firstReader.config.GroupID,
+			Topics:  map[string][]int{firstReader.config.Topic: []int{partitionAssignedToSecondConsumer}},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+
+		for _, topicOffsets := range resp.Topics {
+			for _, offsetPartition := range topicOffsets {
+				if offsetPartition.Partition == partitionAssignedToSecondConsumer {
+					return msgsForSecondReader[len(msgsForSecondReader)-1].Offset+1 == offsetPartition.CommittedOffset
+				}
+			}
+		}
+		return false
+	}, 5*time.Second, 100*time.Millisecond, "Offsets were altered")
+
+	// commit the messages it can actually commit and verify it works
+	for i := 0; i < len(msgsForFirstReader); i++ {
+		if msg, err := firstReader.FetchMessage(ctx); err != nil {
+			t.Errorf("reader %v expected to read 1 message", i)
+		} else {
+			msgs, ok := msgsForFirstReader[msg.Partition]
+			if !ok {
+				msgs = make([]Message, 0)
+			}
+			msgs = append(msgs, msg)
+			msgsForFirstReader[msg.Partition] = msgs
+			totalEvents++
+		}
+	}
+	require.NoError(t, firstReader.CommitMessages(ctx, msgsForFirstReader[partitionAssignedToFirstConsumer][len(msgsForFirstReader[partitionAssignedToFirstConsumer])-1]))
+	require.Eventually(t, func() bool {
+		resp, err := client.OffsetFetch(ctx, &OffsetFetchRequest{
+			GroupID: firstReader.config.GroupID,
+			Topics:  map[string][]int{firstReader.config.Topic: []int{partitionAssignedToFirstConsumer}},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+
+		for _, topicOffsets := range resp.Topics {
+			for _, offsetPartition := range topicOffsets {
+				if offsetPartition.Partition == partitionAssignedToFirstConsumer {
+					return msgsForFirstReader[partitionAssignedToFirstConsumer][len(msgsForSecondReader)-1].Offset+1 == offsetPartition.CommittedOffset
+				}
+			}
+		}
+		return false
+	}, 5*time.Second, 100*time.Millisecond, "Could not commit the new element")
+}
+
 func TestOffsetStash(t *testing.T) {
 	const topic = "topic"
 
@@ -1195,16 +1340,16 @@ func TestOffsetStash(t *testing.T) {
 			Given:    offsetStash{},
 			Messages: []Message{newMessage(0, 0)},
 			Expected: offsetStash{
-				topic: {0: 1},
+				topic: {0: {1, 1}},
 			},
 		},
 		"ignores earlier offsets": {
 			Given: offsetStash{
-				topic: {0: 2},
+				topic: {0: {2, 1}},
 			},
 			Messages: []Message{newMessage(0, 0)},
 			Expected: offsetStash{
-				topic: {0: 2},
+				topic: {0: {2, 1}},
 			},
 		},
 		"uses latest offset": {
@@ -1215,7 +1360,7 @@ func TestOffsetStash(t *testing.T) {
 				newMessage(0, 1),
 			},
 			Expected: offsetStash{
-				topic: {0: 4},
+				topic: {0: {4, 1}},
 			},
 		},
 		"uses latest offset, across multiple topics": {
@@ -1229,8 +1374,8 @@ func TestOffsetStash(t *testing.T) {
 			},
 			Expected: offsetStash{
 				topic: {
-					0: 4,
-					1: 7,
+					0: {4, 1},
+					1: {7, 1},
 				},
 			},
 		},
@@ -1282,10 +1427,11 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 				return offsetCommitResponseV2{}, nil
 			},
 		},
-		done:     make(chan struct{}),
-		log:      func(func(Logger)) {},
-		logError: func(func(Logger)) {},
-		joined:   make(chan struct{}),
+		done:        make(chan struct{}),
+		log:         func(func(Logger)) {},
+		logError:    func(func(Logger)) {},
+		joined:      make(chan struct{}),
+		Assignments: map[string][]PartitionAssignment{"topic": {{0, 1}}},
 	}
 
 	// initialize commits so that the commitLoopImmediate select statement blocks
@@ -1319,7 +1465,7 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 }
 
 func TestCommitOffsetsWithRetry(t *testing.T) {
-	offsets := offsetStash{"topic": {0: 0}}
+	offsets := offsetStash{"topic": {0: {0, 1}}}
 
 	tests := map[string]struct {
 		Fails       int
@@ -1353,9 +1499,10 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 						return offsetCommitResponseV2{}, nil
 					},
 				},
-				done:     make(chan struct{}),
-				log:      func(func(Logger)) {},
-				logError: func(func(Logger)) {},
+				done:        make(chan struct{}),
+				log:         func(func(Logger)) {},
+				logError:    func(func(Logger)) {},
+				Assignments: map[string][]PartitionAssignment{"topic": {{0, 1}}},
 			}
 
 			r := &Reader{stctx: context.Background()}
@@ -1559,7 +1706,7 @@ func TestConsumerGroupWithGroupTopicsSingle(t *testing.T) {
 	}
 }
 
-func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
+func TestConsumerGroupWithGroupTopicsMultiple(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

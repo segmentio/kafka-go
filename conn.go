@@ -65,6 +65,8 @@ type Conn struct {
 	apiVersions atomic.Value // apiVersionMap
 
 	transactionalID *string
+
+	generationId int32
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -182,6 +184,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		offset:          FirstOffset,
 		requiredAcks:    -1,
 		transactionalID: emptyToNullable(config.TransactionalID),
+		generationId:    -1,
 	}
 
 	c.wb.w = &c.wbuf
@@ -388,6 +391,7 @@ func (c *Conn) joinGroup(request joinGroupRequestV1) (joinGroupResponseV1, error
 		return joinGroupResponseV1{}, Error(response.ErrorCode)
 	}
 
+	c.generationId = response.GenerationID
 	return response, nil
 }
 
