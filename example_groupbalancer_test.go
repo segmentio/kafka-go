@@ -31,9 +31,9 @@ func ExampleNewReader_rackAffinity() {
 }
 
 // findRack is the basic rack resolver strategy for use in AWS.  It supports
-//  * ECS with the task metadata endpoint enabled (returns the container
-//    instance's availability zone)
-//  * Linux EC2 (returns the instance's availability zone)
+//   - ECS with the task metadata endpoint enabled (returns the container
+//     instance's availability zone)
+//   - Linux EC2 (returns the instance's availability zone)
 func findRack() string {
 	switch whereAmI() {
 	case "ecs":
