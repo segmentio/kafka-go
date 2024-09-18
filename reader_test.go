@@ -531,6 +531,65 @@ var (
 )
 
 func BenchmarkReader(b *testing.B) {
+	b.Run("pooling=disabled", func(b *testing.B) {
+		var bytesCount int
+		benchmarkReader(b,
+			func(_ *ReaderConfig) {},
+			func(msg Message) {
+				bytesCount += len(msg.Key) + len(msg.Value) // Make sure this isn't optimized away.
+			},
+		)
+	})
+
+	b.Run("pooling=enabled", func(b *testing.B) {
+		// This benchmark serves as an example of usage of MakeKeyBytes
+		// and MakeValBytes configuration options.
+		// It uses three pools: two for pointers to bytes slices used for
+		// keys and values of the messages.
+		// It uses a third one to keep the pointers to those slices
+		// while they're being passed around, to avoid allocating a new pointer
+		// when the slices are returned back to the pool.
+
+		keyBytesPool := sync.Pool{New: func() interface{} { return new([]byte) }}
+		valBytesPool := sync.Pool{New: func() interface{} { return new([]byte) }}
+		ptrBytesPool := sync.Pool{New: func() interface{} { return new([]byte) }}
+
+		makeBytesFromPool := func(p *sync.Pool) func(len int) []byte {
+			return func(l int) []byte {
+				bp := p.Get().(*[]byte)
+				b := *bp
+				ptrBytesPool.Put(bp)
+				if cap(b) < l {
+					return make([]byte, l)
+				}
+				return b[:l]
+			}
+		}
+
+		releaseMessageBytes := func(msg Message) {
+			kbp := ptrBytesPool.Get().(*[]byte)
+			*kbp = msg.Key
+			keyBytesPool.Put(kbp)
+			vbp := ptrBytesPool.Get().(*[]byte)
+			*vbp = msg.Value
+			valBytesPool.Put(vbp)
+		}
+
+		var bytesCount int
+		benchmarkReader(b,
+			func(cfg *ReaderConfig) {
+				cfg.MakeKeyBytes = makeBytesFromPool(&keyBytesPool)
+				cfg.MakeValBytes = makeBytesFromPool(&valBytesPool)
+			},
+			func(msg Message) {
+				bytesCount += len(msg.Key) + len(msg.Value) // Make sure this isn't optimized away.
+				releaseMessageBytes(msg)
+			},
+		)
+	})
+}
+
+func benchmarkReader(b *testing.B, configure func(*ReaderConfig), process func(Message)) {
 	const broker = "localhost:9092"
 	ctx := context.Background()
 
@@ -551,29 +610,30 @@ func BenchmarkReader(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
-
-		b.ResetTimer()
 	})
 
-	r := NewReader(ReaderConfig{
+	cfg := ReaderConfig{
 		Brokers:   []string{broker},
 		Topic:     benchmarkReaderTopic,
 		Partition: 0,
 		MinBytes:  1e3,
 		MaxBytes:  1e6,
 		MaxWait:   100 * time.Millisecond,
-	})
+	}
+	configure(&cfg)
+	r := NewReader(cfg)
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if (i % 10000) == 0 {
-			r.SetOffset(-1)
+			r.SetOffset(FirstOffset)
 		}
-		_, err := r.ReadMessage(ctx)
+		msg, err := r.ReadMessage(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
+		process(msg)
 	}
-
 	r.Close()
 	b.SetBytes(int64(len(benchmarkReaderPayload)))
 }
