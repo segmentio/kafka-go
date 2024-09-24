@@ -113,7 +113,7 @@ func TestClientDeleteOffset(t *testing.T) {
 
 	fetresps := ofr.Topics[topic]
 	if len(fetresps) != 3 {
-		t.Fatalf("expected 3 offsetfetchpartition responses; got %d", len(resps))
+		t.Fatalf("expected 3 offsetfetchpartition responses; got %d", len(fetresps))
 	}
 
 	for _, r := range fetresps {
