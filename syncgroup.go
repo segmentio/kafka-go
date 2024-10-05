@@ -2,13 +2,11 @@ package kafka
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"time"
 
-	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/consumer"
 	"github.com/segmentio/kafka-go/protocol/syncgroup"
 )
@@ -93,7 +91,7 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 
 	for _, assignment := range req.Assignments {
 		assign := consumer.Assignment{
-			Version:            consumer.MaxVersionSupported,
+			Version:            1,
 			AssignedPartitions: make([]consumer.TopicPartition, 0, len(assignment.Assignment.AssignedPartitions)),
 			UserData:           assignment.Assignment.UserData,
 		}
@@ -109,7 +107,7 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 			assign.AssignedPartitions = append(assign.AssignedPartitions, tp)
 		}
 
-		assignBytes, err := protocol.Marshal(consumer.MaxVersionSupported, assign)
+		assignBytes, err := assign.Bytes()
 		if err != nil {
 			return nil, fmt.Errorf("kafka.(*Client).SyncGroup: %w", err)
 		}
@@ -128,7 +126,7 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 	r := m.(*syncgroup.Response)
 
 	var assignment consumer.Assignment
-	err = protocol.Unmarshal(r.Assignments, consumer.MaxVersionSupported, &assignment)
+	err = assignment.FromBytes(r.Assignments)
 	if err != nil {
 		return nil, fmt.Errorf("kafka.(*Client).SyncGroup: %w", err)
 	}
@@ -152,62 +150,6 @@ func (c *Client) SyncGroup(ctx context.Context, req *SyncGroupRequest) (*SyncGro
 	res.Assignment.AssignedPartitions = partitions
 
 	return res, nil
-}
-
-type groupAssignment struct {
-	Version  int16
-	Topics   map[string][]int32
-	UserData []byte
-}
-
-func (t groupAssignment) size() int32 {
-	sz := sizeofInt16(t.Version) + sizeofInt16(int16(len(t.Topics)))
-
-	for topic, partitions := range t.Topics {
-		sz += sizeofString(topic) + sizeofInt32Array(partitions)
-	}
-
-	return sz + sizeofBytes(t.UserData)
-}
-
-func (t groupAssignment) writeTo(wb *writeBuffer) {
-	wb.writeInt16(t.Version)
-	wb.writeInt32(int32(len(t.Topics)))
-
-	for topic, partitions := range t.Topics {
-		wb.writeString(topic)
-		wb.writeInt32Array(partitions)
-	}
-
-	wb.writeBytes(t.UserData)
-}
-
-func (t *groupAssignment) readFrom(r *bufio.Reader, size int) (remain int, err error) {
-	// I came across this case when testing for compatibility with bsm/sarama-cluster. It
-	// appears in some cases, sarama-cluster can send a nil array entry. Admittedly, I
-	// didn't look too closely at it.
-	if size == 0 {
-		t.Topics = map[string][]int32{}
-		return 0, nil
-	}
-
-	if remain, err = readInt16(r, size, &t.Version); err != nil {
-		return
-	}
-	if remain, err = readMapStringInt32(r, remain, &t.Topics); err != nil {
-		return
-	}
-	if remain, err = readBytes(r, remain, &t.UserData); err != nil {
-		return
-	}
-
-	return
-}
-
-func (t groupAssignment) bytes() []byte {
-	buf := bytes.NewBuffer(nil)
-	t.writeTo(&writeBuffer{w: buf})
-	return buf.Bytes()
 }
 
 type syncGroupRequestGroupAssignmentV0 struct {
