@@ -146,10 +146,20 @@ func testWriteProduceRequestV2(t *testing.T) {
 			}},
 		},
 		func(w *writeBuffer) {
-			w.writeProduceRequestV2(nil, testCorrelationID, testClientID, testTopic, testPartition, timeout*time.Millisecond, -1, Message{
-				Offset: 10,
-				Key:    key,
-				Value:  val,
+			w.writeProduceRequestV2(nil, testCorrelationID, testClientID, timeout*time.Millisecond, -1, msgSetProduceInput{
+				topic: testTopic,
+				partitions: []msgSetPartitionBatch{
+					{
+						partition: testPartition,
+						messages: []Message{
+							{
+								Offset: 10,
+								Key:    key,
+								Value:  val,
+							},
+						},
+					},
+				},
 			})
 		},
 	)
