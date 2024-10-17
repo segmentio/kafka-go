@@ -159,6 +159,7 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 				},
 			}},
 		}},
+		MaxMessageSize_: c.MaxMessageSize,
 	})
 
 	switch {

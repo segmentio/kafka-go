@@ -15,9 +15,14 @@ type Request struct {
 	Acks            int16          `kafka:"min=v0,max=v8"`
 	Timeout         int32          `kafka:"min=v0,max=v8"`
 	Topics          []RequestTopic `kafka:"min=v0,max=v8"`
+
+	// Use this to store max.message.size
+	MaxMessageSize_ int64 `kafka:"-"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.Produce }
+
+func (r *Request) MaxMessageSize() int64 { return r.MaxMessageSize_ }
 
 func (r *Request) Broker(cluster protocol.Cluster) (protocol.Broker, error) {
 	broker := protocol.Broker{ID: -1}
