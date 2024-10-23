@@ -861,10 +861,7 @@ func (w *Writer) deriveBatchBytes(msgs []Message) error {
 			return err
 		}
 
-		if res, ok := w.maxMessageBytesPerTopic.Load(topic); ok {
-			// DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
-			fmt.Println("Writer::deriveBatchBytes::LOAD", "topic", topic, "res", res)
-			// DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
+		if _, ok := w.maxMessageBytesPerTopic.Load(topic); ok {
 			continue
 		}
 
@@ -891,9 +888,6 @@ func (w *Writer) deriveBatchBytes(msgs []Message) error {
 		if err != nil {
 			return err
 		}
-		// DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
-		fmt.Println("Writer::deriveBatchBytes::STORE", "topic", topic, "res", maxMessageBytesStr)
-		// DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
 		w.maxMessageBytesPerTopic.Store(topic, int64(maxMessageBytes))
 	}
 	return nil
