@@ -127,9 +127,9 @@ func WriteRequest(w io.Writer, apiVersion int16, correlationID int32, clientID s
 	if err == nil {
 		messageSize := uint32(b.Size()) - 4
 
-		if p, _ := msg.(MaxMessageSizeKeeper); p != nil && p.MaxMessageSize() != 0 {
-			if messageSize > uint32(p.MaxMessageSize()) {
-				return fmt.Errorf("message size: %d exceeded max.message.size: %d", messageSize, p.MaxMessageSize())
+		if p, ok := msg.(MaxMessageBytesKeeper); ok && p.MaxMessageBytesSize() != 0 {
+			if messageSize > uint32(p.MaxMessageBytesSize()) {
+				return NewBaseMaxMessageBytesExceededError(fmt.Errorf("message size: %d exceeded max.message.bytes: %d", messageSize, p.MaxMessageBytesSize()))
 			}
 		}
 

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -88,4 +89,29 @@ func (e *TopicPartitionError) Error() string {
 
 func (e *TopicPartitionError) Unwrap() error {
 	return e.Err
+}
+
+type MaxMessageBytesExceededError interface {
+	error
+	IsMaxMessageBytesExceeded()
+}
+
+func IsMaxMessageBytesExceeded(err error) bool {
+	var target MaxMessageBytesExceededError
+	return errors.As(err, &target)
+}
+
+type baseMaxMessageBytesExceededError struct{ error }
+
+func (b baseMaxMessageBytesExceededError) IsFatal() {}
+
+func (b baseMaxMessageBytesExceededError) Unwrap() error {
+	return b.error
+}
+
+func NewBaseMaxMessageBytesExceededError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &baseMaxMessageBytesExceededError{error: err}
 }

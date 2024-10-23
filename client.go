@@ -46,7 +46,7 @@ type Client struct {
 	// Limit for message size, applied after compression stage.
 	//
 	// If zero, no limit is applied.
-	MaxMessageSize int64
+	MaxMessageBytes int64
 }
 
 // A ConsumerGroup and Topic as these are both strings we define a type for

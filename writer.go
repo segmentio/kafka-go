@@ -127,8 +127,8 @@ type Writer struct {
 	BatchBytes int64
 
 	// Setting this flag to true causes the WriteMessages starts to derive 'BatchBytes'
-	// from topic 'max.message.size' setting. If writer is used to write to multiple
-	// topics each topic 'max.message.size' will be handled appropriately.
+	// from topic 'max.message.bytes' setting. If writer is used to write to multiple
+	// topics each topic 'max.message.bytes' will be handled appropriately.
 	// This option simplifies maintaining of architecture - creates the one source of
 	// truth - topic settings on broker side
 	//
@@ -138,7 +138,7 @@ type Writer struct {
 	// Setting this flag to true causes the WriteMessages starts to apply 'BatchBytes'
 	// as limiting factor after compression stage.
 	// When this flag is false - it's possible to get case, when Value can exceed
-	// 'max.message.size' setting, but after compression it's less.
+	// 'max.message.bytes' setting, but after compression it's less.
 	// And WriteMessages returns an error, when indeed there are no error.
 	//
 	// Nevertheless, 'BatchBytes' also has second function - to form batches, and
@@ -647,14 +647,13 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		return nil
 	}
 
+	balancer := w.balancer()
 	if w.AutoDeriveBatchBytes {
 		err := w.deriveBatchBytes(msgs)
 		if err != nil {
 			return err
 		}
 	}
-
-	balancer := w.balancer()
 
 	if !w.ApplyBatchBytesAfterCompression {
 		for i := range msgs {
@@ -766,7 +765,9 @@ func (w *Writer) produce(key topicPartition, batch *writeBatch) (*ProduceRespons
 	defer cancel()
 
 	client := w.client(timeout)
-	client.MaxMessageSize = w.batchBytes(key.topic)
+	if w.ApplyBatchBytesAfterCompression {
+		client.MaxMessageBytes = w.batchBytes(key.topic)
+	}
 
 	return client.Produce(ctx, &ProduceRequest{
 		Partition:    int(key.partition),
@@ -860,7 +861,10 @@ func (w *Writer) deriveBatchBytes(msgs []Message) error {
 			return err
 		}
 
-		if _, ok := w.maxMessageBytesPerTopic.Load(topic); ok {
+		if res, ok := w.maxMessageBytesPerTopic.Load(topic); ok {
+			// DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
+			fmt.Println("Writer::deriveBatchBytes::LOAD", "topic", topic, "res", res)
+			// DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
 			continue
 		}
 
@@ -887,6 +891,9 @@ func (w *Writer) deriveBatchBytes(msgs []Message) error {
 		if err != nil {
 			return err
 		}
+		// DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
+		fmt.Println("Writer::deriveBatchBytes::STORE", "topic", topic, "res", maxMessageBytesStr)
+		// DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG
 		w.maxMessageBytesPerTopic.Store(topic, int64(maxMessageBytes))
 	}
 	return nil
@@ -897,16 +904,15 @@ func (w *Writer) batchBytes(topic string) int64 {
 		if result, ok := w.maxMessageBytesPerTopic.Load(topic); ok {
 			return result.(int64)
 		}
-
 		// batchBytes expects it's called after 'deriveBatchBytes(msgs)'
 		// It means, there are no unknown topics
 		panic(fmt.Sprintf("unknown topic: %s", topic))
-	} else {
-		if w.BatchBytes > 0 {
-			return w.BatchBytes
-		}
-		return 1048576
 	}
+
+	if w.BatchBytes > 0 {
+		return w.BatchBytes
+	}
+	return 1048576
 }
 
 func (w *Writer) batchTimeout() time.Duration {
