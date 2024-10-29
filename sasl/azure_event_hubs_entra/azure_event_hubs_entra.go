@@ -53,7 +53,8 @@ func (m *Mechanism) getEntraToken(ctx context.Context, saslMeta *sasl.Metadata) 
 
 func buildTokenRequestOptions(saslMeta *sasl.Metadata) policy.TokenRequestOptions {
 	tokenRequestOptions := policy.TokenRequestOptions{
-		Scopes: []string{"https://" + saslMeta.Host},
+		Scopes:    []string{"https://" + saslMeta.Host + "/.default"},
+		EnableCAE: false,
 	}
 
 	return tokenRequestOptions

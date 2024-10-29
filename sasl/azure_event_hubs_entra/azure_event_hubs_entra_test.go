@@ -3,6 +3,8 @@ package azure_event_hubs_entra
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -15,6 +17,24 @@ type MockTokenCredential struct {
 }
 
 func (c *MockTokenCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	if len(options.Scopes) != 1 {
+		return azcore.AccessToken{}, fmt.Errorf("Scopes must contain 1 element! Contains %d elements.", len(options.Scopes))
+	}
+
+	scope := options.Scopes[0]
+
+	if !strings.HasPrefix(scope, "https://") {
+		return azcore.AccessToken{}, fmt.Errorf("Scope must start with https, and it did not.")
+	}
+
+	if !strings.HasSuffix(scope, "/.default") {
+		return azcore.AccessToken{}, fmt.Errorf("Scope must end with /.default, and it did not.")
+	}
+
+	if options.EnableCAE {
+		return azcore.AccessToken{}, fmt.Errorf("CAE must be false. It was true.")
+	}
+
 	token, err := c.getTokenFunc()
 
 	if err != nil {
