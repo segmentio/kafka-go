@@ -1860,7 +1860,7 @@ func TestReaderClose(t *testing.T) {
 	defer cancel()
 
 	_, err := r.FetchMessage(ctx)
-	if err != context.DeadlineExceeded {
+	if errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("bad err: %v", err)
 	}
 
@@ -1868,6 +1868,24 @@ func TestReaderClose(t *testing.T) {
 	r.Close()
 	if time.Since(t0) > 100*time.Millisecond {
 		t.Errorf("r.Close took too long")
+	}
+}
+
+func BenchmarkReaderClose(b *testing.B) {
+	r := NewReader(ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   makeTopic(),
+		MaxWait: 2 * time.Second,
+	})
+	defer r.Close()
+	for i := 0; i < b.N; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+
+		_, err := r.FetchMessage(ctx)
+		if errors.Is(err, context.DeadlineExceeded) {
+			b.Errorf("bad err: %v", err)
+		}
 	}
 }
 
