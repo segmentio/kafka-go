@@ -1846,6 +1846,31 @@ func TestReaderReadCompactedMessage(t *testing.T) {
 	}
 }
 
+func TestReaderClose(t *testing.T) {
+	t.Parallel()
+
+	r := NewReader(ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   makeTopic(),
+		MaxWait: 2 * time.Second,
+	})
+	defer r.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := r.FetchMessage(ctx)
+	if err != context.DeadlineExceeded {
+		t.Errorf("bad err: %v", err)
+	}
+
+	t0 := time.Now()
+	r.Close()
+	if time.Since(t0) > 100*time.Millisecond {
+		t.Errorf("r.Close took too long")
+	}
+}
+
 // writeMessagesForCompactionCheck writes messages with specific writer configuration.
 func writeMessagesForCompactionCheck(t *testing.T, topic string, msgs []Message) {
 	t.Helper()

@@ -1487,6 +1487,30 @@ func (r *reader) initialize(ctx context.Context, offset int64) (conn *Conn, star
 	return
 }
 
+// readBatch wraps the call to conn.ReadBatchWith to make it interruptible.
+// Conn methods are written in a non-interruptible style, so the only way to
+// interrupt them is to close the connection in another goroutine.
+func (r *reader) readBatch(ctx context.Context, conn *Conn) (*Batch, error) {
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-done:
+			return
+		}
+	}()
+
+	batch := conn.ReadBatchWith(ReadBatchConfig{
+		MinBytes:       r.minBytes,
+		MaxBytes:       r.maxBytes,
+		IsolationLevel: r.isolationLevel,
+	})
+	return batch, ctx.Err()
+}
+
 func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, error) {
 	r.stats.fetches.observe(1)
 	r.stats.offset.observe(offset)
@@ -1494,18 +1518,17 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	t0 := time.Now()
 	conn.SetReadDeadline(t0.Add(r.maxWait))
 
-	batch := conn.ReadBatchWith(ReadBatchConfig{
-		MinBytes:       r.minBytes,
-		MaxBytes:       r.maxBytes,
-		IsolationLevel: r.isolationLevel,
-	})
+	batch, err := r.readBatch(ctx, conn)
+	if err != nil {
+		return offset, err
+	}
+
 	highWaterMark := batch.HighWaterMark()
 
 	t1 := time.Now()
 	r.stats.waitTime.observeDuration(t1.Sub(t0))
 
 	var msg Message
-	var err error
 	var size int64
 	var bytes int64
 
