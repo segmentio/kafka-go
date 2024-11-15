@@ -22,11 +22,13 @@ func TestClientAddOffsetsToTxn(t *testing.T) {
 	defer shutdown()
 
 	err := clientCreateTopic(client, topic, 3)
+	defer deleteTopic(t, topic)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	waitForTopic(ctx, t, topic)
 	defer cancel()
 	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,

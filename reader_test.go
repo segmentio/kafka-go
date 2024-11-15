@@ -309,7 +309,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 				ReplicationFactor: 1,
 			},
 		},
-		Timeout: milliseconds(time.Second),
+		Timeout: milliseconds(5 * time.Second),
 	})
 	if err != nil {
 		if !errors.Is(err, TopicAlreadyExists) {
@@ -364,8 +364,8 @@ func waitForTopic(ctx context.Context, t *testing.T, topic string) {
 			}
 		}
 
-		t.Logf("retrying after 1s")
-		time.Sleep(time.Second)
+		t.Logf("retrying after 100ms")
+		time.Sleep(100 * time.Millisecond)
 		continue
 	}
 }
@@ -1559,17 +1559,22 @@ func TestConsumerGroupWithGroupTopicsSingle(t *testing.T) {
 	}
 }
 
-func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func TestConsumerGroupWithGroupTopicsMultiple(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	client, shutdown := newLocalClient()
 	defer shutdown()
-
+	t1 := makeTopic()
+	createTopic(t, t1, 1)
+	defer deleteTopic(t, t1)
+	t2 := makeTopic()
+	createTopic(t, t2, 1)
+	defer deleteTopic(t, t2)
 	conf := ReaderConfig{
 		Brokers:                []string{"localhost:9092"},
 		GroupID:                makeGroupID(),
-		GroupTopics:            []string{makeTopic(), makeTopic()},
+		GroupTopics:            []string{t1, t2},
 		MaxWait:                time.Second,
 		PartitionWatchInterval: 100 * time.Millisecond,
 		WatchPartitionChanges:  true,

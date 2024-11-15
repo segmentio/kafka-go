@@ -55,6 +55,9 @@ jobs:
         paths:
         - /go/pkg/mod
     - run:
+        name: Wait for kafka
+        command: ./scripts/wait-for-kafka.sh
+    - run:
         name: Test kafka-go
         command: go test -race -cover ./...
     - run:
