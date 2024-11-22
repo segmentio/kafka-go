@@ -333,14 +333,14 @@ func murmur2(data []byte) uint32 {
 	}
 
 	// Handle the last few bytes of the input array
-	extra := length % 4
-	if extra >= 3 {
+	switch length % 4 {
+	case 3:
 		h ^= (uint32(data[(length & ^3)+2]) & 0xff) << 16
-	}
-	if extra >= 2 {
+		fallthrough
+	case 2:
 		h ^= (uint32(data[(length & ^3)+1]) & 0xff) << 8
-	}
-	if extra >= 1 {
+		fallthrough
+	case 1:
 		h ^= uint32(data[length & ^3]) & 0xff
 		h *= m
 	}
