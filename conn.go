@@ -17,9 +17,9 @@ import (
 var (
 	errInvalidWriteTopic     = errors.New("writes must NOT set Topic on kafka.Message")
 	errInvalidWritePartition = errors.New("writes must NOT set Partition on kafka.Message")
-
-	undefinedGenerationId int32 = -1
 )
+
+const undefinedGenerationId int32 = -1
 
 // Conn represents a connection to a kafka broker.
 //
