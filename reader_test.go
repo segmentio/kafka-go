@@ -1462,20 +1462,20 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 		Offsets         offsetStash
 		Config          ReaderConfig
 		ExpectedOffsets offsetStash
-		GenerationId    int32
+		GenerationID    int32
 	}{
 		"happy path": {
 			Invocations:     1,
 			Offsets:         offsets(),
 			ExpectedOffsets: offsets(),
-			GenerationId:    1,
+			GenerationID:    1,
 		},
 		"1 retry": {
 			Fails:           1,
 			Invocations:     2,
 			Offsets:         offsets(),
 			ExpectedOffsets: offsets(),
-			GenerationId:    1,
+			GenerationID:    1,
 		},
 		"out of retries": {
 			Fails:           defaultCommitRetries + 1,
@@ -1483,7 +1483,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 			HasError:        true,
 			Offsets:         offsets(),
 			ExpectedOffsets: offsets(),
-			GenerationId:    1,
+			GenerationID:    1,
 		},
 		"illegal generation error only 1 generation": {
 			Fails:           1,
@@ -1491,7 +1491,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 			Offsets:         offsetStash{"topic": {0: {0, 1}, 1: {0, 1}}},
 			ExpectedOffsets: offsetStash{},
 			Config:          ReaderConfig{ErrorOnWrongGenerationCommit: false},
-			GenerationId:    2,
+			GenerationID:    2,
 		},
 		"illegal generation error only 2 generations": {
 			Fails:           1,
@@ -1499,7 +1499,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 			Offsets:         offsetStash{"topic": {0: {0, 1}, 1: {0, 2}}},
 			ExpectedOffsets: offsetStash{"topic": {1: {0, 2}}},
 			Config:          ReaderConfig{ErrorOnWrongGenerationCommit: false},
-			GenerationId:    2,
+			GenerationID:    2,
 		},
 		"illegal generation error only 1 generation - error propagation": {
 			Fails:           1,
@@ -1508,7 +1508,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 			ExpectedOffsets: offsetStash{},
 			Config:          ReaderConfig{ErrorOnWrongGenerationCommit: true},
 			HasError:        true,
-			GenerationId:    2,
+			GenerationID:    2,
 		},
 		"illegal generation error only 2 generations - error propagation": {
 			Fails:           1,
@@ -1517,7 +1517,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 			ExpectedOffsets: offsetStash{"topic": {1: {0, 2}}},
 			Config:          ReaderConfig{ErrorOnWrongGenerationCommit: true},
 			HasError:        true,
-			GenerationId:    2,
+			GenerationID:    2,
 		},
 	}
 
@@ -1530,7 +1530,7 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 					offsetCommitFunc: func(r offsetCommitRequestV2) (offsetCommitResponseV2, error) {
 						requests = append(requests, r)
 						count++
-						if r.GenerationID != test.GenerationId {
+						if r.GenerationID != test.GenerationID {
 							return offsetCommitResponseV2{}, IllegalGeneration
 						}
 						if count <= test.Fails {

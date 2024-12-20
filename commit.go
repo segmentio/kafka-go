@@ -6,7 +6,7 @@ type commit struct {
 	topic        string
 	partition    int
 	offset       int64
-	generationId int32
+	generationID int32
 }
 
 // makeCommit builds a commit value from a message, the resulting commit takes
@@ -16,7 +16,7 @@ func makeCommit(msg Message) commit {
 		topic:        msg.Topic,
 		partition:    msg.Partition,
 		offset:       msg.Offset + 1,
-		generationId: msg.GenerationId,
+		generationID: msg.GenerationID,
 	}
 }
 

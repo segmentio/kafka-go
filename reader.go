@@ -121,7 +121,7 @@ func (r *Reader) unsubscribe() {
 	// another consumer to avoid such a race.
 }
 
-func (r *Reader) subscribe(generationId int32, allAssignments map[string][]PartitionAssignment) {
+func (r *Reader) subscribe(generationID int32, allAssignments map[string][]PartitionAssignment) {
 	offsets := make(map[topicPartition]int64)
 	for topic, assignments := range allAssignments {
 		for _, assignment := range assignments {
@@ -134,7 +134,7 @@ func (r *Reader) subscribe(generationId int32, allAssignments map[string][]Parti
 	}
 
 	r.mutex.Lock()
-	r.start(generationId, offsets)
+	r.start(generationID, offsets)
 	r.mutex.Unlock()
 
 	r.withLogger(func(l Logger) {
@@ -215,7 +215,7 @@ func (o offsetStash) merge(commits []commit) {
 		if offset, ok := offsetsByPartition[c.partition]; !ok || c.offset > offset.offset {
 			offsetsByPartition[c.partition] = offsetEntry{
 				offset:       c.offset,
-				generationID: c.generationId,
+				generationID: c.generationID,
 			}
 		}
 	}
@@ -874,7 +874,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 		r.mutex.Lock()
 
 		if !r.closed && r.version == 0 {
-			r.start(undefinedGenerationId, r.getTopicPartitionOffset())
+			r.start(undefinedGenerationID, r.getTopicPartitionOffset())
 		}
 
 		version := r.version
@@ -1095,7 +1095,7 @@ func (r *Reader) SetOffset(offset int64) error {
 		r.offset = offset
 
 		if r.version != 0 {
-			r.start(undefinedGenerationId, r.getTopicPartitionOffset())
+			r.start(undefinedGenerationID, r.getTopicPartitionOffset())
 		}
 
 		r.activateReadLag()
@@ -1233,7 +1233,7 @@ func (r *Reader) readLag(ctx context.Context) {
 	}
 }
 
-func (r *Reader) start(generationId int32, offsetsByPartition map[topicPartition]int64) {
+func (r *Reader) start(generationID int32, offsetsByPartition map[topicPartition]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
 		return
@@ -1271,7 +1271,7 @@ func (r *Reader) start(generationId int32, offsetsByPartition map[topicPartition
 
 				// backwards-compatibility flags
 				offsetOutOfRangeError: r.config.OffsetOutOfRangeError,
-			}).run(ctx, generationId, offset)
+			}).run(ctx, generationID, offset)
 		}(ctx, key, offset, &r.join)
 	}
 }
@@ -1308,7 +1308,7 @@ type readerMessage struct {
 	error     error
 }
 
-func (r *reader) run(ctx context.Context, generationId int32, offset int64) {
+func (r *reader) run(ctx context.Context, generationID int32, offset int64) {
 	// This is the reader's main loop, it only ends if the context is canceled
 	// and will keep attempting to reader messages otherwise.
 	//
@@ -1361,7 +1361,7 @@ func (r *reader) run(ctx context.Context, generationId int32, offset int64) {
 			}
 			continue
 		}
-		conn.generationId = generationId
+		conn.generationID = generationID
 
 		// Resetting the attempt counter ensures that if a failure occurs after
 		// a successful initialization we don't keep increasing the backoff

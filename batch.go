@@ -233,7 +233,7 @@ func (batch *Batch) ReadMessage() (Message, error) {
 	msg.Time = makeTime(timestamp)
 	msg.Headers = headers
 	if batch.conn != nil {
-		msg.GenerationId = batch.conn.generationId
+		msg.GenerationID = batch.conn.generationID
 	}
 
 	return msg, err
