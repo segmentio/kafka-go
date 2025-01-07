@@ -14,12 +14,12 @@ import (
 	"time"
 )
 
+const undefinedGenerationID int32 = -1
+
 var (
 	errInvalidWriteTopic     = errors.New("writes must NOT set Topic on kafka.Message")
 	errInvalidWritePartition = errors.New("writes must NOT set Partition on kafka.Message")
 )
-
-const undefinedGenerationId int32 = -1
 
 // Conn represents a connection to a kafka broker.
 //
@@ -68,7 +68,7 @@ type Conn struct {
 
 	transactionalID *string
 
-	generationId int32
+	generationID int32
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -186,7 +186,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		offset:          FirstOffset,
 		requiredAcks:    -1,
 		transactionalID: emptyToNullable(config.TransactionalID),
-		generationId:    undefinedGenerationId,
+		generationID:    undefinedGenerationID,
 	}
 
 	c.wb.w = &c.wbuf
@@ -393,7 +393,7 @@ func (c *Conn) joinGroup(request joinGroupRequestV1) (joinGroupResponseV1, error
 		return joinGroupResponseV1{}, Error(response.ErrorCode)
 	}
 
-	c.generationId = response.GenerationID
+	c.generationID = response.GenerationID
 	return response, nil
 }
 
