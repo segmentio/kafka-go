@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const undefinedGenerationID int32 = -1
+
 var (
 	errInvalidWriteTopic     = errors.New("writes must NOT set Topic on kafka.Message")
 	errInvalidWritePartition = errors.New("writes must NOT set Partition on kafka.Message")
@@ -65,6 +67,8 @@ type Conn struct {
 	apiVersions atomic.Value // apiVersionMap
 
 	transactionalID *string
+
+	generationID int32
 }
 
 type apiVersionMap map[apiKey]ApiVersion
@@ -182,6 +186,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		offset:          FirstOffset,
 		requiredAcks:    -1,
 		transactionalID: emptyToNullable(config.TransactionalID),
+		generationID:    undefinedGenerationID,
 	}
 
 	c.wb.w = &c.wbuf
@@ -388,6 +393,7 @@ func (c *Conn) joinGroup(request joinGroupRequestV1) (joinGroupResponseV1, error
 		return joinGroupResponseV1{}, Error(response.ErrorCode)
 	}
 
+	c.generationID = response.GenerationID
 	return response, nil
 }
 

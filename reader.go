@@ -121,7 +121,7 @@ func (r *Reader) unsubscribe() {
 	// another consumer to avoid such a race.
 }
 
-func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
+func (r *Reader) subscribe(generationID int32, allAssignments map[string][]PartitionAssignment) {
 	offsets := make(map[topicPartition]int64)
 	for topic, assignments := range allAssignments {
 		for _, assignment := range assignments {
@@ -134,7 +134,7 @@ func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
 	}
 
 	r.mutex.Lock()
-	r.start(offsets)
+	r.start(generationID, offsets)
 	r.mutex.Unlock()
 
 	r.withLogger(func(l Logger) {
@@ -150,35 +150,73 @@ func (r *Reader) commitOffsetsWithRetry(gen *Generation, offsetStash offsetStash
 		backoffDelayMax = 5 * time.Second
 	)
 
-	for attempt := 0; attempt < retries; attempt++ {
-		if attempt != 0 {
-			if !sleep(r.stctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
-				return
+	messagesToSendForGeneration := make(map[int32]map[string]map[int]int64)
+	for topic, partitionsInfo := range offsetStash {
+		for partition, commitInfo := range partitionsInfo {
+			if _, ok := messagesToSendForGeneration[commitInfo.generationID]; !ok {
+				messagesToSendForGeneration[commitInfo.generationID] = make(map[string]map[int]int64)
 			}
+			msgsForTopic := messagesToSendForGeneration[commitInfo.generationID]
+			if _, ok := msgsForTopic[topic]; !ok {
+				msgsForTopic[topic] = make(map[int]int64)
+			}
+			msgsForPartition := msgsForTopic[topic]
+			msgsForPartition[partition] = commitInfo.offset
 		}
+	}
+	var illegalGenerationErr bool
+	for generationID, messages := range messagesToSendForGeneration {
+		for attempt := 0; attempt < retries; attempt++ {
+			if attempt != 0 {
+				if !sleep(r.stctx, backoff(attempt, backoffDelayMin, backoffDelayMax)) {
+					continue
+				}
+			}
 
-		if err = gen.CommitOffsets(offsetStash); err == nil {
-			return
+			if err = gen.CommitOffsetsForGenID(generationID, messages); err == nil {
+				break
+			}
+
+			// IllegalGeneration error is not retriable, but we should attempt to
+			// perform the remaining commits
+			if errors.Is(err, IllegalGeneration) {
+				r.withErrorLogger(func(l Logger) { l.Printf("generation %d - %v", generationID, err) })
+				offsetStash.removeGenerationID(generationID)
+				illegalGenerationErr = true
+				err = nil
+				break
+			}
 		}
 	}
 
+	// if configured to ignore the error
+	if illegalGenerationErr && r.config.ErrorOnWrongGenerationCommit {
+		err = IllegalGeneration
+	}
 	return // err will not be nil
 }
 
-// offsetStash holds offsets by topic => partition => offset.
-type offsetStash map[string]map[int]int64
+// offsetStash holds offsets by topic => partition => offsetEntry.
+type offsetEntry struct {
+	offset       int64
+	generationID int32
+}
+type offsetStash map[string]map[int]offsetEntry
 
 // merge updates the offsetStash with the offsets from the provided messages.
 func (o offsetStash) merge(commits []commit) {
 	for _, c := range commits {
 		offsetsByPartition, ok := o[c.topic]
 		if !ok {
-			offsetsByPartition = map[int]int64{}
+			offsetsByPartition = map[int]offsetEntry{}
 			o[c.topic] = offsetsByPartition
 		}
 
-		if offset, ok := offsetsByPartition[c.partition]; !ok || c.offset > offset {
-			offsetsByPartition[c.partition] = c.offset
+		if offset, ok := offsetsByPartition[c.partition]; !ok || c.offset > offset.offset {
+			offsetsByPartition[c.partition] = offsetEntry{
+				offset:       c.offset,
+				generationID: c.generationID,
+			}
 		}
 	}
 }
@@ -187,6 +225,19 @@ func (o offsetStash) merge(commits []commit) {
 func (o offsetStash) reset() {
 	for key := range o {
 		delete(o, key)
+	}
+}
+
+func (o offsetStash) removeGenerationID(genID int32) {
+	for topic, offsetsForTopic := range o {
+		for partition, offsetsForPartition := range offsetsForTopic {
+			if offsetsForPartition.generationID == genID {
+				delete(offsetsForTopic, partition)
+			}
+			if len(offsetsForTopic) == 0 {
+				delete(o, topic)
+			}
+		}
 	}
 }
 
@@ -329,7 +380,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.stats.rebalances.observe(1)
 
-		r.subscribe(gen.Assignments)
+		r.subscribe(gen.ID, gen.Assignments)
 
 		gen.Start(func(ctx context.Context) {
 			r.commitLoop(ctx, gen)
@@ -522,6 +573,10 @@ type ReaderConfig struct {
 	// This flag is being added to retain backwards-compatibility, so it will be
 	// removed in a future version of kafka-go.
 	OffsetOutOfRangeError bool
+
+	// ErrorOnWrongGenerationCommit indicates that we should return an error when
+	// attempting to commit a message to a generation different than the current one.
+	ErrorOnWrongGenerationCommit bool
 }
 
 // Validate method validates ReaderConfig properties.
@@ -819,7 +874,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 		r.mutex.Lock()
 
 		if !r.closed && r.version == 0 {
-			r.start(r.getTopicPartitionOffset())
+			r.start(undefinedGenerationID, r.getTopicPartitionOffset())
 		}
 
 		version := r.version
@@ -1040,7 +1095,7 @@ func (r *Reader) SetOffset(offset int64) error {
 		r.offset = offset
 
 		if r.version != 0 {
-			r.start(r.getTopicPartitionOffset())
+			r.start(undefinedGenerationID, r.getTopicPartitionOffset())
 		}
 
 		r.activateReadLag()
@@ -1178,7 +1233,7 @@ func (r *Reader) readLag(ctx context.Context) {
 	}
 }
 
-func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
+func (r *Reader) start(generationID int32, offsetsByPartition map[topicPartition]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
 		return
@@ -1216,7 +1271,7 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 
 				// backwards-compatibility flags
 				offsetOutOfRangeError: r.config.OffsetOutOfRangeError,
-			}).run(ctx, offset)
+			}).run(ctx, generationID, offset)
 		}(ctx, key, offset, &r.join)
 	}
 }
@@ -1253,7 +1308,7 @@ type readerMessage struct {
 	error     error
 }
 
-func (r *reader) run(ctx context.Context, offset int64) {
+func (r *reader) run(ctx context.Context, generationID int32, offset int64) {
 	// This is the reader's main loop, it only ends if the context is canceled
 	// and will keep attempting to reader messages otherwise.
 	//
@@ -1306,6 +1361,7 @@ func (r *reader) run(ctx context.Context, offset int64) {
 			}
 			continue
 		}
+		conn.generationID = generationID
 
 		// Resetting the attempt counter ensures that if a failure occurs after
 		// a successful initialization we don't keep increasing the backoff
