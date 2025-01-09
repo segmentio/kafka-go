@@ -21,6 +21,8 @@ func TestClientTxnOffsetCommit(t *testing.T) {
 
 	client, shutdown := newLocalClientWithTopic(topic, 1)
 	defer shutdown()
+	waitForTopic(context.TODO(), t, topic)
+	defer deleteTopic(t, topic)
 
 	now := time.Now()
 
