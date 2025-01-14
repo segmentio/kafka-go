@@ -507,6 +507,17 @@ type ReaderConfig struct {
 	// back to using Logger instead.
 	ErrorLogger Logger
 
+	// Timeout is the network timeout used when communicating with the consumer
+	// group coordinator.  This value should not be too small since errors
+	// communicating with the broker will generally cause a consumer group
+	// rebalance, and it's undesirable that a transient network error intoduce
+	// that overhead.  Similarly, it should not be too large or the consumer
+	// group may be slow to respond to the coordinator failing over to another
+	// broker.
+	//
+	// Default: 5s
+	Timeout time.Duration
+
 	// IsolationLevel controls the visibility of transactional records.
 	// ReadUncommitted makes all records visible. With ReadCommitted only
 	// non-transactional and committed records are visible.
@@ -737,6 +748,7 @@ func NewReader(config ReaderConfig) *Reader {
 			StartOffset:            r.config.StartOffset,
 			Logger:                 r.config.Logger,
 			ErrorLogger:            r.config.ErrorLogger,
+			Timeout:                r.config.Timeout,
 		})
 		if err != nil {
 			panic(err)
