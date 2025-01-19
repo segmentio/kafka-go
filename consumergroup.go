@@ -1034,9 +1034,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	}
 
 	// resetting old values of partitions per topic
-	for topic := range cg.partitionsPerTopic {
-		cg.partitionsPerTopic[topic] = 0
-	}
+	cg.partitionsPerTopic = make(map[string]int, len(cg.config.Topics))
 
 	// setting new values of partitions per topic
 	for _, partition := range partitions {
