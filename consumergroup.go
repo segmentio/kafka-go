@@ -789,13 +789,9 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	}
 	defer conn.Close()
 
-	var generationID int32
-	var groupAssignments GroupMemberAssignments
-	var assignments map[string][]int32
-
 	// join group.  this will join the group and prepare assignments if our
 	// consumer is elected leader.  it may also change or assign the member ID.
-	memberID, generationID, groupAssignments, err = cg.joinGroup(conn, memberID)
+	memberID, generationID, groupAssignments, iAmLeader, err := cg.joinGroup(conn, memberID)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
@@ -803,11 +799,11 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err
 	}
 	cg.withLogger(func(log Logger) {
-		log.Printf("Joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
+		log.Printf("Joined group %s as member %s (leader %t) in generation %d", cg.config.ID, memberID, iAmLeader, generationID)
 	})
 
 	// sync group
-	assignments, err = cg.syncGroup(conn, memberID, generationID, groupAssignments)
+	assignments, err := cg.syncGroup(conn, memberID, generationID, groupAssignments)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to sync group %s: %v", cg.config.ID, err)
@@ -843,7 +839,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// any of these functions exit, then the generation is determined to be
 	// complete.
 	gen.heartbeatLoop(cg.config.HeartbeatInterval)
-	if cg.config.WatchPartitionChanges {
+	if cg.config.WatchPartitionChanges && iAmLeader {
 		for _, topic := range cg.config.Topics {
 			gen.partitionWatcher(cg.config.PartitionWatchInterval, topic)
 		}
@@ -925,16 +921,16 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 // the leader.  Otherwise, GroupMemberAssignments will be nil.
 //
 // Possible kafka error codes returned:
-//  * GroupLoadInProgress:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * InconsistentGroupProtocol:
-//  * InvalidSessionTimeout:
-//  * GroupAuthorizationFailed:
-func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
+//   - GroupLoadInProgress:
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - InconsistentGroupProtocol:
+//   - InvalidSessionTimeout:
+//   - GroupAuthorizationFailed:
+func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, bool, error) {
 	request, err := cg.makeJoinGroupRequestV1(memberID)
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, nil, false, err
 	}
 
 	response, err := conn.joinGroup(request)
@@ -942,7 +938,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		err = Error(response.ErrorCode)
 	}
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, nil, false, err
 	}
 
 	memberID = response.MemberID
@@ -953,10 +949,12 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	})
 
 	var assignments GroupMemberAssignments
-	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
+	iAmLeader := response.MemberID == response.LeaderID
+
+	if iAmLeader {
 		v, err := cg.assignTopicPartitions(conn, response)
 		if err != nil {
-			return memberID, 0, nil, err
+			return memberID, 0, nil, false, err
 		}
 		assignments = v
 
@@ -973,7 +971,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		l.Printf("joinGroup succeeded for response, %v.  generationID=%v, memberID=%v", cg.config.ID, response.GenerationID, response.MemberID)
 	})
 
-	return memberID, generationID, assignments, nil
+	return memberID, generationID, assignments, iAmLeader, nil
 }
 
 // makeJoinGroupRequestV1 handles the logic of constructing a joinGroup
@@ -1073,11 +1071,11 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 // Readers subscriptions topic => partitions
 //
 // Possible kafka error codes returned:
-//  * GroupCoordinatorNotAvailable:
-//  * NotCoordinatorForGroup:
-//  * IllegalGeneration:
-//  * RebalanceInProgress:
-//  * GroupAuthorizationFailed:
+//   - GroupCoordinatorNotAvailable:
+//   - NotCoordinatorForGroup:
+//   - IllegalGeneration:
+//   - RebalanceInProgress:
+//   - GroupAuthorizationFailed:
 func (cg *ConsumerGroup) syncGroup(conn coordinator, memberID string, generationID int32, memberAssignments GroupMemberAssignments) (map[string][]int32, error) {
 	request := cg.makeSyncGroupRequestV0(memberID, generationID, memberAssignments)
 	response, err := conn.syncGroup(request)
