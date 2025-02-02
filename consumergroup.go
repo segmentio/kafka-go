@@ -786,7 +786,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 
 	// join group.  this will join the group and prepare assignments if our
 	// consumer is elected leader.  it may also change or assign the member ID.
-	memberID, generationID, groupAssignments, iAmLeader, err := cg.joinGroup(conn, memberID)
+	memberID, generationID, groupAssignments, err := cg.joinGroup(conn, memberID)
 	if err != nil {
 		cg.withErrorLogger(func(log Logger) {
 			log.Printf("Failed to join group %s: %v", cg.config.ID, err)
@@ -794,7 +794,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err
 	}
 	cg.withLogger(func(log Logger) {
-		log.Printf("Joined group %s as member %s (leader %t) in generation %d", cg.config.ID, memberID, iAmLeader, generationID)
+		log.Printf("Joined group %s as member %s in generation %d", cg.config.ID, memberID, generationID)
 	})
 
 	// sync group
@@ -834,7 +834,7 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 	// any of these functions exit, then the generation is determined to be
 	// complete.
 	gen.heartbeatLoop(cg.config.HeartbeatInterval)
-	if cg.config.WatchPartitionChanges && iAmLeader {
+	if cg.config.WatchPartitionChanges {
 		for topic, startPartitions := range cg.partitionsPerTopic {
 			gen.partitionWatcher(cg.config.PartitionWatchInterval, topic, startPartitions)
 		}
@@ -922,10 +922,10 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 //   - InconsistentGroupProtocol:
 //   - InvalidSessionTimeout:
 //   - GroupAuthorizationFailed:
-func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, bool, error) {
+func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
 	request, err := cg.makeJoinGroupRequestV1(memberID)
 	if err != nil {
-		return "", 0, nil, false, err
+		return "", 0, nil, err
 	}
 
 	response, err := conn.joinGroup(request)
@@ -933,7 +933,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		err = Error(response.ErrorCode)
 	}
 	if err != nil {
-		return "", 0, nil, false, err
+		return "", 0, nil, err
 	}
 
 	memberID = response.MemberID
@@ -944,12 +944,11 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	})
 
 	var assignments GroupMemberAssignments
-	iAmLeader := response.MemberID == response.LeaderID
 
-	if iAmLeader {
+	if iAmLeader := response.MemberID == response.LeaderID; iAmLeader {
 		v, err := cg.assignTopicPartitions(conn, response)
 		if err != nil {
-			return memberID, 0, nil, false, err
+			return memberID, 0, nil, err
 		}
 		assignments = v
 
@@ -966,7 +965,7 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 		l.Printf("joinGroup succeeded for response, %v.  generationID=%v, memberID=%v", cg.config.ID, response.GenerationID, response.MemberID)
 	})
 
-	return memberID, generationID, assignments, iAmLeader, nil
+	return memberID, generationID, assignments, nil
 }
 
 // makeJoinGroupRequestV1 handles the logic of constructing a joinGroup
