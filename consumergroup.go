@@ -650,10 +650,6 @@ func NewConsumerGroup(config ConsumerGroupConfig) (*ConsumerGroup, error) {
 		done:               make(chan struct{}),
 	}
 
-	for _, topic := range config.Topics {
-		cg.partitionsPerTopic[topic] = 0
-	}
-
 	cg.wg.Add(1)
 	go func() {
 		cg.run()
@@ -1034,7 +1030,7 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	}
 
 	// resetting old values of partitions per topic
-	cg.partitionsPerTopic = make(map[string]int, len(cg.config.Topics))
+	cg.partitionsPerTopic = make(map[string]int, len(topics))
 
 	// setting new values of partitions per topic
 	for _, partition := range partitions {
