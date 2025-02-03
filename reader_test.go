@@ -858,6 +858,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		t.Run(test.scenario, func(t *testing.T) {
 			// It appears that some of the tests depend on all these tests being
 			// run concurrently to pass... this is brittle and should be fixed
