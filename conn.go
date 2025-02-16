@@ -1643,3 +1643,87 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 	resp, _, err := readNewBytes(&c.rbuf, int(respLen), int(respLen))
 	return resp, err
 }
+
+// ConnIface is an interface that aggregates all the public methods of the *Conn type.
+type ConnIface interface {
+	// Broker returns a Broker representing the Kafka broker this connection was established with.
+	Broker() Broker
+
+	// Controller requests the current controller from Kafka and returns its Broker.
+	Controller() (Broker, error)
+
+	// Brokers retrieves the list of brokers from Kafka metadata.
+	Brokers() ([]Broker, error)
+
+	// DeleteTopics deletes the specified topics.
+	DeleteTopics(topics ...string) error
+
+	// Close closes the connection to Kafka.
+	Close() error
+
+	// LocalAddr returns the local network address.
+	LocalAddr() net.Addr
+
+	// RemoteAddr returns the remote network address.
+	RemoteAddr() net.Addr
+
+	// SetDeadline sets the deadlines for both read and write operations.
+	SetDeadline(t time.Time) error
+
+	// SetReadDeadline sets the deadline for future read operations.
+	SetReadDeadline(t time.Time) error
+
+	// SetWriteDeadline sets the deadline for future write operations.
+	SetWriteDeadline(t time.Time) error
+
+	// Offset returns the current offset and the reference point (whence).
+	Offset() (offset int64, whence int)
+
+	// Seek adjusts the connection offset and returns the new absolute offset.
+	Seek(offset int64, whence int) (int64, error)
+
+	// Read reads data from the connection, implementing the net.Conn interface.
+	Read(b []byte) (int, error)
+
+	// ReadMessage reads a complete message starting from the current offset.
+	ReadMessage(maxBytes int) (Message, error)
+
+	// ReadBatch reads a batch of messages based on the minBytes and maxBytes parameters.
+	ReadBatch(minBytes, maxBytes int) *Batch
+
+	// ReadBatchWith reads a batch of messages using the provided configuration.
+	ReadBatchWith(cfg ReadBatchConfig) *Batch
+
+	// ReadOffset returns the offset of the first message with a timestamp >= t.
+	ReadOffset(t time.Time) (int64, error)
+
+	// ReadFirstOffset returns the first available offset.
+	ReadFirstOffset() (int64, error)
+
+	// ReadLastOffset returns the last available offset.
+	ReadLastOffset() (int64, error)
+
+	// ReadOffsets returns the absolute first and last offsets of the topic.
+	ReadOffsets() (first, last int64, err error)
+
+	// ReadPartitions returns the list of partitions for the specified topics.
+	ReadPartitions(topics ...string) ([]Partition, error)
+
+	// Write writes data to the connection.
+	Write(b []byte) (int, error)
+
+	// WriteMessages writes a batch of messages to the connection.
+	WriteMessages(msgs ...Message) (int, error)
+
+	// WriteCompressedMessages writes messages, potentially compressed.
+	WriteCompressedMessages(codec CompressionCodec, msgs ...Message) (int, error)
+
+	// WriteCompressedMessagesAt writes compressed messages and returns additional information.
+	WriteCompressedMessagesAt(codec CompressionCodec, msgs ...Message) (nbytes int, partition int32, offset int64, appendTime time.Time, err error)
+
+	// SetRequiredAcks sets the number of acknowledgements required when producing messages.
+	SetRequiredAcks(n int) error
+
+	// ApiVersions queries the API versions supported by the broker.
+	ApiVersions() ([]ApiVersion, error)
+}
