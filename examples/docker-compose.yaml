@@ -49,7 +49,7 @@ services:
       collectionName: example_coll
       kafkaURL: kafka:9092
       topic: topic1
-      GroupID: mongo-group
+      groupID: mongo-group
     depends_on: 
     - kafka
     - mongo-db
@@ -61,7 +61,7 @@ services:
     environment:
       kafkaURL: kafka:9092
       topic: topic1
-      GroupID: logger-group
+      groupID: logger-group
     depends_on: 
     - kafka
     restart: always
