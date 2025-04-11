@@ -637,7 +637,7 @@ func TestGenerationExitsOnPartitionChange(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		gen.partitionWatcher(watchTime, "topic-1")
+		gen.partitionWatcher(watchTime, "topic-1", 1)
 		close(done)
 	}()
 
