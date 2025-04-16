@@ -67,6 +67,10 @@ func TestReader(t *testing.T) {
 			scenario: "topic being recreated will return an error",
 			function: testReaderTopicRecreated,
 		},
+		{
+			scenario: "reading with enabled partition eof config",
+			function: testReaderPartitionEoF,
+		},
 	}
 
 	for _, test := range tests {
@@ -1986,4 +1990,25 @@ func testReaderTopicRecreated(t *testing.T, ctx context.Context, r *Reader) {
 	// expect an error, since the offset should now be out of range
 	_, err = r.ReadMessage(ctx)
 	require.ErrorIs(t, err, OffsetOutOfRange)
+}
+
+func testReaderPartitionEoF(t *testing.T, ctx context.Context, r *Reader) {
+	r.config.EnablePartitionEoF = true
+
+	const N = 10
+	prepareReader(t, ctx, r, makeTestSequence(N)...)
+
+	var err error
+	for i := 0; i < N; i++ {
+		_, err = r.ReadMessage(ctx)
+		require.NoError(t, err)
+	}
+	_, err = r.ReadMessage(ctx)
+	require.True(t, errors.Is(err, PartitionEoF))
+
+	prepareReader(t, ctx, r, makeTestSequence(1)...)
+	_, err = r.ReadMessage(ctx)
+	require.NoError(t, err)
+	_, err = r.ReadMessage(ctx)
+	require.True(t, errors.Is(err, PartitionEoF))
 }
