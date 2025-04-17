@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -41,6 +42,10 @@ type Conn struct {
 	wlock sync.Mutex
 	wbuf  bufio.Writer
 	wb    writeBuffer
+
+	// sasl session
+	saslSessionDeadline time.Time
+	saslAuth            func() error
 
 	// deadline management
 	wdeadline connDeadline
@@ -1363,6 +1368,11 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func
 }
 
 func (c *Conn) doRequest(d *connDeadline, write func(time.Time, int32) error) (id int32, err error) {
+	// KIP-368
+	if !c.saslSessionDeadline.IsZero() && time.Now().After(c.saslSessionDeadline) {
+		c.saslAuth()
+	}
+
 	c.enter()
 	c.wlock.Lock()
 	c.correlationID++
@@ -1601,28 +1611,60 @@ func (c *Conn) saslAuthenticate(data []byte) ([]byte, error) {
 	// if we sent a v1 handshake, then we must encapsulate the authentication
 	// request in a saslAuthenticateRequest.  otherwise, we read and write raw
 	// bytes.
-	version, err := c.negotiateVersion(saslHandshake, v0, v1)
+	handshakeVersion, err := c.negotiateVersion(saslHandshake, v0, v1)
 	if err != nil {
 		return nil, err
 	}
-	if version == v1 {
+	if handshakeVersion == v1 {
+		authVersion, err := c.negotiateVersion(saslAuthenticate, v0, v1)
+		if err != nil {
+			return nil, err
+		}
 		var request = saslAuthenticateRequestV0{Data: data}
-		var response saslAuthenticateResponseV0
+		var errorCode int16
+		var authData []byte
 
-		err := c.writeOperation(
+		err = c.writeOperation(
 			func(deadline time.Time, id int32) error {
-				return c.writeRequest(saslAuthenticate, v0, id, request)
+				return c.writeRequest(saslAuthenticate, authVersion, id, request)
 			},
 			func(deadline time.Time, size int) error {
 				return expectZeroSize(func() (remain int, err error) {
-					return (&response).readFrom(&c.rbuf, size)
+					switch authVersion {
+					case v0:
+						var response saslAuthenticateResponseV0
+						remain, err = (&response).readFrom(&c.rbuf, size)
+						if err != nil {
+							return remain, err
+						}
+
+						errorCode = response.ErrorCode
+						authData = response.Data
+					case v1:
+						var response saslAuthenticateResponseV1
+						remain, err = (&response).readFrom(&c.rbuf, size)
+						if err != nil {
+							return remain, err
+						}
+
+						errorCode = response.ErrorCode
+						authData = response.Data
+						if response.SessionLifetimeMs > 0 {
+							// set sasl session deadline to a random %80-%90 of session lifetime
+							jitter := 0.10 * rand.New(rand.NewSource(time.Now().UnixNano())).Float64()
+							reducedLifetimeMs := (0.80 + jitter) * float64(response.SessionLifetimeMs)
+							c.saslSessionDeadline = time.Now().Add(time.Duration(reducedLifetimeMs) * time.Millisecond)
+						}
+					}
+
+					return remain, err
 				}())
 			},
 		)
-		if err == nil && response.ErrorCode != 0 {
-			err = Error(response.ErrorCode)
+		if err == nil && errorCode != 0 {
+			err = Error(errorCode)
 		}
-		return response.Data, err
+		return authData, err
 	}
 
 	// fall back to opaque bytes on the wire.  the broker is expecting these if
