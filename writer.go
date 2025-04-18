@@ -663,7 +663,10 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		assignments[key] = append(assignments[key], int32(i))
 	}
 
-	batches := w.batchMessages(msgs, assignments)
+	batches, err := w.batchMessages(msgs, assignments)
+	if err != nil {
+		return err
+	}
 	if w.Async {
 		return nil
 	}
@@ -695,7 +698,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	return werr
 }
 
-func (w *Writer) batchMessages(messages []Message, assignments map[topicPartition][]int32) map[*writeBatch][]int32 {
+func (w *Writer) batchMessages(messages []Message, assignments map[topicPartition][]int32) (map[*writeBatch][]int32, error) {
 	var batches map[*writeBatch][]int32
 	if !w.Async {
 		batches = make(map[*writeBatch][]int32, len(assignments))
@@ -703,6 +706,10 @@ func (w *Writer) batchMessages(messages []Message, assignments map[topicPartitio
 
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
+
+	if w.closed {
+		return nil, io.ErrClosedPipe
+	}
 
 	if w.writers == nil {
 		w.writers = map[topicPartition]*partitionWriter{}
@@ -721,7 +728,7 @@ func (w *Writer) batchMessages(messages []Message, assignments map[topicPartitio
 		}
 	}
 
-	return batches
+	return batches, nil
 }
 
 func (w *Writer) produce(key topicPartition, batch *writeBatch) (*ProduceResponse, error) {
