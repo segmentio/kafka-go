@@ -304,6 +304,20 @@ func (r *Reader) run(cg *ConsumerGroup) {
 		for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
 			gen, err = cg.Next(r.stctx)
 			if err == nil {
+				if r.config.AssignmentListener != nil {
+					assignments := make([]GroupMemberTopic, 0, len(gen.Assignments))
+					for topic, partitions := range gen.Assignments {
+						assignedPartitions := make([]int, 0, len(partitions))
+						for _, partition := range partitions {
+							assignedPartitions = append(assignedPartitions, partition.ID)
+						}
+						assignments = append(assignments, GroupMemberTopic{
+							Topic:      topic,
+							Partitions: assignedPartitions,
+						})
+					}
+					r.config.AssignmentListener(assignments)
+				}
 				break
 			}
 			if errors.Is(err, r.stctx.Err()) {
@@ -522,6 +536,9 @@ type ReaderConfig struct {
 	// This flag is being added to retain backwards-compatibility, so it will be
 	// removed in a future version of kafka-go.
 	OffsetOutOfRangeError bool
+
+	// AsignmentListener is called when a reassignment happens indicating what are the new partitions
+	AssignmentListener func(partitions []GroupMemberTopic)
 }
 
 // Validate method validates ReaderConfig properties.
