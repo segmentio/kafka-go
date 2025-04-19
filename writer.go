@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -576,6 +577,10 @@ func (w *Writer) Close() error {
 		w.transport.CloseIdleConnections()
 	}
 
+	errorsCount := w.stats().errors.snapshot()
+	if errorsCount > 0 {
+		return fmt.Errorf("failed to close gracefully, %d errors occurred", errorsCount)
+	}
 	return nil
 }
 
