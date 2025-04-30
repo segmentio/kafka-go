@@ -29,7 +29,7 @@ func TestClientDeleteTopics(t *testing.T) {
 }
 
 func TestDeleteTopicsResponseV1(t *testing.T) {
-	item := deleteTopicsResponseV0{
+	item := deleteTopicsResponseV1{
 		TopicErrorCodes: []deleteTopicsResponseV0TopicErrorCode{
 			{
 				Topic:     "a",
@@ -42,7 +42,7 @@ func TestDeleteTopicsResponseV1(t *testing.T) {
 	w := &writeBuffer{w: b}
 	item.writeTo(w)
 
-	var found deleteTopicsResponseV0
+	var found deleteTopicsResponseV1
 	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Fatal(err)

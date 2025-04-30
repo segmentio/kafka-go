@@ -306,7 +306,7 @@ func (c *Conn) Brokers() ([]Broker, error) {
 
 // DeleteTopics deletes the specified topics.
 func (c *Conn) DeleteTopics(topics ...string) error {
-	_, err := c.deleteTopics(deleteTopicsRequestV0{
+	_, err := c.deleteTopics(deleteTopicsRequestV1{
 		Topics: topics,
 	})
 	return err
@@ -368,12 +368,12 @@ func (c *Conn) heartbeat(request heartbeatRequestV0) (heartbeatResponseV0, error
 // joinGroup attempts to join a consumer group
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_JoinGroup
-func (c *Conn) joinGroup(request joinGroupRequestV1) (joinGroupResponseV1, error) {
+func (c *Conn) joinGroup(request joinGroupRequestV2) (joinGroupResponseV1, error) {
 	var response joinGroupResponseV1
 
 	err := c.writeOperation(
 		func(deadline time.Time, id int32) error {
-			return c.writeRequest(joinGroup, v1, id, request)
+			return c.writeRequest(joinGroup, v2, id, request)
 		},
 		func(deadline time.Time, size int) error {
 			return expectZeroSize(func() (remain int, err error) {

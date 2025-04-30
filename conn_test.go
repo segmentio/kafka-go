@@ -13,8 +13,9 @@ import (
 	"testing"
 	"time"
 
-	ktesting "github.com/segmentio/kafka-go/testing"
 	"golang.org/x/net/nettest"
+
+	ktesting "github.com/segmentio/kafka-go/testing"
 )
 
 type timeout struct{}
@@ -682,7 +683,7 @@ func createGroup(t *testing.T, conn *Conn, groupID string) (generationID int32, 
 	join := func() (joinGroup joinGroupResponseV1) {
 		var err error
 		for attempt := 0; attempt < 10; attempt++ {
-			joinGroup, err = conn.joinGroup(joinGroupRequestV1{
+			joinGroup, err = conn.joinGroup(joinGroupRequestV2{
 				GroupID:          groupID,
 				SessionTimeout:   int32(time.Minute / time.Millisecond),
 				RebalanceTimeout: int32(time.Second / time.Millisecond),
@@ -770,7 +771,7 @@ func testConnFindCoordinator(t *testing.T, conn *Conn) {
 }
 
 func testConnJoinGroupInvalidGroupID(t *testing.T, conn *Conn) {
-	_, err := conn.joinGroup(joinGroupRequestV1{})
+	_, err := conn.joinGroup(joinGroupRequestV2{})
 	if !errors.Is(err, InvalidGroupId) && !errors.Is(err, NotCoordinatorForGroup) {
 		t.Fatalf("expected %v or %v; got %v", InvalidGroupId, NotCoordinatorForGroup, err)
 	}
@@ -780,7 +781,7 @@ func testConnJoinGroupInvalidSessionTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV1{
+	_, err := conn.joinGroup(joinGroupRequestV2{
 		GroupID: groupID,
 	})
 	if !errors.Is(err, InvalidSessionTimeout) && !errors.Is(err, NotCoordinatorForGroup) {
@@ -792,7 +793,7 @@ func testConnJoinGroupInvalidRefreshTimeout(t *testing.T, conn *Conn) {
 	groupID := makeGroupID()
 	waitForCoordinator(t, conn, groupID)
 
-	_, err := conn.joinGroup(joinGroupRequestV1{
+	_, err := conn.joinGroup(joinGroupRequestV2{
 		GroupID:        groupID,
 		SessionTimeout: int32(3 * time.Second / time.Millisecond),
 	})
