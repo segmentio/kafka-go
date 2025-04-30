@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +16,7 @@ var _ coordinator = mockCoordinator{}
 type mockCoordinator struct {
 	closeFunc           func() error
 	findCoordinatorFunc func(findCoordinatorRequestV0) (findCoordinatorResponseV0, error)
-	joinGroupFunc       func(joinGroupRequestV1) (joinGroupResponse, error)
+	joinGroupFunc       func(joinGroupRequest) (joinGroupResponse, error)
 	syncGroupFunc       func(syncGroupRequestV0) (syncGroupResponseV0, error)
 	leaveGroupFunc      func(leaveGroupRequestV0) (leaveGroupResponseV0, error)
 	heartbeatFunc       func(heartbeatRequestV0) (heartbeatResponseV0, error)
@@ -38,7 +39,7 @@ func (c mockCoordinator) findCoordinator(req findCoordinatorRequestV0) (findCoor
 	return c.findCoordinatorFunc(req)
 }
 
-func (c mockCoordinator) joinGroup(req joinGroupRequestV1) (joinGroupResponse, error) {
+func (c mockCoordinator) joinGroup(req joinGroupRequest) (joinGroupResponse, error) {
 	if c.joinGroupFunc == nil {
 		return joinGroupResponse{}, errors.New("no joinGroup behavior specified")
 	}
@@ -140,34 +141,36 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 		},
 	}
 
-	newJoinGroupResponseV1 := func(topicsByMemberID map[string][]string) joinGroupResponse {
-		resp := joinGroupResponse{
-			v:             v1,
-			GroupProtocol: RoundRobinGroupBalancer{}.ProtocolName(),
-		}
+	newJoinGroupResponse := func(topicsByMemberID map[string][]string) func(v apiVersion) joinGroupResponse {
+		return func(v apiVersion) joinGroupResponse {
+			resp := joinGroupResponse{
+				v:             v,
+				GroupProtocol: RoundRobinGroupBalancer{}.ProtocolName(),
+			}
 
-		for memberID, topics := range topicsByMemberID {
-			resp.Members = append(resp.Members, joinGroupResponseMemberV1{
-				MemberID: memberID,
-				MemberMetadata: groupMetadata{
-					Topics: topics,
-				}.bytes(),
-			})
-		}
+			for memberID, topics := range topicsByMemberID {
+				resp.Members = append(resp.Members, joinGroupResponseMember{
+					MemberID: memberID,
+					MemberMetadata: groupMetadata{
+						Topics: topics,
+					}.bytes(),
+				})
+			}
 
-		return resp
+			return resp
+		}
 	}
 
 	testCases := map[string]struct {
-		Members     joinGroupResponse
+		MembersFunc func(v apiVersion) joinGroupResponse
 		Assignments GroupMemberAssignments
 	}{
 		"nil": {
-			Members:     newJoinGroupResponseV1(nil),
+			MembersFunc: newJoinGroupResponse(nil),
 			Assignments: GroupMemberAssignments{},
 		},
 		"one member, one topic": {
-			Members: newJoinGroupResponseV1(map[string][]string{
+			MembersFunc: newJoinGroupResponse(map[string][]string{
 				"member-1": {"topic-1"},
 			}),
 			Assignments: GroupMemberAssignments{
@@ -177,7 +180,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"one member, two topics": {
-			Members: newJoinGroupResponseV1(map[string][]string{
+			MembersFunc: newJoinGroupResponse(map[string][]string{
 				"member-1": {"topic-1", "topic-2"},
 			}),
 			Assignments: GroupMemberAssignments{
@@ -188,7 +191,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"two members, one topic": {
-			Members: newJoinGroupResponseV1(map[string][]string{
+			MembersFunc: newJoinGroupResponse(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-1"},
 			}),
@@ -202,7 +205,7 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 			},
 		},
 		"two members, two unshared topics": {
-			Members: newJoinGroupResponseV1(map[string][]string{
+			MembersFunc: newJoinGroupResponse(map[string][]string{
 				"member-1": {"topic-1"},
 				"member-2": {"topic-2"},
 			}),
@@ -217,21 +220,24 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 		},
 	}
 
+	supportedVersions := []apiVersion{v1, v2} // joinGroup versions
 	for label, tc := range testCases {
-		t.Run(label, func(t *testing.T) {
-			cg := ConsumerGroup{}
-			cg.config.GroupBalancers = []GroupBalancer{
-				RangeGroupBalancer{},
-				RoundRobinGroupBalancer{},
-			}
-			assignments, err := cg.assignTopicPartitions(conn, tc.Members)
-			if err != nil {
-				t.Fatalf("bad err: %v", err)
-			}
-			if !reflect.DeepEqual(tc.Assignments, assignments) {
-				t.Errorf("expected %v; got %v", tc.Assignments, assignments)
-			}
-		})
+		for _, v := range supportedVersions {
+			t.Run(label+"_v"+strconv.Itoa(int(v)), func(t *testing.T) {
+				cg := ConsumerGroup{}
+				cg.config.GroupBalancers = []GroupBalancer{
+					RangeGroupBalancer{},
+					RoundRobinGroupBalancer{},
+				}
+				assignments, err := cg.assignTopicPartitions(conn, tc.MembersFunc(v))
+				if err != nil {
+					t.Fatalf("bad err: %v", err)
+				}
+				if !reflect.DeepEqual(tc.Assignments, assignments) {
+					t.Errorf("expected %v; got %v", tc.Assignments, assignments)
+				}
+			})
+		}
 	}
 }
 
@@ -420,7 +426,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 						},
 					}, nil
 				}
-				mc.joinGroupFunc = func(joinGroupRequestV1) (joinGroupResponse, error) {
+				mc.joinGroupFunc = func(joinGroupRequest) (joinGroupResponse, error) {
 					return joinGroupResponse{}, errors.New("join group failed")
 				}
 				// NOTE : no stub for leaving the group b/c the member never joined.
@@ -450,7 +456,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 						},
 					}, nil
 				}
-				mc.joinGroupFunc = func(joinGroupRequestV1) (joinGroupResponse, error) {
+				mc.joinGroupFunc = func(joinGroupRequest) (joinGroupResponse, error) {
 					return joinGroupResponse{
 						ErrorCode: int16(InvalidTopic),
 					}, nil
@@ -473,7 +479,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 		{
 			scenario: "fails to join group (leader, unsupported protocol)",
 			prepare: func(mc *mockCoordinator) {
-				mc.joinGroupFunc = func(joinGroupRequestV1) (joinGroupResponse, error) {
+				mc.joinGroupFunc = func(joinGroupRequest) (joinGroupResponse, error) {
 					return joinGroupResponse{
 						GenerationID:  12345,
 						GroupProtocol: "foo",
@@ -499,7 +505,7 @@ func TestConsumerGroupErrors(t *testing.T) {
 		{
 			scenario: "fails to sync group (general error)",
 			prepare: func(mc *mockCoordinator) {
-				mc.joinGroupFunc = func(joinGroupRequestV1) (joinGroupResponse, error) {
+				mc.joinGroupFunc = func(joinGroupRequest) (joinGroupResponse, error) {
 					return joinGroupResponse{
 						GenerationID:  12345,
 						GroupProtocol: "range",

@@ -67,7 +67,7 @@ func (c *Client) DeleteTopics(ctx context.Context, req *DeleteTopicsRequest) (*D
 }
 
 // See http://kafka.apache.org/protocol.html#The_Messages_DeleteTopics
-type deleteTopicsRequestV0 struct {
+type deleteTopicsRequest struct {
 	// Topics holds the topic names
 	Topics []string
 
@@ -77,18 +77,18 @@ type deleteTopicsRequestV0 struct {
 	Timeout int32
 }
 
-func (t deleteTopicsRequestV0) size() int32 {
+func (t deleteTopicsRequest) size() int32 {
 	return sizeofStringArray(t.Topics) +
 		sizeofInt32(t.Timeout)
 }
 
-func (t deleteTopicsRequestV0) writeTo(wb *writeBuffer) {
+func (t deleteTopicsRequest) writeTo(wb *writeBuffer) {
 	wb.writeStringArray(t.Topics)
 	wb.writeInt32(t.Timeout)
 }
 
 type deleteTopicsResponse struct {
-	v apiVersion
+	v apiVersion // v0, v1
 
 	ThrottleTime int32
 	// TopicErrorCodes holds per topic error codes
@@ -162,7 +162,7 @@ func (t deleteTopicsResponseV0TopicErrorCode) writeTo(wb *writeBuffer) {
 // deleteTopics deletes the specified topics.
 //
 // See http://kafka.apache.org/protocol.html#The_Messages_DeleteTopics
-func (c *Conn) deleteTopics(request deleteTopicsRequestV0) (deleteTopicsResponse, error) {
+func (c *Conn) deleteTopics(request deleteTopicsRequest) (deleteTopicsResponse, error) {
 	version, err := c.negotiateVersion(deleteTopics, v0, v1)
 	if err != nil {
 		return deleteTopicsResponse{}, err

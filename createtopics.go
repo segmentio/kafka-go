@@ -263,7 +263,7 @@ func (t createTopicsRequestV0Topic) writeTo(wb *writeBuffer) {
 
 // See http://kafka.apache.org/protocol.html#The_Messages_CreateTopics
 type createTopicsRequest struct {
-	v apiVersion
+	v apiVersion // v0, v1, v2
 
 	// Topics contains n array of single topic creation requests. Can not
 	// have multiple entries for the same topic.
@@ -344,20 +344,20 @@ func (t *createTopicsResponseTopicError) readFrom(r *bufio.Reader, size int) (re
 type createTopicsResponse struct {
 	v apiVersion
 
-	ThrottleTime int32 // v1+
+	ThrottleTime int32 // v2+
 	TopicErrors  []createTopicsResponseTopicError
 }
 
 func (t createTopicsResponse) size() int32 {
 	sz := sizeofArray(len(t.TopicErrors), func(i int) int32 { return t.TopicErrors[i].size() })
-	if t.v >= v1 {
+	if t.v >= v2 {
 		sz += sizeofInt32(t.ThrottleTime)
 	}
 	return sz
 }
 
 func (t createTopicsResponse) writeTo(wb *writeBuffer) {
-	if t.v >= v1 {
+	if t.v >= v2 {
 		wb.writeInt32(t.ThrottleTime)
 	}
 	wb.writeArray(len(t.TopicErrors), func(i int) { t.TopicErrors[i].writeTo(wb) })
@@ -373,7 +373,7 @@ func (t *createTopicsResponse) readFrom(r *bufio.Reader, size int) (remain int, 
 		return
 	}
 	remain = size
-	if t.v >= v1 {
+	if t.v >= v2 {
 		if remain, err = readInt32(r, size, &t.ThrottleTime); err != nil {
 			return
 		}
@@ -386,7 +386,7 @@ func (t *createTopicsResponse) readFrom(r *bufio.Reader, size int) (remain int, 
 }
 
 func (c *Conn) createTopics(request createTopicsRequest) (createTopicsResponse, error) {
-	version, err := c.negotiateVersion(createTopics, v0, v2)
+	version, err := c.negotiateVersion(createTopics, v0, v1, v2)
 	if err != nil {
 		return createTopicsResponse{}, err
 	}
