@@ -555,7 +555,7 @@ func (g *Generation) partitionWatcher(interval time.Duration, topic string) {
 type coordinator interface {
 	io.Closer
 	findCoordinator(findCoordinatorRequestV0) (findCoordinatorResponseV0, error)
-	joinGroup(joinGroupRequestV2) (joinGroupResponseV1, error)
+	joinGroup(joinGroupRequestV1) (joinGroupResponse, error)
 	syncGroup(syncGroupRequestV0) (syncGroupResponseV0, error)
 	leaveGroup(leaveGroupRequestV0) (leaveGroupResponseV0, error)
 	heartbeat(heartbeatRequestV0) (heartbeatResponseV0, error)
@@ -588,11 +588,11 @@ func (t *timeoutCoordinator) findCoordinator(req findCoordinatorRequestV0) (find
 	return t.conn.findCoordinator(req)
 }
 
-func (t *timeoutCoordinator) joinGroup(req joinGroupRequestV2) (joinGroupResponseV1, error) {
+func (t *timeoutCoordinator) joinGroup(req joinGroupRequestV1) (joinGroupResponse, error) {
 	// in the case of join group, the consumer group coordinator may wait up
 	// to rebalance timeout in order to wait for all members to join.
 	if err := t.conn.SetDeadline(time.Now().Add(t.timeout + t.rebalanceTimeout)); err != nil {
-		return joinGroupResponseV1{}, err
+		return joinGroupResponse{}, err
 	}
 	return t.conn.joinGroup(req)
 }
@@ -932,7 +932,7 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 //  * InvalidSessionTimeout:
 //  * GroupAuthorizationFailed:
 func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, int32, GroupMemberAssignments, error) {
-	request, err := cg.makeJoinGroupRequestV2(memberID)
+	request, err := cg.makeJoinGroupRequestV1(memberID)
 	if err != nil {
 		return "", 0, nil, err
 	}
@@ -978,8 +978,8 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 
 // makeJoinGroupRequestV1 handles the logic of constructing a joinGroup
 // request.
-func (cg *ConsumerGroup) makeJoinGroupRequestV2(memberID string) (joinGroupRequestV2, error) {
-	request := joinGroupRequestV2{
+func (cg *ConsumerGroup) makeJoinGroupRequestV1(memberID string) (joinGroupRequestV1, error) {
+	request := joinGroupRequestV1{
 		GroupID:          cg.config.ID,
 		MemberID:         memberID,
 		SessionTimeout:   int32(cg.config.SessionTimeout / time.Millisecond),
@@ -990,7 +990,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV2(memberID string) (joinGroupReque
 	for _, balancer := range cg.config.GroupBalancers {
 		userData, err := balancer.UserData()
 		if err != nil {
-			return joinGroupRequestV2{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
+			return joinGroupRequestV1{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
 		}
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName: balancer.ProtocolName(),
@@ -1007,7 +1007,7 @@ func (cg *ConsumerGroup) makeJoinGroupRequestV2(memberID string) (joinGroupReque
 
 // assignTopicPartitions uses the selected GroupBalancer to assign members to
 // their various partitions.
-func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroupResponseV1) (GroupMemberAssignments, error) {
+func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroupResponse) (GroupMemberAssignments, error) {
 	cg.withLogger(func(l Logger) {
 		l.Printf("selected as leader for group, %s\n", cg.config.ID)
 	})

@@ -161,8 +161,8 @@ func TestClientCreateTopics(t *testing.T) {
 }
 
 func TestCreateTopicsResponseV1(t *testing.T) {
-	item := createTopicsResponseV1{
-		TopicErrors: []createTopicsResponseV1TopicError{
+	item := createTopicsResponse{
+		TopicErrors: []createTopicsResponseTopicError{
 			{
 				Topic:     "topic",
 				ErrorCode: 2,
@@ -174,7 +174,7 @@ func TestCreateTopicsResponseV1(t *testing.T) {
 	w := &writeBuffer{w: b}
 	item.writeTo(w)
 
-	var found createTopicsResponseV1
+	var found createTopicsResponse
 	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
 	if err != nil {
 		t.Error(err)
