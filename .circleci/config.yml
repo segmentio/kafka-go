@@ -149,7 +149,7 @@ jobs:
   kafka-370:
     working_directory: *working_directory
     environment:
-      KAFKA_VERSION: "2.8.1"
+      KAFKA_VERSION: "3.7.0"
 
       # Need to skip nettest to avoid these kinds of errors:
       #  --- FAIL: TestConn/nettest (17.56s)
