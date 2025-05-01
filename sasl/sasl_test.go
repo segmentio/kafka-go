@@ -18,6 +18,11 @@ const (
 )
 
 func TestSASL(t *testing.T) {
+	scramUsers := map[scram.Algorithm]string{scram.SHA256: "adminscram", scram.SHA512: "adminscram"}
+	// kafka 4.0.0 test environment supports only different users for different scram algorithms.
+	if ktesting.KafkaIsAtLeast("4.0.0") {
+		scramUsers = map[scram.Algorithm]string{scram.SHA256: "adminscram256", scram.SHA512: "adminscram512"}
+	}
 	tests := []struct {
 		valid    func() sasl.Mechanism
 		invalid  func() sasl.Mechanism
@@ -39,22 +44,22 @@ func TestSASL(t *testing.T) {
 		},
 		{
 			valid: func() sasl.Mechanism {
-				mech, _ := scram.Mechanism(scram.SHA256, "adminscram", "admin-secret-256")
+				mech, _ := scram.Mechanism(scram.SHA256, scramUsers[scram.SHA256], "admin-secret-256")
 				return mech
 			},
 			invalid: func() sasl.Mechanism {
-				mech, _ := scram.Mechanism(scram.SHA256, "adminscram", "badpassword")
+				mech, _ := scram.Mechanism(scram.SHA256, scramUsers[scram.SHA256], "badpassword")
 				return mech
 			},
 			minKafka: "0.10.2.0",
 		},
 		{
 			valid: func() sasl.Mechanism {
-				mech, _ := scram.Mechanism(scram.SHA512, "adminscram", "admin-secret-512")
+				mech, _ := scram.Mechanism(scram.SHA512, scramUsers[scram.SHA512], "admin-secret-512")
 				return mech
 			},
 			invalid: func() sasl.Mechanism {
-				mech, _ := scram.Mechanism(scram.SHA512, "adminscram", "badpassword")
+				mech, _ := scram.Mechanism(scram.SHA512, scramUsers[scram.SHA512], "badpassword")
 				return mech
 			},
 			minKafka: "0.10.2.0",

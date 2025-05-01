@@ -318,10 +318,13 @@ jobs:
           KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
           KAFKA_CFG_MESSAGE_MAX_BYTES: '200000000'
           KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'org.apache.kafka.metadata.authorizer.StandardAuthorizer'
-        entrypoint:
-          - "/bin/bash"
-          - "-c"
-          - echo -e 'KafkaServer {\norg.apache.kafka.common.security.scram.ScramLoginModule required\n username="adminscram"\n password="admin-secret";\n org.apache.kafka.common.security.plain.PlainLoginModule required\n username="adminplain"\n password="admin-secret"\n user_adminplain="admin-secret";\n  };' > /opt/bitnami/kafka/config/kafka_jaas.conf; exec /entrypoint.sh /run.sh
+          KAFKA_CFG_SUPER_USERS: User:adminscram256;User:adminscram512;User:adminplain
+          KAFKA_CLIENT_USERS: adminscram256,adminscram512,adminplain
+          KAFKA_CLIENT_PASSWORDS: admin-secret-256,admin-secret-512,admin-secret
+          KAFKA_CLIENT_SASL_MECHANISMS: SCRAM-SHA-256,SCRAM-SHA-512,PLAIN
+          KAFKA_INTER_BROKER_USER: adminscram512
+          KAFKA_INTER_BROKER_PASSWORD: admin-secret-512
+          KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-512
     steps: *steps
 
 workflows:
