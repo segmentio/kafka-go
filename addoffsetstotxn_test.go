@@ -81,12 +81,26 @@ func TestClientAddOffsetsToTxn(t *testing.T) {
 	client, shutdown = newClient(transactionCoordinator)
 	defer shutdown()
 
-	ipResp, err := client.InitProducerID(ctx, &InitProducerIDRequest{
-		TransactionalID:      transactionalID,
-		TransactionTimeoutMs: 10000,
-	})
-	if err != nil {
-		t.Fatal(err)
+	attempts := 0
+
+	var ipResp *InitProducerIDResponse
+
+	for attempts < 3 {
+		ipResp, err := client.InitProducerID(ctx, &InitProducerIDRequest{
+			TransactionalID:      transactionalID,
+			TransactionTimeoutMs: 10000,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// we should retry if the group is still loading
+		if ipResp.Error != GroupLoadInProgress {
+			t.Fatal(ipResp.Error)
+		}
+
+		time.Sleep(time.Second)
+		attempts++
 	}
 
 	if ipResp.Error != nil {
