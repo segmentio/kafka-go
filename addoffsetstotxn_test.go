@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net"
 	"os"
@@ -82,32 +81,18 @@ func TestClientAddOffsetsToTxn(t *testing.T) {
 	client, shutdown = newClient(transactionCoordinator)
 	defer shutdown()
 
-	attempts := 0
-	var ipResp *InitProducerIDResponse
-
 	// on Kafka 3.X+, the consumer group takes a longer amount of time to load
-	// so we need to retry InitProducerID a few times to ensure that is setup
-	// before we call AddOffsetsToTxn
-	for attempts < 3 {
-		ipResp, err = client.InitProducerID(ctx, &InitProducerIDRequest{
-			TransactionalID:      transactionalID,
-			TransactionTimeoutMs: 10000,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
+	time.Sleep(time.Second * 3)
+	ipResp, err := client.InitProducerID(ctx, &InitProducerIDRequest{
+		TransactionalID:      transactionalID,
+		TransactionTimeoutMs: 10000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		if ipResp.Error == nil {
-			break
-		}
-
-		// retry if the group is still loading
-		if !errors.Is(ipResp.Error, GroupLoadInProgress) {
-			t.Fatal(ipResp.Error)
-		}
-
-		time.Sleep(time.Second)
-		attempts++
+	if ipResp.Error != nil {
+		t.Fatal(ipResp.Error)
 	}
 
 	defer func() {

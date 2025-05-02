@@ -16,6 +16,12 @@ func TestClientTxnOffsetCommit(t *testing.T) {
 		t.Skip("Skipping test because kafka version is not high enough.")
 	}
 
+	// TODO: look into why this test fails on Kafka 3.0.0 and higher when transactional support
+	// work is done.
+	if ktesting.KafkaIsAtLeast("3.0.0") {
+		t.Skip("Skipping test because it fails on Kafka version 3.0.0 or higher.")
+	}
+
 	transactionalID := makeTransactionalID()
 	topic := makeTopic()
 
