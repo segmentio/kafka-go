@@ -3,9 +3,7 @@ package kafka
 import (
 	"context"
 	"log"
-	"net"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 
@@ -77,18 +75,7 @@ func TestClientAddOffsetsToTxn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	transactionCoordinator := TCP(net.JoinHostPort(respc.Coordinator.Host, strconv.Itoa(int(respc.Coordinator.Port))))
-	client, shutdown = newClient(transactionCoordinator)
-	defer shutdown()
-
-	ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
-	defer cancel()
-	respc, err = waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
-		Addr:    client.Addr,
-		Key:     transactionalID,
-		KeyType: CoordinatorKeyTypeTransaction,
-	})
-	if err != nil {
+	if respc.Error != nil {
 		t.Fatal(err)
 	}
 
