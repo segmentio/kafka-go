@@ -81,8 +81,17 @@ func TestClientAddOffsetsToTxn(t *testing.T) {
 	client, shutdown = newClient(transactionCoordinator)
 	defer shutdown()
 
-	// on Kafka 3.X+, the consumer group takes a longer amount of time to load
-	time.Sleep(time.Second * 3)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	respc, err = waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
+		Addr:    client.Addr,
+		Key:     transactionalID,
+		KeyType: CoordinatorKeyTypeTransaction,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	ipResp, err := client.InitProducerID(ctx, &InitProducerIDRequest{
 		TransactionalID:      transactionalID,
 		TransactionTimeoutMs: 10000,
