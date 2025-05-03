@@ -10,7 +10,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/createtopics"
 )
 
-// CreateTopicRequests represents a request sent to a kafka broker to create
+// CreateTopicsRequest represents a request sent to a kafka broker to create
 // new topics.
 type CreateTopicsRequest struct {
 	// Address of the kafka broker to send the request to.
@@ -27,7 +27,7 @@ type CreateTopicsRequest struct {
 	ValidateOnly bool
 }
 
-// CreateTopicResponse represents a response from a kafka broker to a topic
+// CreateTopicsResponse represents a response from a kafka broker to a topic
 // creation request.
 type CreateTopicsResponse struct {
 	// The amount of time that the broker throttled the request.
