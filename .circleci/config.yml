@@ -177,7 +177,7 @@ jobs:
         KAFKA_CFG_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
         KAFKA_CFG_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
         KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
-        KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+        KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'kafka.security.authorizer.AclAuthorizer'
         KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
         KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_jaas.conf"
         ALLOW_PLAINTEXT_LISTENER: yes
@@ -248,6 +248,36 @@ jobs:
       entrypoint: *entrypoint
     steps: *steps
 
+  kafka-280:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "2.8.0"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:2.8.0
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
   kafka-281:
     working_directory: *working_directory
     environment:
@@ -278,6 +308,456 @@ jobs:
       entrypoint: *entrypoint
     steps: *steps
 
+  kafka-300:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.0.0"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.0.0
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-301:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.0.1"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.0.1
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-302:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.0.2"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.0.2
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-310:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.1.0"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.1.0
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-311:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.1.1"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.1.1
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-312:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.1.2"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.1.2
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-320:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.2.0"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.2.0
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-321:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.2.1"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.2.1
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-323:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.2.3"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.2.3
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-331:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.3.1"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.3.1
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-332:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.3.2"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.3.2
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-350:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.5.0"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.5.0
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-351:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.5.1"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.5.1
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-352:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.5.2"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.5.2
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
+  kafka-360:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "3.6.0"
+
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/zookeeper:latest
+      ports:
+      - 2181:2181
+      environment:
+        ALLOW_ANONYMOUS_LOGIN: yes
+    - image: bitnami/kafka:3.6.0
+      ports:
+      - 9092:9092
+      - 9093:9093
+      environment: *environment
+      entrypoint: *entrypoint
+    steps: *steps
+
 workflows:
   version: 2
   run:
@@ -294,4 +774,20 @@ workflows:
     - kafka-241
     - kafka-260
     - kafka-270
+    - kafka-280
     - kafka-281
+    - kafka-300
+    - kafka-301
+    - kafka-302
+    - kafka-310
+    - kafka-311
+    - kafka-312
+    - kafka-320
+    - kafka-321
+    - kafka-323
+    - kafka-331
+    - kafka-332
+    - kafka-350
+    - kafka-351
+    - kafka-352
+    - kafka-360
