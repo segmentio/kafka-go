@@ -1601,10 +1601,9 @@ func TestConsumerGroupWithGroupTopicsMultiple(t *testing.T) {
 	}
 	defer w.Close()
 
-	time.Sleep(time.Second)
-
 	msgs := make([]Message, 0, len(conf.GroupTopics))
 	for _, topic := range conf.GroupTopics {
+		waitForTopic(ctx, t, topic)
 		msgs = append(msgs, Message{Topic: topic})
 	}
 	if err := w.WriteMessages(ctx, msgs...); err != nil {
