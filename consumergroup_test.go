@@ -8,6 +8,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/protocol"
+	"github.com/segmentio/kafka-go/protocol/consumer"
 )
 
 var _ coordinator = mockCoordinator{}
@@ -146,11 +149,15 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 		}
 
 		for memberID, topics := range topicsByMemberID {
+			mm, err := protocol.Marshal(1, consumer.Subscription{
+				Topics: topics,
+			})
+			if err != nil {
+				t.Errorf("error marshaling consumer subscription: %v", err)
+			}
 			resp.Members = append(resp.Members, joinGroupResponseMemberV1{
-				MemberID: memberID,
-				MemberMetadata: groupMetadata{
-					Topics: topics,
-				}.bytes(),
+				MemberID:       memberID,
+				MemberMetadata: mm,
 			})
 		}
 
@@ -553,7 +560,6 @@ func TestConsumerGroupErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.scenario, func(t *testing.T) {
-
 			tt.prepare(&mc)
 
 			group, err := NewConsumerGroup(ConsumerGroupConfig{

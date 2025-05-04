@@ -1,12 +1,10 @@
 package kafka
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"fmt"
 	"net"
 
+	"github.com/segmentio/kafka-go/protocol/consumer"
 	"github.com/segmentio/kafka-go/protocol/describegroups"
 )
 
@@ -168,52 +166,24 @@ func decodeMemberMetadata(rawMetadata []byte) (DescribeGroupsResponseMemberMetad
 		return mm, nil
 	}
 
-	buf := bytes.NewBuffer(rawMetadata)
-	bufReader := bufio.NewReader(buf)
-	remain := len(rawMetadata)
-
-	var err error
-	var version16 int16
-
-	if remain, err = readInt16(bufReader, remain, &version16); err != nil {
-		return mm, err
-	}
-	mm.Version = int(version16)
-
-	if remain, err = readStringArray(bufReader, remain, &mm.Topics); err != nil {
-		return mm, err
-	}
-	if remain, err = readBytes(bufReader, remain, &mm.UserData); err != nil {
+	var sub consumer.Subscription
+	err := sub.FromBytes(rawMetadata)
+	if err != nil {
 		return mm, err
 	}
 
-	if mm.Version == 1 && remain > 0 {
-		fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-			op := DescribeGroupsResponseMemberMetadataOwnedPartition{}
-			if fnRemain, fnErr = readString(r, size, &op.Topic); fnErr != nil {
-				return
-			}
-
-			ps := []int32{}
-			if fnRemain, fnErr = readInt32Array(r, fnRemain, &ps); fnErr != nil {
-				return
-			}
-
-			for _, p := range ps {
-				op.Partitions = append(op.Partitions, int(p))
-			}
-
-			mm.OwnedPartitions = append(mm.OwnedPartitions, op)
-			return
+	mm.Version = int(sub.Version)
+	mm.Topics = sub.Topics
+	mm.UserData = sub.UserData
+	mm.OwnedPartitions = make([]DescribeGroupsResponseMemberMetadataOwnedPartition, len(sub.OwnedPartitions))
+	for i, op := range sub.OwnedPartitions {
+		mm.OwnedPartitions[i] = DescribeGroupsResponseMemberMetadataOwnedPartition{
+			Topic:      op.Topic,
+			Partitions: make([]int, len(op.Partitions)),
 		}
-
-		if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
-			return mm, err
+		for j, part := range op.Partitions {
+			mm.OwnedPartitions[i].Partitions[j] = int(part)
 		}
-	}
-
-	if remain != 0 {
-		return mm, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
 	}
 
 	return mm, nil
@@ -231,68 +201,24 @@ func decodeMemberAssignments(rawAssignments []byte) (DescribeGroupsResponseAssig
 		return ma, nil
 	}
 
-	buf := bytes.NewBuffer(rawAssignments)
-	bufReader := bufio.NewReader(buf)
-	remain := len(rawAssignments)
-
-	var err error
-	var version16 int16
-
-	if remain, err = readInt16(bufReader, remain, &version16); err != nil {
-		return ma, err
-	}
-	ma.Version = int(version16)
-
-	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		item := GroupMemberTopic{}
-
-		if fnRemain, fnErr = readString(r, size, &item.Topic); fnErr != nil {
-			return
-		}
-
-		partitions := []int32{}
-
-		if fnRemain, fnErr = readInt32Array(r, fnRemain, &partitions); fnErr != nil {
-			return
-		}
-		for _, partition := range partitions {
-			item.Partitions = append(item.Partitions, int(partition))
-		}
-
-		ma.Topics = append(ma.Topics, item)
-		return
-	}
-	if remain, err = readArrayWith(bufReader, remain, fn); err != nil {
+	var assignment consumer.Assignment
+	err := assignment.FromBytes(rawAssignments)
+	if err != nil {
 		return ma, err
 	}
 
-	if remain, err = readBytes(bufReader, remain, &ma.UserData); err != nil {
-		return ma, err
-	}
-
-	if remain != 0 {
-		return ma, fmt.Errorf("Got non-zero number of bytes remaining: %d", remain)
+	ma.Version = int(assignment.Version)
+	ma.UserData = assignment.UserData
+	ma.Topics = make([]GroupMemberTopic, len(assignment.AssignedPartitions))
+	for i, topic := range assignment.AssignedPartitions {
+		ma.Topics[i] = GroupMemberTopic{
+			Topic:      topic.Topic,
+			Partitions: make([]int, len(topic.Partitions)),
+		}
+		for j, part := range topic.Partitions {
+			ma.Topics[i].Partitions[j] = int(part)
+		}
 	}
 
 	return ma, nil
-}
-
-// readInt32Array reads an array of int32s. It's adapted from the implementation of
-// readStringArray.
-func readInt32Array(r *bufio.Reader, sz int, v *[]int32) (remain int, err error) {
-	var content []int32
-	fn := func(r *bufio.Reader, size int) (fnRemain int, fnErr error) {
-		var value int32
-		if fnRemain, fnErr = readInt32(r, size, &value); fnErr != nil {
-			return
-		}
-		content = append(content, value)
-		return
-	}
-	if remain, err = readArrayWith(r, sz, fn); err != nil {
-		return
-	}
-
-	*v = content
-	return
 }
