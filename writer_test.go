@@ -107,6 +107,11 @@ func TestWriter(t *testing.T) {
 		},
 
 		{
+			scenario: "closing a writer with errors should return error",
+			function: testWriterCloseWithErrors,
+		},
+
+		{
 			scenario: "writing 1 message through a writer using round-robin balancing produces 1 message to the first partition",
 			function: testWriterRoundRobin1,
 		},
@@ -220,6 +225,15 @@ func testWriterClose(t *testing.T) {
 
 	if err := w.Close(); err != nil {
 		t.Error(err)
+	}
+}
+
+func testWriterCloseWithErrors(t *testing.T) {
+	w := newTestWriter(WriterConfig{})
+	w.stats().errors.observe(1)
+
+	if err := w.Close(); err == nil {
+		t.Error("expected error, but got nil")
 	}
 }
 
