@@ -863,6 +863,8 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		} else {
 			msgs, err = newMessageSetReader(&c.rbuf, remain)
 		}
+	} else if remain > 0 {
+		c.rbuf.Discard(remain)
 	}
 	if errors.Is(err, errShortRead) {
 		err = checkTimeoutErr(adjustedDeadline)
