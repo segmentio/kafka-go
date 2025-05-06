@@ -216,6 +216,7 @@ jobs:
         KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_jaas.conf"
         # Kafka 4.0 runs out of memory with the default heap size
         KAFKA_HEAP_OPTS: '-Xmx1000m -Xms1000m'
+        KAFKA_JVM_OPTS: '-XX:+UseG1GC'
         KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
         KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
         KAFKA_CFG_MESSAGE_MAX_BYTES: '200000000'
