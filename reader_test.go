@@ -1374,7 +1374,9 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 // than partitions in a group.
 // https://github.com/segmentio/kafka-go/issues/200
 func TestRebalanceTooManyConsumers(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	conf := ReaderConfig{
 		Brokers: []string{"localhost:9092"},
 		GroupID: makeGroupID(),
@@ -1384,8 +1386,15 @@ func TestRebalanceTooManyConsumers(t *testing.T) {
 
 	// Create the first reader and wait for it to become the leader.
 	r1 := NewReader(conf)
+
+	// Give the reader some time to setup before reading a message
+	time.Sleep(1 * time.Second)
 	prepareReader(t, ctx, r1, makeTestSequence(1)...)
-	r1.ReadMessage(ctx)
+
+	_, err := r1.ReadMessage(ctx)
+	if err != nil {
+		t.Fatalf("failed to read message: %v", err)
+	}
 	// Clear the stats from the first rebalance.
 	r1.Stats()
 
