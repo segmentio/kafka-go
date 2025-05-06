@@ -238,4 +238,10 @@ workflows:
     - kafka-270
     - kafka-281
     - kafka-370 
-    - kafka-400
+    - kafka-400:
+        requires:
+          - kafka-010
+          - kafka-270
+          - kafka-281
+          - kafka-370
+          - lint
