@@ -301,7 +301,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 
-	_, err = conn.createTopics(createTopicsRequestV0{
+	_, err = conn.createTopics(createTopicsRequest{
 		Topics: []createTopicsRequestV0Topic{
 			{
 				Topic:             topic,

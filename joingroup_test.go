@@ -217,37 +217,41 @@ func TestMemberMetadata(t *testing.T) {
 	}
 }
 
-func TestJoinGroupResponseV1(t *testing.T) {
-	item := joinGroupResponseV1{
-		ErrorCode:     2,
-		GenerationID:  3,
-		GroupProtocol: "a",
-		LeaderID:      "b",
-		MemberID:      "c",
-		Members: []joinGroupResponseMemberV1{
-			{
-				MemberID:       "d",
-				MemberMetadata: []byte("blah"),
+func TestJoinGroupResponse(t *testing.T) {
+	supportedVersions := []apiVersion{v1, v2}
+	for _, v := range supportedVersions {
+		item := joinGroupResponse{
+			v:             v,
+			ErrorCode:     2,
+			GenerationID:  3,
+			GroupProtocol: "a",
+			LeaderID:      "b",
+			MemberID:      "c",
+			Members: []joinGroupResponseMember{
+				{
+					MemberID:       "d",
+					MemberMetadata: []byte("blah"),
+				},
 			},
-		},
-	}
+		}
 
-	b := bytes.NewBuffer(nil)
-	w := &writeBuffer{w: b}
-	item.writeTo(w)
+		b := bytes.NewBuffer(nil)
+		w := &writeBuffer{w: b}
+		item.writeTo(w)
 
-	var found joinGroupResponseV1
-	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	if remain != 0 {
-		t.Errorf("expected 0 remain, got %v", remain)
-		t.FailNow()
-	}
-	if !reflect.DeepEqual(item, found) {
-		t.Error("expected item and found to be the same")
-		t.FailNow()
+		found := joinGroupResponse{v: v}
+		remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
+		if err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+		if remain != 0 {
+			t.Errorf("expected 0 remain, got %v", remain)
+			t.FailNow()
+		}
+		if !reflect.DeepEqual(item, found) {
+			t.Error("expected item and found to be the same")
+			t.FailNow()
+		}
 	}
 }

@@ -856,7 +856,7 @@ func testWriterAutoCreateTopic(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		err = w.WriteMessages(ctx, msg)
-		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, UnknownTopicOrPartition) {
 			time.Sleep(time.Millisecond * 250)
 			continue
 		}
@@ -924,7 +924,7 @@ func testWriterSasl(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		err = w.WriteMessages(ctx, msg)
-		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, UnknownTopicOrPartition) {
 			time.Sleep(time.Millisecond * 250)
 			continue
 		}
