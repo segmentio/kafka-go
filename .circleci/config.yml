@@ -225,7 +225,6 @@ jobs:
         KAFKA_INTER_BROKER_USER: adminscram512
         KAFKA_INTER_BROKER_PASSWORD: admin-secret-512
         KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-512
-      entrypoint: *entrypoint
     steps: *steps
 
 workflows:
