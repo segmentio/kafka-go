@@ -32,7 +32,7 @@ func TestClientDescribeGroups(t *testing.T) {
 		Topic: topic,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second) // longer timeout for kafka-4.0
 	defer cancel()
 
 	err := w.WriteMessages(

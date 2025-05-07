@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"testing"
+	"time"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
@@ -26,6 +27,7 @@ func TestClientElectLeaders(t *testing.T) {
 		&ElectLeadersRequest{
 			Topic:      topic,
 			Partitions: []int{0, 1},
+			Timeout:    5 * time.Second,
 		},
 	)
 

@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"testing"
+	"time"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
@@ -35,6 +36,7 @@ func TestClientAlterPartitionReassignments(t *testing.T) {
 					BrokerIDs:   []int{1},
 				},
 			},
+			Timeout: 5 * time.Second,
 		},
 	)
 
@@ -96,6 +98,7 @@ func TestClientAlterPartitionReassignmentsMultiTopics(t *testing.T) {
 					BrokerIDs:   []int{1},
 				},
 			},
+			Timeout: 5 * time.Second,
 		},
 	)
 
