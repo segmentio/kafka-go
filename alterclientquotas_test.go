@@ -3,9 +3,11 @@ package kafka
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestClientAlterClientQuotas(t *testing.T) {
@@ -64,6 +66,8 @@ func TestClientAlterClientQuotas(t *testing.T) {
 	}
 
 	assert.Equal(t, expectedAlterResp, *alterResp)
+
+	time.Sleep(1 * time.Second) // wait for the quota to be applie (Kafka 4.0.0+)
 
 	describeResp, err := client.DescribeClientQuotas(context.Background(), &DescribeClientQuotasRequest{
 		Components: []DescribeClientQuotasRequestComponent{

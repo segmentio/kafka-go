@@ -250,11 +250,11 @@ func TestConsumerGroup(t *testing.T) {
 			scenario: "Next returns generations",
 			function: func(t *testing.T, ctx context.Context, cg *ConsumerGroup) {
 				gen1, err := cg.Next(ctx)
-				if gen1 == nil {
-					t.Fatalf("expected generation 1 not to be nil")
-				}
 				if err != nil {
 					t.Fatalf("expected no error, but got %+v", err)
+				}
+				if gen1 == nil {
+					t.Fatalf("expected generation 1 not to be nil")
 				}
 				// returning from this function should cause the generation to
 				// exit.
