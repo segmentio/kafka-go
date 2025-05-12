@@ -304,6 +304,44 @@ func (c *Conn) Brokers() ([]Broker, error) {
 	return brokers, err
 }
 
+// GetControllerConn returns the connection object for the Controller of the kafka cluster 
+// required to avoid the error encountered when attempting to create topics on a conn-
+// ection to a non-controller connection to a kafka server with replication factor > 1;
+// "error = [41] Not Controller: this is not the correct controller for this cluster"
+func (c *Conn) GetControllerConn() (*Conn, error) {
+	// Ranges over the list of brokers returned from the current connection,
+	// then returns the connection object for the controller of the cluster.
+	var controllerConn *Conn
+	dialer := Dialer{ClientID: "Controller Setup Dialer",}
+	brokers, err := c.Brokers()
+	if err != nil {return nil, err} 
+
+	for _, v := range brokers {
+		c, err = dialer.Dial("tcp", v.Host + ":" + fmt.Sprintf("%d",v.Port))
+		if err != nil {
+			return nil, err
+		} else {
+			controlBroker, err := c.Controller()
+			controllerURL := controlBroker.Host + ":" + fmt.Sprintf("%d", controlBroker.Port)
+			if err != nil {
+				return nil, err
+			} 
+			controllerConn, err = dialer.Dial("tcp", controllerURL)
+			if err != nil {
+				return nil, err
+			}
+			c.Close()
+			
+			return controllerConn, nil
+		}
+	}
+	if err != nil {
+		err = fmt.Errorf("No connection to Kafka could be established with broker(s) provided.")
+		return nil, err
+	}
+	return c, nil
+}
+
 // DeleteTopics deletes the specified topics.
 func (c *Conn) DeleteTopics(topics ...string) error {
 	_, err := c.deleteTopics(deleteTopicsRequestV0{
