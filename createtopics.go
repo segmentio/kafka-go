@@ -304,7 +304,7 @@ type createTopicsResponseTopicError struct {
 	// ErrorCode holds response error code
 	ErrorCode int16
 
-	// ErrorMessage holds responce error message string
+	// ErrorMessage holds response error message string
 	ErrorMessage string
 }
 

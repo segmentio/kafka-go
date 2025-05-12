@@ -179,8 +179,8 @@ jobs:
     steps: *steps
 
   # NOTE: this fails quite often due to Java heap errors from Kafka.
-  # Once we switch to Github actions and can use larger instances, we can
-  # set the heap size and enable these
+  # Once we figure out how to fix that, we can re-enable this.
+  # https://github.com/segmentio/kafka-go/issues/1360#issuecomment-2858935900
   # kafka-400:
   #   working_directory: *working_directory
   #   environment:

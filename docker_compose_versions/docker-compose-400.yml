@@ -34,5 +34,7 @@ services:
       KAFKA_INTER_BROKER_USER: adminscram512
       KAFKA_INTER_BROKER_PASSWORD: admin-secret-512
       KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-512
+      # Note you will need to increase this to at least 4GB of memory for the tests to pass
+      # https://github.com/segmentio/kafka-go/issues/1360#issuecomment-2858935900
       KAFKA_HEAP_OPTS: '-Xmx1000m -Xms1000m'
       KAFKA_JVM_OPTS: '-XX:+UseG1GC'
