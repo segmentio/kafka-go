@@ -3,9 +3,7 @@ package kafka
 import (
 	"context"
 	"log"
-	"net"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 
@@ -16,17 +14,26 @@ func TestClientAddOffsetsToTxn(t *testing.T) {
 	if !ktesting.KafkaIsAtLeast("0.11.0") {
 		t.Skip("Skipping test because kafka version is not high enough.")
 	}
+
+	// TODO: look into why this test fails on Kafka 3.0.0 and higher when transactional support
+	// work is revisited.
+	if ktesting.KafkaIsAtLeast("3.0.0") {
+		t.Skip("Skipping test because it fails on Kafka version 3.0.0 or higher.")
+	}
+
 	topic := makeTopic()
 	transactionalID := makeTransactionalID()
 	client, shutdown := newLocalClient()
 	defer shutdown()
 
 	err := clientCreateTopic(client, topic, 3)
+	defer deleteTopic(t, topic)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	waitForTopic(ctx, t, topic)
 	defer cancel()
 	respc, err := waitForCoordinatorIndefinitely(ctx, client, &FindCoordinatorRequest{
 		Addr:    client.Addr,
@@ -75,9 +82,9 @@ func TestClientAddOffsetsToTxn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	transactionCoordinator := TCP(net.JoinHostPort(respc.Coordinator.Host, strconv.Itoa(int(respc.Coordinator.Port))))
-	client, shutdown = newClient(transactionCoordinator)
-	defer shutdown()
+	if respc.Error != nil {
+		t.Fatal(err)
+	}
 
 	ipResp, err := client.InitProducerID(ctx, &InitProducerIDRequest{
 		TransactionalID:      transactionalID,

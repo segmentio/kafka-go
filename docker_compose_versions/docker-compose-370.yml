@@ -11,7 +11,7 @@ services:
       ALLOW_ANONYMOUS_LOGIN: yes
   kafka:
     container_name: kafka
-    image: bitnami/kafka:2.6.0
+    image: bitnami/kafka:3.7.0
     restart: on-failure:3
     links:
       - zookeeper
@@ -29,7 +29,7 @@ services:
       KAFKA_CFG_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
       KAFKA_CFG_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
       KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
-      KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'kafka.security.auth.SimpleAclAuthorizer'
+      KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'kafka.security.authorizer.AclAuthorizer'
       KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
       KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_jaas.conf"
       ALLOW_PLAINTEXT_LISTENER: yes

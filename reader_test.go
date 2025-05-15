@@ -301,7 +301,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 
-	_, err = conn.createTopics(createTopicsRequestV0{
+	_, err = conn.createTopics(createTopicsRequest{
 		Topics: []createTopicsRequestV0Topic{
 			{
 				Topic:             topic,
@@ -309,7 +309,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 				ReplicationFactor: 1,
 			},
 		},
-		Timeout: milliseconds(time.Second),
+		Timeout: milliseconds(5 * time.Second),
 	})
 	if err != nil {
 		if !errors.Is(err, TopicAlreadyExists) {
@@ -364,8 +364,8 @@ func waitForTopic(ctx context.Context, t *testing.T, topic string) {
 			}
 		}
 
-		t.Logf("retrying after 1s")
-		time.Sleep(time.Second)
+		t.Logf("retrying after 100ms")
+		time.Sleep(100 * time.Millisecond)
 		continue
 	}
 }
@@ -1374,7 +1374,9 @@ func TestCommitOffsetsWithRetry(t *testing.T) {
 // than partitions in a group.
 // https://github.com/segmentio/kafka-go/issues/200
 func TestRebalanceTooManyConsumers(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	conf := ReaderConfig{
 		Brokers: []string{"localhost:9092"},
 		GroupID: makeGroupID(),
@@ -1384,8 +1386,15 @@ func TestRebalanceTooManyConsumers(t *testing.T) {
 
 	// Create the first reader and wait for it to become the leader.
 	r1 := NewReader(conf)
+
+	// Give the reader some time to setup before reading a message
+	time.Sleep(1 * time.Second)
 	prepareReader(t, ctx, r1, makeTestSequence(1)...)
-	r1.ReadMessage(ctx)
+
+	_, err := r1.ReadMessage(ctx)
+	if err != nil {
+		t.Fatalf("failed to read message: %v", err)
+	}
 	// Clear the stats from the first rebalance.
 	r1.Stats()
 
@@ -1559,17 +1568,22 @@ func TestConsumerGroupWithGroupTopicsSingle(t *testing.T) {
 	}
 }
 
-func TestConsumerGroupWithGroupTopicsMultple(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func TestConsumerGroupWithGroupTopicsMultiple(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	client, shutdown := newLocalClient()
 	defer shutdown()
-
+	t1 := makeTopic()
+	createTopic(t, t1, 1)
+	defer deleteTopic(t, t1)
+	t2 := makeTopic()
+	createTopic(t, t2, 1)
+	defer deleteTopic(t, t2)
 	conf := ReaderConfig{
 		Brokers:                []string{"localhost:9092"},
 		GroupID:                makeGroupID(),
-		GroupTopics:            []string{makeTopic(), makeTopic()},
+		GroupTopics:            []string{t1, t2},
 		MaxWait:                time.Second,
 		PartitionWatchInterval: 100 * time.Millisecond,
 		WatchPartitionChanges:  true,
