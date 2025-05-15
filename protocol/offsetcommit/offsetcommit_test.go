@@ -93,12 +93,9 @@ func TestOffsetCommitRequest(t *testing.T) {
 		})
 	}
 
-	// Version 5 added:
-	// RequestTopic.RequestPartition.CommitedLeaderEpoc
 	// Version 5 removed:
 	// RetentionTimeMs
-	// Fields are the same through version 6.
-	for _, version := range []int16{5, 6} {
+	for _, version := range []int16{5} {
 		prototest.TestRequest(t, version, &offsetcommit.Request{
 			GroupID:      "group-3",
 			GenerationID: 1,
@@ -108,16 +105,14 @@ func TestOffsetCommitRequest(t *testing.T) {
 					Name: "topic-3",
 					Partitions: []offsetcommit.RequestPartition{
 						{
-							PartitionIndex:       0,
-							CommittedOffset:      1,
-							CommittedMetadata:    "meta-3-0",
-							CommittedLeaderEpoch: 10,
+							PartitionIndex:    0,
+							CommittedOffset:   1,
+							CommittedMetadata: "meta-3-0",
 						},
 						{
-							PartitionIndex:       1,
-							CommittedOffset:      2,
-							CommittedMetadata:    "meta-3-1",
-							CommittedLeaderEpoch: 11,
+							PartitionIndex:    1,
+							CommittedOffset:   2,
+							CommittedMetadata: "meta-3-1",
 						},
 					},
 				},
@@ -125,14 +120,13 @@ func TestOffsetCommitRequest(t *testing.T) {
 		})
 	}
 
-	// Version 7 added:
-	// GroupInstanceID
-	for _, version := range []int16{7} {
+	// Version 6 added:
+	// RequestTopic.RequestPartition.CommittedLeaderEpoch
+	for _, version := range []int16{6} {
 		prototest.TestRequest(t, version, &offsetcommit.Request{
-			GroupID:         "group-4",
-			GenerationID:    1,
-			MemberID:        "member-4",
-			GroupInstanceID: "instance-4",
+			GroupID:      "group-4",
+			GenerationID: 1,
+			MemberID:     "member-4",
 			Topics: []offsetcommit.RequestTopic{
 				{
 					Name: "topic-4",
@@ -147,6 +141,36 @@ func TestOffsetCommitRequest(t *testing.T) {
 							PartitionIndex:       1,
 							CommittedOffset:      2,
 							CommittedMetadata:    "meta-4-1",
+							CommittedLeaderEpoch: 11,
+						},
+					},
+				},
+			},
+		})
+	}
+
+	// Version 7 added:
+	// GroupInstanceID
+	for _, version := range []int16{7} {
+		prototest.TestRequest(t, version, &offsetcommit.Request{
+			GroupID:         "group-5",
+			GenerationID:    1,
+			MemberID:        "member-5",
+			GroupInstanceID: "instance-5",
+			Topics: []offsetcommit.RequestTopic{
+				{
+					Name: "topic-4",
+					Partitions: []offsetcommit.RequestPartition{
+						{
+							PartitionIndex:       0,
+							CommittedOffset:      1,
+							CommittedMetadata:    "meta-5-0",
+							CommittedLeaderEpoch: 10,
+						},
+						{
+							PartitionIndex:       1,
+							CommittedOffset:      2,
+							CommittedMetadata:    "meta-5-1",
 							CommittedLeaderEpoch: 11,
 						},
 					},
