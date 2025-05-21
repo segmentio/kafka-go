@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -124,6 +126,27 @@ type Writer struct {
 	// The default is to use a kafka default value of 1048576.
 	BatchBytes int64
 
+	// Setting this flag to true causes the WriteMessages starts to derive 'BatchBytes'
+	// from topic 'max.message.bytes' setting. If writer is used to write to multiple
+	// topics each topic 'max.message.bytes' will be handled appropriately.
+	// This option simplifies maintaining of architecture - creates the one source of
+	// truth - topic settings on broker side
+	//
+	// The default is false
+	AutoDeriveBatchBytes bool
+
+	// Setting this flag to true causes the WriteMessages starts to apply 'BatchBytes'
+	// as limiting factor after compression stage.
+	// When this flag is false - it's possible to get case, when Value can exceed
+	// 'max.message.bytes' setting, but after compression it's less.
+	// And WriteMessages returns an error, when indeed there are no error.
+	//
+	// Nevertheless, 'BatchBytes' also has second function - to form batches, and
+	// this option doesn't affect this function.
+	//
+	// The default is false
+	ApplyBatchBytesAfterCompression bool
+
 	// Time limit on how often incomplete message batches will be flushed to
 	// kafka.
 	//
@@ -220,6 +243,10 @@ type Writer struct {
 
 	// non-nil when a transport was created by NewWriter, remove in 1.0.
 	transport *Transport
+
+	// map for storing each topic max.message.bytes
+	// Used only when AutoDeriveBatchBytes is true
+	maxMessageBytesPerTopic sync.Map
 }
 
 // WriterConfig is a configuration type used to create new instances of Writer.
@@ -621,17 +648,24 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	}
 
 	balancer := w.balancer()
-	batchBytes := w.batchBytes()
+	if w.AutoDeriveBatchBytes {
+		err := w.deriveBatchBytes(msgs)
+		if err != nil {
+			return err
+		}
+	}
 
-	for i := range msgs {
-		n := int64(msgs[i].totalSize())
-		if n > batchBytes {
-			// This error is left for backward compatibility with historical
-			// behavior, but it can yield O(N^2) behaviors. The expectations
-			// are that the program will check if WriteMessages returned a
-			// MessageTooLargeError, discard the message that was exceeding
-			// the maximum size, and try again.
-			return messageTooLarge(msgs, i)
+	if !w.ApplyBatchBytesAfterCompression {
+		for i := range msgs {
+			n := int64(msgs[i].totalSize())
+			if n > w.batchBytes(msgs[i].Topic) {
+				// This error is left for backward compatibility with historical
+				// behavior, but it can yield O(N^2) behaviors. The expectations
+				// are that the program will check if WriteMessages returned a
+				// MessageTooLargeError, discard the message that was exceeding
+				// the maximum size, and try again.
+				return messageTooLarge(msgs, i)
+			}
 		}
 	}
 
@@ -730,7 +764,12 @@ func (w *Writer) produce(key topicPartition, batch *writeBatch) (*ProduceRespons
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	return w.client(timeout).Produce(ctx, &ProduceRequest{
+	client := w.client(timeout)
+	if w.ApplyBatchBytesAfterCompression {
+		client.MaxMessageBytes = w.batchBytes(key.topic)
+	}
+
+	return client.Produce(ctx, &ProduceRequest{
 		Partition:    int(key.partition),
 		Topic:        key.topic,
 		RequiredAcks: w.RequiredAcks,
@@ -815,7 +854,55 @@ func (w *Writer) batchSize() int {
 	return 100
 }
 
-func (w *Writer) batchBytes() int64 {
+func (w *Writer) deriveBatchBytes(msgs []Message) error {
+	for _, msg := range msgs {
+		topic, err := w.chooseTopic(msg)
+		if err != nil {
+			return err
+		}
+
+		if _, ok := w.maxMessageBytesPerTopic.Load(topic); ok {
+			continue
+		}
+
+		describeResp, err := w.client(w.readTimeout()).DescribeConfigs(context.Background(), &DescribeConfigsRequest{
+			Resources: []DescribeConfigRequestResource{{
+				ResourceType: ResourceTypeTopic,
+				ResourceName: msg.Topic,
+				ConfigNames: []string{
+					"max.message.bytes",
+				},
+			}},
+		})
+		if err != nil {
+			return err
+		}
+		if len(describeResp.Resources) != 1 {
+			return errors.New("describeResp contains 0 'Resources' entries")
+		}
+		if len(describeResp.Resources[0].ConfigEntries) != 1 {
+			return errors.New("describeResp.Resources[0] contains 0 'ConfigEntries' entries")
+		}
+		maxMessageBytesStr := describeResp.Resources[0].ConfigEntries[0].ConfigValue
+		maxMessageBytes, err := strconv.Atoi(maxMessageBytesStr)
+		if err != nil {
+			return err
+		}
+		w.maxMessageBytesPerTopic.Store(topic, int64(maxMessageBytes))
+	}
+	return nil
+}
+
+func (w *Writer) batchBytes(topic string) int64 {
+	if w.AutoDeriveBatchBytes {
+		if result, ok := w.maxMessageBytesPerTopic.Load(topic); ok {
+			return result.(int64)
+		}
+		// batchBytes expects it's called after 'deriveBatchBytes(msgs)'
+		// It means, there are no unknown topics
+		panic(fmt.Sprintf("unknown topic: %s", topic))
+	}
+
 	if w.BatchBytes > 0 {
 		return w.BatchBytes
 	}
@@ -1028,7 +1115,7 @@ func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*
 	defer ptw.mutex.Unlock()
 
 	batchSize := ptw.w.batchSize()
-	batchBytes := ptw.w.batchBytes()
+	batchBytes := ptw.w.batchBytes(ptw.meta.topic)
 
 	var batches map[*writeBatch][]int32
 	if !ptw.w.Async {

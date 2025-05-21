@@ -159,12 +159,15 @@ func (c *Client) Produce(ctx context.Context, req *ProduceRequest) (*ProduceResp
 				},
 			}},
 		}},
+		MaxMessageBytes: c.MaxMessageBytes,
 	})
 
 	switch {
 	case err == nil:
 	case errors.Is(err, protocol.ErrNoRecord):
 		return new(ProduceResponse), nil
+	case protocol.IsMaxMessageBytesExceeded(err):
+		return nil, MessageTooLargeError{}
 	default:
 		return nil, fmt.Errorf("kafka.(*Client).Produce: %w", err)
 	}
