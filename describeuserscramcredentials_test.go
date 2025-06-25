@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +48,9 @@ func TestDescribeUserScramCredentials(t *testing.T) {
 	if createRes.Results[0].Error != nil {
 		t.Fatalf("didn't expect an error in createResult, got %v", createRes.Results[0].Error)
 	}
+
+	// Kraftmode is slow, wait for the user scram credentials to be created
+	time.Sleep(1 * time.Second)
 
 	describeCreationRes, err := client.DescribeUserScramCredentials(context.Background(), &DescribeUserScramCredentialsRequest{
 		Users: []UserScramCredentialsUser{

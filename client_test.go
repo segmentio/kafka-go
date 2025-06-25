@@ -167,7 +167,7 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, client *Cl
 	for i := 0; i < totalMessages; i++ {
 		m, err := r.FetchMessage(ctx)
 		if err != nil {
-			t.Fatalf("error fetching message: %s", err)
+			t.Fatalf("error fetching message number %d: %s", i, err)
 		}
 		if err := r.CommitMessages(context.Background(), m); err != nil {
 			t.Fatal(err)
