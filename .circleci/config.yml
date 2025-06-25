@@ -30,7 +30,7 @@ jobs:
         KAFKA_ADVERTISED_PORT: '9092'
         KAFKA_ZOOKEEPER_CONNECT: localhost:2181
         KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-        KAFKA_MESSAGE_MAX_BYTES: '200000000'
+        KAFKA_MESSAGE_MAX_BYTES: '20000000'
         KAFKA_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
         KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
         KAFKA_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
@@ -102,7 +102,7 @@ jobs:
         KAFKA_CFG_ADVERTISED_PORT: '9092'
         KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
         KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
-        KAFKA_CFG_MESSAGE_MAX_BYTES: '200000000'
+        KAFKA_CFG_MESSAGE_MAX_BYTES: '20000000'
         KAFKA_CFG_LISTENERS: 'PLAINTEXT://:9092,SASL_PLAINTEXT://:9093'
         KAFKA_CFG_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092,SASL_PLAINTEXT://localhost:9093'
         KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
@@ -178,57 +178,54 @@ jobs:
       entrypoint: *entrypoint
     steps: *steps
 
-  # NOTE: this fails quite often due to Java heap errors from Kafka.
-  # Once we figure out how to fix that, we can re-enable this.
-  # https://github.com/segmentio/kafka-go/issues/1360#issuecomment-2858935900
-  # kafka-400:
-  #   working_directory: *working_directory
-  #   environment:
-  #     KAFKA_VERSION: "4.0.0"
+  kafka-400:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "4.0.0"
 
-  #     # Need to skip nettest to avoid these kinds of errors:
-  #     #  --- FAIL: TestConn/nettest (17.56s)
-  #     #    --- FAIL: TestConn/nettest/PingPong (7.40s)
-  #     #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
-  #     #      conntest.go:118: mismatching value: got 77, want 78
-  #     #      conntest.go:118: mismatching value: got 78, want 79
-  #     # ...
-  #     #
-  #     # TODO: Figure out why these are happening and fix them (they don't appear to be new).
-  #     KAFKA_SKIP_NETTEST: "1"
-  #   docker:
-  #   - image: circleci/golang
-  #   - image: bitnami/kafka:4.0.0
-  #     ports:
-  #       - 9092:9092
-  #       - 9093:9093
-  #     environment:
-  #       KAFKA_CFG_NODE_ID: 1
-  #       KAFKA_CFG_BROKER_ID: 1
-  #       KAFKA_CFG_PROCESS_ROLES: broker,controller
-  #       KAFKA_CFG_ADVERTISED_HOST_NAME: 'localhost'
-  #       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
-  #       KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAIN:PLAINTEXT,SASL:SASL_PLAINTEXT
-  #       KAFKA_CFG_LISTENERS: CONTROLLER://:9094,PLAIN://:9092,SASL://:9093
-  #       KAFKA_CFG_ADVERTISED_LISTENERS: PLAIN://localhost:9092,SASL://localhost:9093
-  #       KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAIN
-  #       KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
-  #       KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@localhost:9094
-  #       ALLOW_PLAINTEXT_LISTENER: yes
-  #       KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
-  #       KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_jaas.conf"
-  #       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
-  #       KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
-  #       KAFKA_CFG_MESSAGE_MAX_BYTES: '200000000'
-  #       KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'org.apache.kafka.metadata.authorizer.StandardAuthorizer'
-  #       KAFKA_CFG_SUPER_USERS: User:adminscram256;User:adminscram512;User:adminplain
-  #       KAFKA_CLIENT_USERS: adminscram256,adminscram512,adminplain
-  #       KAFKA_CLIENT_PASSWORDS: admin-secret-256,admin-secret-512,admin-secret
-  #       KAFKA_CLIENT_SASL_MECHANISMS: SCRAM-SHA-256,SCRAM-SHA-512,PLAIN
-  #       KAFKA_INTER_BROKER_USER: adminscram512
-  #       KAFKA_INTER_BROKER_PASSWORD: admin-secret-512
-  #       KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-512
-  #   steps: *steps
+      # Need to skip nettest to avoid these kinds of errors:
+      #  --- FAIL: TestConn/nettest (17.56s)
+      #    --- FAIL: TestConn/nettest/PingPong (7.40s)
+      #      conntest.go:112: unexpected Read error: [7] Request Timed Out: the request exceeded the user-specified time limit in the request
+      #      conntest.go:118: mismatching value: got 77, want 78
+      #      conntest.go:118: mismatching value: got 78, want 79
+      # ...
+      #
+      # TODO: Figure out why these are happening and fix them (they don't appear to be new).
+      KAFKA_SKIP_NETTEST: "1"
+    docker:
+    - image: circleci/golang
+    - image: bitnami/kafka:4.0.0
+      ports:
+        - 9092:9092
+        - 9093:9093
+      environment:
+        KAFKA_CFG_NODE_ID: 1
+        KAFKA_CFG_BROKER_ID: 1
+        KAFKA_CFG_PROCESS_ROLES: broker,controller
+        KAFKA_CFG_ADVERTISED_HOST_NAME: 'localhost'
+        KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+        KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAIN:PLAINTEXT,SASL:SASL_PLAINTEXT
+        KAFKA_CFG_LISTENERS: CONTROLLER://:9094,PLAIN://:9092,SASL://:9093
+        KAFKA_CFG_ADVERTISED_LISTENERS: PLAIN://localhost:9092,SASL://localhost:9093
+        KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAIN
+        KAFKA_CFG_SASL_ENABLED_MECHANISMS: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-512'
+        KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@localhost:9094
+        ALLOW_PLAINTEXT_LISTENER: yes
+        KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'true'
+        KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_jaas.conf"
+        KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
+        KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
+        KAFKA_CFG_MESSAGE_MAX_BYTES: '20000000'
+        KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'org.apache.kafka.metadata.authorizer.StandardAuthorizer'
+        KAFKA_CFG_SUPER_USERS: User:adminscram256;User:adminscram512;User:adminplain
+        KAFKA_CLIENT_USERS: adminscram256,adminscram512,adminplain
+        KAFKA_CLIENT_PASSWORDS: admin-secret-256,admin-secret-512,admin-secret
+        KAFKA_CLIENT_SASL_MECHANISMS: SCRAM-SHA-256,SCRAM-SHA-512,PLAIN
+        KAFKA_INTER_BROKER_USER: adminscram512
+        KAFKA_INTER_BROKER_PASSWORD: admin-secret-512
+        KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-512
+    steps: *steps
 
 workflows:
   version: 2
@@ -239,4 +236,4 @@ workflows:
     - kafka-270
     - kafka-281
     - kafka-370 
-    #- kafka-400
+    - kafka-400
