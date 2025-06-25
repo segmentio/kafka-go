@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"testing"
+	"time"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
 )
@@ -14,6 +15,8 @@ func TestClientElectLeaders(t *testing.T) {
 
 	ctx := context.Background()
 	client, shutdown := newLocalClient()
+	// on Kraft mode leader elections take longer
+	client.Timeout = 10 * time.Second
 	defer shutdown()
 
 	topic := makeTopic()
