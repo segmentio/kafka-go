@@ -25,7 +25,7 @@ services:
       KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/bitnami/kafka/config/kafka_jaas.conf"
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
       KAFKA_CFG_DELETE_TOPIC_ENABLE: 'true'
-      KAFKA_CFG_MESSAGE_MAX_BYTES: '200000000'
+      KAFKA_CFG_MESSAGE_MAX_BYTES: '20000000'
       KAFKA_CFG_AUTHORIZER_CLASS_NAME: 'org.apache.kafka.metadata.authorizer.StandardAuthorizer'
       KAFKA_CFG_SUPER_USERS: User:adminscram256;User:adminscram512;User:adminplain
       KAFKA_CLIENT_USERS: adminscram256,adminscram512,adminplain
