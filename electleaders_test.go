@@ -15,8 +15,6 @@ func TestClientElectLeaders(t *testing.T) {
 
 	ctx := context.Background()
 	client, shutdown := newLocalClient()
-	// on Kraft mode leader elections take longer
-	client.Timeout = 10 * time.Second
 	defer shutdown()
 
 	topic := makeTopic()
@@ -29,6 +27,7 @@ func TestClientElectLeaders(t *testing.T) {
 		&ElectLeadersRequest{
 			Topic:      topic,
 			Partitions: []int{0, 1},
+			Timeout:    5 * time.Second,
 		},
 	)
 
