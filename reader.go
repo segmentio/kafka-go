@@ -914,28 +914,23 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 
 // FetchMessageBatch fetches a batch of messages from the reader. It is similar to
 // FetchMessage, except it blocks until no. of messages read reaches batchSize.
-func (r *Reader) FetchMessageBatch(ctx context.Context, batchSize int) ([]Message, error) {
+func (r *Reader) FetchMessageBatch(ctx context.Context, batchSize int, deadline time.Duration) ([]Message, error) {
 	r.activateReadLag()
 	msgBatch := make([]Message, 0, batchSize)
 
-	var i int
-	for i <= batchSize {
-		r.mutex.Lock()
+	r.mutex.Lock()
+	if !r.closed && r.version == 0 {
+		r.start(r.getTopicPartitionOffset())
+	}
+	version := r.version
+	r.mutex.Unlock()
 
-		if !r.closed && r.version == 0 {
-			r.start(r.getTopicPartitionOffset())
-		}
-
-		version := r.version
-		r.mutex.Unlock()
-
+	for {
 		select {
 		case <-ctx.Done():
 			return []Message{}, ctx.Err()
-
-		case err := <-r.runError:
-			return []Message{}, err
-
+		case <-time.After(deadline):
+			return msgBatch, nil
 		case m, ok := <-r.msgs:
 			if !ok {
 				return []Message{}, io.EOF
@@ -968,10 +963,12 @@ func (r *Reader) FetchMessageBatch(ctx context.Context, batchSize int) ([]Messag
 			}
 
 			msgBatch = append(msgBatch, m.message)
+
+			if len(msgBatch) == batchSize {
+				return msgBatch, nil
+			}
 		}
-		i++
 	}
-	return msgBatch, nil
 }
 
 // ReadLag returns the current lag of the reader by fetching the last offset of
