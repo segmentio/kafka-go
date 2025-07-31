@@ -93,6 +93,10 @@ type Reader struct {
 	stats *readerStats
 }
 
+func (r *Reader) GetVersion() int64 {
+	return r.version
+}
+
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
 func (r *Reader) useConsumerGroup() bool { return r.config.GroupID != "" }
 
