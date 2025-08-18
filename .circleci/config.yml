@@ -14,12 +14,12 @@ jobs:
     working_directory: &working_directory /go/src/github.com/segmentio/kafka-go
     docker:
     - image: circleci/golang
-    - image: bitnami/zookeeper:latest
+    - image: bitnamilegacy/zookeeper:latest
       ports:
       - 2181:2181
       environment:
         ALLOW_ANONYMOUS_LOGIN: yes
-    - image: bitnami/kafka:0.10.2.1
+    - image: bitnamilegacy/kafka:0.10.2.1
       ports:
       - 9092:9092
       - 9093:9093
@@ -86,12 +86,12 @@ jobs:
       KAFKA_SKIP_NETTEST: "1"
     docker:
     - image: circleci/golang
-    - image: bitnami/zookeeper:latest
+    - image: bitnamilegacy/zookeeper:latest
       ports:
       - 2181:2181
       environment:
         ALLOW_ANONYMOUS_LOGIN: yes
-    - image: bitnami/kafka:2.7.0
+    - image: bitnamilegacy/kafka:2.7.0
       ports:
       - 9092:9092
       - 9093:9093
@@ -133,12 +133,12 @@ jobs:
       KAFKA_SKIP_NETTEST: "1"
     docker:
     - image: circleci/golang
-    - image: bitnami/zookeeper:latest
+    - image: bitnamilegacy/zookeeper:latest
       ports:
       - 2181:2181
       environment:
         ALLOW_ANONYMOUS_LOGIN: yes
-    - image: bitnami/kafka:2.8.1
+    - image: bitnamilegacy/kafka:2.8.1
       ports:
       - 9092:9092
       - 9093:9093
@@ -163,12 +163,12 @@ jobs:
       KAFKA_SKIP_NETTEST: "1"
     docker:
     - image: circleci/golang
-    - image: bitnami/zookeeper:latest
+    - image: bitnamilegacy/zookeeper:latest
       ports:
       - 2181:2181
       environment:
         ALLOW_ANONYMOUS_LOGIN: yes
-    - image: bitnami/kafka:3.7.0
+    - image: bitnamilegacy/kafka:3.7.0
       ports:
         - 9092:9092
         - 9093:9093
@@ -198,7 +198,7 @@ jobs:
   #     KAFKA_SKIP_NETTEST: "1"
   #   docker:
   #   - image: circleci/golang
-  #   - image: bitnami/kafka:4.0.0
+  #   - image: bitnamilegacy/kafka:4.0.0
   #     ports:
   #       - 9092:9092
   #       - 9093:9093

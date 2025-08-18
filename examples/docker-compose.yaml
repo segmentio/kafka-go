@@ -3,7 +3,7 @@ services:
 
   zookeeper:
     hostname: zookeeper
-    image: bitnami/zookeeper:latest
+    image: bitnamilegacy/zookeeper:latest
     restart: always
     expose:
     - "2181"
@@ -14,7 +14,7 @@ services:
   
   kafka:
     hostname: kafka
-    image: bitnami/kafka:2.7.0
+    image: bitnamilegacy/kafka:2.7.0
     restart: always
     env_file:
     - kafka/kafka-variables.env
