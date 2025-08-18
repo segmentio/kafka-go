@@ -11,7 +11,7 @@ services:
       ALLOW_ANONYMOUS_LOGIN: yes
   kafka:
     container_name: kafka
-    image: bitnamilegacy/kafka:0.10.2.1
+    image: bitnamilegacy/kafka:0.10.2-1-r3
     restart: on-failure:3
     links:
       - zookeeper

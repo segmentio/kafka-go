@@ -19,7 +19,7 @@ jobs:
       - 2181:2181
       environment:
         ALLOW_ANONYMOUS_LOGIN: yes
-    - image: bitnamilegacy/kafka:0.10.2.1
+    - image: bitnamilegacy/kafka:0.10.2-1-r3
       ports:
       - 9092:9092
       - 9093:9093
