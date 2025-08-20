@@ -331,6 +331,10 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.subscribe(gen.Assignments)
 
+		r.withRebalanceEventInterceptor(func(l RebalanceEventInterceptor) {
+			l.Callback(gen.Assignments)
+		})
+
 		gen.Start(func(ctx context.Context) {
 			r.commitLoop(ctx, gen)
 		})
@@ -522,6 +526,9 @@ type ReaderConfig struct {
 	// This flag is being added to retain backwards-compatibility, so it will be
 	// removed in a future version of kafka-go.
 	OffsetOutOfRangeError bool
+
+	// If not nil, specifies a callback usd to report rebalance events
+	RebalanceEventInterceptor RebalanceEventInterceptor
 }
 
 // Validate method validates ReaderConfig properties.
@@ -1139,6 +1146,12 @@ func (r *Reader) withErrorLogger(do func(Logger)) {
 		do(r.config.ErrorLogger)
 	} else {
 		r.withLogger(do)
+	}
+}
+
+func (r *Reader) withRebalanceEventInterceptor(do func(RebalanceEventInterceptor)) {
+	if r.config.RebalanceEventInterceptor != nil {
+		do(r.config.RebalanceEventInterceptor)
 	}
 }
 
