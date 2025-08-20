@@ -477,13 +477,20 @@ func NewWriter(config WriterConfig) *Writer {
 		metadataTTL = 15 * time.Second
 	}
 
+	metadataTopic := []string{}
+
+	if len(config.Topic) > 0 {
+		metadataTopic = append(metadataTopic, config.Topic)
+	}
+
 	transport := &Transport{
-		Dial:        dial,
-		SASL:        kafkaDialer.SASLMechanism,
-		TLS:         kafkaDialer.TLS,
-		ClientID:    kafkaDialer.ClientID,
-		IdleTimeout: idleTimeout,
-		MetadataTTL: metadataTTL,
+		Dial:           dial,
+		SASL:           kafkaDialer.SASLMechanism,
+		TLS:            kafkaDialer.TLS,
+		ClientID:       kafkaDialer.ClientID,
+		IdleTimeout:    idleTimeout,
+		MetadataTTL:    metadataTTL,
+		MetadataTopics: metadataTopic,
 	}
 
 	w := &Writer{
