@@ -110,6 +110,7 @@ const (
 	v6  = 6
 	v7  = 7
 	v10 = 10
+	v11 = 11
 
 	// Unused protocol versions: v4, v8, v9.
 )
