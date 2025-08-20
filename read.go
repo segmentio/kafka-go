@@ -237,7 +237,11 @@ func readMapStringInt32(r *bufio.Reader, sz int, v *map[string][]int32) (remain 
 			return
 		}
 
-		content[key] = values
+		if items, ok := content[key]; ok {
+			content[key] = append(items, values...)
+		} else {
+			content[key] = values
+		}
 	}
 	*v = content
 
