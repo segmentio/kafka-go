@@ -450,6 +450,61 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 	}
 }
 
+func testWriterPartailBatch(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	offset, err := readOffset(topic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newTestWriter(WriterConfig{
+		Topic:            topic,
+		BatchBytes:       75,
+		SendPartialBatch: true,
+		Balancer:         &RoundRobin{},
+	})
+	defer w.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := w.WriteMessages(ctx, []Message{
+		// first batch
+		{Value: []byte("M0")}, // 25 Bytes
+		{Value: []byte("M1")}, // 25 Bytes
+		{Value: []byte("M2")}, // 25 Bytes
+		// second batch
+		{Value: []byte("M3")}, // 25 Bytes
+	}...); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if w.Stats().Writes != 2 {
+		t.Error("didn't create expected batches")
+		return
+	}
+	msgs, err := readPartition(topic, 0, offset)
+	if err != nil {
+		t.Error("error reading partition", err)
+		return
+	}
+
+	if len(msgs) != 4 {
+		t.Error("bad messages in partition", msgs)
+		return
+	}
+
+	for i, m := range msgs {
+		if string(m.Value) == "M"+strconv.Itoa(i) {
+			continue
+		}
+		t.Error("bad messages in partition", string(m.Value))
+	}
+}
+
 func testWriterBatchBytes(t *testing.T) {
 	topic := makeTopic()
 	createTopic(t, topic, 1)
