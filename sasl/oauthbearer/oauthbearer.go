@@ -8,7 +8,7 @@ import (
 	"github.com/segmentio/kafka-go/sasl"
 )
 
-// Mechanism implements the AUTHBEARER mechanism and passes the token
+// Mechanism implements the OAUTHBEARER mechanism and passes the token
 type Mechanism struct {
 	Zid        string
 	Token      string
