@@ -219,6 +219,7 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 	lastOffsetDelta := int32(0)
 	firstTimestamp := int64(0)
 	maxTimestamp := int64(0)
+	baseOffset := int64(0)
 
 	err := forEachRecord(records, func(i int, r *Record) error {
 		t := timestamp(r.Time)
@@ -227,6 +228,7 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		}
 		if i == 0 {
 			firstTimestamp = t
+			baseOffset = r.Offset
 		}
 		if t > maxTimestamp {
 			maxTimestamp = t
@@ -270,7 +272,6 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 		numRecords++
 		return nil
 	})
-
 	if err != nil {
 		return err
 	}
@@ -308,7 +309,9 @@ func (rs *RecordSet) writeToVersion2(buffer *pageBuffer, bufferOffset int64) err
 
 	b0 := packUint32(uint32(batchLength))
 	b1 := packUint32(checksum)
+	boff := packUint64(uint64(baseOffset))
 
+	buffer.WriteAt(boff[:], bufferOffset)
 	buffer.WriteAt(b0[:], bufferOffset+8)
 	buffer.WriteAt(b1[:], bufferOffset+17)
 	return nil

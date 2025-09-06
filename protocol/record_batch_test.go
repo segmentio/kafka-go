@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"reflect"
@@ -32,6 +33,62 @@ func makeRecords(memoryRecords []memoryRecord) []Record {
 		records[i] = m.Record()
 	}
 	return records
+}
+
+// TestBaseOffset verifies that serializing and then deserializing a RecordSet should preserve
+// the offsets correctly by writing the base offset to the buffer.
+func TestBaseOffset(t *testing.T) {
+	now := time.Now()
+
+	records := []memoryRecord{
+		{
+			// start the offset at an arbitrary value
+			offset: 101,
+			time:   now,
+			key:    []byte("key-1"),
+		},
+		{
+			offset: 102,
+			time:   now.Add(time.Millisecond),
+			value:  []byte("value-1"),
+		},
+		{
+			offset: 103,
+			time:   now.Add(time.Second),
+			key:    []byte("key-3"),
+			value:  []byte("value-3"),
+			headers: []Header{
+				{Key: "answer", Value: []byte("42")},
+			},
+		},
+	}
+
+	recordSet := RecordSet{Version: 2, Records: NewRecordReader(makeRecords(records)...)}
+
+	// Serialize the record set into a buffer
+	wr := bytes.NewBuffer(nil)
+	if _, err := recordSet.WriteTo(wr); err != nil {
+		t.Errorf("failed to serialize RecordSet: %s", err)
+	}
+
+	// Deserialize the buffer back into a RecordSet
+	var deserialized RecordSet
+	if _, err := deserialized.ReadFrom(wr); err != nil {
+		t.Errorf("failed to deserialize RecordSet: %s", err)
+	}
+
+	for _, expectedRecord := range records {
+		record, err := deserialized.Records.ReadRecord()
+		if err != nil {
+			t.Fatalf("failed to read the next record: %s", err)
+		}
+
+		if record.Offset != expectedRecord.offset {
+			t.Error("record that was serialized and then deserialized had an incorrect offset")
+			t.Errorf("expected offset: %v", expectedRecord.offset)
+			t.Errorf("actual offset: %v", record.Offset)
+		}
+	}
 }
 
 func TestRecordReader(t *testing.T) {
