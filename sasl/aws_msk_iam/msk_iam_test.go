@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	signer "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/segmentio/kafka-go/sasl"
-
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	sigv4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 )
 
 const (
@@ -22,6 +22,14 @@ const (
 var signTime = time.Date(2021, 10, 14, 13, 5, 0, 0, time.UTC)
 
 func TestAwsMskIamMechanism(t *testing.T) {
+	creds := credentials.NewStaticCredentialsProvider(accessKeyId, secretAccessKey, "")
+	ctxWithMetadata := func() context.Context {
+		return sasl.WithMetadata(context.Background(), &sasl.Metadata{
+			Host: "localhost",
+			Port: 9092,
+		})
+	}
+
 	tests := []struct {
 		description string
 		ctx         func() context.Context
@@ -29,12 +37,7 @@ func TestAwsMskIamMechanism(t *testing.T) {
 	}{
 		{
 			description: "with metadata",
-			ctx: func() context.Context {
-				return sasl.WithMetadata(context.Background(), &sasl.Metadata{
-					Host: "localhost",
-					Port: 9092,
-				})
-			},
+			ctx:         ctxWithMetadata,
 		},
 		{
 			description: "without metadata",
@@ -49,13 +52,12 @@ func TestAwsMskIamMechanism(t *testing.T) {
 		t.Run(tt.description, func(t *testing.T) {
 			ctx := tt.ctx()
 
-			creds := credentials.NewStaticCredentials(accessKeyId, secretAccessKey, "")
 			mskMechanism := &Mechanism{
-				Signer:   sigv4.NewSigner(creds),
-				Region:   "us-east-1",
-				SignTime: signTime,
+				Signer:      signer.NewSigner(),
+				Credentials: creds,
+				Region:      "us-east-1",
+				SignTime:    signTime,
 			}
-
 			sess, auth, err := mskMechanism.Start(ctx)
 			if tt.shouldFail { // if error is expected
 				if err == nil { // but we don't find one
@@ -101,5 +103,21 @@ func TestAwsMskIamMechanism(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestNewMechanism(t *testing.T) {
+	region := "us-east-1"
+	creds := credentials.StaticCredentialsProvider{}
+	awsCfg := aws.Config{
+		Region:      region,
+		Credentials: creds,
+	}
+	m := NewMechanism(awsCfg)
+	if m.Region != region {
+		t.Error("Unexpected region", "expected", region, "got", m.Region)
+	}
+	if m.Credentials != creds {
+		t.Error("Unexpected credentials", "expected", creds, "got", m.Credentials)
 	}
 }
