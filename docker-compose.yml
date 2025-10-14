@@ -4,14 +4,14 @@ services:
   zookeeper:
     container_name: zookeeper
     hostname: zookeeper
-    image: bitnami/zookeeper:latest
+    image: bitnamilegacy/zookeeper:latest
     ports:
       - 2181:2181
     environment:
       ALLOW_ANONYMOUS_LOGIN: yes
   kafka:
     container_name: kafka
-    image: bitnami/kafka:3.7.0
+    image: bitnamilegacy/kafka:3.7.0
     restart: on-failure:3
     links:
       - zookeeper
