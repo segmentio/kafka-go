@@ -21,7 +21,7 @@ func (m Mechanism) Start(ctx context.Context) (sasl.StateMachine, []byte, error)
 	if m.Token == "" {
 		return nil, nil, errors.New("token must have a value")
 	}
-	header := fmt.Sprintf("n,,\x01auth=Bearer %s\x01", m.Token)
+	header := fmt.Sprintf("n,,\x01auth=Bearer %s\x01\x01", m.Token)
 	byteArrayHeader := []byte(header)
 	return m, byteArrayHeader, nil
 }
