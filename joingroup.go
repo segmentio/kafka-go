@@ -190,21 +190,48 @@ func (c *Client) JoinGroup(ctx context.Context, req *JoinGroupRequest) (*JoinGro
 }
 
 type groupMetadata struct {
-	Version  int16
-	Topics   []string
-	UserData []byte
+	Version         int16
+	Topics          []string
+	UserData        []byte
+	OwnedPartitions []groupMetadataOwnedPartition // Version >= 1
+}
+
+type groupMetadataOwnedPartition struct {
+	Topic      string
+	Partitions []int32
 }
 
 func (t groupMetadata) size() int32 {
-	return sizeofInt16(t.Version) +
+	sz := sizeofInt16(t.Version) +
 		sizeofStringArray(t.Topics) +
 		sizeofBytes(t.UserData)
+	if t.Version >= 1 {
+		sz += sizeofArray(len(t.OwnedPartitions), func(i int) int32 {
+			return t.OwnedPartitions[i].size()
+		})
+	}
+	return sz
+}
+
+func (op groupMetadataOwnedPartition) size() int32 {
+	return sizeofString(op.Topic) +
+		sizeofInt32Array(op.Partitions)
 }
 
 func (t groupMetadata) writeTo(wb *writeBuffer) {
 	wb.writeInt16(t.Version)
 	wb.writeStringArray(t.Topics)
 	wb.writeBytes(t.UserData)
+	if t.Version >= 1 {
+		wb.writeArray(len(t.OwnedPartitions), func(i int) {
+			t.OwnedPartitions[i].writeTo(wb)
+		})
+	}
+}
+
+func (op groupMetadataOwnedPartition) writeTo(wb *writeBuffer) {
+	wb.writeString(op.Topic)
+	wb.writeInt32Array(op.Partitions)
 }
 
 func (t groupMetadata) bytes() []byte {
@@ -221,6 +248,29 @@ func (t *groupMetadata) readFrom(r *bufio.Reader, size int) (remain int, err err
 		return
 	}
 	if remain, err = readBytes(r, remain, &t.UserData); err != nil {
+		return
+	}
+	if t.Version >= 1 && remain > 0 {
+		fn := func(r *bufio.Reader, sz int) (fnRemain int, fnErr error) {
+			var item groupMetadataOwnedPartition
+			if fnRemain, fnErr = (&item).readFrom(r, sz); fnErr != nil {
+				return
+			}
+			t.OwnedPartitions = append(t.OwnedPartitions, item)
+			return
+		}
+		if remain, err = readArrayWith(r, remain, fn); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (op *groupMetadataOwnedPartition) readFrom(r *bufio.Reader, size int) (remain int, err error) {
+	if remain, err = readString(r, size, &op.Topic); err != nil {
+		return
+	}
+	if remain, err = readInt32Array(r, remain, &op.Partitions); err != nil {
 		return
 	}
 	return

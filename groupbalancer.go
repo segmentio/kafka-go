@@ -15,6 +15,10 @@ type GroupMember struct {
 	// UserData contains any information that the GroupBalancer sent to the
 	// consumer group coordinator.
 	UserData []byte
+
+	// OwnedPartitions contains the partitions currently owned by this member.
+	// This is used by cooperative assignors to preserve partition assignments.
+	OwnedPartitions map[string][]int
 }
 
 // GroupMemberAssignments holds MemberID => topic => partitions.

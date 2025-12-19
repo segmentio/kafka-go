@@ -815,6 +815,15 @@ func (cg *ConsumerGroup) nextGeneration(memberID string) (string, error) {
 		return memberID, err
 	}
 
+	// Update the balancer's state for cooperative sticky protocol.
+	// This allows the assignor to report owned partitions in the next rebalance.
+	for _, balancer := range cg.config.GroupBalancers {
+		if csa, ok := balancer.(*CooperativeStickyAssignor); ok {
+			csa.SetAssignment(assignments, generationID)
+			break
+		}
+	}
+
 	// fetch initial offsets.
 	var offsets map[string]map[int]int64
 	offsets, err = cg.fetchOffsets(conn, assignments)
@@ -992,12 +1001,26 @@ func (cg *ConsumerGroup) makeJoinGroupRequest(memberID string) (joinGroupRequest
 		if err != nil {
 			return joinGroupRequest{}, fmt.Errorf("unable to construct protocol metadata for member, %v: %w", balancer.ProtocolName(), err)
 		}
+
+		// For cooperative sticky protocol, include owned partitions in metadata
+		var ownedPartitions []groupMetadataOwnedPartition
+		if csa, ok := balancer.(*CooperativeStickyAssignor); ok {
+			owned := csa.GetOwnedPartitions()
+			for topic, partitions := range owned {
+				ownedPartitions = append(ownedPartitions, groupMetadataOwnedPartition{
+					Topic:      topic,
+					Partitions: partitions,
+				})
+			}
+		}
+
 		request.GroupProtocols = append(request.GroupProtocols, joinGroupRequestGroupProtocolV1{
 			ProtocolName: balancer.ProtocolName(),
 			ProtocolMetadata: groupMetadata{
-				Version:  1,
-				Topics:   cg.config.Topics,
-				UserData: userData,
+				Version:         1,
+				Topics:          cg.config.Topics,
+				UserData:        userData,
+				OwnedPartitions: ownedPartitions,
 			}.bytes(),
 		})
 	}
@@ -1059,10 +1082,21 @@ func (cg *ConsumerGroup) makeMemberProtocolMetadata(in []joinGroupResponseMember
 			return nil, fmt.Errorf("unable to read metadata for member, %v: %w", item.MemberID, err)
 		}
 
+		// Extract owned partitions from metadata (for cooperative protocols)
+		ownedPartitions := make(map[string][]int)
+		for _, op := range metadata.OwnedPartitions {
+			partitions := make([]int, len(op.Partitions))
+			for i, p := range op.Partitions {
+				partitions[i] = int(p)
+			}
+			ownedPartitions[op.Topic] = partitions
+		}
+
 		members = append(members, GroupMember{
-			ID:       item.MemberID,
-			Topics:   metadata.Topics,
-			UserData: metadata.UserData,
+			ID:              item.MemberID,
+			Topics:          metadata.Topics,
+			UserData:        metadata.UserData,
+			OwnedPartitions: ownedPartitions,
 		})
 	}
 	return members, nil
