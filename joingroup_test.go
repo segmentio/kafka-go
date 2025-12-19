@@ -217,6 +217,37 @@ func TestMemberMetadata(t *testing.T) {
 	}
 }
 
+func TestMemberMetadataWithOwnedPartitions(t *testing.T) {
+	item := groupMetadata{
+		Version:  1,
+		Topics:   []string{"a", "b"},
+		UserData: []byte(`blah`),
+		OwnedPartitions: []groupMetadataOwnedPartition{
+			{Topic: "a", Partitions: []int32{0, 1, 2}},
+			{Topic: "b", Partitions: []int32{3, 4}},
+		},
+	}
+
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
+	item.writeTo(w)
+
+	var found groupMetadata
+	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	if remain != 0 {
+		t.Errorf("expected 0 remain, got %v", remain)
+		t.FailNow()
+	}
+	if !reflect.DeepEqual(item, found) {
+		t.Errorf("expected item and found to be the same\ngot: %+v\nwant: %+v", found, item)
+		t.FailNow()
+	}
+}
+
 func TestJoinGroupResponse(t *testing.T) {
 	supportedVersions := []apiVersion{v1, v2}
 	for _, v := range supportedVersions {
