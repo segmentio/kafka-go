@@ -802,3 +802,8 @@ KAFKA_VERSION=2.3.1 \
 ```
 go clean -cache && make test
 ```
+
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
