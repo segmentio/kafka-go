@@ -169,7 +169,6 @@ func TestClientTxnOffsetCommit(t *testing.T) {
 		ProducerID:      ipResp.Producer.ProducerID,
 		ProducerEpoch:   ipResp.Producer.ProducerEpoch,
 		GenerationID:    int(gen.ID),
-		GroupInstanceID: groupID,
 		Topics: map[string][]TxnOffsetCommit{
 			topic: {
 				{

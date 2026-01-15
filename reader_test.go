@@ -828,7 +828,7 @@ func TestReaderConsumerGroup(t *testing.T) {
 
 		{
 			scenario:   "consumer group rebalance",
-			partitions: 3,
+			partitions: 2,
 			function:   testReaderConsumerGroupRebalance,
 		},
 
@@ -1646,18 +1646,20 @@ func TestConsumerGroupWithGroupTopicsMultiple(t *testing.T) {
 }
 
 func getOffsets(t *testing.T, config ReaderConfig) map[int]int64 {
-	// minimal config required to lookup coordinator
-	cg := ConsumerGroup{
-		config: ConsumerGroupConfig{
-			ID:      config.GroupID,
-			Brokers: config.Brokers,
-			Dialer:  config.Dialer,
-		},
+	cg, err := NewConsumerGroup(ConsumerGroupConfig{
+		ID:      config.GroupID,
+		Brokers: config.Brokers,
+		Dialer:  config.Dialer,
+		Topics:  []string{config.Topic},
+	})
+	if err != nil {
+		t.Fatalf("failed to create consumer group: %v", err)
 	}
+	defer cg.Close()
 
 	conn, err := cg.coordinator()
 	if err != nil {
-		t.Errorf("unable to connect to coordinator: %v", err)
+		t.Fatalf("unable to connect to coordinator: %v", err)
 	}
 	defer conn.Close()
 

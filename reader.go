@@ -857,35 +857,41 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 	r.activateReadLag()
 
 	for {
-		// Deref atom -> deref delay. In consumer group mode, this blocks
-		// between generations until a new channel is delivered.
+		// Load current delay. In consumer group mode, this may be undelivered
+		// until a generation is established.
 		delay := r.msgsDelay.Load()
-		msgs, ok := delay.Get(ctx)
-		if !ok {
-			// Either delay was cancelled (generation ended) or context done
-			if ctx.Err() != nil {
-				return Message{}, ctx.Err()
+		var msgs chan readerMessage
+
+		// Wait for delay to resolve (or bail on error/close/ctx)
+		select {
+		case <-ctx.Done():
+			return Message{}, ctx.Err()
+		case <-r.stctx.Done():
+			return Message{}, io.EOF
+		case err := <-r.runError:
+			return Message{}, err
+		case <-delay.Chan():
+			m, ok := delay.GetIfDelivered()
+			if !ok {
+				continue // cancelled, loop to get new delay
 			}
-			// Generation ended, loop to get new delay
-			continue
+			msgs = m
 		}
 
 		r.mutex.Lock()
-
 		if !r.closed && r.version == 0 {
 			r.start(r.getTopicPartitionOffset(), msgs)
 		}
-
 		version := r.version
 		r.mutex.Unlock()
 
 		select {
 		case <-ctx.Done():
 			return Message{}, ctx.Err()
-
+		case <-r.stctx.Done():
+			return Message{}, io.EOF
 		case err := <-r.runError:
 			return Message{}, err
-
 		case m, ok := <-msgs:
 			if !ok {
 				// Channel closed (generation ended in consumer group mode)

@@ -172,3 +172,51 @@ func TestDelay_GetIfDeliveredAfterCancel(t *testing.T) {
 		t.Fatal("GetIfDelivered returned true after Cancel")
 	}
 }
+
+func TestDelay_Chan(t *testing.T) {
+	d := NewDelay[int]()
+
+	// Chan should not be closed initially
+	select {
+	case <-d.Chan():
+		t.Fatal("Chan was closed before Deliver")
+	default:
+		// expected
+	}
+
+	d.Deliver(42)
+
+	// Chan should be closed after Deliver
+	select {
+	case <-d.Chan():
+		// expected
+	default:
+		t.Fatal("Chan was not closed after Deliver")
+	}
+
+	// GetIfDelivered should work after selecting on Chan
+	v, ok := d.GetIfDelivered()
+	if !ok || v != 42 {
+		t.Fatalf("expected (42, true), got (%d, %v)", v, ok)
+	}
+}
+
+func TestDelay_ChanWithCancel(t *testing.T) {
+	d := NewDelay[int]()
+
+	d.Cancel()
+
+	// Chan should be closed after Cancel
+	select {
+	case <-d.Chan():
+		// expected
+	default:
+		t.Fatal("Chan was not closed after Cancel")
+	}
+
+	// GetIfDelivered should return false after Cancel
+	_, ok := d.GetIfDelivered()
+	if ok {
+		t.Fatal("GetIfDelivered returned true after Cancel")
+	}
+}

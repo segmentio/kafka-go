@@ -79,3 +79,10 @@ func (d *Delay[T]) GetIfDelivered() (T, bool) {
 		return zero, false
 	}
 }
+
+// Chan returns a channel that is closed when the delay is resolved
+// (either delivered or cancelled). Use with select to wait on multiple
+// conditions, then call GetIfDelivered() to get the value.
+func (d *Delay[T]) Chan() <-chan struct{} {
+	return d.resolved
+}
