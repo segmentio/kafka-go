@@ -1288,8 +1288,12 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 		joined:   make(chan struct{}),
 	}
 
-	// initialize commits so that the commitLoopImmediate select statement blocks
-	r := &Reader{stctx: context.Background(), commits: make(chan commitRequest, 100)}
+	// initialize commits channel via the delay so that the commitLoopImmediate select statement blocks
+	commits := make(chan commitRequest, 100)
+	commitsDelay := NewDelay[chan commitRequest]()
+	commitsDelay.Deliver(commits)
+	r := &Reader{stctx: context.Background()}
+	r.commitsDelay.Store(commitsDelay)
 
 	for i := 0; i < 100; i++ {
 		cr := commitRequest{
@@ -1300,11 +1304,11 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 			}},
 			errch: make(chan<- error, 1),
 		}
-		r.commits <- cr
+		commits <- cr
 	}
 
 	gen.Start(func(ctx context.Context) {
-		r.commitLoopImmediate(ctx, gen)
+		r.commitLoopImmediate(ctx, gen, commits)
 	})
 
 	gen.close()

@@ -60,16 +60,12 @@ type Reader struct {
 	// immutable fields of the reader
 	config ReaderConfig
 
-	// communication channels between the parent reader and its subreaders
-	msgs chan readerMessage
-
 	// mutable fields of the reader (synchronized on the mutex)
 	mutex   sync.Mutex
 	join    sync.WaitGroup
 	cancel  context.CancelFunc
 	stop    context.CancelFunc
 	done    chan struct{}
-	commits chan commitRequest
 	version int64 // version holds the generation of the spawned readers
 	offset  int64
 	lag     int64
@@ -91,6 +87,12 @@ type Reader struct {
 	// reader stats are all made of atomic values, no need for synchronization.
 	// Use a pointer to ensure 64-bit alignment of the values.
 	stats *readerStats
+
+	// Atomic pointers to per-generation delays.
+	// In consumer group mode, these are swapped on each rebalance.
+	// In non-consumer-group mode, these are set once and never swapped.
+	msgsDelay    atomic.Pointer[Delay[chan readerMessage]]
+	commitsDelay atomic.Pointer[Delay[chan commitRequest]]
 }
 
 // useConsumerGroup indicates whether the Reader is part of a consumer group.
@@ -121,7 +123,7 @@ func (r *Reader) unsubscribe() {
 	// another consumer to avoid such a race.
 }
 
-func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
+func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment, msgs chan readerMessage) {
 	offsets := make(map[topicPartition]int64)
 	for topic, assignments := range allAssignments {
 		for _, assignment := range assignments {
@@ -134,7 +136,7 @@ func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
 	}
 
 	r.mutex.Lock()
-	r.start(offsets)
+	r.start(offsets, msgs)
 	r.mutex.Unlock()
 
 	r.withLogger(func(l Logger) {
@@ -191,7 +193,7 @@ func (o offsetStash) reset() {
 }
 
 // commitLoopImmediate handles each commit synchronously.
-func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
+func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation, commits chan commitRequest) {
 	offsets := offsetStash{}
 
 	for {
@@ -204,7 +206,7 @@ func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 			var errchs []chan<- error
 			for hasCommits := true; hasCommits; {
 				select {
-				case req := <-r.commits:
+				case req := <-commits:
 					offsets.merge(req.commits)
 					errchs = append(errchs, req.errch)
 				default:
@@ -218,7 +220,7 @@ func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 			}
 			return
 
-		case req := <-r.commits:
+		case req := <-commits:
 			offsets.merge(req.commits)
 			req.errch <- r.commitOffsetsWithRetry(gen, offsets, defaultCommitRetries)
 			offsets.reset()
@@ -228,7 +230,7 @@ func (r *Reader) commitLoopImmediate(ctx context.Context, gen *Generation) {
 
 // commitLoopInterval handles each commit asynchronously with a period defined
 // by ReaderConfig.CommitInterval.
-func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
+func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation, commits chan commitRequest) {
 	ticker := time.NewTicker(r.config.CommitInterval)
 	defer ticker.Stop()
 
@@ -250,7 +252,7 @@ func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 			// drain the commit channel in order to prepare the final commit.
 			for hasCommits := true; hasCommits; {
 				select {
-				case req := <-r.commits:
+				case req := <-commits:
 					offsets.merge(req.commits)
 				default:
 					hasCommits = false
@@ -262,14 +264,14 @@ func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 		case <-ticker.C:
 			commit()
 
-		case req := <-r.commits:
+		case req := <-commits:
 			offsets.merge(req.commits)
 		}
 	}
 }
 
 // commitLoop processes commits off the commit chan.
-func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
+func (r *Reader) commitLoop(ctx context.Context, gen *Generation, commits chan commitRequest) {
 	r.withLogger(func(l Logger) {
 		l.Printf("started commit for group %s\n", r.config.GroupID)
 	})
@@ -278,9 +280,9 @@ func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 	})
 
 	if r.useSyncCommits() {
-		r.commitLoopImmediate(ctx, gen)
+		r.commitLoopImmediate(ctx, gen, commits)
 	} else {
-		r.commitLoopInterval(ctx, gen)
+		r.commitLoopInterval(ctx, gen, commits)
 	}
 }
 
@@ -329,10 +331,22 @@ func (r *Reader) run(cg *ConsumerGroup) {
 
 		r.stats.rebalances.observe(1)
 
-		r.subscribe(gen.Assignments)
+		// Load current delays (undelivered, either from NewReader or previous generation end)
+		msgsDelay := r.msgsDelay.Load()
+		commitsDelay := r.commitsDelay.Load()
+
+		// Create fresh channels for this generation
+		msgs := make(chan readerMessage, r.config.QueueCapacity)
+		commits := make(chan commitRequest, r.config.QueueCapacity)
+
+		// Deliver channels to delays (unblocks FetchMessage/CommitMessages)
+		msgsDelay.Deliver(msgs)
+		commitsDelay.Deliver(commits)
+
+		r.subscribe(gen.Assignments, msgs)
 
 		gen.Start(func(ctx context.Context) {
-			r.commitLoop(ctx, gen)
+			r.commitLoop(ctx, gen, commits)
 		})
 		gen.Start(func(ctx context.Context) {
 			// wait for the generation to end and then unsubscribe.
@@ -342,6 +356,13 @@ func (r *Reader) run(cg *ConsumerGroup) {
 			case <-r.stctx.Done():
 				// this will be the last loop because the reader is closed.
 			}
+			// Swap in fresh undelivered delays, cancel old ones.
+			// This MUST happen before commit loop exits to prevent commits
+			// from being sent to channels that are no longer being read.
+			oldMsgsDelay := r.msgsDelay.Swap(NewDelay[chan readerMessage]())
+			oldCommitsDelay := r.commitsDelay.Swap(NewDelay[chan commitRequest]())
+			oldMsgsDelay.Cancel()
+			oldCommitsDelay.Cancel()
 			r.unsubscribe()
 		})
 	}
@@ -699,13 +720,12 @@ func NewReader(config ReaderConfig) *Reader {
 
 	stctx, stop := context.WithCancel(context.Background())
 	r := &Reader{
-		config:  config,
-		msgs:    make(chan readerMessage, config.QueueCapacity),
-		cancel:  func() {},
-		commits: make(chan commitRequest, config.QueueCapacity),
-		stop:    stop,
-		offset:  FirstOffset,
-		stctx:   stctx,
+		config: config,
+		cancel: func() {},
+		stop:   stop,
+		offset: FirstOffset,
+		stctx:  stctx,
+		// msgsDelay and commitsDelay are zero-value atomic.Pointers, initialized below
 		stats: &readerStats{
 			dialTime:   makeSummary(),
 			readTime:   makeSummary(),
@@ -719,6 +739,10 @@ func NewReader(config ReaderConfig) *Reader {
 		version: version,
 	}
 	if r.useConsumerGroup() {
+		// Consumer group mode: store initial undelivered delays.
+		// run() will deliver channels and swap delays on each generation.
+		r.msgsDelay.Store(NewDelay[chan readerMessage]())
+		r.commitsDelay.Store(NewDelay[chan commitRequest]())
 		r.done = make(chan struct{})
 		r.runError = make(chan error)
 		cg, err := NewConsumerGroup(ConsumerGroupConfig{
@@ -742,6 +766,15 @@ func NewReader(config ReaderConfig) *Reader {
 			panic(err)
 		}
 		go r.run(cg)
+	} else {
+		// Non-consumer-group mode: create delays, deliver immediately, store.
+		// These are never swapped (no rebalances in this mode).
+		msgsDelay := NewDelay[chan readerMessage]()
+		commitsDelay := NewDelay[chan commitRequest]()
+		msgsDelay.Deliver(make(chan readerMessage, config.QueueCapacity))
+		commitsDelay.Deliver(make(chan commitRequest, config.QueueCapacity))
+		r.msgsDelay.Store(msgsDelay)
+		r.commitsDelay.Store(commitsDelay)
 	}
 
 	return r
@@ -771,7 +804,15 @@ func (r *Reader) Close() error {
 	}
 
 	if !closed {
-		close(r.msgs)
+		// Cancel delays to unblock any goroutines waiting on them.
+		// In consumer group mode, run() may have already cancelled these.
+		// In non-consumer-group mode, this unblocks any waiting FetchMessage calls.
+		if d := r.msgsDelay.Load(); d != nil {
+			d.Cancel()
+		}
+		if d := r.commitsDelay.Load(); d != nil {
+			d.Cancel()
+		}
 	}
 
 	return nil
@@ -816,10 +857,23 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 	r.activateReadLag()
 
 	for {
+		// Deref atom -> deref delay. In consumer group mode, this blocks
+		// between generations until a new channel is delivered.
+		delay := r.msgsDelay.Load()
+		msgs, ok := delay.Get(ctx)
+		if !ok {
+			// Either delay was cancelled (generation ended) or context done
+			if ctx.Err() != nil {
+				return Message{}, ctx.Err()
+			}
+			// Generation ended, loop to get new delay
+			continue
+		}
+
 		r.mutex.Lock()
 
 		if !r.closed && r.version == 0 {
-			r.start(r.getTopicPartitionOffset())
+			r.start(r.getTopicPartitionOffset(), msgs)
 		}
 
 		version := r.version
@@ -832,8 +886,12 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 		case err := <-r.runError:
 			return Message{}, err
 
-		case m, ok := <-r.msgs:
+		case m, ok := <-msgs:
 			if !ok {
+				// Channel closed (generation ended in consumer group mode)
+				if r.useConsumerGroup() {
+					continue // loop to get new channel from delay
+				}
 				return Message{}, io.EOF
 			}
 
@@ -875,9 +933,21 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 // the last message seen to CommitMessages in order to move the offset of the
 // topic/partition it belonged to forward, effectively committing all previous
 // messages in the partition.
+//
+// If called between consumer group generations (e.g., during a rebalance),
+// CommitMessages returns ErrGenerationEnded. The commit is dropped, and the
+// message will be redelivered in the next generation.
 func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 	if !r.useConsumerGroup() {
 		return errOnlyAvailableWithGroup
+	}
+
+	// Non-blocking check: if between generations, return error.
+	// This prevents commits from hanging or being applied to wrong generation.
+	delay := r.commitsDelay.Load()
+	commits, ok := delay.GetIfDelivered()
+	if !ok {
+		return ErrGenerationEnded
 	}
 
 	var errch <-chan error
@@ -891,7 +961,7 @@ func (r *Reader) CommitMessages(ctx context.Context, msgs ...Message) error {
 	}
 
 	select {
-	case r.commits <- creq:
+	case commits <- creq:
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-r.stctx.Done():
@@ -1040,7 +1110,9 @@ func (r *Reader) SetOffset(offset int64) error {
 		r.offset = offset
 
 		if r.version != 0 {
-			r.start(r.getTopicPartitionOffset())
+			delay := r.msgsDelay.Load()
+			msgs, _ := delay.GetIfDelivered()
+			r.start(r.getTopicPartitionOffset(), msgs)
 		}
 
 		r.activateReadLag()
@@ -1094,6 +1166,15 @@ func (r *Reader) SetOffsetAt(ctx context.Context, t time.Time) error {
 // call Stats on a kafka reader and report the metrics to a stats collection
 // system.
 func (r *Reader) Stats() ReaderStats {
+	// Get queue stats from the delay (works for both consumer group and non-consumer-group modes).
+	var queueLen, queueCap int64
+	if delay := r.msgsDelay.Load(); delay != nil {
+		if msgs, ok := delay.GetIfDelivered(); ok {
+			queueLen = int64(len(msgs))
+			queueCap = int64(cap(msgs))
+		}
+	}
+
 	stats := ReaderStats{
 		Dials:         r.stats.dials.snapshot(),
 		Fetches:       r.stats.fetches.snapshot(),
@@ -1112,8 +1193,8 @@ func (r *Reader) Stats() ReaderStats {
 		MinBytes:      int64(r.config.MinBytes),
 		MaxBytes:      int64(r.config.MaxBytes),
 		MaxWait:       r.config.MaxWait,
-		QueueLength:   int64(len(r.msgs)),
-		QueueCapacity: int64(cap(r.msgs)),
+		QueueLength:   queueLen,
+		QueueCapacity: queueCap,
 		ClientID:      r.config.Dialer.ClientID,
 		Topic:         r.config.Topic,
 		Partition:     r.stats.partition,
@@ -1178,7 +1259,7 @@ func (r *Reader) readLag(ctx context.Context) {
 	}
 }
 
-func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
+func (r *Reader) start(offsetsByPartition map[topicPartition]int64, msgs chan readerMessage) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
 		return
@@ -1209,7 +1290,7 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 				backoffDelayMin:  r.config.ReadBackoffMin,
 				backoffDelayMax:  r.config.ReadBackoffMax,
 				version:          r.version,
-				msgs:             r.msgs,
+				msgs:             msgs,
 				stats:            r.stats,
 				isolationLevel:   r.config.IsolationLevel,
 				maxAttempts:      r.config.MaxAttempts,
