@@ -10,6 +10,7 @@ import (
 const (
 	v0 = 0
 	v1 = 1
+	v2 = 2
 	v3 = 3
 	v4 = 4
 	v5 = 5
@@ -21,6 +22,10 @@ func TestDescribeGroupsRequest(t *testing.T) {
 	})
 
 	prototest.TestRequest(t, v1, &describegroups.Request{
+		Groups: []string{"test-group"},
+	})
+
+	prototest.TestRequest(t, v2, &describegroups.Request{
 		Groups: []string{"test-group"},
 	})
 
@@ -63,6 +68,28 @@ func TestDescribeGroupsResponse(t *testing.T) {
 	})
 
 	prototest.TestResponse(t, v1, &describegroups.Response{
+		ThrottleTimeMs: 100,
+		Groups: []describegroups.ResponseGroup{
+			{
+				ErrorCode:    0,
+				GroupID:      "test-group",
+				GroupState:   "Stable",
+				ProtocolType: "consumer",
+				ProtocolData: "range",
+				Members: []describegroups.ResponseGroupMember{
+					{
+						MemberID:         "consumer-1",
+						ClientID:         "client-1",
+						ClientHost:       "/127.0.0.1",
+						MemberMetadata:   []byte{0x00, 0x01},
+						MemberAssignment: []byte{0x00, 0x02},
+					},
+				},
+			},
+		},
+	})
+
+	prototest.TestResponse(t, v2, &describegroups.Response{
 		ThrottleTimeMs: 100,
 		Groups: []describegroups.ResponseGroup{
 			{
