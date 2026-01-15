@@ -1,0 +1,28 @@
+services:
+  kafka:
+    image: confluentinc/confluent-local:7.6.0
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-sSf", "localhost:8082/topics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  test:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      KAFKA_VERSION: "3.6.0"
+      KAFKA_SKIP_NETTEST: "1"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    network_mode: "service:kafka"

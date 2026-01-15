@@ -1,0 +1,22 @@
+steps:
+  - label: ":golangci-lint: Lint"
+    command: golangci-lint run
+    plugins:
+      - docker#v5.11.0:
+          image: "golangci/golangci-lint:v1.45-alpine"
+
+  - label: ":kafka: Tests"
+    command: |
+      ./scripts/wait-for-kafka.sh
+      go test -race -cover ./...
+    plugins:
+      - docker-compose#v5.11.0:
+          run: test
+          config: docker-compose.ci.yml
+    env:
+      KAFKA_VERSION: "3.6.0"
+      KAFKA_SKIP_NETTEST: "1"
+    retry:
+      automatic:
+        - exit_status: [-1, 1]
+          limit: 2
