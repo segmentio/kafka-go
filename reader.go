@@ -483,8 +483,6 @@ type ReaderConfig struct {
 	// non-zero, it must be set to one of FirstOffset or LastOffset.
 	//
 	// Default: FirstOffset
-	//
-	// Only used when GroupID is set
 	StartOffset int64
 
 	// BackoffDelayMin optionally sets the smallest amount of time the reader will wait before
@@ -697,6 +695,11 @@ func NewReader(config ReaderConfig) *Reader {
 		version = 1
 	}
 
+	startOffset := FirstOffset
+	if config.StartOffset != 0 {
+		startOffset = config.StartOffset
+	}
+
 	stctx, stop := context.WithCancel(context.Background())
 	r := &Reader{
 		config:  config,
@@ -704,7 +707,7 @@ func NewReader(config ReaderConfig) *Reader {
 		cancel:  func() {},
 		commits: make(chan commitRequest, config.QueueCapacity),
 		stop:    stop,
-		offset:  FirstOffset,
+		offset:  startOffset,
 		stctx:   stctx,
 		stats: &readerStats{
 			dialTime:   makeSummary(),
