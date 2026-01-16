@@ -395,6 +395,52 @@ func deleteTopic(t *testing.T, topic ...string) {
 	}
 }
 
+func TestReaderCollectsRebalanceEvents(t *testing.T) {
+	const GroupId = "a"
+	const Partitions = 5
+	topic := makeTopic()
+	createTopic(t, topic, Partitions)
+	defer deleteTopic(t, topic)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := make(chan map[string][]PartitionAssignment)
+	eventReceived := false
+	defer func() {
+		if !eventReceived {
+			t.Error("no rebalance event received")
+		}
+	}()
+	go func() {
+		firstAssignment := <-c
+		if len(firstAssignment) != 1 {
+			t.Error("multiple topics assigned")
+		}
+		info, ok := firstAssignment[topic]
+		if !ok {
+			t.Error("wrong topic assigned")
+		}
+		if len(info) != Partitions {
+			t.Error("wrong number of partitions assigned")
+		}
+		eventReceived = true
+	}()
+
+	r := NewReader(ReaderConfig{
+		Brokers:                   []string{"localhost:9092"},
+		Topic:                     topic,
+		GroupID:                   GroupId,
+		MinBytes:                  1,
+		MaxBytes:                  1000,
+		MaxWait:                   100 * time.Millisecond,
+		RebalanceEventInterceptor: newTestRebalanceEventCallback(c),
+	})
+	defer r.Close()
+
+	prepareReader(t, ctx, r, makeTestSequence(1)...)
+	_, _ = r.ReadMessage(ctx)
+}
+
 func TestReaderOnNonZeroPartition(t *testing.T) {
 	tests := []struct {
 		scenario string
