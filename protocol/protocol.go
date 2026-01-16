@@ -527,6 +527,13 @@ type Merger interface {
 	Merge(messages []Message, results []interface{}) (Message, error)
 }
 
+// MaxMessageBytesKeeper is an extension of the Message interface, which aimed
+// to store max.message.bytes parameter
+type MaxMessageBytesKeeper interface {
+	// Returns locally stored max.message.bytes value
+	MaxMessageBytesSize() int64
+}
+
 // Result converts r to a Message or an error, or panics if r could not be
 // converted to these types.
 func Result(r interface{}) (Message, error) {
