@@ -135,6 +135,11 @@ func (r *messageSetReader) readMessage(min int64, key readBytesFunc, val readByt
 		// Set an invalid value so that it can be ignored
 		lastOffset = -1
 	case 2:
+		for ; r.count == 0; err = r.readHeader() {
+			if err != nil {
+				return
+			}
+		}
 		offset, lastOffset, timestamp, headers, err = r.readMessageV2(min, key, val)
 	default:
 		err = r.header.badMagic()
