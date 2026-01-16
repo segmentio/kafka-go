@@ -16,6 +16,11 @@ type Codec struct {
 	// Default to 3.
 	Level int
 
+	// The window size configured on writers created by the codec.
+	//
+	// Default to 8 << 20.
+	WindowSize int
+
 	encoderPool sync.Pool // *encoder
 }
 
@@ -52,6 +57,16 @@ func (c *Codec) level() int {
 
 func (c *Codec) zstdLevel() zstd.EncoderLevel {
 	return zstd.EncoderLevelFromZstd(c.level())
+}
+
+func (c *Codec) windowSize() int {
+	if c.WindowSize != 0 {
+		return c.WindowSize
+	}
+	// We use the same default as the zstd package. That is not exposed
+	// so we hardcode it here
+	// https://github.com/klauspost/compress/blob/6bf960e5bd5d38ae691c390c245c33e175a27cdb/zstd/encoder_options.go#L40
+	return 8 << 20
 }
 
 var decoderPool sync.Pool // *zstd.Decoder
@@ -102,6 +117,7 @@ func (c *Codec) NewWriter(w io.Writer) io.WriteCloser {
 			zstd.WithEncoderLevel(c.zstdLevel()),
 			zstd.WithEncoderConcurrency(1),
 			zstd.WithZeroFrames(true),
+			zstd.WithWindowSize(c.windowSize()),
 		)
 		if err != nil {
 			p.err = err
