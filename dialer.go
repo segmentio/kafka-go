@@ -193,6 +193,7 @@ func (d *Dialer) LookupPartition(ctx context.Context, network string, address st
 					return
 				}
 			}
+			break
 		}
 
 		errch <- UnknownTopicOrPartition
