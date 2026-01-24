@@ -626,6 +626,9 @@ type readerStats struct {
 
 // NewReader creates and returns a new Reader configured with config.
 // The offset is initialized to FirstOffset.
+//
+// This function will panic if the [ReaderConfig] argument is invalid.
+// Consider calling [ReaderConfig.Validate] before to make sure your config is valid.
 func NewReader(config ReaderConfig) *Reader {
 	if err := config.Validate(); err != nil {
 		panic(err)
