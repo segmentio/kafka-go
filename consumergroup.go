@@ -1032,8 +1032,18 @@ func (cg *ConsumerGroup) assignTopicPartitions(conn coordinator, group joinGroup
 	// assignments for the topic.  this matches the behavior of the official
 	// clients: java, python, and librdkafka.
 	// a topic watcher can trigger a rebalance when the topic comes into being.
-	if err != nil && !errors.Is(err, UnknownTopicOrPartition) {
-		return nil, err
+	//
+	// if no partitions are returned for any of the requested topics and
+	// WatchPartitionChanges is disabled, return the error so the group can
+	// rejoin with backoff until metadata appears.
+	if err != nil {
+		if errors.Is(err, UnknownTopicOrPartition) {
+			if len(partitions) == 0 && !cg.config.WatchPartitionChanges {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 
 	cg.withLogger(func(l Logger) {
