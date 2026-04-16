@@ -91,7 +91,7 @@ type JoinGroupResponse struct {
 	Members []JoinGroupResponseMember
 }
 
-// JoinGroupResponseMember represents a group member in a reponse to a JoinGroup request.
+// JoinGroupResponseMember represents a group member in a response to a JoinGroup request.
 type JoinGroupResponseMember struct {
 	// The group member ID.
 	ID string
