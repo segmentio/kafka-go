@@ -104,7 +104,7 @@ func TestClientJoinGroup(t *testing.T) {
 	member := resp.Members[0]
 
 	if member.ID != resp.MemberID {
-		t.Fatal("expected to be the only group memmber")
+		t.Fatal("expected to be the only group member")
 	}
 
 	if member.GroupInstanceID != groupInstanceID {
