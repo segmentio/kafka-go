@@ -135,11 +135,13 @@ func (c *Client) DescribeGroups(
 		for _, member := range apiGroup.Members {
 			decodedMetadata, err := decodeMemberMetadata(member.MemberMetadata)
 			if err != nil {
-				return nil, err
+				group.Error = fmt.Errorf("failed to decode member metadata for group %s: %w", apiGroup.GroupID, err)
+				break
 			}
 			decodedAssignments, err := decodeMemberAssignments(member.MemberAssignment)
 			if err != nil {
-				return nil, err
+				group.Error = fmt.Errorf("failed to decode member assignments for group %s: %w", apiGroup.GroupID, err)
+				break
 			}
 
 			group.Members = append(group.Members, DescribeGroupsResponseMember{
