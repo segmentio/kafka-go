@@ -135,6 +135,14 @@ func (r *messageSetReader) readMessage(min int64, key readBytesFunc, val readByt
 		// Set an invalid value so that it can be ignored
 		lastOffset = -1
 	case 2:
+		// On compacted topics, a record batch may have all its records
+		// removed by compaction, resulting in count=0. Skip over these
+		// empty batches by reading the next header.
+		for r.count == 0 && r.remain > 0 {
+			if err = r.readHeader(); err != nil {
+				return
+			}
+		}
 		offset, lastOffset, timestamp, headers, err = r.readMessageV2(min, key, val)
 	default:
 		err = r.header.badMagic()
@@ -350,7 +358,10 @@ func (r *messageSetReader) discardN(sz int) (err error) {
 
 func (r *messageSetReader) markRead() {
 	if r.count == 0 {
-		panic("markRead: negative count")
+		// On compacted topics, records may be removed from a batch,
+		// causing count to reach zero before all records are read.
+		// Clamp to zero instead of panicking.
+		return
 	}
 	r.count--
 	r.unwindStack()
