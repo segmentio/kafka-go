@@ -308,3 +308,65 @@ func TestDescribeGroupsInvalidAssignments(t *testing.T) {
 		t.Errorf("Expected group to have 0 members due to error, got %d", len(resp.Groups[0].Members))
 	}
 }
+
+func TestDescribeGroupsPartialMembersCleared(t *testing.T) {
+	mockResp := &describegroups.Response{
+		Groups: []describegroups.ResponseGroup{
+			{
+				ErrorCode:    0,
+				GroupID:      "multi-member-group",
+				GroupState:   "Stable",
+				ProtocolType: "consumer",
+				Members: []describegroups.ResponseGroupMember{
+					{
+						MemberID:         "member-1", // valid
+						ClientID:         "client-1",
+						ClientHost:       "/127.0.0.1",
+						MemberMetadata:   []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+						MemberAssignment: []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+					},
+					{
+						MemberID:         "member-2", // invalid
+						ClientID:         "client-2",
+						ClientHost:       "/127.0.0.1",
+						MemberMetadata:   []byte{0x00},
+						MemberAssignment: []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+					},
+					{
+						MemberID:         "member-3", // valid, but never processed
+						ClientID:         "client-3",
+						ClientHost:       "/127.0.0.1",
+						MemberMetadata:   []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+						MemberAssignment: []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+					},
+				},
+			},
+		},
+	}
+
+	client := &Client{
+		Transport: &mockRoundTripper{response: mockResp},
+	}
+
+	ctx := context.Background()
+	resp, err := client.DescribeGroups(ctx, &DescribeGroupsRequest{
+		Addr:     TCP("localhost:9092"),
+		GroupIDs: []string{"multi-member-group"},
+	})
+
+	if err != nil {
+		t.Fatalf("Unexpected error from DescribeGroups: %v", err)
+	}
+
+	if len(resp.Groups) != 1 {
+		t.Fatalf("Expected 1 group, got %d", len(resp.Groups))
+	}
+
+	group := resp.Groups[0]
+	if group.Error == nil {
+		t.Fatal("Expected group to have an error, got nil")
+	}
+	if len(group.Members) != 0 {
+		t.Errorf("Expected 0 members when error occurs, got %d", len(group.Members))
+	}
+}
