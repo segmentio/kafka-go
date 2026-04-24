@@ -241,6 +241,79 @@ func TestReaderAssignTopicPartitions(t *testing.T) {
 	}
 }
 
+func TestAssignTopicPartitionsMissingTopic(t *testing.T) {
+	conn := &mockCoordinator{
+		readPartitionsFunc: func(...string) ([]Partition, error) {
+			return nil, UnknownTopicOrPartition
+		},
+	}
+
+	newJoinGroupResponse := func(topicsByMemberID map[string][]string) joinGroupResponse {
+		resp := joinGroupResponse{
+			v:             v1,
+			GroupProtocol: RoundRobinGroupBalancer{}.ProtocolName(),
+		}
+		for memberID, topics := range topicsByMemberID {
+			resp.Members = append(resp.Members, joinGroupResponseMember{
+				MemberID: memberID,
+				MemberMetadata: groupMetadata{
+					Topics: topics,
+				}.bytes(),
+			})
+		}
+		return resp
+	}
+
+	tests := []struct {
+		name                  string
+		watchPartitionChanges bool
+		expectErr             bool
+	}{
+		{
+			name:                  "no watch triggers error on missing topic",
+			watchPartitionChanges: false,
+			expectErr:             true,
+		},
+		{
+			name:                  "watch enabled allows empty assignments",
+			watchPartitionChanges: true,
+			expectErr:             false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cg := ConsumerGroup{}
+			cg.config.GroupBalancers = []GroupBalancer{
+				RangeGroupBalancer{},
+				RoundRobinGroupBalancer{},
+			}
+			cg.config.WatchPartitionChanges = test.watchPartitionChanges
+
+			assignments, err := cg.assignTopicPartitions(conn, newJoinGroupResponse(map[string][]string{
+				"member-1": {"missing-topic"},
+			}))
+
+			if test.expectErr {
+				if !errors.Is(err, UnknownTopicOrPartition) {
+					t.Fatalf("expected UnknownTopicOrPartition, got %v", err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if assignments == nil {
+				t.Fatal("expected assignments to be non-nil")
+			}
+			if _, ok := assignments["member-1"]; !ok {
+				t.Fatalf("expected assignments for member-1, got %v", assignments)
+			}
+		})
+	}
+}
+
 func TestConsumerGroup(t *testing.T) {
 	tests := []struct {
 		scenario string
