@@ -5,8 +5,6 @@ services:
     hostname: zookeeper
     image: bitnamilegacy/zookeeper:latest
     restart: always
-    expose:
-    - "2181"
     ports:
     - "2181:2181"
     environment:
@@ -20,10 +18,6 @@ services:
     - kafka/kafka-variables.env
     depends_on:
     - zookeeper
-    expose:
-    - "9092"
-    - "8082"
-    - "8083"
     ports:
     - '9092:9092'
     - '8082:8082'
@@ -32,8 +26,6 @@ services:
   mongo-db:
     image: mongo:4.0
     restart: always
-    expose:
-    - "27017"
     ports:
     - "27017:27017"
     environment:
@@ -82,8 +74,6 @@ services:
     environment:
       kafkaURL: kafka:9092
       topic: topic1
-    expose:
-    - "8080"
     ports:
     - "8080:8080"
     depends_on: 
