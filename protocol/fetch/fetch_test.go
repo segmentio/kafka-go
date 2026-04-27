@@ -32,6 +32,32 @@ func TestFetchRequest(t *testing.T) {
 			},
 		},
 	})
+
+	// KIP-392: round-trip a v11 request with RackID set to make sure the
+	// rack id is encoded and decoded unchanged.
+	prototest.TestRequest(t, v11, &fetch.Request{
+		ReplicaID:    -1,
+		MaxWaitTime:  500,
+		MinBytes:     1024,
+		MaxBytes:     1 << 20,
+		SessionID:    -1,
+		SessionEpoch: -1,
+		Topics: []fetch.RequestTopic{
+			{
+				Topic: "topic-1",
+				Partitions: []fetch.RequestPartition{
+					{
+						Partition:          1,
+						CurrentLeaderEpoch: -1,
+						FetchOffset:        2,
+						LogStartOffset:     -1,
+						PartitionMaxBytes:  1024,
+					},
+				},
+			},
+		},
+		RackID: "rack-nl",
+	})
 }
 
 func TestFetchResponse(t *testing.T) {
@@ -73,14 +99,39 @@ func TestFetchResponse(t *testing.T) {
 				Topic: "topic-1",
 				Partitions: []fetch.ResponsePartition{
 					{
-						Partition:     1,
-						HighWatermark: 1000,
+						Partition:            1,
+						HighWatermark:        1000,
+						PreferredReadReplica: 42,
 						RecordSet: protocol.RecordSet{
 							Version: 2,
 							Records: protocol.NewRecordReader(
 								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: prototest.String("msg-0"), Headers: headers},
 								protocol.Record{Offset: 1, Time: t1, Key: nil, Value: prototest.String("msg-1")},
 								protocol.Record{Offset: 2, Time: t2, Key: prototest.Bytes([]byte{1}), Value: prototest.String("msg-2")},
+							),
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// KIP-392: when no preferred replica exists the broker sends -1.
+	// Make sure that value round-trips so the client doesn't accidentally
+	// flip it to 0 (which is a valid broker id).
+	prototest.TestResponse(t, v11, &fetch.Response{
+		Topics: []fetch.ResponseTopic{
+			{
+				Topic: "topic-1",
+				Partitions: []fetch.ResponsePartition{
+					{
+						Partition:            1,
+						HighWatermark:        1000,
+						PreferredReadReplica: -1,
+						RecordSet: protocol.RecordSet{
+							Version: 2,
+							Records: protocol.NewRecordReader(
+								protocol.Record{Offset: 0, Time: t0, Key: nil, Value: prototest.String("msg-0")},
 							),
 						},
 					},

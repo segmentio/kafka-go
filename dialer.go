@@ -89,6 +89,11 @@ type Dialer struct {
 	// For more details look at transactional.id description here: http://kafka.apache.org/documentation.html#producerconfigs
 	// Empty string means that the connection will be non-transactional.
 	TransactionalID string
+
+	// ClientRack is the consumer's rack id (KIP-392). When set and the broker
+	// supports Fetch v11+, the broker may direct the consumer to fetch from
+	// the closest replica instead of the partition leader.
+	ClientRack string
 }
 
 // Dial connects to the address on the named network.
@@ -117,6 +122,7 @@ func (d *Dialer) DialContext(ctx context.Context, network string, address string
 		ConnConfig{
 			ClientID:        d.ClientID,
 			TransactionalID: d.TransactionalID,
+			ClientRack:      d.ClientRack,
 		},
 	)
 }
@@ -148,6 +154,7 @@ func (d *Dialer) DialPartition(ctx context.Context, network string, address stri
 		Broker:          partition.Leader.ID,
 		Rack:            partition.Leader.Rack,
 		TransactionalID: d.TransactionalID,
+		ClientRack:      d.ClientRack,
 	})
 }
 

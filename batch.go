@@ -28,7 +28,11 @@ type Batch struct {
 	partition     int
 	offset        int64
 	highWaterMark int64
-	err           error
+	// preferredReadReplica is the broker id (>=0) the broker would prefer
+	// the consumer fetch from for this partition (KIP-392). -1 means no
+	// preference (fetch from leader).
+	preferredReadReplica int32
+	err                  error
 	// The last offset in the batch.
 	//
 	// We use lastOffset to skip offsets that have been compacted away.
@@ -49,6 +53,17 @@ func (batch *Batch) Throttle() time.Duration {
 // HighWaterMark returns the current highest watermark in a partition.
 func (batch *Batch) HighWaterMark() int64 {
 	return batch.highWaterMark
+}
+
+// PreferredReadReplica returns the broker id of the replica the kafka broker
+// recommends the consumer fetch from for this partition, as introduced in
+// KIP-392 (Allow Consumers to Fetch from Closest Replica). A value of -1
+// means no preference and the consumer should keep fetching from the
+// partition leader. The value is only populated when the connection
+// negotiated Fetch v11 or higher and the broker chose a preferred replica;
+// otherwise it is -1.
+func (batch *Batch) PreferredReadReplica() int32 {
+	return batch.preferredReadReplica
 }
 
 // Partition returns the batch partition.

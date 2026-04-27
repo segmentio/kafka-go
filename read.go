@@ -560,3 +560,107 @@ func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, wate
 	return
 
 }
+
+// readFetchResponseHeaderV11 mirrors readFetchResponseHeaderV10 but additionally
+// decodes the per-partition PreferredReadReplica field introduced by KIP-392
+// (Fetch v11). Returned preferredReadReplica is -1 when the broker has no
+// preference.
+func readFetchResponseHeaderV11(r *bufio.Reader, size int) (throttle int32, watermark int64, preferredReadReplica int32, remain int, err error) {
+	var n int32
+	var errorCode int16
+	type AbortedTransaction struct {
+		ProducerId  int64
+		FirstOffset int64
+	}
+	var p struct {
+		Partition           int32
+		ErrorCode           int16
+		HighwaterMarkOffset int64
+		LastStableOffset    int64
+		LogStartOffset      int64
+	}
+	var messageSetSize int32
+	var abortedTransactions []AbortedTransaction
+	preferredReadReplica = -1
+
+	if remain, err = readInt32(r, size, &throttle); err != nil {
+		return
+	}
+
+	if remain, err = readInt16(r, remain, &errorCode); err != nil {
+		return
+	}
+	if errorCode != 0 {
+		err = Error(errorCode)
+		return
+	}
+
+	if remain, err = discardInt32(r, remain); err != nil {
+		return
+	}
+
+	if remain, err = readInt32(r, remain, &n); err != nil {
+		return
+	}
+	if n != 1 {
+		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d", n)
+		return
+	}
+
+	if remain, err = discardString(r, remain); err != nil {
+		return
+	}
+
+	if remain, err = readInt32(r, remain, &n); err != nil {
+		return
+	}
+	if n != 1 {
+		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d", n)
+		return
+	}
+
+	if remain, err = read(r, remain, &p); err != nil {
+		return
+	}
+
+	var abortedTransactionLen int
+	if remain, err = readArrayLen(r, remain, &abortedTransactionLen); err != nil {
+		return
+	}
+
+	if abortedTransactionLen == -1 {
+		abortedTransactions = nil
+	} else {
+		abortedTransactions = make([]AbortedTransaction, abortedTransactionLen)
+		for i := 0; i < abortedTransactionLen; i++ {
+			if remain, err = read(r, remain, &abortedTransactions[i]); err != nil {
+				return
+			}
+		}
+	}
+	_ = abortedTransactions
+
+	// PreferredReadReplica (KIP-392): broker id of the preferred read replica
+	// for this partition, or -1 if no preference.
+	if remain, err = readInt32(r, remain, &preferredReadReplica); err != nil {
+		return
+	}
+
+	if p.ErrorCode != 0 {
+		err = Error(p.ErrorCode)
+		return
+	}
+
+	remain, err = readInt32(r, remain, &messageSetSize)
+	if err != nil {
+		return
+	}
+
+	if remain != int(messageSetSize) {
+		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d)", messageSetSize, remain)
+		return
+	}
+
+	watermark = p.HighwaterMarkOffset
+	return
+}

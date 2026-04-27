@@ -54,6 +54,7 @@ type Conn struct {
 	fetchMinSize  int32
 	broker        int32
 	rack          string
+	clientRack    string
 
 	// correlation ID generator (synchronized on wlock)
 	correlationID int32
@@ -90,6 +91,13 @@ type ConnConfig struct {
 	Partition int
 	Broker    int
 	Rack      string
+
+	// ClientRack is the consumer's rack id used by the broker to determine
+	// the closest replica to fetch from (KIP-392). When set and the broker
+	// supports Fetch v11 or higher, the rack id is sent in fetch requests
+	// and the broker may direct the consumer to read from a follower
+	// replica that is closer to the consumer.
+	ClientRack string
 
 	// The transactional id to use for transactional delivery. Idempotent
 	// deliver should be enabled if transactional id is configured.
@@ -179,6 +187,7 @@ func NewConnWith(conn net.Conn, config ConnConfig) *Conn {
 		partition:       int32(config.Partition),
 		broker:          int32(config.Broker),
 		rack:            config.Rack,
+		clientRack:      config.ClientRack,
 		offset:          FirstOffset,
 		requiredAcks:    -1,
 		transactionalID: emptyToNullable(config.TransactionalID),
@@ -777,7 +786,7 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		return &Batch{err: dontExpectEOF(err)}
 	}
 
-	fetchVersion, err := c.negotiateVersion(fetch, v2, v5, v10)
+	fetchVersion, err := c.negotiateVersion(fetch, v2, v5, v10, v11)
 	if err != nil {
 		return &Batch{err: dontExpectEOF(err)}
 	}
@@ -799,6 +808,19 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 		// truncated messages.
 		adjustedDeadline = deadline
 		switch fetchVersion {
+		case v11:
+			return c.wb.writeFetchRequestV11(
+				id,
+				c.clientID,
+				c.topic,
+				c.partition,
+				offset,
+				cfg.MinBytes,
+				cfg.MaxBytes+int(c.fetchMinSize),
+				timeout,
+				int8(cfg.IsolationLevel),
+				c.clientRack,
+			)
 		case v10:
 			return c.wb.writeFetchRequestV10(
 				id,
@@ -848,8 +870,11 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var throttle int32
 	var highWaterMark int64
 	var remain int
+	var preferredReadReplica int32 = -1
 
 	switch fetchVersion {
+	case v11:
+		throttle, highWaterMark, preferredReadReplica, remain, err = readFetchResponseHeaderV11(&c.rbuf, size)
 	case v10:
 		throttle, highWaterMark, remain, err = readFetchResponseHeaderV10(&c.rbuf, size)
 	case v5:
@@ -874,15 +899,16 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	}
 
 	return &Batch{
-		conn:          c,
-		msgs:          msgs,
-		deadline:      adjustedDeadline,
-		throttle:      makeDuration(throttle),
-		lock:          lock,
-		topic:         c.topic,          // topic is copied to Batch to prevent race with Batch.close
-		partition:     int(c.partition), // partition is copied to Batch to prevent race with Batch.close
-		offset:        offset,
-		highWaterMark: highWaterMark,
+		conn:                 c,
+		msgs:                 msgs,
+		deadline:             adjustedDeadline,
+		throttle:             makeDuration(throttle),
+		lock:                 lock,
+		topic:                c.topic,          // topic is copied to Batch to prevent race with Batch.close
+		partition:            int(c.partition), // partition is copied to Batch to prevent race with Batch.close
+		offset:               offset,
+		highWaterMark:        highWaterMark,
+		preferredReadReplica: preferredReadReplica,
 		// there shouldn't be a short read on initially setting up the batch.
 		// as such, any io.EOF is re-mapped to an io.ErrUnexpectedEOF so that we
 		// don't accidentally signal that we successfully reached the end of the

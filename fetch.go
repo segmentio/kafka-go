@@ -37,6 +37,14 @@ type FetchRequest struct {
 	// This field requires the kafka broker to support the Fetch API in version
 	// 4 or above (otherwise the value is ignored).
 	IsolationLevel IsolationLevel
+
+	// RackID is the consumer's rack id (KIP-392). When set, the broker may
+	// direct the consumer to fetch from the closest replica via the
+	// PreferredReadReplica field of the response.
+	//
+	// This field requires the kafka broker to support the Fetch API in
+	// version 11 or above (otherwise the value is ignored).
+	RackID string
 }
 
 // FetchResponse represents a response from a kafka broker to a fetch request.
@@ -59,6 +67,13 @@ type FetchResponse struct {
 	HighWatermark    int64
 	LastStableOffset int64
 	LogStartOffset   int64
+
+	// PreferredReadReplica is the broker id the broker would prefer the
+	// consumer fetch from for this partition (KIP-392). A value of -1 means
+	// no preference. Only populated when the broker supports Fetch v11 or
+	// above AND the caller set RackID on the request; in any other case
+	// the value is forced to -1.
+	PreferredReadReplica int32
 
 	// An error that may have occurred while attempting to fetch the records.
 	//
@@ -145,6 +160,7 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 				PartitionMaxBytes:  int32(req.MaxBytes),
 			}},
 		}},
+		RackID: req.RackID,
 	})
 
 	if err != nil {
@@ -162,14 +178,26 @@ func (c *Client) Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, 
 	partition := &topic.Partitions[0]
 
 	ret := &FetchResponse{
-		Throttle:         makeDuration(res.ThrottleTimeMs),
-		Topic:            topic.Topic,
-		Partition:        int(partition.Partition),
-		Error:            makeError(res.ErrorCode, ""),
-		HighWatermark:    partition.HighWatermark,
-		LastStableOffset: partition.LastStableOffset,
-		LogStartOffset:   partition.LogStartOffset,
-		Records:          partition.RecordSet.Records,
+		Throttle:             makeDuration(res.ThrottleTimeMs),
+		Topic:                topic.Topic,
+		Partition:            int(partition.Partition),
+		Error:                makeError(res.ErrorCode, ""),
+		HighWatermark:        partition.HighWatermark,
+		LastStableOffset:     partition.LastStableOffset,
+		LogStartOffset:       partition.LogStartOffset,
+		PreferredReadReplica: partition.PreferredReadReplica,
+		Records:              partition.RecordSet.Records,
+	}
+
+	// KIP-392: PreferredReadReplica is only meaningful in Fetch v11+ responses.
+	// When the broker negotiated an older version, the protocol decoder leaves
+	// the field at Go's zero value (0), which is indistinguishable from broker
+	// id 0 being the preferred replica. We can't read the negotiated version
+	// from here, but we know that if the caller did not set RackID then they
+	// did not opt into KIP-392 and we should not surface any preferred replica
+	// id at all. Force -1 so callers can rely on "-1 means no preference".
+	if req.RackID == "" {
+		ret.PreferredReadReplica = -1
 	}
 
 	if partition.ErrorCode != 0 {

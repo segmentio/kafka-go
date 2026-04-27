@@ -295,6 +295,65 @@ func (wb *writeBuffer) writeFetchRequestV10(correlationID int32, clientID, topic
 	return wb.Flush()
 }
 
+// writeFetchRequestV11 is identical to writeFetchRequestV10 but additionally
+// sends a rack id (KIP-392) which lets the broker direct the consumer to the
+// closest replica.
+func (wb *writeBuffer) writeFetchRequestV11(correlationID int32, clientID, topic string, partition int32, offset int64, minBytes, maxBytes int, maxWait time.Duration, isolationLevel int8, rackID string) error {
+	h := requestHeader{
+		ApiKey:        int16(fetch),
+		ApiVersion:    int16(v11),
+		CorrelationID: correlationID,
+		ClientID:      clientID,
+	}
+	h.Size = (h.size() - 4) +
+		4 + // replica ID
+		4 + // max wait time
+		4 + // min bytes
+		4 + // max bytes
+		1 + // isolation level
+		4 + // session ID
+		4 + // session epoch
+		4 + // topic array length
+		sizeofString(topic) +
+		4 + // partition array length
+		4 + // partition
+		4 + // current leader epoch
+		8 + // fetch offset
+		8 + // log start offset
+		4 + // partition max bytes
+		4 + // forgotten topics data
+		sizeofString(rackID) // rack id
+
+	h.writeTo(wb)
+	wb.writeInt32(-1) // replica ID
+	wb.writeInt32(milliseconds(maxWait))
+	wb.writeInt32(int32(minBytes))
+	wb.writeInt32(int32(maxBytes))
+	wb.writeInt8(isolationLevel)
+	wb.writeInt32(0)  // session ID
+	wb.writeInt32(-1) // session epoch
+
+	// topic array
+	wb.writeArrayLen(1)
+	wb.writeString(topic)
+
+	// partition array
+	wb.writeArrayLen(1)
+	wb.writeInt32(partition)
+	wb.writeInt32(-1) // current leader epoch
+	wb.writeInt64(offset)
+	wb.writeInt64(int64(0)) // log start offset only used when sent by follower
+	wb.writeInt32(int32(maxBytes))
+
+	// forgotten topics array
+	wb.writeArrayLen(0)
+
+	// rack id (KIP-392)
+	wb.writeString(rackID)
+
+	return wb.Flush()
+}
+
 func (wb *writeBuffer) writeListOffsetRequestV1(correlationID int32, clientID, topic string, partition int32, time int64) error {
 	h := requestHeader{
 		ApiKey:        int16(listOffsets),
