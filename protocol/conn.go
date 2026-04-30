@@ -9,11 +9,12 @@ import (
 )
 
 type Conn struct {
-	buffer   *bufio.Reader
-	conn     net.Conn
-	clientID string
-	idgen    int32
-	versions atomic.Value // map[ApiKey]int16
+	buffer              *bufio.Reader
+	conn                net.Conn
+	clientID            string
+	idgen               int32
+	saslSessionDeadline time.Time
+	versions            atomic.Value // map[ApiKey]int16
 }
 
 func NewConn(conn net.Conn, clientID string) *Conn {
@@ -66,6 +67,14 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
+}
+
+func (c *Conn) SetSaslSessionDeadline(t time.Time) {
+	c.saslSessionDeadline = t
+}
+
+func (c *Conn) GetSaslSessionDeadline() time.Time {
+	return c.saslSessionDeadline
 }
 
 func (c *Conn) SetVersions(versions map[ApiKey]int16) {

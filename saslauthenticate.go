@@ -52,3 +52,41 @@ func (t *saslAuthenticateResponseV0) readFrom(r *bufio.Reader, sz int) (remain i
 	}
 	return
 }
+
+type saslAuthenticateResponseV1 struct {
+	// ErrorCode holds response error code
+	ErrorCode int16
+
+	ErrorMessage string
+
+	Data []byte
+
+	SessionLifetimeMs int64
+}
+
+func (t saslAuthenticateResponseV1) size() int32 {
+	return sizeofInt16(t.ErrorCode) + sizeofString(t.ErrorMessage) + sizeofBytes(t.Data) + sizeofInt64(t.SessionLifetimeMs)
+}
+
+func (t saslAuthenticateResponseV1) writeTo(wb *writeBuffer) {
+	wb.writeInt16(t.ErrorCode)
+	wb.writeString(t.ErrorMessage)
+	wb.writeBytes(t.Data)
+	wb.writeInt64(t.SessionLifetimeMs)
+}
+
+func (t *saslAuthenticateResponseV1) readFrom(r *bufio.Reader, sz int) (remain int, err error) {
+	if remain, err = readInt16(r, sz, &t.ErrorCode); err != nil {
+		return
+	}
+	if remain, err = readString(r, remain, &t.ErrorMessage); err != nil {
+		return
+	}
+	if remain, err = readBytes(r, remain, &t.Data); err != nil {
+		return
+	}
+	if remain, err = readInt64(r, remain, &t.SessionLifetimeMs); err != nil {
+		return
+	}
+	return
+}

@@ -58,3 +58,31 @@ func TestSASLAuthenticateResponseV0(t *testing.T) {
 		t.FailNow()
 	}
 }
+
+func TestSASLAuthenticateResponseV1(t *testing.T) {
+	item := saslAuthenticateResponseV1{
+		ErrorCode:         2,
+		ErrorMessage:      "Message",
+		Data:              []byte("bytes"),
+		SessionLifetimeMs: 300000,
+	}
+
+	b := bytes.NewBuffer(nil)
+	w := &writeBuffer{w: b}
+	item.writeTo(w)
+
+	var found saslAuthenticateResponseV1
+	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	if remain != 0 {
+		t.Errorf("expected 0 remain, got %v", remain)
+		t.FailNow()
+	}
+	if !reflect.DeepEqual(item, found) {
+		t.Error("expected item and found to be the same")
+		t.FailNow()
+	}
+}
