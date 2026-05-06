@@ -111,6 +111,10 @@ func TestClient(t *testing.T) {
 			scenario: "retrieve committed offsets for a consumer group and topic",
 			function: testConsumerGroupFetchOffsets,
 		},
+		{
+			scenario: "retrieve committed offsets for a consumer group and topic with batch processing",
+			function: testConsumerGroupFetchMessageBatch,
+		},
 	}
 
 	for _, test := range tests {
@@ -171,6 +175,77 @@ func testConsumerGroupFetchOffsets(t *testing.T, ctx context.Context, client *Cl
 		}
 		if err := r.CommitMessages(context.Background(), m); err != nil {
 			t.Fatal(err)
+		}
+	}
+
+	offsets, err := client.ConsumerOffsets(ctx, TopicAndGroup{GroupId: groupId, Topic: topic})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(offsets) != partitions {
+		t.Fatalf("expected %d partitions but only received offsets for %d", partitions, len(offsets))
+	}
+
+	for i := 0; i < partitions; i++ {
+		committedOffset := offsets[i]
+		if committedOffset != msgPerPartition {
+			t.Errorf("expected partition %d with committed offset of %d but received %d", i, msgPerPartition, committedOffset)
+		}
+	}
+}
+
+func testConsumerGroupFetchMessageBatch(t *testing.T, ctx context.Context, client *Client) {
+	const totalMessages = 144
+	const partitions = 12
+	const msgPerPartition = totalMessages / partitions
+
+	topic := makeTopic()
+	if err := clientCreateTopic(client, topic, partitions); err != nil {
+		t.Fatal(err)
+	}
+
+	groupId := makeGroupID()
+	brokers := []string{"localhost:9092"}
+
+	writer := &Writer{
+		Addr:      TCP(brokers...),
+		Topic:     topic,
+		Balancer:  &RoundRobin{},
+		BatchSize: 1,
+		Transport: client.Transport,
+	}
+	if err := writer.WriteMessages(ctx, makeTestSequence(totalMessages)...); err != nil {
+		t.Fatalf("bad write messages: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("bad write err: %v", err)
+	}
+
+	batchSize := 100
+	r := NewReader(ReaderConfig{
+		Brokers:       brokers,
+		Topic:         topic,
+		GroupID:       groupId,
+		MinBytes:      1,
+		MaxBytes:      10e6,
+		MaxWait:       100 * time.Millisecond,
+		QueueCapacity: batchSize,
+	})
+	defer r.Close()
+
+	var expected int
+	for {
+		m, err := r.FetchMessageBatch(ctx, batchSize, time.Second)
+		if err != nil {
+			t.Fatalf("error fetching message: %s", err)
+		}
+		if err := r.CommitMessages(context.Background(), m...); err != nil {
+			t.Fatal(err)
+		}
+		expected += len(m)
+		if expected == totalMessages {
+			break
 		}
 	}
 
