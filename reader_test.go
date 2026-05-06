@@ -15,6 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/segmentio/kafka-go/compress/gzip"
+	"github.com/segmentio/kafka-go/compress/lz4"
+	"github.com/segmentio/kafka-go/compress/snappy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1995,4 +1998,103 @@ func testReaderTopicRecreated(t *testing.T, ctx context.Context, r *Reader) {
 	// expect an error, since the offset should now be out of range
 	_, err = r.ReadMessage(ctx)
 	require.ErrorIs(t, err, OffsetOutOfRange)
+}
+
+// TestReaderCompressedCompactedTopicCPUSpinning reproduces the segmentio/kafka-go
+// bug where readers get stuck in an infinite CPU spinning loop when processing
+// compressed batches from compacted topics.
+func TestReaderCompressedCompactedTopicCPUSpinning(t *testing.T) {
+	topic := makeTopic()
+	createTopicWithCompaction(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	msgs := makeTestDuplicateSequence()
+
+	// Write compressed messages that will be compacted
+	writeCompressedMessagesForCompaction(t, topic, msgs)
+
+	expectedKeys := map[string]int{}
+	for _, msg := range msgs {
+		expectedKeys[string(msg.Key)] = 1
+	}
+
+	// Use shorter timeout to detect CPU spinning faster
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Wait for compaction to occur (may take time on slower systems)
+	time.Sleep(2 * time.Second)
+
+	for {
+		success := func() bool {
+			r := NewReader(ReaderConfig{
+				Brokers:  []string{"localhost:9092"},
+				Topic:    topic,
+				MinBytes: 200,
+				MaxBytes: 200,
+				MaxWait:  100 * time.Millisecond,
+			})
+			defer r.Close()
+
+			keys := map[string]int{}
+
+			// This loop should NOT hang indefinitely
+			// If it does, we have the CPU spinning bug
+			for {
+				m, err := r.FetchMessage(ctx)
+				if err != nil {
+					if errors.Is(err, context.DeadlineExceeded) {
+						t.Fatalf("Reader CPU spinning detected - stuck in (*reader).read after processing compressed compacted batches. This indicates the lengthRemain bug in message_reader.go")
+					}
+					t.Logf("can't get message from compacted log: %v", err)
+					return false
+				}
+				keys[string(m.Key)]++
+
+				if len(keys) == countKeys(msgs) {
+					t.Logf("got keys: %+v", keys)
+					return reflect.DeepEqual(keys, expectedKeys)
+				}
+			}
+		}()
+		if success {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("Test timed out - likely due to CPU spinning bug in compressed compacted topic processing")
+		default:
+		}
+	}
+}
+
+// writeCompressedMessagesForCompaction writes compressed messages with specific
+// writer configuration that combines compression with compaction-friendly patterns.
+func writeCompressedMessagesForCompaction(t *testing.T, topic string, msgs []Message) {
+	t.Helper()
+
+	// Test multiple compression codecs to ensure the bug affects all of them
+	codecs := []CompressionCodec{
+		&gzip.Codec{},
+		&snappy.Codec{},
+		&lz4.Codec{},
+	}
+
+	for _, codec := range codecs {
+		wr := NewWriter(WriterConfig{
+			Brokers: []string{"localhost:9092"},
+			Topic:   topic,
+			// KEY: Enable compression - this creates compressed batches
+			CompressionCodec: codec,
+			// Small batch size ensures multiple batches and triggers compaction edge cases
+			BatchSize: 3,
+			Async:     false,
+			// Use manual balancer for predictable behavior
+			Balancer: &LeastBytes{},
+		})
+		defer wr.Close()
+
+		err := wr.WriteMessages(context.Background(), msgs...)
+		require.NoError(t, err)
+	}
 }
