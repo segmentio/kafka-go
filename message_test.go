@@ -686,7 +686,7 @@ func TestMessageSize(t *testing.T) {
 				Time:  randate(),
 			}
 			expSize := msg.message(nil).size()
-			gotSize := msg.size()
+			gotSize := msg.Size()
 			if expSize != gotSize {
 				t.Errorf("Expected size %d, but got size %d", expSize, gotSize)
 			}
