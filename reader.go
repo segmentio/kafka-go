@@ -522,6 +522,10 @@ type ReaderConfig struct {
 	// This flag is being added to retain backwards-compatibility, so it will be
 	// removed in a future version of kafka-go.
 	OffsetOutOfRangeError bool
+
+	// EnablePartitionEoF will notify the reader by throwing PartitionEoF when
+	// it reaches the end of partition.
+	EnablePartitionEoF bool
 }
 
 // Validate method validates ReaderConfig properties.
@@ -1196,23 +1200,24 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 			defer join.Done()
 
 			(&reader{
-				dialer:           r.config.Dialer,
-				logger:           r.config.Logger,
-				errorLogger:      r.config.ErrorLogger,
-				brokers:          r.config.Brokers,
-				topic:            key.topic,
-				partition:        int(key.partition),
-				minBytes:         r.config.MinBytes,
-				maxBytes:         r.config.MaxBytes,
-				maxWait:          r.config.MaxWait,
-				readBatchTimeout: r.config.ReadBatchTimeout,
-				backoffDelayMin:  r.config.ReadBackoffMin,
-				backoffDelayMax:  r.config.ReadBackoffMax,
-				version:          r.version,
-				msgs:             r.msgs,
-				stats:            r.stats,
-				isolationLevel:   r.config.IsolationLevel,
-				maxAttempts:      r.config.MaxAttempts,
+				dialer:             r.config.Dialer,
+				logger:             r.config.Logger,
+				errorLogger:        r.config.ErrorLogger,
+				brokers:            r.config.Brokers,
+				topic:              key.topic,
+				partition:          int(key.partition),
+				minBytes:           r.config.MinBytes,
+				maxBytes:           r.config.MaxBytes,
+				maxWait:            r.config.MaxWait,
+				readBatchTimeout:   r.config.ReadBatchTimeout,
+				backoffDelayMin:    r.config.ReadBackoffMin,
+				backoffDelayMax:    r.config.ReadBackoffMax,
+				version:            r.version,
+				msgs:               r.msgs,
+				stats:              r.stats,
+				isolationLevel:     r.config.IsolationLevel,
+				maxAttempts:        r.config.MaxAttempts,
+				enablePartitionEoF: r.config.EnablePartitionEoF,
 
 				// backwards-compatibility flags
 				offsetOutOfRangeError: r.config.OffsetOutOfRangeError,
@@ -1225,23 +1230,24 @@ func (r *Reader) start(offsetsByPartition map[topicPartition]int64) {
 // used as a way to asynchronously fetch messages while the main program reads
 // them using the high level reader API.
 type reader struct {
-	dialer           *Dialer
-	logger           Logger
-	errorLogger      Logger
-	brokers          []string
-	topic            string
-	partition        int
-	minBytes         int
-	maxBytes         int
-	maxWait          time.Duration
-	readBatchTimeout time.Duration
-	backoffDelayMin  time.Duration
-	backoffDelayMax  time.Duration
-	version          int64
-	msgs             chan<- readerMessage
-	stats            *readerStats
-	isolationLevel   IsolationLevel
-	maxAttempts      int
+	dialer             *Dialer
+	logger             Logger
+	errorLogger        Logger
+	brokers            []string
+	topic              string
+	partition          int
+	minBytes           int
+	maxBytes           int
+	maxWait            time.Duration
+	readBatchTimeout   time.Duration
+	backoffDelayMin    time.Duration
+	backoffDelayMax    time.Duration
+	version            int64
+	msgs               chan<- readerMessage
+	stats              *readerStats
+	isolationLevel     IsolationLevel
+	maxAttempts        int
+	enablePartitionEoF bool
 
 	offsetOutOfRangeError bool
 }
@@ -1378,6 +1384,10 @@ func (r *reader) run(ctx context.Context, offset int64) {
 				})
 				r.stats.timeouts.observe(1)
 				continue
+			case errors.Is(err, PartitionEoF):
+				errcount = 0
+				r.sendError(ctx, err)
+				continue
 
 			case errors.Is(err, OffsetOutOfRange):
 				first, last, err := r.readOffsets(conn)
@@ -1508,6 +1518,7 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	var err error
 	var size int64
 	var bytes int64
+	var newOffset = offset
 
 	for {
 		conn.SetReadDeadline(time.Now().Add(r.readBatchTimeout))
@@ -1526,9 +1537,9 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 			break
 		}
 
-		offset = msg.Offset + 1
-		r.stats.offset.observe(offset)
-		r.stats.lag.observe(highWaterMark - offset)
+		newOffset = msg.Offset + 1
+		r.stats.offset.observe(newOffset)
+		r.stats.lag.observe(highWaterMark - newOffset)
 
 		size++
 		bytes += n
@@ -1540,7 +1551,11 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 	r.stats.readTime.observeDuration(t2.Sub(t1))
 	r.stats.fetchSize.observe(size)
 	r.stats.fetchBytes.observe(bytes)
-	return offset, err
+
+	if r.enablePartitionEoF && newOffset == highWaterMark && newOffset > offset {
+		return offset, PartitionEoF
+	}
+	return newOffset, err
 }
 
 func (r *reader) readOffsets(conn *Conn) (first, last int64, err error) {
