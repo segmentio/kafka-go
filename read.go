@@ -560,3 +560,111 @@ func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, wate
 	return
 
 }
+
+func readFetchResponseHeaderV11(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, preferredReadReplica int32, err error) {
+	var n int32
+	var errorCode int16
+	type AbortedTransaction struct {
+		ProducerId  int64
+		FirstOffset int64
+	}
+	var p struct {
+		Partition           int32
+		ErrorCode           int16
+		HighwaterMarkOffset int64
+		LastStableOffset    int64
+		LogStartOffset      int64
+	}
+	var messageSetSize int32
+	var abortedTransactions []AbortedTransaction
+
+	if remain, err = readInt32(r, size, &throttle); err != nil {
+		return
+	}
+
+	if remain, err = readInt16(r, remain, &errorCode); err != nil {
+		return
+	}
+	if errorCode != 0 {
+		err = Error(errorCode)
+		return
+	}
+
+	if remain, err = discardInt32(r, remain); err != nil {
+		return
+	}
+
+	if remain, err = readInt32(r, remain, &n); err != nil {
+		return
+	}
+
+	// This error should never trigger, unless there's a bug in the kafka client
+	// or server.
+	if n != 1 {
+		err = fmt.Errorf("1 kafka topic was expected in the fetch response but the client received %d", n)
+		return
+	}
+
+	// We ignore the topic name because we've requests messages for a single
+	// topic, unless there's a bug in the kafka server we will have received
+	// the name of the topic that we requested.
+	if remain, err = discardString(r, remain); err != nil {
+		return
+	}
+
+	if remain, err = readInt32(r, remain, &n); err != nil {
+		return
+	}
+
+	// This error should never trigger, unless there's a bug in the kafka client
+	// or server.
+	if n != 1 {
+		err = fmt.Errorf("1 kafka partition was expected in the fetch response but the client received %d", n)
+		return
+	}
+
+	if remain, err = read(r, remain, &p); err != nil {
+		return
+	}
+
+	var abortedTransactionLen int
+	if remain, err = readArrayLen(r, remain, &abortedTransactionLen); err != nil {
+		return
+	}
+
+	if abortedTransactionLen == -1 {
+		abortedTransactions = nil
+	} else {
+		abortedTransactions = make([]AbortedTransaction, abortedTransactionLen)
+		for i := 0; i < abortedTransactionLen; i++ {
+			if remain, err = read(r, remain, &abortedTransactions[i]); err != nil {
+				return
+			}
+		}
+	}
+
+	if p.ErrorCode != 0 {
+		err = Error(p.ErrorCode)
+		return
+	}
+
+	if preferredReadReplica, err = readInt32(r, remain, &preferredReadReplica); err != nil {
+		return
+	}
+
+	remain, err = readInt32(r, remain, &messageSetSize)
+	if err != nil {
+		return
+	}
+
+	// This error should never trigger, unless there's a bug in the kafka client
+	// or server.
+	if remain != int(messageSetSize) {
+		err = fmt.Errorf("the size of the message set in a fetch response doesn't match the number of remaining bytes (message set size = %d, remaining bytes = %d)", messageSetSize, remain)
+		return
+	}
+
+	watermark = p.HighwaterMarkOffset
+	return
+
+}
