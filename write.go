@@ -325,19 +325,22 @@ func (wb *writeBuffer) writeListOffsetRequestV1(correlationID int32, clientID, t
 	return wb.Flush()
 }
 
-func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, msgs ...Message) (err error) {
-	var size int32
-	var attributes int8
-	var compressed *bytes.Buffer
+type msgSetProduceInput struct {
+	topic      string
+	partitions []msgSetPartitionBatch
+}
 
-	if codec == nil {
-		size = messageSetSize(msgs...)
-	} else {
-		compressed, attributes, size, err = compressMessageSet(codec, msgs...)
-		if err != nil {
-			return
-		}
-		msgs = []Message{{Value: compressed.Bytes()}}
+type msgSetPartitionBatch struct {
+	partition int32
+	messages  []Message
+	size      int32
+	buffer    *bytes.Buffer
+}
+
+func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlationID int32, clientID string, timeout time.Duration, requiredAcks int16, inputs ...msgSetProduceInput) (err error) {
+	var attributes int8
+	if codec != nil {
+		attributes = codec.Code()
 	}
 
 	h := requestHeader{
@@ -349,41 +352,67 @@ func (wb *writeBuffer) writeProduceRequestV2(codec CompressionCodec, correlation
 	h.Size = (h.size() - 4) +
 		2 + // required acks
 		4 + // timeout
-		4 + // topic array length
-		sizeofString(topic) + // topic
-		4 + // partition array length
-		4 + // partition
-		4 + // message set size
-		size
+		4 // topic array length
+
+	for i, in := range inputs {
+		h.Size += sizeofString(in.topic) +
+			4 // partition array length
+
+		for j, pb := range in.partitions {
+			h.Size += 4 + // partition
+				4 // message set size
+
+			var sz int32
+			if codec == nil {
+				sz = messageSetSize(pb.messages...)
+			} else {
+				var buf *bytes.Buffer
+				buf, sz, err = compressMessageSet(codec, pb.messages...)
+				if err != nil {
+					return err
+				}
+				inputs[i].partitions[j].messages = []Message{{Value: buf.Bytes()}}
+			}
+			inputs[i].partitions[j].size = sz
+			h.Size += sz
+		}
+	}
 
 	h.writeTo(wb)
 	wb.writeInt16(requiredAcks) // required acks
 	wb.writeInt32(milliseconds(timeout))
 
-	// topic array
-	wb.writeArrayLen(1)
-	wb.writeString(topic)
+	wb.writeArray(len(inputs), func(i int) {
+		wb.writeString(inputs[i].topic)
+		wb.writeArray(len(inputs[i].partitions), func(j int) {
+			wb.writeInt32(inputs[i].partitions[j].partition)
+			wb.writeInt32(inputs[i].partitions[j].size)
+			cw := &crc32Writer{table: crc32.IEEETable}
+			for _, msg := range inputs[i].partitions[j].messages {
+				wb.writeMessage(msg.Offset, attributes, msg.Time, msg.Key, msg.Value, cw)
+			}
+			releaseBuffer(inputs[i].partitions[j].buffer)
+		})
+	})
 
-	// partition array
-	wb.writeArrayLen(1)
-	wb.writeInt32(partition)
-
-	wb.writeInt32(size)
-	cw := &crc32Writer{table: crc32.IEEETable}
-
-	for _, msg := range msgs {
-		wb.writeMessage(msg.Offset, attributes, msg.Time, msg.Key, msg.Value, cw)
-	}
-
-	releaseBuffer(compressed)
 	return wb.Flush()
 }
 
-func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, recordBatch *recordBatch) (err error) {
+type produceInput struct {
+	topic      string
+	partitions []partitionBatch
+}
+
+type partitionBatch struct {
+	partition   int32
+	recordBatch *recordBatch
+}
+
+func (wb *writeBuffer) writeProduceRequest(version apiVersion, correlationID int32, clientID string, timeout time.Duration, requiredAcks int16, transactionalID *string, inputs ...produceInput) (err error) {
 
 	h := requestHeader{
 		ApiKey:        int16(produce),
-		ApiVersion:    int16(v3),
+		ApiVersion:    int16(version),
 		CorrelationID: correlationID,
 		ClientID:      clientID,
 	}
@@ -392,64 +421,30 @@ func (wb *writeBuffer) writeProduceRequestV3(correlationID int32, clientID, topi
 		sizeofNullableString(transactionalID) +
 		2 + // required acks
 		4 + // timeout
-		4 + // topic array length
-		sizeofString(topic) + // topic
-		4 + // partition array length
-		4 + // partition
-		4 + // message set size
-		recordBatch.size
+		4 // topic array length
 
-	h.writeTo(wb)
-	wb.writeNullableString(transactionalID)
-	wb.writeInt16(requiredAcks) // required acks
-	wb.writeInt32(milliseconds(timeout))
-
-	// topic array
-	wb.writeArrayLen(1)
-	wb.writeString(topic)
-
-	// partition array
-	wb.writeArrayLen(1)
-	wb.writeInt32(partition)
-
-	recordBatch.writeTo(wb)
-
-	return wb.Flush()
-}
-
-func (wb *writeBuffer) writeProduceRequestV7(correlationID int32, clientID, topic string, partition int32, timeout time.Duration, requiredAcks int16, transactionalID *string, recordBatch *recordBatch) (err error) {
-
-	h := requestHeader{
-		ApiKey:        int16(produce),
-		ApiVersion:    int16(v7),
-		CorrelationID: correlationID,
-		ClientID:      clientID,
+	for _, i := range inputs {
+		h.Size += sizeofString(i.topic) +
+			4 // partition array length
+		for _, pb := range i.partitions {
+			h.Size += 4 + // partition
+				4 + // record batch size
+				pb.recordBatch.size
+		}
 	}
-	h.Size = (h.size() - 4) +
-		sizeofNullableString(transactionalID) +
-		2 + // required acks
-		4 + // timeout
-		4 + // topic array length
-		sizeofString(topic) + // topic
-		4 + // partition array length
-		4 + // partition
-		4 + // message set size
-		recordBatch.size
 
 	h.writeTo(wb)
 	wb.writeNullableString(transactionalID)
 	wb.writeInt16(requiredAcks) // required acks
 	wb.writeInt32(milliseconds(timeout))
 
-	// topic array
-	wb.writeArrayLen(1)
-	wb.writeString(topic)
-
-	// partition array
-	wb.writeArrayLen(1)
-	wb.writeInt32(partition)
-
-	recordBatch.writeTo(wb)
+	wb.writeArray(len(inputs), func(i int) {
+		wb.writeString(inputs[i].topic)
+		wb.writeArray(len(inputs[i].partitions), func(j int) {
+			wb.writeInt32(inputs[i].partitions[j].partition)
+			inputs[i].partitions[j].recordBatch.writeTo(wb)
+		})
+	})
 
 	return wb.Flush()
 }
@@ -498,7 +493,7 @@ func (wb *writeBuffer) writeRecordBatch(attributes int16, size int32, count int,
 	write(wb)
 }
 
-func compressMessageSet(codec CompressionCodec, msgs ...Message) (compressed *bytes.Buffer, attributes int8, size int32, err error) {
+func compressMessageSet(codec CompressionCodec, msgs ...Message) (compressed *bytes.Buffer, size int32, err error) {
 	compressed = acquireBuffer()
 	compressor := codec.NewWriter(compressed)
 	wb := &writeBuffer{w: compressor}
@@ -513,7 +508,6 @@ func compressMessageSet(codec CompressionCodec, msgs ...Message) (compressed *by
 		return
 	}
 
-	attributes = codec.Code()
 	size = messageSetSize(Message{Value: compressed.Bytes()})
 	return
 }
