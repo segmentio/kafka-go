@@ -350,7 +350,7 @@ func (r *messageSetReader) discardN(sz int) (err error) {
 
 func (r *messageSetReader) markRead() {
 	if r.count == 0 {
-		panic("markRead: negative count")
+		return
 	}
 	r.count--
 	r.unwindStack()
