@@ -271,10 +271,10 @@ func (r *Reader) commitLoopInterval(ctx context.Context, gen *Generation) {
 // commitLoop processes commits off the commit chan.
 func (r *Reader) commitLoop(ctx context.Context, gen *Generation) {
 	r.withLogger(func(l Logger) {
-		l.Printf("started commit for group %s\n", r.config.GroupID)
+		l.Printf("started commit for group %s", r.config.GroupID)
 	})
 	defer r.withLogger(func(l Logger) {
-		l.Printf("stopped commit for group %s\n", r.config.GroupID)
+		l.Printf("stopped commit for group %s", r.config.GroupID)
 	})
 
 	if r.useSyncCommits() {
@@ -293,7 +293,7 @@ func (r *Reader) run(cg *ConsumerGroup) {
 	defer cg.Close()
 
 	r.withLogger(func(l Logger) {
-		l.Printf("entering loop for consumer group, %v\n", r.config.GroupID)
+		l.Printf("entering loop for consumer group, %v", r.config.GroupID)
 	})
 
 	for {
