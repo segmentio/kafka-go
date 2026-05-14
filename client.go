@@ -42,6 +42,11 @@ type Client struct {
 	//
 	// If nil, DefaultTransport is used.
 	Transport RoundTripper
+
+	// Limit for message size, applied after compression stage.
+	//
+	// If zero, no limit is applied.
+	MaxMessageBytes int64
 }
 
 // A ConsumerGroup and Topic as these are both strings we define a type for
