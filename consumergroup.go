@@ -1161,8 +1161,12 @@ func (cg *ConsumerGroup) fetchOffsets(conn coordinator, subs map[string][]int32)
 
 	offsetsByTopic := make(map[string]map[int]int64)
 	for _, res := range offsets.Responses {
-		offsetsByPartition := map[int]int64{}
-		offsetsByTopic[res.Topic] = offsetsByPartition
+		offsetsByPartition, ok := offsetsByTopic[res.Topic]
+		if !ok {
+			offsetsByPartition = map[int]int64{}
+			offsetsByTopic[res.Topic] = offsetsByPartition
+		}
+
 		for _, pr := range res.PartitionResponses {
 			for _, partition := range subs[res.Topic] {
 				if partition == pr.Partition {
