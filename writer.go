@@ -124,6 +124,11 @@ type Writer struct {
 	// The default is to use a kafka default value of 1048576.
 	BatchBytes int64
 
+	// Setting this flag to true causes the writer to flush batches of messages
+	// either when the number of messages reaches BatchSize or when the number of
+	// unprocessed messages less than BatchSize.
+	BatchNoWait bool
+
 	// Time limit on how often incomplete message batches will be flushed to
 	// kafka.
 	//
@@ -1059,6 +1064,15 @@ func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*
 			batches[batch] = append(batches[batch], i)
 		}
 	}
+
+	// Useful for sync writers, where we want to flush the batch immediately
+	// if there are no more messages to write.
+	if ptw.w.BatchNoWait && ptw.currBatch != nil {
+		ptw.currBatch.trigger()
+		ptw.queue.Put(ptw.currBatch)
+		ptw.currBatch = nil
+	}
+
 	return batches
 }
 
