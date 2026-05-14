@@ -189,3 +189,15 @@ func (l *testKafkaLogger) Printf(msg string, args ...interface{}) {
 		l.T.Logf(msg, args...)
 	}
 }
+
+type testRebalanceEventCallback struct {
+	NoticeChan chan map[string][]PartitionAssignment
+}
+
+func newTestRebalanceEventCallback(c chan map[string][]PartitionAssignment) RebalanceEventInterceptor {
+	return &testRebalanceEventCallback{NoticeChan: c}
+}
+
+func (c *testRebalanceEventCallback) Callback(partitionAssignments map[string][]PartitionAssignment) {
+	c.NoticeChan <- partitionAssignments
+}
