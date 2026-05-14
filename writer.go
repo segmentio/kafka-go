@@ -1226,7 +1226,7 @@ func (b *writeBatch) add(msg Message, maxSize int, maxBytes int64) bool {
 	}
 
 	if cap(b.msgs) == 0 {
-		b.msgs = make([]Message, 0, maxSize)
+		b.msgs = make([]Message, 0)
 	}
 
 	b.msgs = append(b.msgs, msg)
