@@ -305,6 +305,7 @@ func TestDialerConnectTLSHonorsContext(t *testing.T) {
 
 func TestDialerResolver(t *testing.T) {
 	ctx := context.TODO()
+	runCompleteTest := true
 
 	tests := []struct {
 		scenario string
@@ -334,9 +335,9 @@ func TestDialerResolver(t *testing.T) {
 		},
 		{
 			scenario: "resolve domain with port to ip with different port",
-			address:  "example.com:9092",
+			address:  "example.com:9093",
 			resolver: map[string][]string{
-				"example.com": {"127.0.0.1:80"},
+				"example.com": {"127.0.0.1:9092"},
 			},
 		},
 		{
@@ -346,17 +347,32 @@ func TestDialerResolver(t *testing.T) {
 				"example.com": {"127.0.0.1"},
 			},
 		},
+		{
+			scenario: "resolve domain with port to ip without port",
+			address:  "example.com:9092",
+			resolver: map[string][]string{
+				"example.com": {"127.0.0.1:"},
+			},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
-			topic := makeTopic()
-			createTopic(t, topic, 1)
-			defer deleteTopic(t, topic)
-
 			d := Dialer{
 				Resolver: &mockResolver{addrs: test.resolver},
 			}
+
+			if resolverResult, _ := lookupHost(context.TODO(), test.address, d.Resolver); resolverResult != "127.0.0.1:9092" {
+				t.Errorf("bad resolver result, got %s expected %s", resolverResult, "127.0.0.1:9092")
+			}
+
+			if !runCompleteTest {
+				return
+			}
+
+			topic := makeTopic()
+			createTopic(t, topic, 1)
+			defer deleteTopic(t, topic)
 
 			// Write a message to ensure the partition gets created.
 			w := NewWriter(WriterConfig{

@@ -476,15 +476,18 @@ func lookupHost(ctx context.Context, address string, resolver Resolver) (string,
 		// if the resolver doesn't return anything, we'll fall back on the provided
 		// address instead
 		if len(resolved) > 0 {
-			resolvedHost, resolvedPort := splitHostPort(resolved[0])
-
-			// we'll always prefer the resolved host
-			host = resolvedHost
-
-			// in the case of port though, the provided address takes priority, and we
-			// only use the resolved address to set the port when not specified
-			if port == "" {
-				port = resolvedPort
+			resolvedHost, resolvedPort, err := net.SplitHostPort(resolved[0])
+			//errors
+			if err == nil {
+				//no error if "fully qualified" (host:[port])
+				if resolvedPort != "" {
+					//use explicitly set port
+					port = resolvedPort
+				}
+				host = resolvedHost
+			} else {
+				//fallback to resolved host
+				host = resolved[0]
 			}
 		}
 	}
