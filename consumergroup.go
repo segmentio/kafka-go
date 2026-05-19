@@ -941,6 +941,18 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	if err == nil && response.ErrorCode != 0 {
 		err = Error(response.ErrorCode)
 	}
+	// KIP-394: brokers may reject the initial JoinGroup with MEMBER_ID_REQUIRED
+	// and return a freshly assigned MemberID in the response. Complete the
+	// handshake by re-sending the request with that ID. The second attempt is
+	// the only retry — any further MEMBER_ID_REQUIRED falls through to the
+	// regular error path so we cannot loop here.
+	if errors.Is(err, MemberIDRequired) && response.MemberID != "" {
+		request.MemberID = response.MemberID
+		response, err = conn.joinGroup(request)
+		if err == nil && response.ErrorCode != 0 {
+			err = Error(response.ErrorCode)
+		}
+	}
 	if err != nil {
 		return "", 0, nil, err
 	}

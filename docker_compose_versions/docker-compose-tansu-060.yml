@@ -1,0 +1,33 @@
+# Tansu — Apache Kafka®-compatible broker (Rust, single binary).
+# Used to regression-test KIP-394 (MEMBER_ID_REQUIRED handshake) since
+# Tansu enforces it strictly across JoinGroup versions, unlike Apache Kafka
+# which only enforces on v4+.
+#
+# Known semantic differences vs. Apache Kafka (see `ktesting.IsTansu` for
+# the canonical list and the test branches gated on it):
+#   - generation_id is not bumped on soft rejoin of an existing dynamic
+#     member; Apache Kafka bumps on every JoinGroup from an existing member.
+#     Run tests with KAFKA_VERSION=tansu-0.6.0 so the affected assertions
+#     downgrade to log lines instead of failures.
+#
+# See:
+#   https://github.com/tansu-io/tansu
+#   https://github.com/segmentio/kafka-go/issues/1432
+version: '3'
+services:
+  tansu:
+    container_name: tansu
+    image: ghcr.io/tansu-io/tansu:0.6.0
+    restart: on-failure:3
+    ports:
+      - 9092:9092
+    environment:
+      RUST_LOG: info
+    # All flags below match the defaults documented by `tansu --help`,
+    # but are spelled out explicitly so the compose file documents the
+    # broker's exposed surface for kafka-go tests.
+    command:
+      - --kafka-cluster-id=kafka-go-tansu-test
+      - --kafka-listener-url=tcp://0.0.0.0:9092/
+      - --kafka-advertised-listener-url=tcp://localhost:9092/
+      - --storage-engine=memory://tansu/
