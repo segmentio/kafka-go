@@ -191,6 +191,46 @@ jobs:
   #       KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-512
   #   steps: *steps
 
+  # Tansu is an Apache Kafka®-compatible broker (Rust, single binary) that
+  # enforces KIP-394 (MEMBER_ID_REQUIRED) strictly across JoinGroup versions.
+  # This job is the regression guard for that handshake and runs a targeted
+  # subset of the suite. Tansu 0.6.0 lacks features other tests depend on
+  # (notably broker-side auto.create.topics.enable), so the full suite is not
+  # exercised here; broadening the scope is tracked as a follow-up.
+  tansu-060:
+    working_directory: *working_directory
+    environment:
+      KAFKA_VERSION: "tansu-0.6.0"
+    docker:
+    - image: circleci/golang
+    - image: ghcr.io/tansu-io/tansu:0.6.0
+      ports:
+      - 9092:9092
+      environment:
+        RUST_LOG: info
+      command:
+      - --kafka-cluster-id=kafka-go-tansu-test
+      - --kafka-listener-url=tcp://0.0.0.0:9092/
+      - --kafka-advertised-listener-url=tcp://localhost:9092/
+      - --storage-engine=memory://tansu/
+    steps:
+    - checkout
+    - restore_cache:
+        key: kafka-go-mod-{{ checksum "go.sum" }}-1
+    - run:
+        name: Download dependencies
+        command: go mod download
+    - save_cache:
+        key: kafka-go-mod-{{ checksum "go.sum" }}-1
+        paths:
+        - /go/pkg/mod
+    - run:
+        name: Wait for Tansu
+        command: ./scripts/wait-for-kafka.sh
+    - run:
+        name: Test KIP-394 regression scenarios
+        command: go test -race -count=1 -timeout 120s -run 'TestConsumerGroupJoinGroupHandshake|^TestConsumerGroup$' .
+
 workflows:
   version: 2
   run:
@@ -198,5 +238,6 @@ workflows:
     - lint
     - kafka-270
     - kafka-281
-    - kafka-370 
+    - kafka-370
+    - tansu-060
     #- kafka-400

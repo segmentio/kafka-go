@@ -390,7 +390,9 @@ func (c *Conn) joinGroup(request joinGroupRequest) (joinGroupResponse, error) {
 		return joinGroupResponse{}, err
 	}
 	if response.ErrorCode != 0 {
-		return joinGroupResponse{}, Error(response.ErrorCode)
+		// Preserve the response so callers can inspect fields like MemberID
+		// (needed for the KIP-394 MEMBER_ID_REQUIRED two-step handshake).
+		return response, Error(response.ErrorCode)
 	}
 
 	return response, nil
