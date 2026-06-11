@@ -5,12 +5,14 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/segmentio/kafka-go/protocol"
 	"github.com/segmentio/kafka-go/protocol/createtopics"
 	meta "github.com/segmentio/kafka-go/protocol/metadata"
+	produceAPI "github.com/segmentio/kafka-go/protocol/produce"
 )
 
 func TestIssue477(t *testing.T) {
@@ -302,5 +304,152 @@ func TestIssue806(t *testing.T) {
 	_, ok := r.(*meta.Response)
 	if !ok {
 		t.Fatalf("expected a meta.Response but got %T", r)
+	}
+}
+
+// TestRoundTripRefreshesMetadataOnStaleError verifies that a Produce response
+// carrying a stale-metadata error code (e.g. NotLeaderForPartition) triggers an
+// asynchronous metadata refresh so the next attempt can be routed to the new
+// partition leader.
+func TestRoundTripRefreshesMetadataOnStaleError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	const topic = "topic"
+
+	ready := make(chan struct{})
+	close(ready)
+
+	// A buffered wake channel lets requestMetadataUpdate's non-blocking send
+	// succeed without a concurrent reader, making the assertion deterministic.
+	wake := make(chan event, 1)
+
+	// Resolve the produce request with a NotLeaderForPartition error.
+	requests := make(chan connRequest, 1)
+	defer close(requests)
+	go func() {
+		request := <-requests
+		request.res.resolve(&produceAPI.Response{
+			Topics: []produceAPI.ResponseTopic{{
+				Topic: topic,
+				Partitions: []produceAPI.ResponsePartition{{
+					Partition: 0,
+					ErrorCode: int16(NotLeaderForPartition),
+				}},
+			}},
+		})
+	}()
+
+	pool := &connPool{
+		ready: ready,
+		wake:  wake,
+		conns: map[int32]*connGroup{},
+	}
+
+	pool.setState(connPoolState{
+		layout: protocol.Cluster{
+			Brokers: map[int32]protocol.Broker{
+				0: {ID: 0},
+			},
+			Topics: map[string]protocol.Topic{
+				topic: {
+					Name: topic,
+					Partitions: map[int32]protocol.Partition{
+						0: {ID: 0, Leader: 0},
+					},
+				},
+			},
+		},
+	})
+
+	// Produce requests are routed to the partition leader (broker 0).
+	pool.conns[0] = &connGroup{
+		pool:   pool,
+		broker: Broker{ID: 0},
+		idleConns: []*conn{
+			{
+				reqs: requests,
+			},
+		},
+	}
+
+	r, err := pool.roundTrip(ctx, &produceAPI.Request{
+		Topics: []produceAPI.RequestTopic{{
+			Topic: topic,
+			Partitions: []produceAPI.RequestPartition{{
+				Partition: 0,
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error from roundTrip: %v", err)
+	}
+	if _, ok := r.(*produceAPI.Response); !ok {
+		t.Fatalf("expected a produce.Response but got %T", r)
+	}
+
+	select {
+	case <-wake:
+		// expected: a metadata refresh was requested.
+	default:
+		t.Fatal("expected a metadata refresh to be requested after a stale-metadata produce error")
+	}
+}
+
+// TestRequestMetadataUpdateNonBlocking verifies that requestMetadataUpdate never
+// blocks the caller, even when no consumer is reading from the wake channel.
+func TestRequestMetadataUpdateNonBlocking(t *testing.T) {
+	pool := &connPool{
+		wake: make(chan event), // unbuffered, with no reader
+	}
+
+	done := make(chan struct{})
+	go func() {
+		pool.requestMetadataUpdate()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// expected: the call returned without blocking.
+	case <-time.After(time.Second):
+		t.Fatal("requestMetadataUpdate blocked when no consumer was reading the wake channel")
+	}
+}
+
+// TestRequestMetadataUpdateThrottled verifies that consecutive refresh requests
+// are throttled: only one wake is emitted per metadataRefreshThrottle window,
+// even when many callers race, bounding the load on the cluster.
+func TestRequestMetadataUpdateThrottled(t *testing.T) {
+	// Buffered so each accepted request is recorded without a reader.
+	wake := make(chan event, 8)
+	pool := &connPool{wake: wake}
+
+	const callers = 50
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			defer wg.Done()
+			pool.requestMetadataUpdate()
+		}()
+	}
+	wg.Wait()
+
+	if got := len(wake); got != 1 {
+		t.Fatalf("expected a single metadata refresh within the throttle window, got %d", got)
+	}
+
+	// A second burst within the window must be throttled out.
+	pool.requestMetadataUpdate()
+	if got := len(wake); got != 1 {
+		t.Fatalf("expected refreshes within the throttle window to be dropped, got %d", got)
+	}
+
+	// Simulating an elapsed window allows a new refresh.
+	pool.lastMetadataRefresh.Store(time.Now().Add(-2 * metadataRefreshThrottle).UnixNano())
+	pool.requestMetadataUpdate()
+	if got := len(wake); got != 2 {
+		t.Fatalf("expected a new metadata refresh after the throttle window elapsed, got %d", got)
 	}
 }

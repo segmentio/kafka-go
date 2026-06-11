@@ -296,6 +296,9 @@ type connPool struct {
 	ready  event      // triggered after the first metadata update
 	wake   chan event // used to force metadata updates
 	cancel context.CancelFunc
+	// Unix-nanos timestamp of the last error-triggered metadata refresh
+	// request, used to throttle refreshes under cascading failures.
+	lastMetadataRefresh atomic.Int64
 	// Mutable fields of the connection pool, access must be synchronized.
 	mutex sync.RWMutex
 	conns map[int32]*connGroup // data connections used for produce/fetch/etc...
@@ -398,7 +401,18 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 
 	r, err := response.await(ctx)
 	if err != nil {
+		// A communication or routing error likely means the cached cluster
+		// view is stale; refresh it so retries reach the right brokers.
+		if errorRequiresMetadataRefresh(err) {
+			p.requestMetadataUpdate()
+		}
 		return r, err
+	}
+
+	// A successful response may still report per-partition errors that
+	// indicate stale metadata (e.g. the partition leader moved).
+	if responseRequiresMetadataRefresh(r) {
+		p.requestMetadataUpdate()
 	}
 
 	switch resp := r.(type) {
@@ -440,6 +454,31 @@ func (p *connPool) roundTrip(ctx context.Context, req Request) (Response, error)
 	}
 
 	return r, nil
+}
+
+// metadataRefreshThrottle is the minimum interval between two error-triggered
+// metadata refreshes. It bounds the load on the cluster when many round trips
+// fail in cascade.
+const metadataRefreshThrottle = time.Second
+
+// requestMetadataUpdate triggers an asynchronous refresh of the cached cluster
+// metadata without blocking the caller. The discover goroutine performs the
+// refresh on its next iteration. Requests are coalesced and throttled to at
+// most one per metadataRefreshThrottle to avoid storming the brokers under
+// cascading failures.
+func (p *connPool) requestMetadataUpdate() {
+	now := time.Now().UnixNano()
+	last := p.lastMetadataRefresh.Load()
+	if now-last < int64(metadataRefreshThrottle) {
+		return
+	}
+	if !p.lastMetadataRefresh.CompareAndSwap(last, now) {
+		return
+	}
+	select {
+	case p.wake <- make(event):
+	default:
+	}
 }
 
 // refreshMetadata forces an update of the cached cluster metadata, and waits
