@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -447,7 +448,7 @@ func TestRequestMetadataUpdateThrottled(t *testing.T) {
 	}
 
 	// Simulating an elapsed window allows a new refresh.
-	pool.lastMetadataRefresh.Store(time.Now().Add(-2 * metadataRefreshThrottle).UnixNano())
+	atomic.StoreInt64(&pool.lastMetadataRefresh, time.Now().Add(-2*metadataRefreshThrottle).UnixNano())
 	pool.requestMetadataUpdate()
 	if got := len(wake); got != 2 {
 		t.Fatalf("expected a new metadata refresh after the throttle window elapsed, got %d", got)

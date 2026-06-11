@@ -298,7 +298,7 @@ type connPool struct {
 	cancel context.CancelFunc
 	// Unix-nanos timestamp of the last error-triggered metadata refresh
 	// request, used to throttle refreshes under cascading failures.
-	lastMetadataRefresh atomic.Int64
+	lastMetadataRefresh int64
 	// Mutable fields of the connection pool, access must be synchronized.
 	mutex sync.RWMutex
 	conns map[int32]*connGroup // data connections used for produce/fetch/etc...
@@ -468,11 +468,11 @@ const metadataRefreshThrottle = time.Second
 // cascading failures.
 func (p *connPool) requestMetadataUpdate() {
 	now := time.Now().UnixNano()
-	last := p.lastMetadataRefresh.Load()
+	last := atomic.LoadInt64(&p.lastMetadataRefresh)
 	if now-last < int64(metadataRefreshThrottle) {
 		return
 	}
-	if !p.lastMetadataRefresh.CompareAndSwap(last, now) {
+	if !atomic.CompareAndSwapInt64(&p.lastMetadataRefresh, last, now) {
 		return
 	}
 	select {
