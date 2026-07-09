@@ -10,7 +10,7 @@ import (
 )
 
 // CreatePartitionsRequest represents a request sent to a kafka broker to create
-// and update topic parititions.
+// and update topic partitions.
 type CreatePartitionsRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr

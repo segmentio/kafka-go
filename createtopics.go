@@ -108,7 +108,7 @@ func (t createTopicsRequestV0ConfigEntry) writeTo(wb *writeBuffer) {
 type ReplicaAssignment struct {
 	Partition int
 	// The list of brokers where the partition should be allocated. There must
-	// be as many entries in thie list as there are replicas of the partition.
+	// be as many entries in the list as there are replicas of the partition.
 	// The first entry represents the broker that will be the preferred leader
 	// for the partition.
 	//

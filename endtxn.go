@@ -9,7 +9,7 @@ import (
 	"github.com/segmentio/kafka-go/protocol/endtxn"
 )
 
-// EndTxnRequest represets a request sent to a kafka broker to end a transaction.
+// EndTxnRequest represents a request sent to a kafka broker to end a transaction.
 type EndTxnRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
@@ -27,7 +27,7 @@ type EndTxnRequest struct {
 	Committed bool
 }
 
-// EndTxnResponse represents a resposne from a kafka broker to an end transaction request.
+// EndTxnResponse represents a response from a kafka broker to an end transaction request.
 type EndTxnResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration

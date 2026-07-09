@@ -40,7 +40,7 @@ type SyncGroupRequest struct {
 	Assignments []SyncGroupRequestAssignment
 }
 
-// SyncGroupRequestAssignment represents an assignement for a goroup memeber.
+// SyncGroupRequestAssignment represents an assignment for a group member.
 type SyncGroupRequestAssignment struct {
 	// The ID of the member to assign.
 	MemberID string
@@ -70,12 +70,12 @@ type SyncGroupResponse struct {
 	Assignment GroupProtocolAssignment
 }
 
-// GroupProtocolAssignment represents an assignment of topics and partitions for a group memeber.
+// GroupProtocolAssignment represents an assignment of topics and partitions for a group member.
 type GroupProtocolAssignment struct {
-	// The topics and partitions assigned to the group memeber.
+	// The topics and partitions assigned to the group member.
 	AssignedPartitions map[string][]int
 
-	// UserData for the assignemnt.
+	// UserData for the assignment.
 	UserData []byte
 }
 

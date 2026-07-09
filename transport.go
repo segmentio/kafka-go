@@ -1200,7 +1200,7 @@ func (g *connGroup) connect(ctx context.Context, addr net.Addr) (*conn, error) {
 	ver := make(map[protocol.ApiKey]int16, len(res.ApiKeys))
 
 	if res.ErrorCode != 0 {
-		return nil, fmt.Errorf("negotating API versions with kafka broker at %s: %w", g.addr, Error(res.ErrorCode))
+		return nil, fmt.Errorf("negotiating API versions with kafka broker at %s: %w", g.addr, Error(res.ErrorCode))
 	}
 
 	for _, r := range res.ApiKeys {

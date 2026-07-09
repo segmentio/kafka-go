@@ -18,7 +18,7 @@ const (
 	defaultMaxWait                 = 500 * time.Millisecond
 )
 
-// Client is a high-level API to interract with kafka brokers.
+// Client is a high-level API to interact with kafka brokers.
 //
 // All methods of the Client type accept a context as first argument, which may
 // be used to asynchronously cancel the requests.
