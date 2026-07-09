@@ -16,7 +16,7 @@ type AddPartitionToTxn struct {
 	Partition int
 }
 
-// AddPartitionsToTxnRequest is the request structure fo the AddPartitionsToTxn function.
+// AddPartitionsToTxnRequest is the request structure for the AddPartitionsToTxn function.
 type AddPartitionsToTxnRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr

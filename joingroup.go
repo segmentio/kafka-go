@@ -54,7 +54,7 @@ type GroupProtocolSubscription struct {
 	// The Topics to subscribe to.
 	Topics []string
 
-	// UserData assosiated with the subscription for the given protocol
+	// UserData associated with the subscription for the given protocol
 	UserData []byte
 
 	// Partitions owned by this consumer.
@@ -91,9 +91,9 @@ type JoinGroupResponse struct {
 	Members []JoinGroupResponseMember
 }
 
-// JoinGroupResponseMember represents a group memmber in a reponse to a JoinGroup request.
+// JoinGroupResponseMember represents a group member in a response to a JoinGroup request.
 type JoinGroupResponseMember struct {
-	// The group memmber ID.
+	// The group member ID.
 	ID string
 
 	// The unique identifier of the consumer instance.

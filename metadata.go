@@ -115,7 +115,7 @@ func (r topicMetadataRequestV1) size() int32 {
 
 func (r topicMetadataRequestV1) writeTo(wb *writeBuffer) {
 	// communicate nil-ness to the broker by passing -1 as the array length.
-	// for this particular request, the broker interpets a zero length array
+	// for this particular request, the broker interprets a zero length array
 	// as a request for no topics whereas a nil array is for all topics.
 	if r == nil {
 		wb.writeArrayLen(-1)
@@ -211,7 +211,7 @@ func (r topicMetadataRequestV6) size() int32 {
 
 func (r topicMetadataRequestV6) writeTo(wb *writeBuffer) {
 	// communicate nil-ness to the broker by passing -1 as the array length.
-	// for this particular request, the broker interpets a zero length array
+	// for this particular request, the broker interprets a zero length array
 	// as a request for no topics whereas a nil array is for all topics.
 	if r.Topics == nil {
 		wb.writeArrayLen(-1)

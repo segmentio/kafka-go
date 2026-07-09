@@ -459,7 +459,7 @@ type Partition struct {
 	Offline  []int32
 }
 
-// RawExchanger is an extention to the Message interface to allow messages
+// RawExchanger is an extension to the Message interface to allow messages
 // to control the request response cycle for the message. This is currently
 // only used to facilitate v0 SASL Authenticate requests being written in
 // a non-standard fashion when the SASL Handshake was done at v0 but not

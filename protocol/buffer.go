@@ -71,7 +71,7 @@ func (rc *refCount) unref(onZero func()) {
 }
 
 const (
-	// Size of the memory buffer for a single page. We use a farily
+	// Size of the memory buffer for a single page. We use a fairly
 	// large size here (64 KiB) because batches exchanged with kafka
 	// tend to be multiple kilobytes in size, sometimes hundreds.
 	// Using large pages amortizes the overhead of the page metadata
