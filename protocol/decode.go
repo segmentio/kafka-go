@@ -110,8 +110,9 @@ func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeF
 	if n := d.readInt32(); n < 0 {
 		v.setArray(array{})
 	} else {
-		a := makeArray(elemType, int(n))
-		for i := 0; i < int(n) && d.remain > 0; i++ {
+		count := boundArrayLen(int(n), d.remain)
+		a := makeArray(elemType, count)
+		for i := 0; i < count && d.remain > 0; i++ {
 			decodeElem(d, a.index(i))
 		}
 		v.setArray(a)
@@ -122,12 +123,25 @@ func (d *decoder) decodeCompactArray(v value, elemType reflect.Type, decodeElem 
 	if n := d.readUnsignedVarInt(); n < 1 {
 		v.setArray(array{})
 	} else {
-		a := makeArray(elemType, int(n-1))
-		for i := 0; i < int(n-1) && d.remain > 0; i++ {
+		count := boundArrayLen(int(n-1), d.remain)
+		a := makeArray(elemType, count)
+		for i := 0; i < count && d.remain > 0; i++ {
 			decodeElem(d, a.index(i))
 		}
 		v.setArray(a)
 	}
+}
+
+// boundArrayLen clamps a decoded array length to the number of bytes left in
+// the frame. Every encoded element occupies at least one byte, so a length
+// greater than remain can only come from a malformed or non-Kafka response;
+// allocating an array of that size would let an untrusted length field drive
+// unbounded memory allocation before a single element is validated.
+func boundArrayLen(n, remain int) int {
+	if n > remain {
+		return remain
+	}
+	return n
 }
 
 func (d *decoder) discardAll() {
