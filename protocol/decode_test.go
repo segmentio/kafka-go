@@ -26,13 +26,13 @@ func TestDecodeArrayMalformedLengthDoesNotOOM(t *testing.T) {
 	binary.BigEndian.PutUint32(buf, uint32(1<<31-1)) // math.MaxInt32 elements
 	d := newTestDecoder(buf)
 
-	v := valueOf(new([]int32))
-	d.decodeArray(v, reflect.TypeOf(int32(0)), (*decoder).decodeInt32)
+	p := new([]int32)
+	d.decodeArray(valueOf(p), reflect.TypeOf(int32(0)), (*decoder).decodeInt32)
 
 	if d.remain != 0 {
 		t.Fatalf("expected all bytes consumed, got remain=%d", d.remain)
 	}
-	if n := v.val.Len(); n > len(buf) {
+	if n := len(*p); n > len(buf) {
 		t.Fatalf("array length %d was not bounded to the %d bytes available in the frame", n, len(buf))
 	}
 }
@@ -43,10 +43,10 @@ func TestDecodeCompactArrayMalformedLengthDoesNotOOM(t *testing.T) {
 	buf := []byte{0xff, 0xff, 0xff, 0xff, 0x0f} // unsigned varint for MaxUint32
 	d := newTestDecoder(buf)
 
-	v := valueOf(new([]int32))
-	d.decodeCompactArray(v, reflect.TypeOf(int32(0)), (*decoder).decodeInt32)
+	p := new([]int32)
+	d.decodeCompactArray(valueOf(p), reflect.TypeOf(int32(0)), (*decoder).decodeInt32)
 
-	if n := v.val.Len(); n > len(buf) {
+	if n := len(*p); n > len(buf) {
 		t.Fatalf("array length %d was not bounded to the %d bytes available in the frame", n, len(buf))
 	}
 }
