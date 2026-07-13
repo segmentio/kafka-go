@@ -44,7 +44,7 @@ in the Kafka API may not yet be implemented in the client.
 
 ## Go versions
 
-`kafka-go` requires Go version 1.15 or later.
+`kafka-go` requires Go version 1.23 or later.
 
 ## Connection [![GoDoc](https://godoc.org/github.com/segmentio/kafka-go?status.svg)](https://godoc.org/github.com/segmentio/kafka-go#Conn)
 
@@ -372,7 +372,7 @@ if err := w.Close(); err != nil {
 ```go
 // Make a writer that publishes messages to topic-A.
 // The topic will be created if it is missing.
-w := &Writer{
+w := &kafka.Writer{
     Addr:                   kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
     Topic:                  "topic-A",
     AllowAutoTopicCreation: true,
@@ -580,7 +580,9 @@ w := kafka.Writer{
     }
 ```
 
-Using `kafka.NewWriter`
+Using `kafka.NewWriter` (Deprecated)
+
+> **Note:** `kafka.NewWriter` and `kafka.WriterConfig` are deprecated and will be removed in a future release. Use the `kafka.Writer{}` struct directly, as shown above, instead.
 
 ```go
 dialer := &kafka.Dialer{
@@ -596,7 +598,6 @@ w := kafka.NewWriter(kafka.WriterConfig{
 	Dialer:   dialer,
 })
 ```
-Note that `kafka.NewWriter` and `kafka.WriterConfig` are deprecated and will be removed in a future release.
 
 ## SASL Support
 
