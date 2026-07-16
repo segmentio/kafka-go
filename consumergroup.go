@@ -941,6 +941,15 @@ func (cg *ConsumerGroup) joinGroup(conn coordinator, memberID string) (string, i
 	if err == nil && response.ErrorCode != 0 {
 		err = Error(response.ErrorCode)
 	}
+	// KIP-394: if the broker requires a member ID before allowing the
+	// consumer to join the group, retry the join with the assigned member ID.
+	if err == MemberIDRequired {
+		request.MemberID = response.MemberID
+		response, err = conn.joinGroup(request)
+		if err == nil && response.ErrorCode != 0 {
+			err = Error(response.ErrorCode)
+		}
+	}
 	if err != nil {
 		return "", 0, nil, err
 	}
