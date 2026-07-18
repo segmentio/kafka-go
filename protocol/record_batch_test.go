@@ -1,7 +1,10 @@
 package protocol
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"io"
 	"reflect"
 	"testing"
@@ -135,6 +138,58 @@ func TestControlRecord(t *testing.T) {
 
 	if !reflect.DeepEqual(records, found) {
 		t.Error("control records mismatch")
+	}
+}
+
+// TestRecordSetNegativeRecordCount verifies that a v2 record batch reporting
+// a negative record count is rejected with an error instead of panicking in
+// make([]optimizedRecord, numRecords). A broker (or any other party that can
+// influence the bytes on the wire) sending such a batch would otherwise crash
+// the client.
+func TestRecordSetNegativeRecordCount(t *testing.T) {
+	rs := &RecordSet{
+		Version: 2,
+		Records: NewRecordReader(Record{
+			Offset: 0,
+			Key:    NewBytes([]byte("key")),
+			Value:  NewBytes([]byte("value")),
+		}),
+	}
+
+	buf := &bytes.Buffer{}
+	if _, err := rs.WriteTo(buf); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.Bytes()
+
+	// Layout (relative to the 4-byte size prefix written by WriteTo):
+	//   [0:4]   size prefix
+	//   [4:12]  base offset
+	//   [12:16] batch length
+	//   [16:20] partition leader epoch
+	//   [20]    magic byte
+	//   [21:25] crc32
+	//   [25:...] attributes, ..., numRecords, records (crc-protected region)
+	const batchStart = 4
+	const crcOffset = batchStart + 17
+	const crcProtectedStart = batchStart + 21
+	const numRecordsOffset = batchStart + 57
+
+	negativeOne := int32(-1)
+	binary.BigEndian.PutUint32(raw[numRecordsOffset:], uint32(negativeOne))
+
+	crc := crc32.Checksum(raw[crcProtectedStart:], crc32.MakeTable(crc32.Castagnoli))
+	binary.BigEndian.PutUint32(raw[crcOffset:], crc)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("reading a record batch with a negative record count panicked: %v", r)
+		}
+	}()
+
+	out := &RecordSet{}
+	if _, err := out.ReadFrom(bytes.NewReader(raw)); err == nil {
+		t.Fatal("expected an error reading a record batch with a negative record count, got nil")
 	}
 }
 

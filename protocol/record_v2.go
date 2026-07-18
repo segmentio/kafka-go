@@ -66,6 +66,10 @@ func (rs *RecordSet) readFromVersion2(d *decoder) error {
 	dec.reader = buffer
 	dec.remain = recordsLength
 
+	if numRecords < 0 {
+		return Errorf("invalid negative record count in record batch (%d)", numRecords)
+	}
+
 	records := make([]optimizedRecord, numRecords)
 	// These are two lazy allocators that will be used to optimize allocation of
 	// page references for keys and values.
