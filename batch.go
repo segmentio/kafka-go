@@ -278,17 +278,33 @@ func (batch *Batch) readMessage(
 			// - `batch.err` for a "success" from the previous timeout check
 			// - `batch.msgs.lengthRemain` to ensure that this EOF is not due
 			//   to MaxBytes truncation
-			// - `batch.lastOffset` to ensure that the message format contains
-			//   `lastOffset`
-			if errors.Is(batch.err, io.EOF) && batch.msgs.lengthRemain == 0 && batch.lastOffset != -1 {
-				// Log compaction can create batches that end with compacted
-				// records so the normal strategy that increments the "next"
-				// offset as records are read doesn't work as the compacted
-				// records are "missing" and never get "read".
+			if errors.Is(batch.err, io.EOF) && batch.msgs.lengthRemain == 0 {
+				// Two things leave offsets behind that no returned message
+				// accounted for, and both are resolved by resuming past the
+				// highest offset the reader is known to have consumed:
 				//
-				// In order to reliably reach the next non-compacted offset we
-				// jump past the saved lastOffset.
-				batch.offset = batch.lastOffset + 1
+				//   - Log compaction can create batches that end with compacted
+				//     records so the normal strategy that increments the "next"
+				//     offset as records are read doesn't work as the compacted
+				//     records are "missing" and never get "read". In order to
+				//     reliably reach the next non-compacted offset we jump past
+				//     the saved lastOffset, which is -1 when the message format
+				//     does not carry one.
+				//   - Control batches and batches belonging to aborted
+				//     transactions are consumed without being returned. Leaving
+				//     their offsets behind would mean fetching the same batches
+				//     again and never making progress.
+				//
+				// The offset only ever moves forward here: a response that
+				// returned no message at all must not rewind the partition.
+				next := batch.offset
+				if batch.lastOffset != -1 && batch.lastOffset+1 > next {
+					next = batch.lastOffset + 1
+				}
+				if skipped := batch.msgs.lastSkippedOffset; skipped+1 > next {
+					next = skipped + 1
+				}
+				batch.offset = next
 			}
 		}
 	default:

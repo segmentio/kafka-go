@@ -715,10 +715,10 @@ type readerHelper struct {
 
 func newReaderHelper(t *testing.T, bs []byte) (r *readerHelper, err error) {
 	bufReader := bufio.NewReader(bytes.NewReader(bs))
-	_, _, remain, err := readFetchResponseHeaderV10(bufReader, len(bs))
+	_, _, remain, aborted, err := readFetchResponseHeaderV10(bufReader, len(bs))
 	require.NoError(t, err)
 	var msgs *messageSetReader
-	msgs, err = newMessageSetReader(bufReader, remain)
+	msgs, err = newMessageSetReader(bufReader, remain, aborted)
 	if err != nil {
 		return
 	}
