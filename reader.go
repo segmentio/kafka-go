@@ -510,6 +510,9 @@ type ReaderConfig struct {
 	// IsolationLevel controls the visibility of transactional records.
 	// ReadUncommitted makes all records visible. With ReadCommitted only
 	// non-transactional and committed records are visible.
+	//
+	// Defaults to ReadUncommitted, matching Kafka's own default. See the
+	// IsolationLevel constants for the trade-off ReadCommitted carries.
 	IsolationLevel IsolationLevel
 
 	// Limit of how many attempts to connect will be made before returning the error.
@@ -1532,6 +1535,15 @@ func (r *reader) read(ctx context.Context, offset int64, conn *Conn) (int64, err
 
 		size++
 		bytes += n
+	}
+
+	// The tail of a response can be control batches or batches from aborted
+	// transactions, which are consumed without producing a message. The batch
+	// tracked those offsets, so take its position when it is ahead of the last
+	// message read; otherwise a reconnect would resume before them and redeliver
+	// everything in between.
+	if o := batch.Offset(); o > offset {
+		offset = o
 	}
 
 	conn.SetReadDeadline(time.Time{})

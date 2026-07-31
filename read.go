@@ -304,7 +304,20 @@ func readSlice(r *bufio.Reader, sz int, v reflect.Value) (int, error) {
 	return sz, nil
 }
 
-func readFetchResponseHeaderV2(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, err error) {
+// abortedTransaction is one entry of the aborted transaction list a broker
+// returns in a fetch response. The broker only populates the list when the
+// request asked for ReadCommitted; it bounds the response at the last stable
+// offset and leaves it to the client to drop the records these entries point
+// at.
+//
+// The fields have to stay exported and in this order: readStruct reads them
+// positionally through reflection, which cannot address unexported fields.
+type abortedTransaction struct {
+	ProducerID  int64
+	FirstOffset int64
+}
+
+func readFetchResponseHeaderV2(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, aborted []abortedTransaction, err error) {
 	var n int32
 	var p struct {
 		Partition           int32
@@ -366,12 +379,8 @@ func readFetchResponseHeaderV2(r *bufio.Reader, size int) (throttle int32, water
 	return
 }
 
-func readFetchResponseHeaderV5(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, err error) {
+func readFetchResponseHeaderV5(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, aborted []abortedTransaction, err error) {
 	var n int32
-	type AbortedTransaction struct {
-		ProducerId  int64
-		FirstOffset int64
-	}
 	var p struct {
 		Partition           int32
 		ErrorCode           int16
@@ -380,7 +389,6 @@ func readFetchResponseHeaderV5(r *bufio.Reader, size int) (throttle int32, water
 		LogStartOffset      int64
 	}
 	var messageSetSize int32
-	var abortedTransactions []AbortedTransaction
 
 	if remain, err = readInt32(r, size, &throttle); err != nil {
 		return
@@ -424,12 +432,12 @@ func readFetchResponseHeaderV5(r *bufio.Reader, size int) (throttle int32, water
 		return
 	}
 
-	if abortedTransactionLen == -1 {
-		abortedTransactions = nil
-	} else {
-		abortedTransactions = make([]AbortedTransaction, abortedTransactionLen)
+	// A length of -1 is the protocol's null array, and a length of 0 is an
+	// empty one; neither leaves anything for the reader to filter.
+	if abortedTransactionLen > 0 {
+		aborted = make([]abortedTransaction, abortedTransactionLen)
 		for i := 0; i < abortedTransactionLen; i++ {
-			if remain, err = read(r, remain, &abortedTransactions[i]); err != nil {
+			if remain, err = read(r, remain, &aborted[i]); err != nil {
 				return
 			}
 		}
@@ -457,13 +465,9 @@ func readFetchResponseHeaderV5(r *bufio.Reader, size int) (throttle int32, water
 
 }
 
-func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, err error) {
+func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, watermark int64, remain int, aborted []abortedTransaction, err error) {
 	var n int32
 	var errorCode int16
-	type AbortedTransaction struct {
-		ProducerId  int64
-		FirstOffset int64
-	}
 	var p struct {
 		Partition           int32
 		ErrorCode           int16
@@ -472,7 +476,6 @@ func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, wate
 		LogStartOffset      int64
 	}
 	var messageSetSize int32
-	var abortedTransactions []AbortedTransaction
 
 	if remain, err = readInt32(r, size, &throttle); err != nil {
 		return
@@ -528,12 +531,12 @@ func readFetchResponseHeaderV10(r *bufio.Reader, size int) (throttle int32, wate
 		return
 	}
 
-	if abortedTransactionLen == -1 {
-		abortedTransactions = nil
-	} else {
-		abortedTransactions = make([]AbortedTransaction, abortedTransactionLen)
+	// A length of -1 is the protocol's null array, and a length of 0 is an
+	// empty one; neither leaves anything for the reader to filter.
+	if abortedTransactionLen > 0 {
+		aborted = make([]abortedTransaction, abortedTransactionLen)
 		for i := 0; i < abortedTransactionLen; i++ {
-			if remain, err = read(r, remain, &abortedTransactions[i]); err != nil {
+			if remain, err = read(r, remain, &aborted[i]); err != nil {
 				return
 			}
 		}

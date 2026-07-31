@@ -114,6 +114,9 @@ type ReadBatchConfig struct {
 	// IsolationLevel controls the visibility of transactional records.
 	// ReadUncommitted makes all records visible. With ReadCommitted only
 	// non-transactional and committed records are visible.
+	//
+	// Defaults to ReadUncommitted, matching Kafka's own default. See the
+	// IsolationLevel constants for the trade-off ReadCommitted carries.
 	IsolationLevel IsolationLevel
 
 	// MaxWait is the amount of time for the broker while waiting to hit the
@@ -125,11 +128,33 @@ type ReadBatchConfig struct {
 	MaxWait time.Duration
 }
 
+// IsolationLevel controls which transactional records a consumer is shown.
+//
+// Transaction markers are hidden at both levels: they are bookkeeping written
+// by the transaction coordinator, not records, and the protocol requires that
+// clients never surface them.
 type IsolationLevel int8
 
 const (
+	// ReadUncommitted returns every record, including those written by a
+	// transaction that has not committed and those written by one that
+	// aborted. This is the zero value, and matches Kafka's own default.
 	ReadUncommitted IsolationLevel = 0
-	ReadCommitted   IsolationLevel = 1
+
+	// ReadCommitted returns only non-transactional records and records from
+	// committed transactions.
+	//
+	// Two things are worth knowing before choosing it:
+	//
+	// It requires a broker supporting version 4 or above of the Fetch API
+	// (Kafka 0.11 and later). Against an older broker the request carries no
+	// isolation level and the setting has no effect.
+	//
+	// Reads stop at the last stable offset rather than the high watermark, so
+	// a producer that leaves a transaction open blocks the consumer behind it
+	// no matter how many records were committed after it. That is inherent to
+	// how Kafka implements the guarantee, and applies to every client.
+	ReadCommitted IsolationLevel = 1
 )
 
 var (
@@ -848,14 +873,15 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var throttle int32
 	var highWaterMark int64
 	var remain int
+	var aborted []abortedTransaction
 
 	switch fetchVersion {
 	case v10:
-		throttle, highWaterMark, remain, err = readFetchResponseHeaderV10(&c.rbuf, size)
+		throttle, highWaterMark, remain, aborted, err = readFetchResponseHeaderV10(&c.rbuf, size)
 	case v5:
-		throttle, highWaterMark, remain, err = readFetchResponseHeaderV5(&c.rbuf, size)
+		throttle, highWaterMark, remain, aborted, err = readFetchResponseHeaderV5(&c.rbuf, size)
 	default:
-		throttle, highWaterMark, remain, err = readFetchResponseHeaderV2(&c.rbuf, size)
+		throttle, highWaterMark, remain, aborted, err = readFetchResponseHeaderV2(&c.rbuf, size)
 	}
 	if errors.Is(err, errShortRead) {
 		err = checkTimeoutErr(adjustedDeadline)
@@ -864,9 +890,9 @@ func (c *Conn) ReadBatchWith(cfg ReadBatchConfig) *Batch {
 	var msgs *messageSetReader
 	if err == nil {
 		if highWaterMark == offset {
-			msgs = &messageSetReader{empty: true}
+			msgs = &messageSetReader{empty: true, lastSkippedOffset: -1}
 		} else {
-			msgs, err = newMessageSetReader(&c.rbuf, remain)
+			msgs, err = newMessageSetReader(&c.rbuf, remain, aborted)
 		}
 	}
 	if errors.Is(err, errShortRead) {

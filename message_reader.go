@@ -3,9 +3,11 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
+	"sort"
 )
 
 type readBytesFunc func(*bufio.Reader, int, int) (int, error)
@@ -23,6 +25,25 @@ type messageSetReader struct {
 	lengthRemain int
 
 	decompressed *bytes.Buffer
+
+	// abortedTxns holds the transactions the broker reported as aborted in the
+	// fetch response, ordered by first offset and consumed front to back as the
+	// response is read. abortedProducers holds the producers whose records are
+	// currently being dropped: a producer enters the set when the reader
+	// reaches the first offset of one of its aborted transactions, and leaves
+	// it again when the matching abort marker is read.
+	//
+	// Brokers only send the list when the fetch asked for ReadCommitted, so
+	// under ReadUncommitted both stay empty and nothing is dropped.
+	abortedTxns      []abortedTransaction
+	abortedProducers map[int64]struct{}
+
+	// lastSkippedOffset is the highest offset consumed by a batch that was
+	// hidden from the caller, or -1 if there was none. Those offsets appear in
+	// no message, so Batch needs this to resume after them; without it a
+	// response ending in a control batch would leave the offset behind the
+	// marker and the same batch would be fetched forever.
+	lastSkippedOffset int64
 }
 
 type readerStack struct {
@@ -59,6 +80,32 @@ type messagesHeader struct {
 	}
 }
 
+// control returns true if the header describes a control batch. Control
+// batches hold transaction markers written by the transaction coordinator
+// rather than records written by a producer, and the protocol requires that
+// they are not exposed to the application. Consumers that do surface them see
+// an empty message for every committed transaction.
+// See https://kafka.apache.org/documentation/#controlbatch
+//
+// Only v2 message sets support transactions, so v0 and v1 are never control
+// batches.
+func (h messagesHeader) control() bool {
+	const controlMask = 0x20
+	return h.magic == 2 && (h.v2.attributes&controlMask) != 0
+}
+
+// transactional returns true if the header describes a batch that a producer
+// wrote inside a transaction. Such a batch is only visible to a ReadCommitted
+// consumer once the transaction commits, so the reader has to be able to tell
+// it apart from an ordinary one.
+//
+// Only v2 message sets support transactions, so v0 and v1 are never
+// transactional.
+func (h messagesHeader) transactional() bool {
+	const transactionalMask = 0x10
+	return h.magic == 2 && (h.v2.attributes&transactionalMask) != 0
+}
+
 func (h messagesHeader) compression() (codec CompressionCodec, err error) {
 	const compressionCodecMask = 0x07
 	var code int8
@@ -81,13 +128,24 @@ func (h messagesHeader) badMagic() error {
 	return fmt.Errorf("unsupported magic byte %d in header", h.magic)
 }
 
-func newMessageSetReader(reader *bufio.Reader, remain int) (*messageSetReader, error) {
+// newMessageSetReader constructs a reader over the message set of a fetch
+// response. aborted is the list of aborted transactions the broker returned
+// alongside it, which may be nil; the reader uses it to drop the records those
+// transactions produced.
+func newMessageSetReader(reader *bufio.Reader, remain int, aborted []abortedTransaction) (*messageSetReader, error) {
+	// Brokers return the list in offset order, but consuming it front to back
+	// depends on that, so sort rather than assume.
+	sort.Slice(aborted, func(i, j int) bool {
+		return aborted[i].FirstOffset < aborted[j].FirstOffset
+	})
 	res := &messageSetReader{
 		readerStack: &readerStack{
 			reader: reader,
 			remain: remain,
 		},
-		decompressed: acquireBuffer(),
+		decompressed:      acquireBuffer(),
+		abortedTxns:       aborted,
+		lastSkippedOffset: -1,
 	}
 	err := res.readHeader()
 	return res, err
@@ -122,24 +180,186 @@ func (r *messageSetReader) discard() (err error) {
 func (r *messageSetReader) readMessage(min int64, key readBytesFunc, val readBytesFunc) (
 	offset int64, lastOffset int64, timestamp int64, headers []Header, err error) {
 
-	if r.empty {
-		err = RequestTimedOut
+	for {
+		if r.empty {
+			err = RequestTimedOut
+			return
+		}
+		if err = r.readHeader(); err != nil {
+			return
+		}
+		switch r.header.magic {
+		case 0, 1:
+			offset, timestamp, headers, err = r.readMessageV1(min, key, val)
+			// Set an invalid value so that it can be ignored
+			lastOffset = -1
+		case 2:
+			// Two kinds of batch are consumed here instead of being returned:
+			// control batches, which hold transaction markers rather than
+			// messages, and batches whose transaction the broker told us was
+			// aborted. Neither may be exposed to the application, so keep
+			// reading until a regular batch or the end of the response.
+			r.consumeAbortedTransactionsUpTo(r.header.firstOffset)
+			if r.count == 0 {
+				// A batch the log cleaner emptied. readHeader consumed it
+				// whole and accounted for its offsets; dispatching on its
+				// header would consume records of the batch that follows.
+				continue
+			}
+			switch {
+			case r.header.control():
+				if err = r.skipControlRecordV2(min); err != nil {
+					return
+				}
+				continue
+			case r.abortedBatch():
+				if err = r.skipBatchV2(); err != nil {
+					return
+				}
+				continue
+			}
+			offset, lastOffset, timestamp, headers, err = r.readMessageV2(min, key, val)
+		default:
+			err = r.header.badMagic()
+		}
 		return
 	}
-	if err = r.readHeader(); err != nil {
+}
+
+// consumeAbortedTransactionsUpTo moves every aborted transaction that starts at
+// or before offset into the set of producers whose records are being dropped.
+// A producer stays in that set until its abort marker is read, which is what
+// makes the records between the two invisible.
+//
+// The reader calls this with the first offset of each batch before deciding
+// what to do with it. Repeat calls for the records of one batch are harmless:
+// every entry it could match has already been removed from the list.
+func (r *messageSetReader) consumeAbortedTransactionsUpTo(offset int64) {
+	for len(r.abortedTxns) > 0 && r.abortedTxns[0].FirstOffset <= offset {
+		if r.abortedProducers == nil {
+			r.abortedProducers = make(map[int64]struct{})
+		}
+		r.abortedProducers[r.abortedTxns[0].ProducerID] = struct{}{}
+		r.abortedTxns = r.abortedTxns[1:]
+	}
+}
+
+// abortedBatch reports whether the records of the current batch belong to a
+// transaction the broker reported as aborted. Batches written outside a
+// transaction are never dropped, even when they sit between two that were.
+func (r *messageSetReader) abortedBatch() bool {
+	if len(r.abortedProducers) == 0 || !r.header.transactional() {
+		return false
+	}
+	_, aborted := r.abortedProducers[r.header.v2.producerID]
+	return aborted
+}
+
+// skipControlRecordV2 reads a record from a control batch and discards it.
+// discardN satisfies readBytesFunc, so the record is consumed by the same code
+// path as a regular one and the reader's bookkeeping is left unchanged. The key
+// is kept to identify the marker, which decides both what is logged and whether
+// a producer stops being a reason to drop records.
+func (r *messageSetReader) skipControlRecordV2(min int64) (err error) {
+	// Read the header before consuming the record: doing so can exhaust and pop
+	// a reader stack, replacing r.header with the enclosing one.
+	producerID := r.header.v2.producerID
+	lastOffset := r.batchLastOffset()
+
+	var key []byte
+	captureKey := func(br *bufio.Reader, size int, nbytes int) (remain int, err error) {
+		key, remain, err = readNewBytes(br, size, nbytes)
 		return
 	}
-	switch r.header.magic {
-	case 0, 1:
-		offset, timestamp, headers, err = r.readMessageV1(min, key, val)
-		// Set an invalid value so that it can be ignored
-		lastOffset = -1
-	case 2:
-		offset, lastOffset, timestamp, headers, err = r.readMessageV2(min, key, val)
-	default:
-		err = r.header.badMagic()
+	if _, _, _, _, err = r.readMessageV2(min, captureKey, discardN); err != nil {
+		return
+	}
+
+	marker := controlRecordType(key)
+	if marker == controlRecordAbort {
+		// The transaction this producer opened is over, so its records stop
+		// being dropped. A commit marker needs no equivalent: a producer that
+		// committed was never added to the set in the first place.
+		delete(r.abortedProducers, producerID)
+	}
+	r.noteBatchSkipped(lastOffset)
+
+	if r.debug {
+		r.log("Skipped %s control record for producerID=%d",
+			controlRecordTypeName(marker), producerID)
 	}
 	return
+}
+
+// skipBatchV2 discards the record section of the current batch without decoding
+// it, for a batch whose transaction was aborted.
+//
+// lengthRemain is the batch length minus its 49 header bytes, which is exactly
+// that record section, so a compressed batch is discarded in its compressed
+// form and never inflated. That only holds before any record of the batch has
+// been read: once readMessageV2 has started on a compressed batch it has pushed
+// a reader stack holding the decompressed bytes and the accounting no longer
+// lines up.
+func (r *messageSetReader) skipBatchV2() (err error) {
+	if r.count != int(r.header.v2.count) {
+		return fmt.Errorf("skipBatchV2 called after %d of %d records were read",
+			int(r.header.v2.count)-r.count, r.header.v2.count)
+	}
+	lastOffset := r.batchLastOffset()
+	if err = r.discardN(r.lengthRemain); err != nil {
+		return
+	}
+	if r.debug {
+		r.log("Skipped aborted batch of %d records for producerID=%d",
+			r.header.v2.count, r.header.v2.producerID)
+	}
+	r.noteBatchSkipped(lastOffset)
+	r.lengthRemain = 0
+	r.count = 0
+	r.unwindStack()
+	return
+}
+
+// batchLastOffset returns the offset of the last record of the current v2
+// batch.
+func (r *messageSetReader) batchLastOffset() int64 {
+	return r.header.firstOffset + int64(r.header.v2.lastOffsetDelta)
+}
+
+// noteBatchSkipped records that every offset up to lastOffset has been consumed
+// by a batch the caller never sees, so that Batch can resume past it.
+func (r *messageSetReader) noteBatchSkipped(lastOffset int64) {
+	if lastOffset > r.lastSkippedOffset {
+		r.lastSkippedOffset = lastOffset
+	}
+}
+
+// Marker types held in the int16 type field of a control record's key.
+const (
+	controlRecordAbort   int16 = 0
+	controlRecordCommit  int16 = 1
+	controlRecordUnknown int16 = -1
+)
+
+// controlRecordType returns the type of the marker held in a control record's
+// key, which is an int16 version followed by an int16 type. A key of any other
+// shape is not a marker this client understands.
+func controlRecordType(key []byte) int16 {
+	if len(key) != 4 {
+		return controlRecordUnknown
+	}
+	return int16(binary.BigEndian.Uint16(key[2:]))
+}
+
+func controlRecordTypeName(t int16) string {
+	switch t {
+	case controlRecordAbort:
+		return "ABORT"
+	case controlRecordCommit:
+		return "COMMIT"
+	default:
+		return "unknown"
+	}
 }
 
 func (r *messageSetReader) readMessageV1(min int64, key readBytesFunc, val readBytesFunc) (
@@ -482,6 +702,21 @@ func (r *messageSetReader) readHeader() (err error) {
 		r.count = int(r.header.v2.count)
 		// Subtracts the header bytes from the length
 		r.lengthRemain = int(r.header.length) - 49
+		// The log cleaner can remove every record a batch held and retain the
+		// batch itself to preserve the producer's state, so a batch with no
+		// records at all is a normal sight on a compacted topic. Reading its
+		// header consumed the whole batch, and the next call replaces the
+		// header, so the offsets it spans have to be accounted for now: no
+		// message will ever surface them.
+		if r.count == 0 {
+			r.noteBatchSkipped(r.batchLastOffset())
+			if r.lengthRemain > 0 {
+				if err = r.discardN(r.lengthRemain); err != nil {
+					return
+				}
+			}
+			r.lengthRemain = 0
+		}
 		if r.debug {
 			r.log("Read v2 header with count=%d offset=%d len=%d magic=%d attributes=%d", r.count, r.header.firstOffset, r.header.length, r.header.magic, r.header.v2.attributes)
 		}
