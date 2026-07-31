@@ -23,6 +23,24 @@ func appendZigZagVarInt(b []byte, v int64) []byte {
 	return append(b, byte(u))
 }
 
+func appendUint16(b []byte, v uint16) []byte {
+	var buf [2]byte
+	binary.BigEndian.PutUint16(buf[:], v)
+	return append(b, buf[:]...)
+}
+
+func appendUint32(b []byte, v uint32) []byte {
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], v)
+	return append(b, buf[:]...)
+}
+
+func appendUint64(b []byte, v uint64) []byte {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], v)
+	return append(b, buf[:]...)
+}
+
 // v2Record builds a single record of the v2 message format.
 func v2Record(offsetDelta int64, key, value []byte) []byte {
 	var body []byte
@@ -81,19 +99,19 @@ func v2Batch(t *testing.T, o batchOpts, records ...[]byte) []byte {
 	}
 
 	b := make([]byte, 0, 61+len(recs))
-	b = binary.BigEndian.AppendUint64(b, uint64(o.firstOffset))
-	b = binary.BigEndian.AppendUint32(b, uint32(49+len(recs))) // length after this field
-	b = binary.BigEndian.AppendUint32(b, 0)                    // partitionLeaderEpoch
-	b = append(b, 2)                                           // magic
-	b = binary.BigEndian.AppendUint32(b, 0)                    // crc
-	b = binary.BigEndian.AppendUint16(b, attributes)
-	b = binary.BigEndian.AppendUint32(b, uint32(len(records)-1)) // lastOffsetDelta
-	b = binary.BigEndian.AppendUint64(b, 0)                      // firstTimestamp
-	b = binary.BigEndian.AppendUint64(b, 0)                      // maxTimestamp
-	b = binary.BigEndian.AppendUint64(b, uint64(o.producerID))
-	b = binary.BigEndian.AppendUint16(b, 0)                    // producerEpoch
-	b = binary.BigEndian.AppendUint32(b, 0)                    // baseSequence
-	b = binary.BigEndian.AppendUint32(b, uint32(len(records))) // record count
+	b = appendUint64(b, uint64(o.firstOffset))
+	b = appendUint32(b, uint32(49+len(recs))) // length after this field
+	b = appendUint32(b, 0)                    // partitionLeaderEpoch
+	b = append(b, 2)                          // magic
+	b = appendUint32(b, 0)                    // crc
+	b = appendUint16(b, attributes)
+	b = appendUint32(b, uint32(len(records)-1)) // lastOffsetDelta
+	b = appendUint64(b, 0)                      // firstTimestamp
+	b = appendUint64(b, 0)                      // maxTimestamp
+	b = appendUint64(b, uint64(o.producerID))
+	b = appendUint16(b, 0)                    // producerEpoch
+	b = appendUint32(b, 0)                    // baseSequence
+	b = appendUint32(b, uint32(len(records))) // record count
 	return append(b, recs...)
 }
 
@@ -104,14 +122,6 @@ func marker(offsetDelta int64, markerType int16) []byte {
 	key := make([]byte, 4)
 	binary.BigEndian.PutUint16(key[2:], uint16(markerType))
 	return v2Record(offsetDelta, key, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-}
-
-func commitMarker(offsetDelta int64) []byte {
-	return marker(offsetDelta, controlRecordCommit)
-}
-
-func abortMarker(offsetDelta int64) []byte {
-	return marker(offsetDelta, controlRecordAbort)
 }
 
 // controlBatch builds the single-record control batch that closes a
