@@ -570,13 +570,21 @@ r := kafka.NewReader(kafka.ReaderConfig{
 Direct Writer creation
 
 ```go
+// Transports are responsible for managing connection pools and other
+// resources, so it's generally best to create a single Transport and share
+// it across the Writer (and Client) values in your application, rather than
+// creating one per Writer. A Transport that is never shared and never
+// closed (via its CloseIdleConnections method) will leak the goroutine it
+// starts to discover the cluster layout.
+sharedTransport := &kafka.Transport{
+    TLS: &tls.Config{},
+}
+
 w := kafka.Writer{
     Addr: kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"), 
     Topic:   "topic-A",
     Balancer: &kafka.Hash{},
-    Transport: &kafka.Transport{
-        TLS: &tls.Config{},
-      },
+    Transport: sharedTransport,
     }
 ```
 

@@ -41,6 +41,12 @@ type Client struct {
 	// A transport used to communicate with the kafka brokers.
 	//
 	// If nil, DefaultTransport is used.
+	//
+	// The Client never closes the Transport; the caller retains ownership of
+	// it and is responsible for calling its CloseIdleConnections method once
+	// it is no longer needed. Prefer sharing a single Transport across
+	// Client (and Writer) values instead of creating a new one per Client,
+	// see Transport's documentation for details.
 	Transport RoundTripper
 }
 

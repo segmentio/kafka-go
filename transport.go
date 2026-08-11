@@ -54,6 +54,17 @@ type RoundTripper interface {
 //
 // Note: The intent is for the Transport to become the underlying layer of the
 // kafka.Reader and kafka.Writer types.
+//
+// Like http.Transport, a Transport owns background goroutines and connections
+// for as long as it is used, and it is never closed automatically by the
+// Client, Reader, or Writer values that reference it (with the sole exception
+// of the deprecated NewWriter constructor, which closes the Transport it
+// creates internally). Callers are responsible for calling
+// CloseIdleConnections on a Transport once it is no longer needed, or reusing
+// a single Transport across multiple Client/Reader/Writer values instead of
+// creating one per instance. Creating a new Transport for every request or
+// every short-lived Writer/Client will leak the goroutine started to discover
+// the cluster layout.
 type Transport struct {
 	// A function used to establish connections to the kafka cluster.
 	Dial func(context.Context, string, string) (net.Conn, error)
@@ -132,6 +143,11 @@ var DefaultTransport RoundTripper = &Transport{
 
 // CloseIdleConnections closes all idle connections immediately, and marks all
 // connections that are in use to be closed when they become idle again.
+//
+// This also stops the background goroutines that the Transport started to
+// discover the cluster layout. Call this method once the Transport is no
+// longer needed to avoid leaking those goroutines; the Transport is not
+// closed automatically by the Client, Reader, or Writer values that use it.
 func (t *Transport) CloseIdleConnections() {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()

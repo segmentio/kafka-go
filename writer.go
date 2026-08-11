@@ -195,6 +195,14 @@ type Writer struct {
 	// A transport used to send messages to kafka clusters.
 	//
 	// If nil, DefaultTransport is used.
+	//
+	// When set, the Transport is not closed when the Writer is closed via
+	// Close; the caller retains ownership of it and is responsible for
+	// calling its CloseIdleConnections method once it is no longer needed.
+	// Prefer creating a single Transport and sharing it across Writer (and
+	// Client) values instead of creating a new one per Writer, as each
+	// Transport starts a background goroutine that otherwise leaks for as
+	// long as the Transport is never closed.
 	Transport RoundTripper
 
 	// AllowAutoTopicCreation notifies writer to create topic if missing.
@@ -552,6 +560,11 @@ func (w *Writer) spawn(f func()) {
 // returning. Calling Close also prevents new writes from being submitted to
 // the writer, further calls to WriteMessages and the like will fail with
 // io.ErrClosedPipe.
+//
+// Close only releases the Transport it created internally (when the Writer
+// was constructed via the deprecated NewWriter). If the Transport field was
+// set explicitly, Close does not call CloseIdleConnections on it; see the
+// Transport field's documentation for details on who owns its lifecycle.
 func (w *Writer) Close() error {
 	w.mutex.Lock()
 	// Marking the writer as closed here causes future calls to WriteMessages to
