@@ -673,7 +673,17 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	for batch := range batches {
 		select {
 		case <-done:
-			return ctx.Err()
+			// Double-check if delivery completed before or concurrently
+			// with context cancellation. This prevents returning ctx.Err()
+			// when the message was actually delivered successfully.
+			select {
+			case <-batch.done:
+				if batch.err != nil {
+					hasErrors = true
+				}
+			default:
+				return ctx.Err()
+			}
 		case <-batch.done:
 			if batch.err != nil {
 				hasErrors = true
