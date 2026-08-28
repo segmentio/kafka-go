@@ -109,6 +109,8 @@ func (d *decoder) decodeCompactBytes(v value) {
 func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeFunc) {
 	if n := d.readInt32(); n < 0 {
 		v.setArray(array{})
+	} else if !d.validArrayLen(int(n)) {
+		v.setArray(array{})
 	} else {
 		a := makeArray(elemType, int(n))
 		for i := 0; i < int(n) && d.remain > 0; i++ {
@@ -121,6 +123,8 @@ func (d *decoder) decodeArray(v value, elemType reflect.Type, decodeElem decodeF
 func (d *decoder) decodeCompactArray(v value, elemType reflect.Type, decodeElem decodeFunc) {
 	if n := d.readUnsignedVarInt(); n < 1 {
 		v.setArray(array{})
+	} else if !d.validArrayLen(int(n - 1)) {
+		v.setArray(array{})
 	} else {
 		a := makeArray(elemType, int(n-1))
 		for i := 0; i < int(n-1) && d.remain > 0; i++ {
@@ -128,6 +132,21 @@ func (d *decoder) decodeCompactArray(v value, elemType reflect.Type, decodeElem 
 		}
 		v.setArray(a)
 	}
+}
+
+// validArrayLen reports whether n elements can exist in the remaining frame.
+// Each element occupies at least one byte on the wire, so n cannot exceed
+// remain; a larger value is garbage (or a non-Kafka peer) and must not
+// allocate.
+func (d *decoder) validArrayLen(n int) bool {
+	if d.err != nil {
+		return false
+	}
+	if n < 0 || n > d.remain {
+		d.setError(fmt.Errorf("cannot decode array of length %d from remaining %d bytes", n, d.remain))
+		return false
+	}
+	return true
 }
 
 func (d *decoder) discardAll() {
