@@ -340,3 +340,38 @@ func TestFloat64(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeArrayRejectsLengthLargerThanRemaining(t *testing.T) {
+	// 1e9-element array claimed in an 8-byte frame (non-Kafka garbage).
+	payload := []byte{0x3b, 0x9a, 0xca, 0x00, 0x00, 0x00, 0x00, 0x00}
+	d := &decoder{reader: bytes.NewReader(payload), remain: len(payload)}
+	var got []int32
+	d.decodeArray(valueOf(&got), reflect.TypeOf(int32(0)), (*decoder).decodeInt32)
+	if d.err == nil {
+		t.Fatal("expected decode error for array length larger than remaining bytes")
+	}
+
+	// A well-formed 2-element int32 array still decodes.
+	ok := []byte{0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02}
+	d = &decoder{reader: bytes.NewReader(ok), remain: len(ok)}
+	got = nil
+	d.decodeArray(valueOf(&got), reflect.TypeOf(int32(0)), (*decoder).decodeInt32)
+	if d.err != nil {
+		t.Fatalf("unexpected error: %v", d.err)
+	}
+	if !reflect.DeepEqual(got, []int32{1, 2}) {
+		t.Fatalf("got %v, want [1 2]", got)
+	}
+}
+
+func TestDecodeCompactArrayRejectsLengthLargerThanRemaining(t *testing.T) {
+	// Compact array length is N+1 as an unsigned varint. 0xFF 0xFF 0xFF 0xFF 0x0F
+	// is 268435455+..., far larger than the remaining 2 bytes.
+	payload := []byte{0xff, 0xff, 0xff, 0xff, 0x0f, 0x00, 0x00}
+	d := &decoder{reader: bytes.NewReader(payload), remain: len(payload)}
+	var got []int32
+	d.decodeCompactArray(valueOf(&got), reflect.TypeOf(int32(0)), (*decoder).decodeInt32)
+	if d.err == nil {
+		t.Fatal("expected decode error for compact array length larger than remaining bytes")
+	}
+}
