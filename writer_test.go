@@ -1037,3 +1037,27 @@ type staticBalancer struct {
 func (b *staticBalancer) Balance(_ Message, partitions ...int) int {
 	return b.partition
 }
+
+func TestWriterContextTimeout(t *testing.T) {
+	topic := makeTopic()
+	createTopic(t, topic, 1)
+	defer deleteTopic(t, topic)
+
+	w := &Writer{
+		Addr:  TCP("localhost:9999"),
+		Topic: topic,
+		MaxAttempts: 10,
+	}
+	defer w.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	err := w.WriteMessages(ctx, Message{
+		Value: []byte("hello"),
+	})
+
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context timeout error, got %v", err)
+	}
+}
