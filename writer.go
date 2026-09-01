@@ -1042,12 +1042,11 @@ func (ptw *partitionWriter) writeMessages(ctx context.Context, msgs []Message, i
 			batch = ptw.newWriteBatch()
 			ptw.currBatch = batch
 		}
-		
 		var bCtx context.Context
 		if !ptw.w.Async {
 			bCtx = ctx
 		}
-		
+
 		if !batch.add(bCtx, msgs[i], batchSize, batchBytes) {
 			batch.trigger()
 			ptw.queue.Put(batch)
