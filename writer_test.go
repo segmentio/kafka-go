@@ -1037,5 +1037,3 @@ type staticBalancer struct {
 func (b *staticBalancer) Balance(_ Message, partitions ...int) int {
 	return b.partition
 }
-
-
