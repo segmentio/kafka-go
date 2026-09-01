@@ -663,7 +663,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 		assignments[key] = append(assignments[key], int32(i))
 	}
 
-	batches := w.batchMessages(msgs, assignments)
+	batches := w.batchMessages(ctx, msgs, assignments)
 	if w.Async {
 		return nil
 	}
@@ -695,7 +695,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	return werr
 }
 
-func (w *Writer) batchMessages(messages []Message, assignments map[topicPartition][]int32) map[*writeBatch][]int32 {
+func (w *Writer) batchMessages(ctx context.Context, messages []Message, assignments map[topicPartition][]int32) map[*writeBatch][]int32 {
 	var batches map[*writeBatch][]int32
 	if !w.Async {
 		batches = make(map[*writeBatch][]int32, len(assignments))
@@ -714,7 +714,7 @@ func (w *Writer) batchMessages(messages []Message, assignments map[topicPartitio
 			writer = newPartitionWriter(w, key)
 			w.writers[key] = writer
 		}
-		wbatches := writer.writeMessages(messages, indexes)
+		wbatches := writer.writeMessages(ctx, messages, indexes)
 
 		for batch, idxs := range wbatches {
 			batches[batch] = idxs
@@ -1023,7 +1023,7 @@ func (ptw *partitionWriter) writeBatches() {
 	}
 }
 
-func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*writeBatch][]int32 {
+func (ptw *partitionWriter) writeMessages(ctx context.Context, msgs []Message, indexes []int32) map[*writeBatch][]int32 {
 	ptw.mutex.Lock()
 	defer ptw.mutex.Unlock()
 
@@ -1042,7 +1042,12 @@ func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*
 			batch = ptw.newWriteBatch()
 			ptw.currBatch = batch
 		}
-		if !batch.add(msgs[i], batchSize, batchBytes) {
+		var doneCh <-chan struct{}
+		if !ptw.w.Async && ctx != nil {
+			doneCh = ctx.Done()
+		}
+
+		if !batch.add(doneCh, msgs[i], batchSize, batchBytes) {
 			batch.trigger()
 			ptw.queue.Put(batch)
 			ptw.currBatch = nil
@@ -1108,6 +1113,25 @@ func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
 	var err error
 	key := ptw.meta
 	for attempt, maxAttempts := 0, ptw.w.maxAttempts(); attempt < maxAttempts; attempt++ {
+		if len(batch.doneChannels) > 0 {
+			allExpired := true
+			for _, doneCh := range batch.doneChannels {
+				select {
+				case <-doneCh:
+					// context expired
+				default:
+					allExpired = false
+				}
+				if !allExpired {
+					break
+				}
+			}
+			if allExpired {
+				err = context.Canceled
+				break
+			}
+		}
+
 		if attempt != 0 {
 			stats.retries.observe(1)
 			// TODO: should there be a way to asynchronously cancel this
@@ -1199,14 +1223,15 @@ func (ptw *partitionWriter) close() {
 }
 
 type writeBatch struct {
-	time  time.Time
-	msgs  []Message
-	size  int
-	bytes int64
-	ready chan struct{}
-	done  chan struct{}
-	timer *time.Timer
-	err   error // result of the batch completion
+	time         time.Time
+	msgs         []Message
+	size         int
+	bytes        int64
+	ready        chan struct{}
+	done         chan struct{}
+	timer        *time.Timer
+	err          error // result of the batch completion
+	doneChannels []<-chan struct{}
 }
 
 func newWriteBatch(now time.Time, timeout time.Duration) *writeBatch {
@@ -1218,7 +1243,7 @@ func newWriteBatch(now time.Time, timeout time.Duration) *writeBatch {
 	}
 }
 
-func (b *writeBatch) add(msg Message, maxSize int, maxBytes int64) bool {
+func (b *writeBatch) add(doneCh <-chan struct{}, msg Message, maxSize int, maxBytes int64) bool {
 	bytes := int64(msg.totalSize())
 
 	if b.size > 0 && (b.bytes+bytes) > maxBytes {
@@ -1230,6 +1255,9 @@ func (b *writeBatch) add(msg Message, maxSize int, maxBytes int64) bool {
 	}
 
 	b.msgs = append(b.msgs, msg)
+	if doneCh != nil {
+		b.doneChannels = append(b.doneChannels, doneCh)
+	}
 	b.size++
 	b.bytes += bytes
 	return true
