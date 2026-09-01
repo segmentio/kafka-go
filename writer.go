@@ -1223,14 +1223,14 @@ func (ptw *partitionWriter) close() {
 }
 
 type writeBatch struct {
-	time  time.Time
-	msgs  []Message
-	size  int
-	bytes int64
-	ready chan struct{}
-	done  chan struct{}
-	timer *time.Timer
-	err   error // result of the batch completion
+	time         time.Time
+	msgs         []Message
+	size         int
+	bytes        int64
+	ready        chan struct{}
+	done         chan struct{}
+	timer        *time.Timer
+	err          error // result of the batch completion
 	doneChannels []<-chan struct{}
 }
 
