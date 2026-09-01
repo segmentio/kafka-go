@@ -1042,12 +1042,12 @@ func (ptw *partitionWriter) writeMessages(ctx context.Context, msgs []Message, i
 			batch = ptw.newWriteBatch()
 			ptw.currBatch = batch
 		}
-		var bCtx context.Context
-		if !ptw.w.Async {
-			bCtx = ctx
+		var doneCh <-chan struct{}
+		if !ptw.w.Async && ctx != nil {
+			doneCh = ctx.Done()
 		}
 
-		if !batch.add(bCtx, msgs[i], batchSize, batchBytes) {
+		if !batch.add(doneCh, msgs[i], batchSize, batchBytes) {
 			batch.trigger()
 			ptw.queue.Put(batch)
 			ptw.currBatch = nil
@@ -1113,16 +1113,21 @@ func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
 	var err error
 	key := ptw.meta
 	for attempt, maxAttempts := 0, ptw.w.maxAttempts(); attempt < maxAttempts; attempt++ {
-		if len(batch.contexts) > 0 {
+		if len(batch.doneChannels) > 0 {
 			allExpired := true
-			for _, ctx := range batch.contexts {
-				if ctx.Err() == nil {
+			for _, doneCh := range batch.doneChannels {
+				select {
+				case <-doneCh:
+					// context expired
+				default:
 					allExpired = false
+				}
+				if !allExpired {
 					break
 				}
 			}
 			if allExpired {
-				err = batch.contexts[0].Err()
+				err = context.Canceled
 				break
 			}
 		}
@@ -1226,7 +1231,7 @@ type writeBatch struct {
 	done  chan struct{}
 	timer *time.Timer
 	err   error // result of the batch completion
-	contexts []context.Context
+	doneChannels []<-chan struct{}
 }
 
 func newWriteBatch(now time.Time, timeout time.Duration) *writeBatch {
@@ -1238,7 +1243,7 @@ func newWriteBatch(now time.Time, timeout time.Duration) *writeBatch {
 	}
 }
 
-func (b *writeBatch) add(ctx context.Context, msg Message, maxSize int, maxBytes int64) bool {
+func (b *writeBatch) add(doneCh <-chan struct{}, msg Message, maxSize int, maxBytes int64) bool {
 	bytes := int64(msg.totalSize())
 
 	if b.size > 0 && (b.bytes+bytes) > maxBytes {
@@ -1250,8 +1255,8 @@ func (b *writeBatch) add(ctx context.Context, msg Message, maxSize int, maxBytes
 	}
 
 	b.msgs = append(b.msgs, msg)
-	if ctx != nil {
-		b.contexts = append(b.contexts, ctx)
+	if doneCh != nil {
+		b.doneChannels = append(b.doneChannels, doneCh)
 	}
 	b.size++
 	b.bytes += bytes
