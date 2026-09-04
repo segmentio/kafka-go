@@ -611,7 +611,8 @@ func isTemporary(err error) bool {
 }
 
 func isTransientNetworkError(err error) bool {
-	return errors.Is(err, io.ErrUnexpectedEOF) ||
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.EPIPE)

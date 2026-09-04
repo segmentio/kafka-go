@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -124,4 +125,10 @@ func TestError(t *testing.T) {
 		assert.Contains(t, msgTooLarge.Error(), MessageSizeTooLarge.Error())
 		assert.ErrorIs(t, msgTooLarge, MessageSizeTooLarge)
 	})
+}
+
+func TestIsTransientNetworkErrorEOF(t *testing.T) {
+	if !isTransientNetworkError(io.EOF) {
+		t.Fatal("io.EOF should be treated as a transient network error")
+	}
 }

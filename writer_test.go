@@ -6,14 +6,61 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	metadataAPI "github.com/segmentio/kafka-go/protocol/metadata"
+	produceAPI "github.com/segmentio/kafka-go/protocol/produce"
+
 	"github.com/segmentio/kafka-go/sasl/plain"
 )
+
+type roundTripperFunc func(context.Context, net.Addr, Request) (Response, error)
+
+func (f roundTripperFunc) RoundTrip(ctx context.Context, addr net.Addr, req Request) (Response, error) {
+	return f(ctx, addr, req)
+}
+
+func TestWriterRetriesEOF(t *testing.T) {
+	var produceCalls int
+	transport := roundTripperFunc(func(ctx context.Context, addr net.Addr, req Request) (Response, error) {
+		switch req.(type) {
+		case *metadataAPI.Request:
+			return &metadataAPI.Response{Topics: []metadataAPI.ResponseTopic{{Name: "topic", Partitions: []metadataAPI.ResponsePartition{{}}}}}, nil
+		case *produceAPI.Request:
+			produceCalls++
+			if produceCalls == 1 {
+				return nil, io.EOF
+			}
+			return &produceAPI.Response{Topics: []produceAPI.ResponseTopic{{Topic: "topic", Partitions: []produceAPI.ResponsePartition{{}}}}}, nil
+		default:
+			return nil, fmt.Errorf("unexpected request type %T", req)
+		}
+	})
+
+	w := &Writer{
+		Addr:            TCP("broker:9092"),
+		Topic:           "topic",
+		Transport:       transport,
+		MaxAttempts:     2,
+		BatchSize:       1,
+		BatchTimeout:    time.Hour,
+		WriteBackoffMin: time.Nanosecond,
+		WriteBackoffMax: time.Nanosecond,
+	}
+	defer w.Close()
+
+	if err := w.WriteMessages(context.Background(), Message{Value: []byte("value")}); err != nil {
+		t.Fatalf("WriteMessages returned error: %v", err)
+	}
+	if produceCalls != 2 {
+		t.Fatalf("Produce calls = %d, want 2", produceCalls)
+	}
+}
 
 func TestBatchQueue(t *testing.T) {
 	tests := []struct {
