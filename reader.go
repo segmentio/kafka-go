@@ -69,11 +69,12 @@ type Reader struct {
 	cancel  context.CancelFunc
 	stop    context.CancelFunc
 	done    chan struct{}
-	commits chan commitRequest
-	version int64 // version holds the generation of the spawned readers
-	offset  int64
-	lag     int64
-	closed  bool
+	commits     chan commitRequest
+	assignments map[topicPartition]struct{}
+	version     int64 // version holds the generation of the spawned readers
+	offset      int64
+	lag         int64
+	closed      bool
 
 	// Without a group subscription (when Reader.config.GroupID == ""),
 	// when errors occur, the Reader gets a synthetic readerMessage with
@@ -111,14 +112,25 @@ func (r *Reader) useSyncCommits() bool { return r.config.CommitInterval == 0 }
 func (r *Reader) unsubscribe() {
 	r.cancel()
 	r.join.Wait()
-	// it would be interesting to drain the r.msgs channel at this point since
-	// it will contain buffered messages for partitions that may not be
-	// re-assigned to this reader in the next consumer group generation.
-	// however, draining the channel could race with the client calling
-	// ReadMessage, which could result in messages delivered and/or committed
-	// with gaps in the offset.  for now, we will err on the side of caution and
-	// potentially have those messages be reprocessed in the next generation by
-	// another consumer to avoid such a race.
+
+	r.mutex.Lock()
+	r.version++
+	r.assignments = nil
+	r.drainMsgs()
+	r.mutex.Unlock()
+}
+
+func (r *Reader) drainMsgs() {
+	for {
+		select {
+		case _, ok := <-r.msgs:
+			if !ok {
+				return
+			}
+		default:
+			return
+		}
+	}
 }
 
 func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
@@ -134,6 +146,11 @@ func (r *Reader) subscribe(allAssignments map[string][]PartitionAssignment) {
 	}
 
 	r.mutex.Lock()
+	r.assignments = make(map[topicPartition]struct{}, len(offsets))
+	for key := range offsets {
+		r.assignments[key] = struct{}{}
+	}
+	r.drainMsgs()
 	r.start(offsets)
 	r.mutex.Unlock()
 
@@ -839,15 +856,30 @@ func (r *Reader) FetchMessage(ctx context.Context) (Message, error) {
 
 			if m.version >= version {
 				r.mutex.Lock()
+				currentVersion := r.version
+				assigned := true
+				if r.useConsumerGroup() {
+					key := topicPartition{
+						topic:     m.message.Topic,
+						partition: int32(m.message.Partition),
+					}
+					_, assigned = r.assignments[key]
+				}
 
-				switch {
-				case m.error != nil:
-				case version == r.version:
+				stale := m.version < currentVersion
+				if m.error == nil && r.useConsumerGroup() && !assigned {
+					stale = true
+				}
+
+				if !stale && m.error == nil {
 					r.offset = m.message.Offset + 1
 					r.lag = m.watermark - r.offset
 				}
-
 				r.mutex.Unlock()
+
+				if stale {
+					continue
+				}
 
 				if errors.Is(m.error, io.EOF) {
 					// io.EOF is used as a marker to indicate that the stream
@@ -1041,6 +1073,7 @@ func (r *Reader) SetOffset(offset int64) error {
 
 		if r.version != 0 {
 			r.start(r.getTopicPartitionOffset())
+			r.drainMsgs()
 		}
 
 		r.activateReadLag()

@@ -1996,3 +1996,170 @@ func testReaderTopicRecreated(t *testing.T, ctx context.Context, r *Reader) {
 	_, err = r.ReadMessage(ctx)
 	require.ErrorIs(t, err, OffsetOutOfRange)
 }
+
+func TestReaderRebalanceDiscardStaleMessages(t *testing.T) {
+	t.Run("drains internal queue on unsubscribe", func(t *testing.T) {
+		r := &Reader{
+			config: ReaderConfig{
+				GroupID: "test-group",
+				Topic:   "test-topic",
+			},
+			msgs:    make(chan readerMessage, 10),
+			cancel:  func() {},
+			commits: make(chan commitRequest, 10),
+			stctx:   context.Background(),
+			version: 1,
+			stats:   &readerStats{},
+			assignments: map[topicPartition]struct{}{
+				{topic: "test-topic", partition: 0}: {},
+			},
+		}
+
+		r.msgs <- readerMessage{
+			version: 1,
+			message: Message{Topic: "test-topic", Partition: 0, Offset: 10},
+		}
+		r.msgs <- readerMessage{
+			version: 1,
+			message: Message{Topic: "test-topic", Partition: 0, Offset: 11},
+		}
+
+		require.Equal(t, 2, len(r.msgs))
+
+		r.unsubscribe()
+
+		require.Equal(t, 0, len(r.msgs))
+		require.Nil(t, r.assignments)
+		require.Equal(t, int64(2), r.version)
+	})
+
+	t.Run("discards messages from stale generation version", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		r := &Reader{
+			config: ReaderConfig{
+				GroupID: "test-group",
+				Topic:   "test-topic",
+			},
+			msgs:    make(chan readerMessage, 10),
+			cancel:  func() {},
+			commits: make(chan commitRequest, 10),
+			stctx:   context.Background(),
+			version: 3,
+			stats:   &readerStats{},
+			assignments: map[topicPartition]struct{}{
+				{topic: "test-topic", partition: 0}: {},
+			},
+		}
+
+		// Enqueue a stale message from generation version 2
+		r.msgs <- readerMessage{
+			version: 2,
+			message: Message{Topic: "test-topic", Partition: 0, Offset: 10},
+		}
+		// Enqueue a fresh message from generation version 3
+		r.msgs <- readerMessage{
+			version: 3,
+			message: Message{Topic: "test-topic", Partition: 0, Offset: 20},
+		}
+
+		msg, err := r.FetchMessage(ctx)
+		require.NoError(t, err)
+		require.Equal(t, int64(20), msg.Offset)
+	})
+
+	t.Run("discards messages from revoked partitions", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		r := &Reader{
+			config: ReaderConfig{
+				GroupID: "test-group",
+				Topic:   "test-topic",
+			},
+			msgs:    make(chan readerMessage, 10),
+			cancel:  func() {},
+			commits: make(chan commitRequest, 10),
+			stctx:   context.Background(),
+			version: 3,
+			stats:   &readerStats{},
+			assignments: map[topicPartition]struct{}{
+				{topic: "test-topic", partition: 1}: {}, // partition 0 revoked
+			},
+		}
+
+		// Enqueue message from unassigned partition 0
+		r.msgs <- readerMessage{
+			version: 3,
+			message: Message{Topic: "test-topic", Partition: 0, Offset: 10},
+		}
+		// Enqueue message from assigned partition 1
+		r.msgs <- readerMessage{
+			version: 3,
+			message: Message{Topic: "test-topic", Partition: 1, Offset: 30},
+		}
+
+		msg, err := r.FetchMessage(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 1, msg.Partition)
+		require.Equal(t, int64(30), msg.Offset)
+	})
+
+	t.Run("rebalance across generations discards undrained stale messages", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		r := &Reader{
+			config: ReaderConfig{
+				GroupID: "test-group",
+				Topic:   "test-topic",
+			},
+			msgs:    make(chan readerMessage, 10),
+			cancel:  func() {},
+			commits: make(chan commitRequest, 10),
+			stctx:   context.Background(),
+			version: 1,
+			stats:   &readerStats{},
+			assignments: map[topicPartition]struct{}{
+				{topic: "test-topic", partition: 0}: {},
+			},
+		}
+
+		// Generation 1: messages queued up to offset 100
+		r.msgs <- readerMessage{
+			version: 1,
+			message: Message{Topic: "test-topic", Partition: 0, Offset: 99},
+		}
+		r.msgs <- readerMessage{
+			version: 1,
+			message: Message{Topic: "test-topic", Partition: 0, Offset: 100},
+		}
+
+		// Consume offset 99
+		msg, err := r.FetchMessage(ctx)
+		require.NoError(t, err)
+		require.Equal(t, int64(99), msg.Offset)
+
+		// Rebalance occurs: unsubscribe() drains the internal queue and invalidates generation
+		r.unsubscribe()
+		require.Equal(t, 0, len(r.msgs))
+
+		// Generation 2 starts: new assignments given
+		r.assignments = map[topicPartition]struct{}{
+			{topic: "test-topic", partition: 0}: {},
+		}
+		r.version++ // new generation version (3)
+
+		// Fresh message from new generation
+		r.msgs <- readerMessage{
+			version: 3,
+			message: Message{Topic: "test-topic", Partition: 0, Offset: 100},
+		}
+
+		msg, err = r.FetchMessage(ctx)
+		require.NoError(t, err)
+		require.Equal(t, int64(100), msg.Offset)
+	})
+}
+
