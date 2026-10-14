@@ -286,7 +286,17 @@ func (rs *RecordSet) WriteTo(w io.Writer) (int64, error) {
 	// not a *pageBuffer, in which case we need to flush the buffered records
 	// data into it.
 	if buffer != w {
-		return buffer.WriteTo(w)
+		n, err := buffer.WriteTo(w)
+		if err != nil {
+			return n, err
+		}
+		// A writer that accepts fewer bytes than the rendered batch must not be
+		// reported as a complete write: the caller would treat a truncated
+		// batch as delivered and lose records silently.
+		if total := buffer.Size() - bufferOffset; n < total {
+			return n, io.ErrShortWrite
+		}
+		return n, nil
 	}
 
 	return n, nil

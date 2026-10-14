@@ -56,6 +56,17 @@ func (e *encoder) Write(b []byte) (int, error) {
 		return 0, e.err
 	}
 	n, err := e.writer.Write(b)
+	// A writer must never report more bytes than it was handed. When one does,
+	// n exceeds cap(b) and the slice expression below panics with "slice bounds
+	// out of range" instead of failing cleanly, so reject the count first.
+	if n > len(b) {
+		e.err = io.ErrShortWrite
+		return len(b), io.ErrShortWrite
+	}
+	if n < 0 {
+		e.err = io.ErrShortWrite
+		return 0, io.ErrShortWrite
+	}
 	if n > 0 {
 		e.update(b[:n])
 	}
