@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
+	metadataAPI "github.com/segmentio/kafka-go/protocol/metadata"
+	produceAPI "github.com/segmentio/kafka-go/protocol/produce"
 	"github.com/segmentio/kafka-go/sasl/plain"
 )
 
@@ -1036,4 +1041,109 @@ type staticBalancer struct {
 
 func (b *staticBalancer) Balance(_ Message, partitions ...int) int {
 	return b.partition
+}
+
+// unavailableThenRecoverRoundTripper fails produce calls until recovered is set.
+// An in-flight produce also returns when its context is canceled.
+type unavailableThenRecoverRoundTripper struct {
+	recovered    atomic.Bool
+	lateProduces atomic.Int32
+}
+
+func (r *unavailableThenRecoverRoundTripper) RoundTrip(ctx context.Context, addr net.Addr, req Request) (Response, error) {
+	switch req.(type) {
+	case *metadataAPI.Request:
+		return &metadataAPI.Response{
+			Topics: []metadataAPI.ResponseTopic{{
+				Name: "topic",
+				Partitions: []metadataAPI.ResponsePartition{{
+					PartitionIndex: 0,
+					LeaderID:       1,
+					ReplicaNodes:   []int32{1},
+					IsrNodes:       []int32{1},
+				}},
+			}},
+		}, nil
+	case *produceAPI.Request:
+		timer := time.NewTimer(5 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+		if r.recovered.Load() {
+			r.lateProduces.Add(1)
+			return &produceAPI.Response{
+				Topics: []produceAPI.ResponseTopic{{
+					Topic: "topic",
+					Partitions: []produceAPI.ResponsePartition{{
+						Partition: 0,
+					}},
+				}},
+			}, nil
+		}
+		return nil, syscall.ECONNREFUSED
+	default:
+		return nil, fmt.Errorf("unexpected request %T", req)
+	}
+}
+
+func TestWriteMessagesDoesNotDeliverAfterContextTimeout(t *testing.T) {
+	t.Run("queued batch is not retried", func(t *testing.T) {
+		rt := &unavailableThenRecoverRoundTripper{}
+		w := &Writer{
+			Addr:            TCP("127.0.0.1:9092"),
+			Topic:           "topic",
+			Transport:       rt,
+			BatchSize:       1,
+			BatchTimeout:    time.Millisecond,
+			WriteBackoffMin: 5 * time.Millisecond,
+			WriteBackoffMax: 5 * time.Millisecond,
+			MaxAttempts:     10,
+		}
+		defer w.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+		defer cancel()
+		err := w.WriteMessages(ctx, Message{Value: []byte("x")})
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("WriteMessages returned %v, want context deadline", err)
+		}
+
+		rt.recovered.Store(true)
+		time.Sleep(30 * time.Millisecond)
+		if n := rt.lateProduces.Load(); n != 0 {
+			t.Fatalf("produced %d batches after WriteMessages returned a timeout", n)
+		}
+	})
+
+	t.Run("partial batch is not flushed", func(t *testing.T) {
+		rt := &unavailableThenRecoverRoundTripper{}
+		w := &Writer{
+			Addr:         TCP("127.0.0.1:9092"),
+			Topic:        "topic",
+			Transport:    rt,
+			BatchSize:    100,
+			BatchTimeout: time.Hour,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+		defer cancel()
+		err := w.WriteMessages(ctx, Message{Value: []byte("x")})
+		if !errors.Is(err, context.DeadlineExceeded) {
+			w.Close()
+			t.Fatalf("WriteMessages returned %v, want context deadline", err)
+		}
+
+		// Close flushes a batch that is still open. The timed-out messages
+		// must not be part of that flush once the broker is reachable again.
+		rt.recovered.Store(true)
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if n := rt.lateProduces.Load(); n != 0 {
+			t.Fatalf("flushed %d batches after WriteMessages returned a timeout", n)
+		}
+	})
 }

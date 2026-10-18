@@ -599,11 +599,10 @@ func (w *Writer) Close() error {
 // the caller to determine the status of each message.
 //
 // The context passed as first argument may also be used to asynchronously
-// cancel the operation. Note that in this case there are no guarantees made on
-// whether messages were written to kafka, they might also still be written
-// after this method has already returned, therefore it is important to not
-// modify byte slices of passed messages if WriteMessages returned early due
-// to a canceled context.
+// cancel the operation. A batch is not written after this method returns
+// unless another call is still waiting on it. A produce already in flight
+// may still be acknowledged, so do not modify the byte slices of passed
+// messages if WriteMessages returns early because the context was canceled.
 // The program should assume that the whole batch failed and re-write the
 // messages later (which could then cause duplicates).
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
@@ -673,6 +672,13 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	for batch := range batches {
 		select {
 		case <-done:
+			for b := range batches {
+				select {
+				case <-b.done:
+				default:
+					b.stopWaiting()
+				}
+			}
 			return ctx.Err()
 		case <-batch.done:
 			if batch.err != nil {
@@ -727,7 +733,7 @@ func (w *Writer) batchMessages(messages []Message, assignments map[topicPartitio
 func (w *Writer) produce(key topicPartition, batch *writeBatch) (*ProduceResponse, error) {
 	timeout := w.writeTimeout()
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(batch.ctx, timeout)
 	defer cancel()
 
 	return w.client(timeout).Produce(ctx, &ProduceRequest{
@@ -1056,6 +1062,9 @@ func (ptw *partitionWriter) writeMessages(msgs []Message, indexes []int32) map[*
 		}
 
 		if !ptw.w.Async {
+			if _, waiting := batches[batch]; !waiting {
+				atomic.AddInt32(&batch.waiters, 1)
+			}
 			batches[batch] = append(batches[batch], i)
 		}
 	}
@@ -1084,15 +1093,40 @@ func (ptw *partitionWriter) awaitBatch(batch *writeBatch) {
 		// pw.currBatch != batch so we just move on.
 		// Otherwise, we detach the batch from the ptWriter and enqueue it for writing.
 		if ptw.currBatch == batch {
-			ptw.queue.Put(batch)
+			canceled := batch.ctx.Err() != nil
 			ptw.currBatch = nil
+			if !canceled {
+				ptw.queue.Put(batch)
+			}
+			ptw.mutex.Unlock()
+			if canceled {
+				batch.complete(context.Canceled)
+			}
+		} else {
+			ptw.mutex.Unlock()
 		}
-		ptw.mutex.Unlock()
 	case <-batch.ready:
 		// The batch became full, it was removed from the ptwriter and its
 		// ready channel was closed. We need to close the timer to avoid
 		// having it leak until it expires.
 		batch.timer.Stop()
+	case <-batch.ctx.Done():
+		if !batch.timer.Stop() {
+			select {
+			case <-batch.timer.C:
+			default:
+			}
+		}
+		ptw.mutex.Lock()
+		// writeBatch completes a batch that was already queued.
+		owned := ptw.currBatch == batch
+		if owned {
+			ptw.currBatch = nil
+		}
+		ptw.mutex.Unlock()
+		if owned {
+			batch.complete(context.Canceled)
+		}
 	}
 	stats := ptw.w.stats()
 	stats.batchQueueTime.observe(int64(time.Since(batch.time)))
@@ -1108,23 +1142,31 @@ func (ptw *partitionWriter) writeBatch(batch *writeBatch) {
 	var err error
 	key := ptw.meta
 	for attempt, maxAttempts := 0, ptw.w.maxAttempts(); attempt < maxAttempts; attempt++ {
+		if batch.ctx.Err() != nil {
+			err = context.Canceled
+			break
+		}
 		if attempt != 0 {
-			stats.retries.observe(1)
-			// TODO: should there be a way to asynchronously cancel this
-			// operation?
-			//
-			// * If all goroutines that added message to this batch have stopped
-			//   waiting for it, should we abort?
-			//
-			// * If the writer has been closed? It reduces the durability
-			//   guarantees to abort, but may be better to avoid long wait times
-			//   on close.
-			//
+			// TODO: should a closed writer stop waiting as well? Aborting
+			// reduces the durability guarantees, but may be better to avoid
+			// long wait times on close.
 			delay := backoff(attempt, ptw.w.writeBackoffMin(), ptw.w.writeBackoffMax())
 			ptw.w.withLogger(func(log Logger) {
 				log.Printf("backing off %s writing %d messages to %s (partition: %d)", delay, len(batch.msgs), key.topic, key.partition)
 			})
-			time.Sleep(delay)
+			timer := time.NewTimer(delay)
+			canceled := false
+			select {
+			case <-timer.C:
+			case <-batch.ctx.Done():
+				timer.Stop()
+				canceled = true
+			}
+			if canceled {
+				err = context.Canceled
+				break
+			}
+			stats.retries.observe(1)
 		}
 
 		ptw.w.withLogger(func(log Logger) {
@@ -1199,22 +1241,28 @@ func (ptw *partitionWriter) close() {
 }
 
 type writeBatch struct {
-	time  time.Time
-	msgs  []Message
-	size  int
-	bytes int64
-	ready chan struct{}
-	done  chan struct{}
-	timer *time.Timer
-	err   error // result of the batch completion
+	time    time.Time
+	msgs    []Message
+	size    int
+	bytes   int64
+	ready   chan struct{}
+	done    chan struct{}
+	timer   *time.Timer
+	err     error // result of the batch completion
+	waiters int32
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 func newWriteBatch(now time.Time, timeout time.Duration) *writeBatch {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &writeBatch{
-		time:  now,
-		ready: make(chan struct{}),
-		done:  make(chan struct{}),
-		timer: time.NewTimer(timeout),
+		time:   now,
+		ready:  make(chan struct{}),
+		done:   make(chan struct{}),
+		timer:  time.NewTimer(timeout),
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
@@ -1243,9 +1291,18 @@ func (b *writeBatch) trigger() {
 	close(b.ready)
 }
 
+// stopWaiting records that one caller is no longer waiting for this batch.
+// The batch is canceled once none remain.
+func (b *writeBatch) stopWaiting() {
+	if atomic.AddInt32(&b.waiters, -1) == 0 {
+		b.cancel()
+	}
+}
+
 func (b *writeBatch) complete(err error) {
 	b.err = err
 	close(b.done)
+	b.cancel()
 }
 
 type writerRecords struct {
