@@ -160,32 +160,37 @@ func TestClientCreateTopics(t *testing.T) {
 	}
 }
 
-func TestCreateTopicsResponseV0(t *testing.T) {
-	item := createTopicsResponseV0{
-		TopicErrors: []createTopicsResponseV0TopicError{
-			{
-				Topic:     "topic",
-				ErrorCode: 2,
+func TestCreateTopicsResponse(t *testing.T) {
+	supportedVersions := []apiVersion{v0, v1, v2}
+	for _, v := range supportedVersions {
+		item := createTopicsResponse{
+			v: v,
+			TopicErrors: []createTopicsResponseTopicError{
+				{
+					v:         v,
+					Topic:     "topic",
+					ErrorCode: 2,
+				},
 			},
-		},
-	}
+		}
 
-	b := bytes.NewBuffer(nil)
-	w := &writeBuffer{w: b}
-	item.writeTo(w)
+		b := bytes.NewBuffer(nil)
+		w := &writeBuffer{w: b}
+		item.writeTo(w)
 
-	var found createTopicsResponseV0
-	remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	if remain != 0 {
-		t.Errorf("expected 0 remain, got %v", remain)
-		t.FailNow()
-	}
-	if !reflect.DeepEqual(item, found) {
-		t.Error("expected item and found to be the same")
-		t.FailNow()
+		found := createTopicsResponse{v: v}
+		remain, err := (&found).readFrom(bufio.NewReader(b), b.Len())
+		if err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+		if remain != 0 {
+			t.Errorf("expected 0 remain, got %v", remain)
+			t.FailNow()
+		}
+		if !reflect.DeepEqual(item, found) {
+			t.Error("expected item and found to be the same")
+			t.FailNow()
+		}
 	}
 }

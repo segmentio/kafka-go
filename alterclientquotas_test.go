@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"testing"
+	"time"
 
 	ktesting "github.com/segmentio/kafka-go/testing"
 	"github.com/stretchr/testify/assert"
@@ -64,6 +65,11 @@ func TestClientAlterClientQuotas(t *testing.T) {
 	}
 
 	assert.Equal(t, expectedAlterResp, *alterResp)
+
+	// kraft mode is slow
+	if ktesting.KafkaIsAtLeast("3.7.0") {
+		time.Sleep(3 * time.Second)
+	}
 
 	describeResp, err := client.DescribeClientQuotas(context.Background(), &DescribeClientQuotasRequest{
 		Components: []DescribeClientQuotasRequestComponent{

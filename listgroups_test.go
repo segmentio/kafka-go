@@ -96,14 +96,21 @@ func TestClientListGroups(t *testing.T) {
 		)
 	}
 	hasGroup := false
+	hasProtocol := false
 	for _, group := range resp.Groups {
 		if group.GroupID == gid {
 			hasGroup = true
+			if group.ProtocolType == "consumer" {
+				hasProtocol = true
+			}
 			break
 		}
 	}
 
 	if !hasGroup {
 		t.Error("Group not found in list")
+	}
+	if !hasProtocol {
+		t.Error("Group does not have expected protocol type")
 	}
 }

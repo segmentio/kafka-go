@@ -5,7 +5,7 @@ This document outlines how to create a docker-compose file for a specific Bitnam
 
 ## Steps to create docker-compose
 
-- Refer to [docker-hub Bitnami Kafka tags](https://hub.docker.com/r/bitnami/kafka/tags) and sort by NEWEST to locate the image preferred, for example: `2.7.0`
+- Refer to [docker-hub Bitnami Kafka tags](https://hub.docker.com/r/bitnamilegacy/kafka/tags) and sort by NEWEST to locate the image preferred, for example: `2.7.0`
 - There is documentation in the (main branch)[https://github.com/bitnami/containers/blob/main/bitnami/kafka/README.md] for environment config setup information. Refer to the `Notable Changes` section.
 - Sometimes there is a need to understand how the set up is being done. To locate the appropriate Kafka release in the repo [bitnami/containers](https://github.com/bitnami/containers), go through the [kafka commit history](https://github.com/bitnami/containers/commits/main/bitnami/kafka).
 - Once a commit is located, Refer to README.md, Dockerfile, entrypoint and various init scripts to understand the environment variables to config server.properties mapping conventions. Alternatively, you can spin up the required Kafka image and refer the mapping inside the container.
@@ -112,41 +112,41 @@ For user reference, please find the some of the older kafka versions commits fro
 
 
 ### Kafka v010: docker-compose reference: `kafka-go/docker_compose_versions/docker-compose-010.yml`
-- [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=0.10.2.1)
+- [tag](https://hub.docker.com/r/bitnamilegacy/kafka/tags?page=1&ordering=last_updated&name=0.10.2.1)
 - [kafka commit](https://github.com/bitnami/containers/tree/c4240f0525916a418245c7ef46d9534a7a212c92/bitnami/kafka)
 
 
 ### Kafka v011: docker-compose reference: `kafka-go/docker_compose_versions/docker-compose-011.yml`
-- [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=0.11.0)
+- [tag](https://hub.docker.com/r/bitnamilegacy/kafka/tags?page=1&ordering=last_updated&name=0.11.0)
 - [kafka commit](https://github.com/bitnami/containers/tree/7724adf655e4ca9aac69d606d41ad329ef31eeca/bitnami/kafka)
 
 
 ### Kafka v101: docker-compose reference: N/A
-- [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=1.0.1)
+- [tag](https://hub.docker.com/r/bitnamilegacy/kafka/tags?page=1&ordering=last_updated&name=1.0.1)
 - [kafka commit](https://github.com/bitnami/containers/tree/44cc8f4c43ead6edebd3758c8df878f4f9da82c2/bitnami/kafka)
 
 
 ### Kafka v111: docker-compose reference: N/A
-- [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=1.1.1)
+- [tag](https://hub.docker.com/r/bitnamilegacy/kafka/tags?page=1&ordering=last_updated&name=1.1.1)
 - [kafka commit](https://github.com/bitnami/containers/tree/cb593dc98c2eb7a39f2792641e741d395dbe50e7/bitnami/kafka)
 
 
 ### Kafka v201: docker-compose reference: N/A
-- [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=2.0.1)
+- [tag](https://hub.docker.com/r/bitnamilegacy/kafka/tags?page=1&ordering=last_updated&name=2.0.1)
 - [kafka commit](https://github.com/bitnami/containers/tree/9ff8763df265c87c8b59f8d7ff0cf69299d636c9/bitnami/kafka)
 
 
 ### Kafka v211: docker-compose reference: N/A
-- [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=2.1.1)
+- [tag](https://hub.docker.com/r/bitnamilegacy/kafka/tags?page=1&ordering=last_updated&name=2.1.1)
 - [kafka commit](https://github.com/bitnami/containers/tree/d3a9d40afc2b7e7de53486538a63084c1a565d43/bitnami/kafka)
 
 
 ### Kafka v221: docker-compose reference: N/A
-- [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=2.2.1)
+- [tag](https://hub.docker.com/r/bitnamilegacy/kafka/tags?page=1&ordering=last_updated&name=2.2.1)
 - [kafka commit](https://github.com/bitnami/containers/tree/f132ef830d1ba9b78392ec4619174b4640c276c9/bitnami/kafka)
 
 
 ### Kafka v231: docker-compose reference: `kafka-go/docker_compose_versions/docker-compose-231.yml`
-- [tag](https://hub.docker.com/r/bitnami/kafka/tags?page=1&ordering=last_updated&name=2.3.1)
+- [tag](https://hub.docker.com/r/bitnamilegacy/kafka/tags?page=1&ordering=last_updated&name=2.3.1)
 - [kafka commit](https://github.com/bitnami/containers/tree/ae572036b5281456b0086345fec0bdb74f7cf3a3/bitnami/kafka)
 
