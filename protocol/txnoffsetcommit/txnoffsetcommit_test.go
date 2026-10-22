@@ -100,7 +100,7 @@ func TestTxnOffsetCommitRequest(t *testing.T) {
 	// GenerationID
 	// MemberID
 	// GroupInstanceID
-	for _, version := range []int16{3} {
+	for _, version := range []int16{3, 4, 5} {
 		prototest.TestRequest(t, version, &txnoffsetcommit.Request{
 			TransactionalID: "transactional-id-0",
 			GroupID:         "group-0",
@@ -150,7 +150,7 @@ func TestTxnOffsetCommitRequest(t *testing.T) {
 }
 
 func TestTxnOffsetCommitResponse(t *testing.T) {
-	for _, version := range []int16{0, 1, 2, 3} {
+	for _, version := range []int16{0, 1, 2, 3, 4, 5} {
 		prototest.TestResponse(t, version, &txnoffsetcommit.Response{
 			ThrottleTimeMs: 10,
 			Topics: []txnoffsetcommit.ResponseTopic{

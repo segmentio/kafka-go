@@ -119,6 +119,7 @@ const (
 	InconsistentClusterID              Error = 104
 	TransactionalIDNotFound            Error = 105
 	FetchSessionTopicIDError           Error = 106
+	TransactionAbortable               Error = 120
 )
 
 // Error satisfies the error interface.
@@ -137,7 +138,8 @@ func (e Error) Timeout() bool {
 // https://kafka.apache.org/protocol#protocol_error_codes
 func (e Error) Temporary() bool {
 	switch e {
-	case InvalidMessage,
+	case ConcurrentTransactions,
+		InvalidMessage,
 		UnknownTopicOrPartition,
 		LeaderNotAvailable,
 		NotLeaderForPartition,
@@ -379,6 +381,8 @@ func (e Error) Title() string {
 		return "Transactional ID Not Found"
 	case FetchSessionTopicIDError:
 		return "Fetch Session Topic ID Error"
+	case TransactionAbortable:
+		return "Transaction Abortable"
 	}
 	return ""
 }
@@ -590,6 +594,8 @@ func (e Error) Description() string {
 		return "The transactionalId could not be found"
 	case FetchSessionTopicIDError:
 		return "The fetch session encountered inconsistent topic ID usage"
+	case TransactionAbortable:
+		return "The server encountered an error with the transaction. The client can abort the transaction to continue using this transactional ID."
 	}
 	return ""
 }

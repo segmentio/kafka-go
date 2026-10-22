@@ -9,12 +9,12 @@ func init() {
 type Request struct {
 	// We need at least one tagged field to indicate that this is a "flexible" message
 	// type.
-	_ struct{} `kafka:"min=v3,max=v3,tag"`
+	_ struct{} `kafka:"min=v3,max=v4,tag"`
 
-	TransactionalID string `kafka:"min=v0,max=v2|min=v3,max=v3,compact"`
-	ProducerID      int64  `kafka:"min=v0,max=v3"`
-	ProducerEpoch   int16  `kafka:"min=v0,max=v3"`
-	GroupID         string `kafka:"min=v0,max=v3|min=v3,max=v3,compact"`
+	TransactionalID string `kafka:"min=v0,max=v2|min=v3,max=v4,compact"`
+	ProducerID      int64  `kafka:"min=v0,max=v4"`
+	ProducerEpoch   int16  `kafka:"min=v0,max=v4"`
+	GroupID         string `kafka:"min=v0,max=v2|min=v3,max=v4,compact"`
 }
 
 func (r *Request) ApiKey() protocol.ApiKey { return protocol.AddOffsetsToTxn }
@@ -26,10 +26,10 @@ var _ protocol.TransactionalMessage = (*Request)(nil)
 type Response struct {
 	// We need at least one tagged field to indicate that this is a "flexible" message
 	// type.
-	_ struct{} `kafka:"min=v3,max=v3,tag"`
+	_ struct{} `kafka:"min=v3,max=v4,tag"`
 
-	ThrottleTimeMs int32 `kafka:"min=v0,max=v3"`
-	ErrorCode      int16 `kafka:"min=v0,max=v3"`
+	ThrottleTimeMs int32 `kafka:"min=v0,max=v4"`
+	ErrorCode      int16 `kafka:"min=v0,max=v4"`
 }
 
 func (r *Response) ApiKey() protocol.ApiKey { return protocol.AddOffsetsToTxn }

@@ -27,15 +27,21 @@ type EndTxnRequest struct {
 	Committed bool
 }
 
-// EndTxnResponse represents a resposne from a kafka broker to an end transaction request.
+// EndTxnResponse represents a response from a kafka broker to an end transaction request.
 type EndTxnResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration
 
-	// Error is non-nil if an error occureda and contains the kafka error code.
+	// Error is non-nil if an error occurred and contains the kafka error code.
 	// Programs may use the standard errors.Is function to test the error
 	// against kafka error codes.
 	Error error
+
+	// The producer ID returned by Kafka 4.0+ (Transactions v2 / KIP-890).
+	ProducerID int
+
+	// The producer epoch returned by Kafka 4.0+ (Transactions v2 / KIP-890).
+	ProducerEpoch int
 }
 
 // EndTxn sends an EndTxn request to a kafka broker and returns its response.
@@ -53,8 +59,10 @@ func (c *Client) EndTxn(ctx context.Context, req *EndTxnRequest) (*EndTxnRespons
 	r := m.(*endtxn.Response)
 
 	res := &EndTxnResponse{
-		Throttle: makeDuration(r.ThrottleTimeMs),
-		Error:    makeError(r.ErrorCode, ""),
+		Throttle:      makeDuration(r.ThrottleTimeMs),
+		Error:         makeError(r.ErrorCode, ""),
+		ProducerID:    int(r.ProducerID),
+		ProducerEpoch: int(r.ProducerEpoch),
 	}
 
 	return res, nil

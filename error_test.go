@@ -85,6 +85,7 @@ func TestError(t *testing.T) {
 		FencedLeaderEpoch,
 		UnknownLeaderEpoch,
 		UnsupportedCompressionType,
+		TransactionAbortable,
 	}
 
 	for _, err := range errorCodes {
@@ -111,6 +112,11 @@ func TestError(t *testing.T) {
 		if s := err.Description(); len(s) != 0 {
 			t.Error("non-empty description:", s)
 		}
+	})
+
+	t.Run("verify temporary status for transaction errors", func(t *testing.T) {
+		assert.True(t, ConcurrentTransactions.Temporary(), "ConcurrentTransactions must be retriable")
+		assert.False(t, TransactionAbortable.Temporary(), "TransactionAbortable must not be retriable")
 	})
 
 	t.Run("MessageTooLargeError error.Is satisfaction", func(t *testing.T) {

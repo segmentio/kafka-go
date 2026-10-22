@@ -18,7 +18,7 @@ func TestInitProducerIDRequest(t *testing.T) {
 	// Version 2 added:
 	// ProducerID
 	// ProducerEpoch
-	for _, version := range []int16{3, 4} {
+	for _, version := range []int16{3, 4, 5} {
 		prototest.TestRequest(t, version, &initproducerid.Request{
 			TransactionalID:      "transactional-id-0",
 			TransactionTimeoutMs: 1000,
@@ -29,7 +29,7 @@ func TestInitProducerIDRequest(t *testing.T) {
 }
 
 func TestInitProducerIDResponse(t *testing.T) {
-	for _, version := range []int16{0, 1, 2, 3, 4} {
+	for _, version := range []int16{0, 1, 2, 3, 4, 5} {
 		prototest.TestResponse(t, version, &initproducerid.Response{
 			ThrottleTimeMs: 1000,
 			ErrorCode:      9,

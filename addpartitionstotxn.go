@@ -16,7 +16,7 @@ type AddPartitionToTxn struct {
 	Partition int
 }
 
-// AddPartitionsToTxnRequest is the request structure fo the AddPartitionsToTxn function.
+// AddPartitionsToTxnRequest is the request structure for the AddPartitionsToTxn function.
 type AddPartitionsToTxnRequest struct {
 	// Address of the kafka broker to send the request to.
 	Addr net.Addr
@@ -31,6 +31,10 @@ type AddPartitionsToTxnRequest struct {
 	// The epoch associated with the current producer session for the given PID
 	ProducerEpoch int
 
+	// VerifyOnly indicates whether to only verify that the partition has already been added to the transaction.
+	// Supported in Kafka 3.6+ / KIP-890 (API version 4+).
+	VerifyOnly bool
+
 	// Mappings of topic names to lists of partitions.
 	Topics map[string][]AddPartitionToTxn
 }
@@ -40,7 +44,11 @@ type AddPartitionsToTxnResponse struct {
 	// The amount of time that the broker throttled the request.
 	Throttle time.Duration
 
-	// Mappings of topic names to partitions being added to a transactions.
+	// Error is non-nil if a top-level error occurred and contains the kafka error code.
+	// Returned by Kafka 3.6+ / KIP-890 (API version 4+).
+	Error error
+
+	// Mappings of topic names to partitions being added to a transaction.
 	Topics map[string][]AddPartitionToTxnPartition
 }
 
@@ -58,7 +66,7 @@ type AddPartitionToTxnPartition struct {
 	Error error
 }
 
-// AddPartitionsToTnx sends an add partitions to txn request to a kafka broker and returns the response.
+// AddPartitionsToTxn sends an add partitions to txn request to a kafka broker and returns the response.
 func (c *Client) AddPartitionsToTxn(
 	ctx context.Context,
 	req *AddPartitionsToTxnRequest,
@@ -67,6 +75,7 @@ func (c *Client) AddPartitionsToTxn(
 		TransactionalID: req.TransactionalID,
 		ProducerID:      int64(req.ProducerID),
 		ProducerEpoch:   int16(req.ProducerEpoch),
+		VerifyOnly:      req.VerifyOnly,
 	}
 	protoReq.Topics = make([]addpartitionstotxn.RequestTopic, 0, len(req.Topics))
 
@@ -90,7 +99,8 @@ func (c *Client) AddPartitionsToTxn(
 
 	res := &AddPartitionsToTxnResponse{
 		Throttle: makeDuration(r.ThrottleTimeMs),
-		Topics:   make(map[string][]AddPartitionToTxnPartition, len(r.Results)),
+		Error:    makeError(r.ErrorCode, ""),
+		Topics:   make(map[string][]AddPartitionToTxnPartition),
 	}
 
 	for _, result := range r.Results {
@@ -102,6 +112,19 @@ func (c *Client) AddPartitionsToTxn(
 			})
 		}
 		res.Topics[result.Name] = partitions
+	}
+
+	for _, txResult := range r.ResultsByTransaction {
+		for _, result := range txResult.TopicResults {
+			partitions := res.Topics[result.Name]
+			for _, rp := range result.Results {
+				partitions = append(partitions, AddPartitionToTxnPartition{
+					Partition: int(rp.PartitionIndex),
+					Error:     makeError(rp.ErrorCode, ""),
+				})
+			}
+			res.Topics[result.Name] = partitions
+		}
 	}
 
 	return res, nil
