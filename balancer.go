@@ -34,25 +34,31 @@ func (f BalancerFunc) Balance(msg Message, partitions ...int) int {
 	return f(msg, partitions...)
 }
 
-// RoundRobin is an Balancer implementation that equally distributes messages
-// across all available partitions.  It can take an optional chunk size to send
-// ChunkSize messages to the same partition before moving to the next partition.
-// This can be used to improve batch sizes.
+// RoundRobin is a Balancer implementation that equally distributes messages
+// across partitions independently for each explicitly named topic. It can take
+// an optional chunk size to send ChunkSize messages to the same partition before
+// moving to the next partition. This can be used to improve batch sizes.
+// Messages with no topic use the legacy shared counter.
 type RoundRobin struct {
 	ChunkSize int
 	// Use a 32 bits integer so RoundRobin values don't need to be aligned to
 	// apply increments.
 	counter uint32
+	topicCounters map[string]uint32
 
 	mutex sync.Mutex
 }
 
 // Balance satisfies the Balancer interface.
 func (rr *RoundRobin) Balance(msg Message, partitions ...int) int {
-	return rr.balance(partitions)
+	return rr.balanceForTopic(msg.Topic, partitions)
 }
 
 func (rr *RoundRobin) balance(partitions []int) int {
+	return rr.balanceForTopic("", partitions)
+}
+
+func (rr *RoundRobin) balanceForTopic(topic string, partitions []int) int {
 	rr.mutex.Lock()
 	defer rr.mutex.Unlock()
 
@@ -61,9 +67,18 @@ func (rr *RoundRobin) balance(partitions []int) int {
 	}
 
 	length := len(partitions)
-	counterNow := rr.counter
+	var counterNow uint32
+	if topic == "" {
+		counterNow = rr.counter
+		rr.counter++
+	} else {
+		if rr.topicCounters == nil {
+			rr.topicCounters = make(map[string]uint32)
+		}
+		counterNow = rr.topicCounters[topic]
+		rr.topicCounters[topic] = counterNow + 1
+	}
 	offset := int(counterNow / uint32(rr.ChunkSize))
-	rr.counter++
 	return partitions[offset%length]
 }
 
