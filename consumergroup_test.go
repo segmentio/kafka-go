@@ -594,6 +594,109 @@ func TestConsumerGroupErrors(t *testing.T) {
 	}
 }
 
+func TestConsumerGroupCoordinatorLookupFallsBackToNextBroker(t *testing.T) {
+	coordinatorConn := &mockCoordinator{}
+	lookupConn := func(err error) mockCoordinator {
+		return mockCoordinator{
+			closeFunc: func() error { return nil },
+			findCoordinatorFunc: func(findCoordinatorRequestV0) (findCoordinatorResponseV0, error) {
+				if err != nil {
+					return findCoordinatorResponseV0{}, err
+				}
+				return findCoordinatorResponseV0{
+					Coordinator: findCoordinatorResponseCoordinatorV0{Host: "broker-3", Port: 9092},
+				}, nil
+			},
+		}
+	}
+
+	tests := []struct {
+		scenario string
+		brokers  map[string]func() (coordinator, error)
+		dialed   []string
+		err      error
+	}{
+		{
+			scenario: "first broker accepts the connection but fails the lookup",
+			brokers: map[string]func() (coordinator, error){
+				"broker-1:9092": func() (coordinator, error) { return lookupConn(errors.New("connection reset by peer")), nil },
+				"broker-2:9092": func() (coordinator, error) { return lookupConn(nil), nil },
+				"broker-3:9092": func() (coordinator, error) { return coordinatorConn, nil },
+			},
+			dialed: []string{"broker-1:9092", "broker-2:9092", "broker-3:9092"},
+		},
+		{
+			scenario: "first broker returns an error code",
+			brokers: map[string]func() (coordinator, error){
+				"broker-1:9092": func() (coordinator, error) { return lookupConn(GroupCoordinatorNotAvailable), nil },
+				"broker-2:9092": func() (coordinator, error) { return lookupConn(nil), nil },
+				"broker-3:9092": func() (coordinator, error) { return coordinatorConn, nil },
+			},
+			dialed: []string{"broker-1:9092", "broker-2:9092", "broker-3:9092"},
+		},
+		{
+			scenario: "first broker cannot be dialed",
+			brokers: map[string]func() (coordinator, error){
+				"broker-1:9092": func() (coordinator, error) { return nil, errors.New("connection refused") },
+				"broker-2:9092": func() (coordinator, error) { return lookupConn(nil), nil },
+				"broker-3:9092": func() (coordinator, error) { return coordinatorConn, nil },
+			},
+			dialed: []string{"broker-1:9092", "broker-2:9092", "broker-3:9092"},
+		},
+		{
+			scenario: "every lookup fails",
+			brokers: map[string]func() (coordinator, error){
+				"broker-1:9092": func() (coordinator, error) { return lookupConn(errors.New("connection reset by peer")), nil },
+				"broker-2:9092": func() (coordinator, error) { return nil, errors.New("connection refused") },
+			},
+			dialed: []string{"broker-1:9092", "broker-2:9092"},
+			err:    errors.New("connection refused"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.scenario, func(t *testing.T) {
+			var dialed []string
+			cg := &ConsumerGroup{
+				config: ConsumerGroupConfig{
+					ID:      makeGroupID(),
+					Brokers: []string{"broker-1:9092", "broker-2:9092"},
+					// mirrors makeConnect, returning the first broker that can be dialed
+					connect: func(_ *Dialer, brokers ...string) (coordinator, error) {
+						var err error
+						for _, broker := range brokers {
+							dialed = append(dialed, broker)
+							var conn coordinator
+							if conn, err = tt.brokers[broker](); err == nil {
+								return conn, nil
+							}
+						}
+						return nil, err
+					},
+				},
+			}
+
+			conn, err := cg.coordinator()
+
+			if !reflect.DeepEqual(tt.dialed, dialed) {
+				t.Errorf("expected dialed brokers %v, got %v", tt.dialed, dialed)
+			}
+			if tt.err != nil {
+				if err == nil || err.Error() != tt.err.Error() {
+					t.Fatalf("expected error %v, got %v", tt.err, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if conn != coordinator(coordinatorConn) {
+				t.Errorf("expected the connection to the coordinator, got %v", conn)
+			}
+		})
+	}
+}
+
 // todo : test for multi-topic?
 
 func TestGenerationExitsOnPartitionChange(t *testing.T) {

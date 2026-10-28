@@ -900,9 +900,27 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 	//        here.  since consumer group balances happen infrequently and are
 	//        an expensive operation, we're not currently optimizing that case
 	//        in order to keep the code simpler.
-	conn, err := cg.config.connect(cg.config.Dialer, cg.config.Brokers...)
+	//
+	// the lookup is attempted against each broker in turn rather than only the
+	// first one that accepts a connection.  a broker that is restarting can
+	// still accept the dial and then fail the request, which would otherwise
+	// make every rebalance fail until that broker is back.
+	var err error
+	for _, broker := range cg.config.Brokers {
+		var address string
+		if address, err = cg.findCoordinator(broker); err == nil {
+			return cg.config.connect(cg.config.Dialer, address)
+		}
+	}
+	return nil, err
+}
+
+// findCoordinator asks the given broker for the address of the coordinator
+// for this consumer group.
+func (cg *ConsumerGroup) findCoordinator(broker string) (string, error) {
+	conn, err := cg.config.connect(cg.config.Dialer, broker)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer conn.Close()
 
@@ -913,11 +931,10 @@ func (cg *ConsumerGroup) coordinator() (coordinator, error) {
 		err = Error(out.ErrorCode)
 	}
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	address := net.JoinHostPort(out.Coordinator.Host, strconv.Itoa(int(out.Coordinator.Port)))
-	return cg.config.connect(cg.config.Dialer, address)
+	return net.JoinHostPort(out.Coordinator.Host, strconv.Itoa(int(out.Coordinator.Port))), nil
 }
 
 // joinGroup attempts to join the reader to the consumer group.
