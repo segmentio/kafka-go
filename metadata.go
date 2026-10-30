@@ -83,24 +83,19 @@ func (c *Client) Metadata(ctx context.Context, req *MetadataRequest) (*MetadataR
 		}
 
 		for j, p := range t.Partitions {
-			partition := Partition{
-				Topic:    t.Name,
-				ID:       int(p.PartitionIndex),
-				Leader:   brokers[p.LeaderID],
-				Replicas: make([]Broker, len(p.ReplicaNodes)),
-				Isr:      make([]Broker, len(p.IsrNodes)),
-				Error:    makeError(p.ErrorCode, ""),
+			// Use makeBrokers so a replica/ISR/offline ID absent from the broker
+			// list (typically a down broker) keeps its logical ID instead of
+			// collapsing to the zero Broker (ID 0). Same for a missing leader
+			// (including leader_id -1 on a leaderless partition).
+			ret.Topics[i].Partitions[j] = Partition{
+				Topic:           t.Name,
+				ID:              int(p.PartitionIndex),
+				Leader:          makeBrokers(brokers, p.LeaderID)[0],
+				Replicas:        makeBrokers(brokers, p.ReplicaNodes...),
+				Isr:             makeBrokers(brokers, p.IsrNodes...),
+				OfflineReplicas: makeBrokers(brokers, p.OfflineReplicas...),
+				Error:           makeError(p.ErrorCode, ""),
 			}
-
-			for i, id := range p.ReplicaNodes {
-				partition.Replicas[i] = brokers[id]
-			}
-
-			for i, id := range p.IsrNodes {
-				partition.Isr[i] = brokers[id]
-			}
-
-			ret.Topics[i].Partitions[j] = partition
 		}
 	}
 
