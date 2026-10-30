@@ -2,7 +2,10 @@ package kafka
 
 import (
 	"context"
+	"net"
 	"testing"
+
+	metadataAPI "github.com/segmentio/kafka-go/protocol/metadata"
 )
 
 func TestClientMetadata(t *testing.T) {
@@ -70,6 +73,90 @@ func TestClientMetadata(t *testing.T) {
 
 		if len(metadata.Topics) > 1 {
 			t.Error("too many topics were returned in the metadata response")
+		}
+	}
+}
+
+func TestClientMetadataPreservesMissingBrokerIDsAndOfflineReplicas(t *testing.T) {
+	// Synthetic Metadata: broker 1 is live; broker 2 is down (absent from the
+	// broker list but still named by the partitions). Partition 1 is leaderless.
+	client := &Client{
+		Addr:      TCP("unused.invalid:9092"),
+		Transport: syntheticMetadataTransport{},
+	}
+	response, err := client.Metadata(context.Background(), &MetadataRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Topics) != 1 || len(response.Topics[0].Partitions) != 2 {
+		t.Fatalf("unexpected topics/partitions: %+v", response.Topics)
+	}
+
+	p0 := response.Topics[0].Partitions[0]
+	assertBrokerIDs(t, "partition 0 replicas", brokerIDs(p0.Replicas), []int{1, 2})
+	assertBrokerIDs(t, "partition 0 offline replicas", brokerIDs(p0.OfflineReplicas), []int{2})
+	if p0.Leader.ID != 1 {
+		t.Errorf("partition 0 leader ID = %d, want 1", p0.Leader.ID)
+	}
+
+	p1 := response.Topics[0].Partitions[1]
+	if p1.Leader.ID != -1 {
+		t.Errorf("partition 1 leader ID = %d, want -1", p1.Leader.ID)
+	}
+	assertBrokerIDs(t, "partition 1 replicas", brokerIDs(p1.Replicas), []int{2})
+	assertBrokerIDs(t, "partition 1 isr", brokerIDs(p1.Isr), []int{2})
+	assertBrokerIDs(t, "partition 1 offline replicas", brokerIDs(p1.OfflineReplicas), []int{2})
+}
+
+type syntheticMetadataTransport struct{}
+
+func (syntheticMetadataTransport) RoundTrip(context.Context, net.Addr, Request) (Response, error) {
+	return &metadataAPI.Response{
+		ClusterID:    "synthetic-cluster",
+		ControllerID: 1,
+		Brokers: []metadataAPI.ResponseBroker{
+			{NodeID: 1, Host: "broker1.invalid", Port: 9092},
+		},
+		Topics: []metadataAPI.ResponseTopic{{
+			Name: "synthetic-topic",
+			Partitions: []metadataAPI.ResponsePartition{
+				{
+					PartitionIndex:  0,
+					LeaderID:        1,
+					ReplicaNodes:    []int32{1, 2},
+					IsrNodes:        []int32{1},
+					OfflineReplicas: []int32{2},
+				},
+				{
+					PartitionIndex:  1,
+					LeaderID:        -1,
+					ReplicaNodes:    []int32{2},
+					IsrNodes:        []int32{2},
+					OfflineReplicas: []int32{2},
+				},
+			},
+		}},
+	}, nil
+}
+
+func brokerIDs(brokers []Broker) []int {
+	ids := make([]int, len(brokers))
+	for i, broker := range brokers {
+		ids[i] = broker.ID
+	}
+	return ids
+}
+
+func assertBrokerIDs(t *testing.T, name string, got, want []int) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("%s: got %v, want %v", name, got, want)
+		return
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%s: got %v, want %v", name, got, want)
+			return
 		}
 	}
 }
