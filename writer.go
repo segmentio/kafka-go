@@ -673,7 +673,19 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...Message) error {
 	for batch := range batches {
 		select {
 		case <-done:
-			return ctx.Err()
+			// Double-check whether the batch also completed (successfully or not)
+			// before or concurrently with the context cancellation. Go's select
+			// pseudo-randomizes when both cases are ready; without this check we
+			// could return ctx.Err() for messages that were actually delivered to
+			// the broker, causing the caller to retry and produce duplicates.
+			select {
+			case <-batch.done:
+				if batch.err != nil {
+					hasErrors = true
+				}
+			default:
+				return ctx.Err()
+			}
 		case <-batch.done:
 			if batch.err != nil {
 				hasErrors = true
