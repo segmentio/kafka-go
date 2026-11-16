@@ -1310,7 +1310,7 @@ func TestCommitLoopImmediateFlushOnGenerationEnd(t *testing.T) {
 	gen.close()
 
 	if committedOffset != 100 {
-		t.Fatalf("expected commited offset to be 100 but got %d", committedOffset)
+		t.Fatalf("expected committed offset to be 100 but got %d", committedOffset)
 	}
 
 	if commitCount >= 100 {
