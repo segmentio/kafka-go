@@ -54,7 +54,7 @@ type LeaveGroupResponseMember struct {
 	// The group instance ID to remove from the group.
 	GroupInstanceID string
 
-	// An error that may have occured when attempting to remove the member from the group.
+	// An error that may have occurred when attempting to remove the member from the group.
 	//
 	// The errors contain the kafka error code. Programs may use the standard
 	// errors.Is function to test the error against kafka error codes.
