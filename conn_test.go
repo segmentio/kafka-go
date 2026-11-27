@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -1150,6 +1151,95 @@ func TestReadPartitionsNoTopic(t *testing.T) {
 
 	if len(parts) == 0 {
 		t.Errorf("no partitions were returned")
+	}
+}
+
+func TestReadPartitionsMissingACL(t *testing.T) {
+	// A broker that blocks topic listing (e.g. missing ACLs) responds with
+	// zero topics and ControllerID == -1. ReadPartitions must surface this as
+	// ErrNoTopicMetadata instead of silently returning an empty slice.
+	tests := []struct {
+		name    string
+		version apiVersion
+		encode  func() ([]byte, int)
+	}{
+		{
+			name:    "v6",
+			version: v6,
+			encode: func() ([]byte, int) {
+				b := bytes.NewBuffer(nil)
+				(metadataResponseV6{ControllerID: -1}).writeTo(&writeBuffer{w: b})
+				return b.Bytes(), b.Len()
+			},
+		},
+		{
+			name:    "v1",
+			version: v1,
+			encode: func() ([]byte, int) {
+				b := bytes.NewBuffer(nil)
+				(metadataResponseV1{ControllerID: -1}).writeTo(&writeBuffer{w: b})
+				return b.Bytes(), b.Len()
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, size := tt.encode()
+			conn := &Conn{rbuf: *bufio.NewReader(bytes.NewReader(payload))}
+
+			parts, err := conn.readPartitionsResponse(tt.version, size)
+			if !errors.Is(err, ErrNoTopicMetadata) {
+				t.Fatalf("expected ErrNoTopicMetadata, got err=%v parts=%v", err, parts)
+			}
+			if parts != nil {
+				t.Errorf("expected nil partitions, got %v", parts)
+			}
+		})
+	}
+}
+
+func TestReadPartitionsEmptyClusterOK(t *testing.T) {
+	// A healthy but empty cluster returns zero topics with a VALID ControllerID.
+	// That must NOT be treated as an error.
+	tests := []struct {
+		name    string
+		version apiVersion
+		encode  func() ([]byte, int)
+	}{
+		{
+			name:    "v6",
+			version: v6,
+			encode: func() ([]byte, int) {
+				b := bytes.NewBuffer(nil)
+				(metadataResponseV6{ControllerID: 1}).writeTo(&writeBuffer{w: b})
+				return b.Bytes(), b.Len()
+			},
+		},
+		{
+			name:    "v1",
+			version: v1,
+			encode: func() ([]byte, int) {
+				b := bytes.NewBuffer(nil)
+				(metadataResponseV1{ControllerID: 1}).writeTo(&writeBuffer{w: b})
+				return b.Bytes(), b.Len()
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, size := tt.encode()
+			conn := &Conn{rbuf: *bufio.NewReader(bytes.NewReader(payload))}
+
+			parts, err := conn.readPartitionsResponse(tt.version, size)
+			if err != nil {
+				t.Fatalf("expected no error for empty cluster, got %v", err)
+			}
+			if len(parts) != 0 {
+				t.Errorf("expected no partitions, got %v", parts)
+			}
+		})
 	}
 }
 

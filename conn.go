@@ -19,6 +19,12 @@ var (
 	errInvalidWritePartition = errors.New("writes must NOT set Partition on kafka.Message")
 )
 
+// ErrNoTopicMetadata is returned by (*Conn).ReadPartitions when the broker
+// responds with no topic metadata and an invalid controller id, which
+// typically indicates the client lacks the ACL permissions required to list
+// topics.
+var ErrNoTopicMetadata = errors.New("no topic metadata returned, possibly due to missing ACL permissions")
+
 // Conn represents a connection to a kafka broker.
 //
 // Instances of Conn are safe to use concurrently from multiple goroutines.
@@ -963,6 +969,12 @@ func (c *Conn) readOffset(t int64) (offset int64, err error) {
 // If the method is called with no topic, it uses the topic configured on the
 // connection. If there are none, the method fetches all partitions of the kafka
 // cluster.
+//
+// When no topics are requested and the broker returns no topic metadata with an
+// invalid controller id — which typically indicates the client lacks the ACL
+// permissions required to list topics — ReadPartitions returns
+// ErrNoTopicMetadata. Callers can detect this with
+// errors.Is(err, kafka.ErrNoTopicMetadata).
 func (c *Conn) ReadPartitions(topics ...string) (partitions []Partition, err error) {
 
 	if len(topics) == 0 {
@@ -1004,12 +1016,18 @@ func (c *Conn) readPartitionsResponse(metadataVersion apiVersion, size int) ([]P
 		if err := c.readResponse(size, &res); err != nil {
 			return nil, err
 		}
+		if len(res.Topics) == 0 && res.ControllerID == -1 {
+			return nil, ErrNoTopicMetadata
+		}
 		brokers := readBrokerMetadata(res.Brokers)
 		return c.readTopicMetadatav6(brokers, res.Topics)
 	default:
 		var res metadataResponseV1
 		if err := c.readResponse(size, &res); err != nil {
 			return nil, err
+		}
+		if len(res.Topics) == 0 && res.ControllerID == -1 {
+			return nil, ErrNoTopicMetadata
 		}
 		brokers := readBrokerMetadata(res.Brokers)
 		return c.readTopicMetadatav1(brokers, res.Topics)
